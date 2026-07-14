@@ -1,10 +1,10 @@
-# PROTOCOL-001 — Bridge RPC 1.0
+# PROTOCOL-001 — Bridge RPC 1.x
 
-**Status:** Accepted for Sprint 1
+**Status:** Bridge RPC 1.0 accepted for Sprint 1; compatible 1.1 extension implemented for Sprint 2
 
 **Date:** 2026-07-14
 
-**Protocol version:** `1.0`
+**Protocol versions:** `1.0` baseline; `1.1` current
 
 **Decision owner:** `Sergan2B` (interim Sidecar/Protocol and Security owner)
 
@@ -18,7 +18,8 @@ Bridge RPC is the private, project-scoped protocol between the editor-only `modu
 
 This specification defines:
 
-- macOS Unix Domain Socket discovery and framing;
+- local IPC discovery and framing: Unix Domain Sockets on macOS and loopback
+  TCP on Windows;
 - project and editor-session identity;
 - version negotiation and compatibility;
 - token-based mutual authentication;
@@ -28,7 +29,9 @@ This specification defines:
 - structured errors, limits, and redaction requirements;
 - canonical JSON Schemas and conformance fixtures.
 
-Snapshots, event notifications, chunks/acks, semantic entities, MCP, indexing, runtime observation, and transactions are outside the implemented Sprint 1 surface. They must extend the authenticated session and compatibility rules defined here rather than introduce a second transport.
+Bridge RPC 1.1 adds capability-gated editor snapshots, event notifications,
+chunks, and acknowledgements on the same authenticated session. MCP, indexing,
+runtime observation, and transactions remain outside the bridge wire surface.
 
 ## 2. Normative conventions
 
@@ -58,7 +61,7 @@ Binary values in JSON use unpadded base64url as defined by the URL-safe Base64 a
 
 ## 3. Runtime discovery and publication
 
-The macOS v1 runtime layout is project-local:
+The v1 runtime layout is project-local:
 
 ```text
 .godot/codex/
@@ -69,18 +72,24 @@ The macOS v1 runtime layout is project-local:
     └── bridge-<session-hex>.sock
 ```
 
-The containing directories use mode `0700`. `bridge.json`, `bridge.lock`, `session.token`, and the socket use owner-only access; regular files use mode `0600`. A more permissive observed mode is a startup failure, not a warning followed by publication.
+On macOS, the containing directories use mode `0700`; `bridge.json`,
+`bridge.lock`, `session.token`, and the socket use owner-only access and regular
+files use mode `0600`. On Windows, `.godot/codex`, `run`, and the three runtime
+files use a protected DACL limited to the current user, Local System, and local
+Administrators. Reparse points are rejected. A more permissive observed access
+policy is a startup failure, not a warning followed by publication.
 
 `session.token` contains exactly 32 raw random bytes and no text encoding or trailing newline. It is regenerated for every editor session.
 
-The endpoint path and token are published only after successful UDS `bind()` and `listen()`:
+The endpoint and token are published only after a successful local `bind()` and
+`listen()`:
 
 1. acquire the project-local lock without replacing an active owner;
-2. create private directories and bind/listen on the session socket;
+2. create private directories and bind/listen on the session endpoint;
 3. write a token temporary file, set mode `0600`, `fsync` as supported, and atomically rename it to `session.token`;
 4. write and atomically rename the discovery record to `bridge.json` last.
 
-The discovery record contains only project-relative paths:
+The macOS discovery record contains only project-relative file paths:
 
 ```json
 {
@@ -96,9 +105,42 @@ The discovery record contains only project-relative paths:
 }
 ```
 
-The client discovers the record from the canonical project root supplied to that client. It MUST reject absolute paths, `..` traversal, symlinks escaping `.godot/codex`, an unexpected file owner/mode, a mismatched `project_id`, or a changed discovery/session record during connection.
+Windows publishes the same record with a canonical IPv4 loopback endpoint:
 
-A second editor for the same canonical project MUST NOT replace active discovery. Stale ownership is not inferred from age alone: the implementation checks process state and attempts the authenticated endpoint before taking over. Shutdown stops accept, closes clients, removes `bridge.json`, `session.token`, the socket, and the lock owned by that session, and waits for the worker only for a bounded interval.
+```json
+{
+  "created_at": "2026-07-14T10:00:00Z",
+  "discovery_schema": 1,
+  "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+  "endpoint": "127.0.0.1:49152",
+  "pid": 12345,
+  "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd",
+  "protocol_versions": ["1.1", "1.0"],
+  "token_file": ".godot/codex/session.token",
+  "transport": "tcp_loopback"
+}
+```
+
+The Windows server asks the OS for an ephemeral port and binds only
+`127.0.0.1`; wildcard, LAN, IPv6, zero, non-canonical, or out-of-range
+endpoints are rejected by the client. The TCP stream still requires the same
+per-session mutual HMAC authentication before any RPC data is accepted.
+
+The client discovers the record from the canonical project root supplied to
+that client. It MUST reject absolute token paths, `..` traversal, symlinks or
+reparse points escaping `.godot/codex`, an unexpected Unix owner/mode, a
+mismatched `project_id`, a transport/endpoint mismatch, or a changed
+discovery/session record during connection. On Windows, the bridge validates
+and protects the DACL before publishing; the client independently rejects
+reparse points and non-regular runtime objects before reading them.
+
+A second editor for the same canonical project MUST NOT replace active
+discovery. Stale ownership is not inferred from age alone: the implementation
+checks process state and attempts the authenticated endpoint before taking
+over. Unix uses a non-blocking file lock; Windows opens `bridge.lock` with
+exclusive read/write sharing. Shutdown stops accept, closes clients, removes
+`bridge.json`, `session.token`, the Unix socket when applicable, and the lock
+owned by that session, and waits for the worker only for a bounded interval.
 
 ## 4. Framing and JSON encoding
 
@@ -125,7 +167,7 @@ When no trustworthy `request_id` can be recovered (invalid prefix, UTF-8, or JSO
 
 ## 5. Project identity
 
-### 5.1. Canonical root on the macOS profile
+### 5.1. Canonical root
 
 Both bridge and client compute the canonical root independently:
 
@@ -135,7 +177,16 @@ Both bridge and client compute the canonical root independently:
 4. encode the resulting POSIX path exactly as UTF-8 with `/` separators;
 5. remove a trailing `/` unless the result is `/`.
 
-Version 1.0 performs no case folding or additional Unicode normalization after physical canonicalization. The identifier is machine/path scoped; it is not promised to remain stable when the same project is moved or opened through a different physical root.
+On macOS the canonical identity is the physical POSIX path. On Windows both
+peers resolve the physical directory, remove the Win32 extended-length
+`\\?\` prefix, convert separators to `/`, preserve the filesystem-reported
+path casing, and remove the trailing separator. UNC roots are normalized from
+`\\?\UNC\server\share` to `//server/share`.
+
+Version 1.0 performs no additional case folding or Unicode normalization after
+physical canonicalization. The identifier is machine/path scoped; it is not
+promised to remain stable when the same project is moved or opened through a
+different physical root.
 
 ### 5.2. Fingerprint
 
@@ -327,7 +378,9 @@ Error messages are safe, bounded user-facing summaries. Optional `data` contains
 
 The `request_id` identifies the request being cancelled; cancel has no separate response. If the request has not produced a terminal response, the server completes it exactly once with `cancelled`. A late cancel for an already-terminal request is ignored. Cancellation and expiry remove queued work before it reaches the main thread.
 
-Notification, ack, and chunk kinds are reserved for later minor-version capabilities and are not accepted by the Sprint 1 implementation.
+Notification, ack, and chunk kinds are rejected by a negotiated 1.0 session and
+are accepted by a negotiated 1.1 session only for the capabilities in section
+17.
 
 ## 9. Connection and method lifecycle
 
@@ -351,7 +404,8 @@ Result:
 - negotiated/hard limits;
 - current session-scoped revision vector.
 
-Sprint 1 advertises at least `bridge.lifecycle` and `transport.uds` version `1.0`.
+Every session advertises `bridge.lifecycle` plus its active transport:
+`transport.uds` on macOS or `transport.tcp_loopback` on Windows, version `1.0`.
 
 ### 9.2. `bridge.ping`
 
@@ -425,7 +479,10 @@ Bridge RPC 1.0 revision counters do not persist across editor restarts:
 
 ## 13. Security, privacy, and logs
 
-The transport is local-only but does not trust every local process. UDS permissions, a per-session random token, mutual proof, exact project/session binding, and bounded parsing are all required; none substitutes for another.
+The transport is local-only but does not trust every local process. Unix
+permissions or Windows protected DACLs, loopback-only binding where applicable,
+a per-session random token, mutual proof, exact project/session binding, and
+bounded parsing are all required; none substitutes for another.
 
 The `codex_bridge` log category may record method name, safe error code, duration, sizes, queue depth, shortened opaque session ID, and hashed project ID. It MUST NOT record:
 
@@ -444,8 +501,9 @@ The authoritative bundle is [`schemas/codex_bridge/v1`](../../schemas/codex_brid
 - `common.schema.json` — shared identifiers, context, limits, revisions, capabilities, and errors;
 - `discovery.schema.json` — `bridge.json`;
 - `handshake.schema.json` — the five handshake message variants;
-- `rpc.schema.json` — request/response/cancel envelopes;
+- `rpc.schema.json` — request/response/cancel/notification/ack/chunk envelopes;
 - `lifecycle.schema.json` — Sprint 1 lifecycle params/results;
+- `sync.schema.json` — Bridge RPC 1.1 full snapshots and ordered invalidation events;
 - `fixture-manifest.schema.json` — conformance case manifest;
 - `fixtures/` — positive, negative, fragmentation, compatibility, project-ID, and proof vectors.
 
@@ -474,4 +532,84 @@ Protocol 1.0 is ready for implementation when:
 
 ## 16. Deferred extensions
 
-Later sprints may add notification, ack, chunk, snapshot, event stream, runtime, and transaction capabilities as compatible minor additions when they remain optional and capability-gated. A change to framing, authentication transcript semantics, project fingerprint inputs, required fields, or existing side effects is a Bridge RPC major-version change.
+Later sprints may add incremental semantic deltas, runtime, and transaction
+capabilities as compatible minor additions when they remain optional and
+capability-gated. A change to framing, authentication transcript semantics,
+project fingerprint inputs, required fields, or existing side effects is a
+Bridge RPC major-version change.
+
+## 17. Bridge RPC 1.1 editor synchronization
+
+Bridge RPC 1.1 retains every 1.0 lifecycle method and adds these capabilities:
+
+| Capability | Version | Meaning |
+|---|---:|---|
+| `editor.context` | `1.0` | Live editor, scene, node, selection, dirty-state projection |
+| `editor.inspector` | `1.0` | Bounded live editor-visible properties for selected nodes |
+| `sync.full_snapshot_v1` | `1.0` | Atomic full snapshot transfer |
+| `sync.event_stream_v1` | `1.0` | Ordered invalidation events after a snapshot boundary |
+
+The server selects `1.1` when the client offers major 1 with maximum minor 1 or
+greater. A client offering maximum minor 0 receives `1.0` and the four new
+capabilities are not advertised. Discovery publishes `1.1` and `1.0` so legacy
+clients can select their compatible maximum.
+
+### 17.1. Snapshot sequence
+
+After initialize, a 1.1 client requests `editor.snapshot.get` with one or both
+domains `editor_context` and `editor_inspector`. A successful transfer is
+strictly ordered:
+
+```text
+client                         bridge
+  | editor.snapshot.get          |
+  |----------------------------->|
+  |<------------- response result| snapshot_id, base event, revisions
+  |<----------- snapshot.begin   | chunk count and identical revisions
+  |<----------- chunk 0..N-1     | canonical payload JSON + SHA-256
+  |<----------- snapshot.end     | entity count + aggregate SHA-256
+  | snapshot ack --------------->|
+```
+
+Each chunk checksum is lowercase SHA-256 of the exact UTF-8 `payload_json`.
+The end checksum is lowercase SHA-256 of the concatenated lowercase chunk
+checksum strings in chunk-index order. The client MUST stage the generation,
+verify contiguous indices, all checksums, entity count, snapshot identity, and
+an identical revision vector, then publish the generation atomically. A failed
+transfer MUST NOT replace the current generation.
+
+Snapshots are captured only on the editor main thread. The adapter exposes
+session-scoped opaque scene/node identifiers, current `NodePath`, Godot type,
+owner/script paths, dirty state, selection, and selected-node inspector values.
+Variant projection is bounded to depth 8, 1000 container items, 64 KiB per
+projected property, 256 KiB of inspector projection per selected node, 4 MiB
+of inspector projection across the snapshot, 1024 characters per identity
+field, and 1000 scene nodes. Truncation is explicit.
+
+### 17.2. Ordered events and recovery
+
+Every editor event increments `event_seq`. Scene or property mutations also
+increment `project_revision` and the current scene revision; selection-only
+changes do not. The bridge emits `sync.event` with `selection_changed`,
+`scene_changed`, or `property_changed` and the complete resulting revision
+vector.
+
+The Sprint 2 event payload is an invalidation signal rather than a semantic
+delta. On the next contiguous event, the sidecar marks the active generation
+stale and requests another atomic snapshot. A sequence gap, journal overflow,
+session change, or `sync.invalidated` has the same recovery rule. Tools MUST
+NOT label the prior generation current while recovery is in progress.
+
+The outbound event journal is bounded to 4096 entries and 16 MiB. A client
+outbound window is bounded to 32 MiB. Overflow produces `sync.invalidated`
+where possible and never permits silent partial freshness.
+
+### 17.3. Additional limits
+
+Negotiated 1.1 limits add `hard_message_bytes = 8388608`,
+`snapshot_chunk_bytes = 524288`, `event_journal_entries = 4096`,
+`event_journal_bytes = 16777216`, `snapshot_window_bytes = 33554432`,
+`variant_depth = 8`, and `container_items = 1000`. The ordinary framed payload
+limit remains 1 MiB. Because a chunk carries both its structured payload and
+the exact canonical JSON checksum input, Sprint 2 targets 256 KiB of entity
+payload within the negotiated 512 KiB chunk ceiling.

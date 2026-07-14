@@ -1,10 +1,24 @@
 {
-  "bundle_version": "1.0",
+  "bundle_version": "1.1",
   "cases": [
     {
       "expect": "valid",
       "fixture": "valid/discovery.json",
       "id": "schema.discovery.valid",
+      "kind": "schema",
+      "schema_ref": "discovery.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/discovery-windows.json",
+      "id": "schema.discovery.windows-loopback",
+      "kind": "schema",
+      "schema_ref": "discovery.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/discovery-windows-nonloopback.json",
+      "id": "schema.discovery.windows-nonloopback",
       "kind": "schema",
       "schema_ref": "discovery.schema.json"
     },
@@ -151,6 +165,77 @@
       "id": "schema.compatibility.unknown-optional-fields",
       "kind": "schema",
       "schema_ref": "lifecycle.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-snapshot-request.json",
+      "id": "schema.sync.snapshot-request",
+      "kind": "schema",
+      "schema_ref": "sync.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-snapshot-response.json",
+      "id": "schema.sync.snapshot-response-envelope",
+      "kind": "schema",
+      "schema_ref": "rpc.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-snapshot-response.json",
+      "id": "schema.sync.snapshot-accepted-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "sync.schema.json#/$defs/snapshotAcceptedResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/snapshot-begin.json",
+      "id": "schema.sync.snapshot-begin",
+      "kind": "schema",
+      "schema_ref": "sync.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/snapshot-chunk.json",
+      "id": "schema.sync.snapshot-chunk",
+      "kind": "schema",
+      "schema_ref": "sync.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/snapshot-end.json",
+      "id": "schema.sync.snapshot-end",
+      "kind": "schema",
+      "schema_ref": "sync.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/snapshot-ack.json",
+      "id": "schema.sync.snapshot-ack",
+      "kind": "schema",
+      "schema_ref": "sync.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/sync-event.json",
+      "id": "schema.sync.event",
+      "kind": "schema",
+      "schema_ref": "sync.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/sync-invalidated.json",
+      "id": "schema.sync.invalidated",
+      "kind": "schema",
+      "schema_ref": "sync.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/snapshot-chunk-bad-checksum.json",
+      "id": "schema.sync.snapshot-chunk-bad-checksum",
+      "kind": "schema",
+      "schema_ref": "sync.schema.json"
     },
     {
       "expect": "invalid_schema",

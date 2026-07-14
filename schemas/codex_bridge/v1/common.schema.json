@@ -27,6 +27,22 @@
       "maxLength": 128,
       "pattern": "^req:[A-Za-z0-9._-]+$"
     },
+    "snapshotId": {
+      "type": "string",
+      "pattern": "^snapshot:[0-9a-f]{32}$"
+    },
+    "sceneId": {
+      "type": "string",
+      "pattern": "^scene:[0-9a-f]{32}$"
+    },
+    "nodeId": {
+      "type": "string",
+      "pattern": "^node:[0-9a-f]{32}$"
+    },
+    "sha256Hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "base64Url32": {
       "type": "string",
       "pattern": "^[A-Za-z0-9_-]{43}$"
@@ -138,6 +154,27 @@
         },
         "ping_echo_bytes": {
           "const": 256
+        },
+        "hard_message_bytes": {
+          "const": 8388608
+        },
+        "snapshot_chunk_bytes": {
+          "const": 524288
+        },
+        "event_journal_entries": {
+          "const": 4096
+        },
+        "event_journal_bytes": {
+          "const": 16777216
+        },
+        "snapshot_window_bytes": {
+          "const": 33554432
+        },
+        "variant_depth": {
+          "const": 8
+        },
+        "container_items": {
+          "const": 1000
         }
       },
       "additionalProperties": true

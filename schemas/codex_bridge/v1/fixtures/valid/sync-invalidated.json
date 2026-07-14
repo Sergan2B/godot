@@ -1,0 +1,13 @@
+{
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "kind": "notification",
+  "method": "sync.invalidated",
+  "params": {
+    "last_contiguous_event_seq": 8,
+    "reason": "journal_overflow"
+  },
+  "protocol_version": "1.1"
+}

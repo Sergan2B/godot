@@ -1,0 +1,56 @@
+{
+  "checksum": "3175322fb44eddca959b77691f50e0b2e1a953baea1de6f6fd312730e9f89baa",
+  "chunk_index": 0,
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "kind": "chunk",
+  "payload": {
+    "entities": [
+      {
+        "current_scene_dirty": true,
+        "current_scene_id": "scene:0123456789abcdef0123456789abcdef",
+        "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+        "entity_id": "editor:0123456789abcdef0123456789abcdef",
+        "kind": "editor_state",
+        "projected_selection_count": 1,
+        "selection_count": 1
+      },
+      {
+        "dirty": true,
+        "entity_id": "scene:0123456789abcdef0123456789abcdef",
+        "kind": "scene",
+        "path": "res://main.tscn",
+        "scene_revision": 3,
+        "selected_node_ids": [
+          "node:0123456789abcdef0123456789abcdef"
+        ]
+      },
+      {
+        "entity_id": "node:0123456789abcdef0123456789abcdef",
+        "godot_type": "CharacterBody2D",
+        "kind": "node",
+        "node_path": "Player",
+        "owner_path": ".",
+        "properties": [
+          {
+            "freshness": "current",
+            "name": "movement_speed",
+            "scene_revision": 3,
+            "source": "live_editor_property",
+            "value": 275.0,
+            "variant_type": "float"
+          }
+        ],
+        "properties_truncated": false,
+        "scene_id": "scene:0123456789abcdef0123456789abcdef",
+        "script_path": "res://player.gd",
+        "selected": true
+      }
+    ]
+  },
+  "payload_json": "{\"entities\":[{\"current_scene_dirty\":true,\"current_scene_id\":\"scene:0123456789abcdef0123456789abcdef\",\"editor_session_id\":\"editor:0123456789abcdef0123456789abcdef\",\"entity_id\":\"editor:0123456789abcdef0123456789abcdef\",\"kind\":\"editor_state\",\"projected_selection_count\":1,\"selection_count\":1},{\"dirty\":true,\"entity_id\":\"scene:0123456789abcdef0123456789abcdef\",\"kind\":\"scene\",\"path\":\"res://main.tscn\",\"scene_revision\":3,\"selected_node_ids\":[\"node:0123456789abcdef0123456789abcdef\"]},{\"entity_id\":\"node:0123456789abcdef0123456789abcdef\",\"godot_type\":\"CharacterBody2D\",\"kind\":\"node\",\"node_path\":\"Player\",\"owner_path\":\".\",\"properties\":[{\"freshness\":\"current\",\"name\":\"movement_speed\",\"scene_revision\":3,\"source\":\"live_editor_property\",\"value\":275.0,\"variant_type\":\"float\"}],\"properties_truncated\":false,\"scene_id\":\"scene:0123456789abcdef0123456789abcdef\",\"script_path\":\"res://player.gd\",\"selected\":true}]}",
+  "protocol_version": "1.1",
+  "snapshot_id": "snapshot:0123456789abcdef0123456789abcdef"
+}

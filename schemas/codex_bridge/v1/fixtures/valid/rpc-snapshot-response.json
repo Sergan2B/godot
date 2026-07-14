@@ -1,0 +1,34 @@
+{
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "kind": "response",
+  "protocol_version": "1.1",
+  "request_id": "req:snapshot-0001",
+  "result": {
+    "base_event_seq": 7,
+    "domains": ["editor_context", "editor_inspector"],
+    "limits_applied": {
+      "container_items": 1000,
+      "identity_characters": 1024,
+      "inspector_bytes_per_node": 262144,
+      "negotiated_snapshot_chunk_bytes": 524288,
+      "projected_value_bytes": 65536,
+      "snapshot_chunk_bytes": 262144,
+      "total_inspector_bytes": 4194304,
+      "truncated": false,
+      "variant_depth": 8
+    },
+    "revisions": {
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+      "event_seq": 7,
+      "operation_seq": 0,
+      "project_revision": 3,
+      "scene_revisions": {
+        "scene:0123456789abcdef0123456789abcdef": 3
+      }
+    },
+    "snapshot_id": "snapshot:0123456789abcdef0123456789abcdef"
+  }
+}

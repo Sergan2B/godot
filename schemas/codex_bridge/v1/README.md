@@ -1,14 +1,16 @@
 # Codex Bridge RPC v1 schemas
 
-This directory is the canonical machine-readable contract for Bridge RPC major version 1. The current protocol version is `1.0`; [PROTOCOL-001](../../../docs/codex-integration/PROTOCOL-001-bridge-rpc-v1.md) is the normative behavioral specification.
+This directory is the canonical machine-readable contract for Bridge RPC major version 1. The current protocol version is `1.1`; `1.0` remains supported for the Sprint 1 lifecycle surface. [PROTOCOL-001](../../../docs/codex-integration/PROTOCOL-001-bridge-rpc-v1.md) is the normative behavioral specification.
 
 ## Files
 
 - `common.schema.json` — shared identifiers, connection context, errors, capabilities, limits, and revision vectors.
-- `discovery.schema.json` — project-local `.godot/codex/bridge.json`.
+- `discovery.schema.json` — project-local `.godot/codex/bridge.json` for macOS
+  UDS and Windows IPv4 loopback TCP.
 - `handshake.schema.json` — framed authentication messages.
 - `rpc.schema.json` — request, response, and cancel envelopes.
 - `lifecycle.schema.json` — `bridge.initialize`, `bridge.ping`, `bridge.capabilities`, and `bridge.shutdown` payloads.
+- `sync.schema.json` — capability-gated editor snapshots, chunks, acknowledgements, and ordered editor events added in Bridge RPC 1.1.
 - `fixture-manifest.schema.json` — metadata for schema, framing, sequence, and cryptographic conformance cases.
 - `fixtures/manifest.json` — the ordered conformance case index.
 - `fixtures/valid` and `fixtures/invalid` — wire-message examples.

@@ -1,0 +1,13 @@
+{
+  "checksum": "not-a-sha256",
+  "chunk_index": 0,
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "kind": "chunk",
+  "payload": {"entities": []},
+  "payload_json": "{\"entities\":[]}",
+  "protocol_version": "1.1",
+  "snapshot_id": "snapshot:0123456789abcdef0123456789abcdef"
+}

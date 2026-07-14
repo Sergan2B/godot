@@ -10,6 +10,15 @@
     },
     {
       "$ref": "#/$defs/cancel"
+    },
+    {
+      "$ref": "#/$defs/notification"
+    },
+    {
+      "$ref": "#/$defs/ack"
+    },
+    {
+      "$ref": "#/$defs/chunk"
     }
   ],
   "$defs": {
@@ -130,6 +139,109 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 128
+        },
+        "context": {
+          "$ref": "common.schema.json#/$defs/context"
+        }
+      },
+      "additionalProperties": true
+    },
+    "notification": {
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "kind",
+        "method",
+        "params",
+        "context"
+      ],
+      "properties": {
+        "protocol_version": {
+          "$ref": "common.schema.json#/$defs/protocolVersionV1"
+        },
+        "kind": {
+          "const": "notification"
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9_.-]*$"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "context": {
+          "$ref": "common.schema.json#/$defs/context"
+        }
+      },
+      "additionalProperties": true
+    },
+    "ack": {
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "kind",
+        "ack_id",
+        "params",
+        "context"
+      ],
+      "properties": {
+        "protocol_version": {
+          "$ref": "common.schema.json#/$defs/protocolVersionV1"
+        },
+        "kind": {
+          "const": "ack"
+        },
+        "ack_id": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 128,
+          "pattern": "^ack:[A-Za-z0-9._-]+$"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "context": {
+          "$ref": "common.schema.json#/$defs/context"
+        }
+      },
+      "additionalProperties": true
+    },
+    "chunk": {
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "kind",
+        "snapshot_id",
+        "chunk_index",
+        "payload",
+        "checksum",
+        "context"
+      ],
+      "properties": {
+        "protocol_version": {
+          "$ref": "common.schema.json#/$defs/protocolVersionV1"
+        },
+        "kind": {
+          "const": "chunk"
+        },
+        "snapshot_id": {
+          "$ref": "common.schema.json#/$defs/snapshotId"
+        },
+        "chunk_index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "checksum": {
+          "$ref": "common.schema.json#/$defs/sha256Hex"
         },
         "context": {
           "$ref": "common.schema.json#/$defs/context"
