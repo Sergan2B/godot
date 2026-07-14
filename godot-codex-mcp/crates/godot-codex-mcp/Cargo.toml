@@ -1,0 +1,16 @@
+[package]
+name = "godot-codex-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+godot-codex-bridge-client = { path = "../bridge-client" }
+godot-codex-mcp-server = { path = "../mcp-server" }
+godot-codex-semantic-model = { path = "../semantic-model" }
+rmcp.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

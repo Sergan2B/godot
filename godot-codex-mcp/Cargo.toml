@@ -1,0 +1,34 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/bridge-client",
+  "crates/semantic-model",
+  "crates/mcp-server",
+  "crates/godot-codex-mcp",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+base64 = "0.22.1"
+getrandom = "0.4.3"
+hmac = "0.12.1"
+rmcp = { version = "=2.2.0", default-features = false, features = ["macros", "server", "transport-io"] }
+rustix = { version = "1.1.4", features = ["fs", "process"] }
+schemars = "1.2.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+sha2 = "0.10.9"
+thiserror = "2.0.17"
+tokio = { version = "1.49.0", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = "deny"
+pedantic = "allow"

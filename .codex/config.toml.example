@@ -1,0 +1,16 @@
+# Copy this file into the .codex directory of the Godot project that the editor
+# opens. Put the release sidecar on PATH or replace command with its absolute
+# path. Project-scoped configuration is loaded only when that project is trusted.
+
+[mcp_servers.godot_editor]
+command = "godot-codex-mcp"
+args = ["--project-root", "."]
+cwd = "."
+required = true
+startup_timeout_sec = 10
+tool_timeout_sec = 10
+enabled_tools = [
+  "godot_get_editor_state",
+  "godot_get_current_scene",
+  "godot_get_selected_nodes",
+]
