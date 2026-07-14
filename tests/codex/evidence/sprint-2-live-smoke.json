@@ -1,0 +1,55 @@
+{
+  "disk_value": 240.0,
+  "first": {
+    "editor_session_id": "editor:e474d4917e230c368e4d5cf9b41a033e",
+    "event_seq": 4,
+    "godot_type": "CharacterBody2D",
+    "node_id": "node:1cccddcf109654ce1efa0af101a32fa8",
+    "node_path": "Player",
+    "owner_path": ".",
+    "project_id": "project:sha256:fc9bc95c2d4f93cadaefd659d45525bb8edf6324ecace1c25b9e213e238d77e3",
+    "property": {
+      "freshness": "current",
+      "name": "movement_speed",
+      "source": "live_editor_property",
+      "value": 275.0
+    },
+    "scene_dirty": true,
+    "scene_id": "scene:39cbd56eb8302131f555b40de3a3a729",
+    "scene_revision": 2,
+    "script_path": "res://player.gd",
+    "snapshot_id": "snapshot:52e8f3d17f9a8611882a7a41bf7ea2de"
+  },
+  "godot_version": "4.8.dev.custom_build.18c60a7fd",
+  "host": "Windows-11-10.0.26200-SP0",
+  "mcp_protocol": "2025-11-25",
+  "platform": "windows-x86_64",
+  "schema_version": "1.0",
+  "second": {
+    "editor_session_id": "editor:e474d4917e230c368e4d5cf9b41a033e",
+    "event_seq": 5,
+    "godot_type": "CharacterBody2D",
+    "node_id": "node:1cccddcf109654ce1efa0af101a32fa8",
+    "node_path": "Player",
+    "owner_path": ".",
+    "project_id": "project:sha256:fc9bc95c2d4f93cadaefd659d45525bb8edf6324ecace1c25b9e213e238d77e3",
+    "property": {
+      "freshness": "current",
+      "name": "movement_speed",
+      "source": "live_editor_property",
+      "value": 310.0
+    },
+    "scene_dirty": true,
+    "scene_id": "scene:39cbd56eb8302131f555b40de3a3a729",
+    "scene_revision": 3,
+    "script_path": "res://player.gd",
+    "snapshot_id": "snapshot:1126912a1d09c8fc4d7b981f407020f2"
+  },
+  "sidecar_version": "godot-codex-mcp 0.1.0",
+  "status": "pass",
+  "tools": [
+    "godot_get_current_scene",
+    "godot_get_editor_state",
+    "godot_get_selected_nodes"
+  ]
+}
