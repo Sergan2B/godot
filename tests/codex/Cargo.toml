@@ -1,0 +1,29 @@
+[package]
+name = "codex-bridge-conformance"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
+getrandom = { version = "0.4.1", default-features = false }
+hmac = { version = "0.12.1", default-features = false }
+jsonschema = { version = "0.47.0", default-features = false }
+libc = { version = "0.2.183", default-features = false }
+serde = { version = "1.0.228", default-features = false, features = ["std"] }
+serde_json = { version = "1.0.149", default-features = false, features = ["std"] }
+sha2 = { version = "0.10.9", default-features = false }
+
+[lib]
+path = "conformance/lib.rs"
+
+[[bin]]
+name = "codex-bridge-conformance"
+path = "conformance/main.rs"
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = "deny"
+pedantic = "deny"

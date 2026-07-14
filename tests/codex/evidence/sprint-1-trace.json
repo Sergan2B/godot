@@ -1,0 +1,1663 @@
+{
+  "events": [
+    {
+      "case": "canonical.schemas-and-fixtures",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "discovery.private-project-binding",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "lifecycle.fragmented-happy-path",
+      "direction": "client",
+      "message": {
+        "client_nonce": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_hello",
+        "project_id": "<project-id>",
+        "supported_protocol_versions": [
+          "1.0"
+        ]
+      }
+    },
+    {
+      "case": "lifecycle.fragmented-happy-path",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_challenge",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0",
+        "server_nonce": "<redacted-secret>",
+        "server_proof": "<redacted-secret>"
+      }
+    },
+    {
+      "case": "lifecycle.fragmented-happy-path",
+      "direction": "client",
+      "message": {
+        "client_proof": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_authenticate",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "lifecycle.fragmented-happy-path",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_ready",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "lifecycle.fragmented-happy-path",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.initialize",
+        "params": {
+          "client": {
+            "name": "codex-bridge-conformance",
+            "version": "0.1.0"
+          },
+          "requested_capabilities": [
+            "bridge.lifecycle",
+            "transport.uds"
+          ]
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:happy-init"
+      }
+    },
+    {
+      "case": "lifecycle.fragmented-happy-path",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:happy-init",
+        "result": {
+          "capabilities": [
+            {
+              "name": "bridge.lifecycle",
+              "readiness": "ready",
+              "version": "1.0"
+            },
+            {
+              "name": "transport.uds",
+              "readiness": "ready",
+              "version": "1.0"
+            }
+          ],
+          "editor_session_id": "<editor-session-id>",
+          "limits": {
+            "default_deadline_ms": 5000,
+            "frame_bytes": 1048576,
+            "main_thread_budget_us": 2000,
+            "main_thread_commands_per_frame": 8,
+            "max_deadline_ms": 30000,
+            "max_in_flight_requests": 64,
+            "ping_echo_bytes": 256
+          },
+          "project_id": "<project-id>",
+          "protocol_version": "1.0",
+          "revisions": {
+            "editor_session_id": "<editor-session-id>",
+            "event_seq": 0,
+            "operation_seq": 0,
+            "project_revision": 0,
+            "scene_revisions": {}
+          }
+        }
+      }
+    },
+    {
+      "case": "lifecycle.fragmented-happy-path",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.ping",
+        "params": {
+          "echo": "fragmented-✓"
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:happy-ping"
+      }
+    },
+    {
+      "case": "lifecycle.fragmented-happy-path",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:happy-ping",
+        "result": {
+          "echo": "fragmented-✓"
+        }
+      }
+    },
+    {
+      "case": "lifecycle.fragmented-happy-path",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.capabilities",
+        "params": {},
+        "protocol_version": "1.0",
+        "request_id": "req:happy-capabilities"
+      }
+    },
+    {
+      "case": "lifecycle.fragmented-happy-path",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:happy-capabilities",
+        "result": {
+          "capabilities": [
+            {
+              "name": "bridge.lifecycle",
+              "readiness": "ready",
+              "version": "1.0"
+            },
+            {
+              "name": "transport.uds",
+              "readiness": "ready",
+              "version": "1.0"
+            }
+          ],
+          "limits": {
+            "default_deadline_ms": 5000,
+            "frame_bytes": 1048576,
+            "main_thread_budget_us": 2000,
+            "main_thread_commands_per_frame": 8,
+            "max_deadline_ms": 30000,
+            "max_in_flight_requests": 64,
+            "ping_echo_bytes": 256
+          }
+        }
+      }
+    },
+    {
+      "case": "lifecycle.fragmented-happy-path",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.shutdown",
+        "params": {
+          "reason": "conformance_complete"
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:happy-shutdown"
+      }
+    },
+    {
+      "case": "lifecycle.fragmented-happy-path",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:happy-shutdown",
+        "result": {
+          "closing": true
+        }
+      }
+    },
+    {
+      "case": "lifecycle.fragmented-happy-path",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "client",
+      "message": {
+        "client_nonce": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_hello",
+        "project_id": "<project-id>",
+        "supported_protocol_versions": [
+          "1.0"
+        ]
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_challenge",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0",
+        "server_nonce": "<redacted-secret>",
+        "server_proof": "<redacted-secret>"
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "client",
+      "message": {
+        "client_proof": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_authenticate",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_ready",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.ping",
+        "params": {
+          "echo": "not-ready"
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:before-initialize"
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "error": {
+          "code": "not_initialized",
+          "message": "Initialize the RPC connection before calling this method.",
+          "retryable": true
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:before-initialize"
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.initialize",
+        "params": {
+          "client": {
+            "name": "codex-bridge-conformance",
+            "version": "0.1.0"
+          },
+          "requested_capabilities": [
+            "bridge.lifecycle",
+            "transport.uds"
+          ]
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:sequence-init"
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:sequence-init",
+        "result": {
+          "capabilities": [
+            {
+              "name": "bridge.lifecycle",
+              "readiness": "ready",
+              "version": "1.0"
+            },
+            {
+              "name": "transport.uds",
+              "readiness": "ready",
+              "version": "1.0"
+            }
+          ],
+          "editor_session_id": "<editor-session-id>",
+          "limits": {
+            "default_deadline_ms": 5000,
+            "frame_bytes": 1048576,
+            "main_thread_budget_us": 2000,
+            "main_thread_commands_per_frame": 8,
+            "max_deadline_ms": 30000,
+            "max_in_flight_requests": 64,
+            "ping_echo_bytes": 256
+          },
+          "project_id": "<project-id>",
+          "protocol_version": "1.0",
+          "revisions": {
+            "editor_session_id": "<editor-session-id>",
+            "event_seq": 0,
+            "operation_seq": 0,
+            "project_revision": 0,
+            "scene_revisions": {}
+          }
+        }
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.initialize",
+        "params": {
+          "client": {
+            "name": "codex-bridge-conformance",
+            "version": "0.1.0"
+          },
+          "requested_capabilities": [
+            "bridge.lifecycle",
+            "transport.uds"
+          ]
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:sequence-init-again"
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "error": {
+          "code": "already_initialized",
+          "message": "This RPC connection was already initialized.",
+          "retryable": false
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:sequence-init-again"
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.ping",
+        "params": {
+          "echo": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:ping-256-bytes"
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:ping-256-bytes",
+        "result": {
+          "echo": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        }
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.ping",
+        "params": {
+          "echo": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:ping-258-bytes"
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "error": {
+          "code": "invalid_request",
+          "message": "The ping parameters are invalid.",
+          "retryable": false
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:ping-258-bytes"
+      }
+    },
+    {
+      "case": "rpc.lifecycle-sequencing-and-limits",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "handshake.wrong-project",
+      "direction": "client",
+      "message": {
+        "client_nonce": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_hello",
+        "project_id": "<project-id>",
+        "supported_protocol_versions": [
+          "1.0"
+        ]
+      }
+    },
+    {
+      "case": "handshake.wrong-project",
+      "direction": "server",
+      "message": {
+        "error": {
+          "code": "project_not_bound",
+          "message": "Project binding failed.",
+          "retryable": false
+        },
+        "handshake_version": "1.0",
+        "kind": "handshake.error"
+      }
+    },
+    {
+      "case": "handshake.wrong-project",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "handshake.incompatible-major",
+      "direction": "client",
+      "message": {
+        "client_nonce": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_hello",
+        "project_id": "<project-id>",
+        "supported_protocol_versions": [
+          "2.0"
+        ]
+      }
+    },
+    {
+      "case": "handshake.incompatible-major",
+      "direction": "server",
+      "message": {
+        "error": {
+          "code": "protocol_mismatch",
+          "message": "No compatible protocol version.",
+          "retryable": false
+        },
+        "handshake_version": "1.0",
+        "kind": "handshake.error",
+        "supported_protocol_versions": [
+          "1.0"
+        ]
+      }
+    },
+    {
+      "case": "handshake.incompatible-major",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "handshake.wrong-token",
+      "direction": "client",
+      "message": {
+        "client_nonce": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_hello",
+        "project_id": "<project-id>",
+        "supported_protocol_versions": [
+          "1.0"
+        ]
+      }
+    },
+    {
+      "case": "handshake.wrong-token",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_challenge",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0",
+        "server_nonce": "<redacted-secret>",
+        "server_proof": "<redacted-secret>"
+      }
+    },
+    {
+      "case": "handshake.wrong-token",
+      "direction": "client",
+      "message": {
+        "client_proof": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_authenticate",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "handshake.wrong-token",
+      "direction": "server",
+      "message": {
+        "error": {
+          "code": "unauthenticated",
+          "message": "Authentication failed.",
+          "retryable": false
+        },
+        "handshake_version": "1.0",
+        "kind": "handshake.error"
+      }
+    },
+    {
+      "case": "handshake.wrong-token",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "framing.maximum-payload",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_challenge",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0",
+        "server_nonce": "<redacted-secret>",
+        "server_proof": "<redacted-secret>"
+      }
+    },
+    {
+      "case": "framing.maximum-payload",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "framing.zero-length",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "framing.oversized-payload",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "framing.invalid-json",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "rpc.unknown-method-and-duplicate-id",
+      "direction": "client",
+      "message": {
+        "client_nonce": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_hello",
+        "project_id": "<project-id>",
+        "supported_protocol_versions": [
+          "1.0"
+        ]
+      }
+    },
+    {
+      "case": "rpc.unknown-method-and-duplicate-id",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_challenge",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0",
+        "server_nonce": "<redacted-secret>",
+        "server_proof": "<redacted-secret>"
+      }
+    },
+    {
+      "case": "rpc.unknown-method-and-duplicate-id",
+      "direction": "client",
+      "message": {
+        "client_proof": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_authenticate",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.unknown-method-and-duplicate-id",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_ready",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.unknown-method-and-duplicate-id",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.initialize",
+        "params": {
+          "client": {
+            "name": "codex-bridge-conformance",
+            "version": "0.1.0"
+          },
+          "requested_capabilities": [
+            "bridge.lifecycle",
+            "transport.uds"
+          ]
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:rpc.unknown-method-and-duplicate-id-init"
+      }
+    },
+    {
+      "case": "rpc.unknown-method-and-duplicate-id",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:rpc.unknown-method-and-duplicate-id-init",
+        "result": {
+          "capabilities": [
+            {
+              "name": "bridge.lifecycle",
+              "readiness": "ready",
+              "version": "1.0"
+            },
+            {
+              "name": "transport.uds",
+              "readiness": "ready",
+              "version": "1.0"
+            }
+          ],
+          "editor_session_id": "<editor-session-id>",
+          "limits": {
+            "default_deadline_ms": 5000,
+            "frame_bytes": 1048576,
+            "main_thread_budget_us": 2000,
+            "main_thread_commands_per_frame": 8,
+            "max_deadline_ms": 30000,
+            "max_in_flight_requests": 64,
+            "ping_echo_bytes": 256
+          },
+          "project_id": "<project-id>",
+          "protocol_version": "1.0",
+          "revisions": {
+            "editor_session_id": "<editor-session-id>",
+            "event_seq": 0,
+            "operation_seq": 0,
+            "project_revision": 0,
+            "scene_revisions": {}
+          }
+        }
+      }
+    },
+    {
+      "case": "rpc.unknown-method-and-duplicate-id",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.unknown",
+        "params": {},
+        "protocol_version": "1.0",
+        "request_id": "req:unknown"
+      }
+    },
+    {
+      "case": "rpc.unknown-method-and-duplicate-id",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "error": {
+          "code": "method_not_found",
+          "message": "The requested bridge method is not supported.",
+          "retryable": false
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:unknown"
+      }
+    },
+    {
+      "case": "rpc.unknown-method-and-duplicate-id",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.ping",
+        "params": {
+          "echo": "first"
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:duplicate"
+      }
+    },
+    {
+      "case": "rpc.unknown-method-and-duplicate-id",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:duplicate",
+        "result": {
+          "echo": "first"
+        }
+      }
+    },
+    {
+      "case": "rpc.unknown-method-and-duplicate-id",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.ping",
+        "params": {
+          "echo": "first"
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:duplicate"
+      }
+    },
+    {
+      "case": "rpc.unknown-method-and-duplicate-id",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "error": {
+          "code": "duplicate_request_id",
+          "message": "The request ID was already used on this connection.",
+          "retryable": true
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:duplicate"
+      }
+    },
+    {
+      "case": "rpc.unknown-method-and-duplicate-id",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "rpc.cancellation",
+      "direction": "client",
+      "message": {
+        "client_nonce": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_hello",
+        "project_id": "<project-id>",
+        "supported_protocol_versions": [
+          "1.0"
+        ]
+      }
+    },
+    {
+      "case": "rpc.cancellation",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_challenge",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0",
+        "server_nonce": "<redacted-secret>",
+        "server_proof": "<redacted-secret>"
+      }
+    },
+    {
+      "case": "rpc.cancellation",
+      "direction": "client",
+      "message": {
+        "client_proof": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_authenticate",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.cancellation",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_ready",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.cancellation",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.initialize",
+        "params": {
+          "client": {
+            "name": "codex-bridge-conformance",
+            "version": "0.1.0"
+          },
+          "requested_capabilities": [
+            "bridge.lifecycle",
+            "transport.uds"
+          ]
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:rpc.cancellation-init"
+      }
+    },
+    {
+      "case": "rpc.cancellation",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:rpc.cancellation-init",
+        "result": {
+          "capabilities": [
+            {
+              "name": "bridge.lifecycle",
+              "readiness": "ready",
+              "version": "1.0"
+            },
+            {
+              "name": "transport.uds",
+              "readiness": "ready",
+              "version": "1.0"
+            }
+          ],
+          "editor_session_id": "<editor-session-id>",
+          "limits": {
+            "default_deadline_ms": 5000,
+            "frame_bytes": 1048576,
+            "main_thread_budget_us": 2000,
+            "main_thread_commands_per_frame": 8,
+            "max_deadline_ms": 30000,
+            "max_in_flight_requests": 64,
+            "ping_echo_bytes": 256
+          },
+          "project_id": "<project-id>",
+          "protocol_version": "1.0",
+          "revisions": {
+            "editor_session_id": "<editor-session-id>",
+            "event_seq": 0,
+            "operation_seq": 0,
+            "project_revision": 0,
+            "scene_revisions": {}
+          }
+        }
+      }
+    },
+    {
+      "case": "rpc.cancellation",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "deadline_ms": 30000,
+        "kind": "request",
+        "method": "bridge.ping",
+        "params": {
+          "echo": "cancel-before-main"
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:cancel"
+      }
+    },
+    {
+      "case": "rpc.cancellation",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "cancel",
+        "protocol_version": "1.0",
+        "reason": "client_cancelled",
+        "request_id": "req:cancel"
+      }
+    },
+    {
+      "case": "rpc.cancellation",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "error": {
+          "code": "cancelled",
+          "message": "The request was cancelled by the client.",
+          "retryable": true
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:cancel"
+      }
+    },
+    {
+      "case": "rpc.cancellation",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "rpc.deadline-and-terminal-once",
+      "direction": "client",
+      "message": {
+        "client_nonce": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_hello",
+        "project_id": "<project-id>",
+        "supported_protocol_versions": [
+          "1.0"
+        ]
+      }
+    },
+    {
+      "case": "rpc.deadline-and-terminal-once",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_challenge",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0",
+        "server_nonce": "<redacted-secret>",
+        "server_proof": "<redacted-secret>"
+      }
+    },
+    {
+      "case": "rpc.deadline-and-terminal-once",
+      "direction": "client",
+      "message": {
+        "client_proof": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_authenticate",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.deadline-and-terminal-once",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_ready",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.deadline-and-terminal-once",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.initialize",
+        "params": {
+          "client": {
+            "name": "codex-bridge-conformance",
+            "version": "0.1.0"
+          },
+          "requested_capabilities": [
+            "bridge.lifecycle",
+            "transport.uds"
+          ]
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:rpc.deadline-and-terminal-once-init"
+      }
+    },
+    {
+      "case": "rpc.deadline-and-terminal-once",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:rpc.deadline-and-terminal-once-init",
+        "result": {
+          "capabilities": [
+            {
+              "name": "bridge.lifecycle",
+              "readiness": "ready",
+              "version": "1.0"
+            },
+            {
+              "name": "transport.uds",
+              "readiness": "ready",
+              "version": "1.0"
+            }
+          ],
+          "editor_session_id": "<editor-session-id>",
+          "limits": {
+            "default_deadline_ms": 5000,
+            "frame_bytes": 1048576,
+            "main_thread_budget_us": 2000,
+            "main_thread_commands_per_frame": 8,
+            "max_deadline_ms": 30000,
+            "max_in_flight_requests": 64,
+            "ping_echo_bytes": 256
+          },
+          "project_id": "<project-id>",
+          "protocol_version": "1.0",
+          "revisions": {
+            "editor_session_id": "<editor-session-id>",
+            "event_seq": 0,
+            "operation_seq": 0,
+            "project_revision": 0,
+            "scene_revisions": {}
+          }
+        }
+      }
+    },
+    {
+      "case": "rpc.deadline-and-terminal-once",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "rpc.saturation",
+      "direction": "client",
+      "message": {
+        "client_nonce": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_hello",
+        "project_id": "<project-id>",
+        "supported_protocol_versions": [
+          "1.0"
+        ]
+      }
+    },
+    {
+      "case": "rpc.saturation",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_challenge",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0",
+        "server_nonce": "<redacted-secret>",
+        "server_proof": "<redacted-secret>"
+      }
+    },
+    {
+      "case": "rpc.saturation",
+      "direction": "client",
+      "message": {
+        "client_proof": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_authenticate",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.saturation",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_ready",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.saturation",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.initialize",
+        "params": {
+          "client": {
+            "name": "codex-bridge-conformance",
+            "version": "0.1.0"
+          },
+          "requested_capabilities": [
+            "bridge.lifecycle",
+            "transport.uds"
+          ]
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:rpc.saturation-init"
+      }
+    },
+    {
+      "case": "rpc.saturation",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:rpc.saturation-init",
+        "result": {
+          "capabilities": [
+            {
+              "name": "bridge.lifecycle",
+              "readiness": "ready",
+              "version": "1.0"
+            },
+            {
+              "name": "transport.uds",
+              "readiness": "ready",
+              "version": "1.0"
+            }
+          ],
+          "editor_session_id": "<editor-session-id>",
+          "limits": {
+            "default_deadline_ms": 5000,
+            "frame_bytes": 1048576,
+            "main_thread_budget_us": 2000,
+            "main_thread_commands_per_frame": 8,
+            "max_deadline_ms": 30000,
+            "max_in_flight_requests": 64,
+            "ping_echo_bytes": 256
+          },
+          "project_id": "<project-id>",
+          "protocol_version": "1.0",
+          "revisions": {
+            "editor_session_id": "<editor-session-id>",
+            "event_seq": 0,
+            "operation_seq": 0,
+            "project_revision": 0,
+            "scene_revisions": {}
+          }
+        }
+      }
+    },
+    {
+      "case": "rpc.saturation",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "client",
+      "message": {
+        "client_nonce": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_hello",
+        "project_id": "<project-id>",
+        "supported_protocol_versions": [
+          "1.0"
+        ]
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_challenge",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0",
+        "server_nonce": "<redacted-secret>",
+        "server_proof": "<redacted-secret>"
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "client",
+      "message": {
+        "client_proof": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_authenticate",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_ready",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.initialize",
+        "params": {
+          "client": {
+            "name": "codex-bridge-conformance",
+            "version": "0.1.0"
+          },
+          "requested_capabilities": [
+            "bridge.lifecycle",
+            "transport.uds"
+          ]
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:rpc.abrupt-disconnect-recovery-init"
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:rpc.abrupt-disconnect-recovery-init",
+        "result": {
+          "capabilities": [
+            {
+              "name": "bridge.lifecycle",
+              "readiness": "ready",
+              "version": "1.0"
+            },
+            {
+              "name": "transport.uds",
+              "readiness": "ready",
+              "version": "1.0"
+            }
+          ],
+          "editor_session_id": "<editor-session-id>",
+          "limits": {
+            "default_deadline_ms": 5000,
+            "frame_bytes": 1048576,
+            "main_thread_budget_us": 2000,
+            "main_thread_commands_per_frame": 8,
+            "max_deadline_ms": 30000,
+            "max_in_flight_requests": 64,
+            "ping_echo_bytes": 256
+          },
+          "project_id": "<project-id>",
+          "protocol_version": "1.0",
+          "revisions": {
+            "editor_session_id": "<editor-session-id>",
+            "event_seq": 0,
+            "operation_seq": 0,
+            "project_revision": 0,
+            "scene_revisions": {}
+          }
+        }
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "client",
+      "message": {
+        "client_nonce": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_hello",
+        "project_id": "<project-id>",
+        "supported_protocol_versions": [
+          "1.0"
+        ]
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_challenge",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0",
+        "server_nonce": "<redacted-secret>",
+        "server_proof": "<redacted-secret>"
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "client",
+      "message": {
+        "client_proof": "<redacted-secret>",
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.client_authenticate",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "server",
+      "message": {
+        "editor_session_id": "<editor-session-id>",
+        "handshake_version": "1.0",
+        "kind": "handshake.server_ready",
+        "project_id": "<project-id>",
+        "selected_protocol_version": "1.0"
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.initialize",
+        "params": {
+          "client": {
+            "name": "codex-bridge-conformance",
+            "version": "0.1.0"
+          },
+          "requested_capabilities": [
+            "bridge.lifecycle",
+            "transport.uds"
+          ]
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:rpc.abrupt-disconnect-recovery-init"
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:rpc.abrupt-disconnect-recovery-init",
+        "result": {
+          "capabilities": [
+            {
+              "name": "bridge.lifecycle",
+              "readiness": "ready",
+              "version": "1.0"
+            },
+            {
+              "name": "transport.uds",
+              "readiness": "ready",
+              "version": "1.0"
+            }
+          ],
+          "editor_session_id": "<editor-session-id>",
+          "limits": {
+            "default_deadline_ms": 5000,
+            "frame_bytes": 1048576,
+            "main_thread_budget_us": 2000,
+            "main_thread_commands_per_frame": 8,
+            "max_deadline_ms": 30000,
+            "max_in_flight_requests": 64,
+            "ping_echo_bytes": 256
+          },
+          "project_id": "<project-id>",
+          "protocol_version": "1.0",
+          "revisions": {
+            "editor_session_id": "<editor-session-id>",
+            "event_seq": 0,
+            "operation_seq": 0,
+            "project_revision": 0,
+            "scene_revisions": {}
+          }
+        }
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "client",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "request",
+        "method": "bridge.ping",
+        "params": {
+          "echo": "healthy-after-disconnect"
+        },
+        "protocol_version": "1.0",
+        "request_id": "req:recovered"
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "server",
+      "message": {
+        "context": {
+          "editor_session_id": "<editor-session-id>",
+          "project_id": "<project-id>"
+        },
+        "kind": "response",
+        "protocol_version": "1.0",
+        "request_id": "req:recovered",
+        "result": {
+          "echo": "healthy-after-disconnect"
+        }
+      }
+    },
+    {
+      "case": "rpc.abrupt-disconnect-recovery",
+      "direction": "local",
+      "message": {
+        "kind": "conformance.result",
+        "outcome": "passed"
+      }
+    }
+  ],
+  "protocol_version": "1.0",
+  "schema_version": 1,
+  "suite": "sprint-1-stage-5"
+}
