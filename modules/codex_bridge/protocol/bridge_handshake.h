@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  bridge_transport_worker.h                                             */
+/*  bridge_handshake.h                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,62 +30,51 @@
 
 #pragma once
 
-#include "core/os/mutex.h"
-#include "core/os/semaphore.h"
-#include "core/os/thread.h"
-#include "core/string/ustring.h"
-#include "core/templates/list.h"
-#include "core/templates/safe_refcount.h"
+#include "core/templates/hash_set.h"
+#include "core/variant/variant.h"
 
-class MainThreadDispatcher;
-
-class BridgeTransportWorker {
+class BridgeHandshakeSession {
 public:
-	enum StopResult {
-		STOP_NOT_RUNNING,
-		STOPPED,
-		STOP_TIMED_OUT,
+	enum State {
+		STATE_WAITING_FOR_HELLO,
+		STATE_WAITING_FOR_AUTHENTICATION,
+		STATE_AUTHENTICATED,
+		STATE_CLOSED,
 	};
 
-	static constexpr uint64_t DEFAULT_STOP_TIMEOUT_USEC = 1000000;
-	static constexpr uint64_t DEFAULT_START_TIMEOUT_USEC = 5000000;
-
-public:
-	struct Context {
-		SafeRefCount references;
-		SafeFlag stop_requested;
-		SafeFlag exited;
-		SafeFlag startup_done;
-		Semaphore wakeup;
-		Semaphore startup;
-		String project_root;
-		Mutex dispatcher_mutex;
-		MainThreadDispatcher *dispatcher = nullptr;
-		Mutex completion_mutex;
-		List<uint64_t> completed_requests;
-		Error startup_error = OK;
-
-		Context() {
-			references.init(2);
-		}
+	struct Outcome {
+		Dictionary response;
+		bool has_response = false;
+		bool close_after_response = false;
+		bool authentication_failed = false;
 	};
+
+	static constexpr uint64_t HANDSHAKE_TIMEOUT_USEC = 3000000;
 
 private:
-	Thread *thread = nullptr;
-	Context *context = nullptr;
+	State state = STATE_WAITING_FOR_HELLO;
+	uint64_t deadline_usec = 0;
+	PackedByteArray token;
+	String project_id;
+	String editor_session_id;
+	PackedStringArray supported_versions;
+	PackedStringArray offered_versions;
+	String selected_version;
+	PackedByteArray client_nonce;
+	PackedByteArray server_nonce;
+	PackedByteArray transcript;
+	HashSet<String> *seen_client_nonces = nullptr;
 
-	static void _thread_main(void *p_userdata);
-	static void _release_context(Context *p_context);
+	static bool _parse_protocol_version(const String &p_version, uint32_t &r_major, uint32_t &r_minor);
+	static Dictionary _make_error(const String &p_code, const String &p_message, bool p_retryable);
+	void _set_error_outcome(const String &p_code, const String &p_message, bool p_retryable, Outcome &r_outcome, bool p_authentication_failed = false);
+	Error _handle_client_hello(const Dictionary &p_message, Outcome &r_outcome);
+	Error _handle_client_authenticate(const Dictionary &p_message, Outcome &r_outcome);
 
 public:
-	Error start();
-	Error start(const String &p_project_root, uint64_t p_timeout_usec = DEFAULT_START_TIMEOUT_USEC);
-	Error start(const String &p_project_root, MainThreadDispatcher *p_dispatcher, uint64_t p_timeout_usec = DEFAULT_START_TIMEOUT_USEC);
-	StopResult stop(uint64_t p_timeout_usec = DEFAULT_STOP_TIMEOUT_USEC);
-	void wake();
-	void complete_request(uint64_t p_request_id);
+	BridgeHandshakeSession(const PackedByteArray &p_token, const String &p_project_id, const String &p_editor_session_id, uint64_t p_accepted_at_usec, HashSet<String> *p_seen_client_nonces = nullptr);
 
-	bool is_running() const;
-
-	~BridgeTransportWorker();
+	Error handle_message(const Dictionary &p_message, uint64_t p_now_usec, Outcome &r_outcome);
+	bool has_timed_out(uint64_t p_now_usec) const;
+	State get_state() const;
 };

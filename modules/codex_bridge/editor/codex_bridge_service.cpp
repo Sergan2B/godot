@@ -30,6 +30,7 @@
 
 #include "codex_bridge_service.h"
 
+#include "core/config/project_settings.h"
 #include "core/string/print_string.h"
 
 CodexBridgeService *CodexBridgeService::singleton = nullptr;
@@ -40,6 +41,12 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 
 	switch (p_command.type) {
 		case MainThreadDispatcher::COMMAND_NO_OP:
+			break;
+		case MainThreadDispatcher::COMMAND_INITIALIZE:
+		case MainThreadDispatcher::COMMAND_PING:
+		case MainThreadDispatcher::COMMAND_CAPABILITIES:
+		case MainThreadDispatcher::COMMAND_SHUTDOWN:
+			service->transport_worker.complete_request(p_command.request_id);
 			break;
 	}
 }
@@ -72,7 +79,11 @@ Error CodexBridgeService::start() {
 
 	state = STATE_STARTING;
 	dispatcher.start_accepting();
+#ifdef MACOS_ENABLED
+	const Error error = transport_worker.start(ProjectSettings::get_singleton()->get_resource_path(), &dispatcher);
+#else
 	const Error error = transport_worker.start();
+#endif
 	if (error != OK) {
 		dispatcher.begin_shutdown();
 		state = STATE_STOPPED;

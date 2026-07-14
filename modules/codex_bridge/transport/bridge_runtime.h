@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  bridge_transport_worker.h                                             */
+/*  bridge_runtime.h                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,62 +30,55 @@
 
 #pragma once
 
-#include "core/os/mutex.h"
-#include "core/os/semaphore.h"
-#include "core/os/thread.h"
-#include "core/string/ustring.h"
-#include "core/templates/list.h"
-#include "core/templates/safe_refcount.h"
+#include "core/io/stream_peer_uds.h"
+#include "core/io/uds_server.h"
+#include "core/variant/variant.h"
 
-class MainThreadDispatcher;
+class BridgeRuntime {
+	String canonical_project_root;
+	String codex_directory;
+	String run_directory;
+	String discovery_path;
+	String token_path;
+	String lock_path;
+	String endpoint_path;
+	String endpoint_relative_path;
+	String project_id;
+	String editor_session_id;
+	PackedByteArray token;
+	Ref<UDSServer> server;
+	int lock_fd = -1;
+	bool discovery_published = false;
+	bool token_published = false;
 
-class BridgeTransportWorker {
-public:
-	enum StopResult {
-		STOP_NOT_RUNNING,
-		STOPPED,
-		STOP_TIMED_OUT,
-	};
-
-	static constexpr uint64_t DEFAULT_STOP_TIMEOUT_USEC = 1000000;
-	static constexpr uint64_t DEFAULT_START_TIMEOUT_USEC = 5000000;
-
-public:
-	struct Context {
-		SafeRefCount references;
-		SafeFlag stop_requested;
-		SafeFlag exited;
-		SafeFlag startup_done;
-		Semaphore wakeup;
-		Semaphore startup;
-		String project_root;
-		Mutex dispatcher_mutex;
-		MainThreadDispatcher *dispatcher = nullptr;
-		Mutex completion_mutex;
-		List<uint64_t> completed_requests;
-		Error startup_error = OK;
-
-		Context() {
-			references.init(2);
-		}
-	};
-
-private:
-	Thread *thread = nullptr;
-	Context *context = nullptr;
-
-	static void _thread_main(void *p_userdata);
-	static void _release_context(Context *p_context);
+	Error _acquire_lock();
+	Error _remove_or_reject_stale_runtime();
+	Error _write_lock_metadata();
+	Error _bind_server();
+	Error _publish_token();
+	Error _publish_discovery();
+	void _release_lock();
 
 public:
-	Error start();
-	Error start(const String &p_project_root, uint64_t p_timeout_usec = DEFAULT_START_TIMEOUT_USEC);
-	Error start(const String &p_project_root, MainThreadDispatcher *p_dispatcher, uint64_t p_timeout_usec = DEFAULT_START_TIMEOUT_USEC);
-	StopResult stop(uint64_t p_timeout_usec = DEFAULT_STOP_TIMEOUT_USEC);
-	void wake();
-	void complete_request(uint64_t p_request_id);
+	static constexpr uint32_t DIRECTORY_MODE = 0700;
+	static constexpr uint32_t PRIVATE_FILE_MODE = 0600;
 
-	bool is_running() const;
+	static Error canonicalize_project_root(const String &p_project_root, String &r_canonical_root);
+	static Error validate_private_path(const String &p_path, uint32_t p_mode, bool p_directory, bool p_socket = false);
+	static bool probe_authenticated_runtime(const String &p_project_root);
 
-	~BridgeTransportWorker();
+	Error initialize(const String &p_project_root);
+	void cleanup();
+
+	bool is_listening() const;
+	bool is_connection_available() const;
+	Ref<StreamPeerUDS> take_connection();
+
+	const String &get_canonical_project_root() const;
+	const String &get_project_id() const;
+	const String &get_editor_session_id() const;
+	const String &get_endpoint_path() const;
+	const PackedByteArray &get_token() const;
+
+	~BridgeRuntime();
 };

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  bridge_transport_worker.h                                             */
+/*  bridge_crypto.h                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,62 +30,21 @@
 
 #pragma once
 
-#include "core/os/mutex.h"
-#include "core/os/semaphore.h"
-#include "core/os/thread.h"
-#include "core/string/ustring.h"
-#include "core/templates/list.h"
-#include "core/templates/safe_refcount.h"
+#include "core/variant/variant.h"
 
-class MainThreadDispatcher;
-
-class BridgeTransportWorker {
+class BridgeCrypto {
 public:
-	enum StopResult {
-		STOP_NOT_RUNNING,
-		STOPPED,
-		STOP_TIMED_OUT,
-	};
+	static constexpr int RANDOM_VALUE_BYTES = 32;
 
-	static constexpr uint64_t DEFAULT_STOP_TIMEOUT_USEC = 1000000;
-	static constexpr uint64_t DEFAULT_START_TIMEOUT_USEC = 5000000;
+	static Error random_bytes(int p_size, PackedByteArray &r_bytes);
+	static String bytes_to_lower_hex(const PackedByteArray &p_bytes);
+	static Error project_id_from_canonical_root(const String &p_canonical_root, String &r_project_id);
 
-public:
-	struct Context {
-		SafeRefCount references;
-		SafeFlag stop_requested;
-		SafeFlag exited;
-		SafeFlag startup_done;
-		Semaphore wakeup;
-		Semaphore startup;
-		String project_root;
-		Mutex dispatcher_mutex;
-		MainThreadDispatcher *dispatcher = nullptr;
-		Mutex completion_mutex;
-		List<uint64_t> completed_requests;
-		Error startup_error = OK;
+	static Error base64url_encode_32(const PackedByteArray &p_bytes, String &r_encoded);
+	static Error base64url_decode_32(const String &p_encoded, PackedByteArray &r_bytes);
 
-		Context() {
-			references.init(2);
-		}
-	};
-
-private:
-	Thread *thread = nullptr;
-	Context *context = nullptr;
-
-	static void _thread_main(void *p_userdata);
-	static void _release_context(Context *p_context);
-
-public:
-	Error start();
-	Error start(const String &p_project_root, uint64_t p_timeout_usec = DEFAULT_START_TIMEOUT_USEC);
-	Error start(const String &p_project_root, MainThreadDispatcher *p_dispatcher, uint64_t p_timeout_usec = DEFAULT_START_TIMEOUT_USEC);
-	StopResult stop(uint64_t p_timeout_usec = DEFAULT_STOP_TIMEOUT_USEC);
-	void wake();
-	void complete_request(uint64_t p_request_id);
-
-	bool is_running() const;
-
-	~BridgeTransportWorker();
+	static Error build_handshake_transcript(const String &p_handshake_version, const PackedStringArray &p_supported_versions, const String &p_selected_version, const String &p_project_id, const String &p_editor_session_id, const PackedByteArray &p_client_nonce, const PackedByteArray &p_server_nonce, PackedByteArray &r_transcript);
+	static Error hmac_sha256(const PackedByteArray &p_key, const PackedByteArray &p_message, PackedByteArray &r_digest);
+	static Error handshake_proof(bool p_server, const PackedByteArray &p_token, const PackedByteArray &p_transcript, PackedByteArray &r_proof);
+	static bool constant_time_equal(const PackedByteArray &p_trusted, const PackedByteArray &p_received);
 };

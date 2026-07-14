@@ -37,6 +37,10 @@ class MainThreadDispatcher {
 public:
 	enum CommandType {
 		COMMAND_NO_OP,
+		COMMAND_INITIALIZE,
+		COMMAND_PING,
+		COMMAND_CAPABILITIES,
+		COMMAND_SHUTDOWN,
 	};
 
 	struct Command {

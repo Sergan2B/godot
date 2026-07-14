@@ -9,6 +9,7 @@ env_codex_bridge = env_modules.Clone()
 module_obj = []
 env_codex_bridge.add_source_files(module_obj, "*.cpp")
 env_codex_bridge.add_source_files(module_obj, "editor/*.cpp")
+env_codex_bridge.add_source_files(module_obj, "protocol/*.cpp")
 env_codex_bridge.add_source_files(module_obj, "transport/*.cpp")
 
 env.modules_sources += module_obj

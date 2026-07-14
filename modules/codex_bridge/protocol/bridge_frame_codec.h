@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  bridge_transport_worker.h                                             */
+/*  bridge_frame_codec.h                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,62 +30,29 @@
 
 #pragma once
 
-#include "core/os/mutex.h"
-#include "core/os/semaphore.h"
-#include "core/os/thread.h"
-#include "core/string/ustring.h"
-#include "core/templates/list.h"
-#include "core/templates/safe_refcount.h"
+#include "core/templates/vector.h"
+#include "core/variant/variant.h"
 
-class MainThreadDispatcher;
-
-class BridgeTransportWorker {
+class BridgeJson {
 public:
-	enum StopResult {
-		STOP_NOT_RUNNING,
-		STOPPED,
-		STOP_TIMED_OUT,
-	};
+	static constexpr int MAX_NESTING_DEPTH = 64;
+	static constexpr int MAX_CONTAINER_ENTRIES = 8192;
 
-	static constexpr uint64_t DEFAULT_STOP_TIMEOUT_USEC = 1000000;
-	static constexpr uint64_t DEFAULT_START_TIMEOUT_USEC = 5000000;
+	static Error parse_strict_object(const PackedByteArray &p_payload, Dictionary &r_object);
+};
+
+class BridgeFrameCodec {
+	uint8_t prefix[4] = {};
+	int prefix_size = 0;
+	uint32_t expected_payload_size = 0;
+	uint32_t payload_size = 0;
+	PackedByteArray payload;
 
 public:
-	struct Context {
-		SafeRefCount references;
-		SafeFlag stop_requested;
-		SafeFlag exited;
-		SafeFlag startup_done;
-		Semaphore wakeup;
-		Semaphore startup;
-		String project_root;
-		Mutex dispatcher_mutex;
-		MainThreadDispatcher *dispatcher = nullptr;
-		Mutex completion_mutex;
-		List<uint64_t> completed_requests;
-		Error startup_error = OK;
+	static constexpr uint32_t MAX_PAYLOAD_BYTES = 1048576;
 
-		Context() {
-			references.init(2);
-		}
-	};
+	Error feed(const uint8_t *p_bytes, int p_size, Vector<PackedByteArray> &r_frames);
+	void reset();
 
-private:
-	Thread *thread = nullptr;
-	Context *context = nullptr;
-
-	static void _thread_main(void *p_userdata);
-	static void _release_context(Context *p_context);
-
-public:
-	Error start();
-	Error start(const String &p_project_root, uint64_t p_timeout_usec = DEFAULT_START_TIMEOUT_USEC);
-	Error start(const String &p_project_root, MainThreadDispatcher *p_dispatcher, uint64_t p_timeout_usec = DEFAULT_START_TIMEOUT_USEC);
-	StopResult stop(uint64_t p_timeout_usec = DEFAULT_STOP_TIMEOUT_USEC);
-	void wake();
-	void complete_request(uint64_t p_request_id);
-
-	bool is_running() const;
-
-	~BridgeTransportWorker();
+	static Error encode_json(const Dictionary &p_object, PackedByteArray &r_frame);
 };
