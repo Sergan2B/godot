@@ -32,6 +32,7 @@
 
 #include "core/os/mutex.h"
 #include "core/templates/list.h"
+#include "core/variant/variant.h"
 
 class MainThreadDispatcher {
 public:
@@ -40,6 +41,7 @@ public:
 		COMMAND_INITIALIZE,
 		COMMAND_PING,
 		COMMAND_CAPABILITIES,
+		COMMAND_EDITOR_SNAPSHOT,
 		COMMAND_SHUTDOWN,
 	};
 
@@ -47,6 +49,7 @@ public:
 		CommandType type = COMMAND_NO_OP;
 		uint64_t request_id = 0;
 		uint64_t deadline_usec = 0;
+		Dictionary params;
 	};
 
 	enum EnqueueResult {

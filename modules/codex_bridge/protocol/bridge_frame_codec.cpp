@@ -305,7 +305,11 @@ void BridgeFrameCodec::reset() {
 }
 
 Error BridgeFrameCodec::encode_json(const Dictionary &p_object, PackedByteArray &r_frame) {
-	const CharString json = JSON::stringify(p_object, "", true).utf8();
+	// Snapshot chunks carry both a structured payload and the exact canonical
+	// JSON used for their checksum. Preserve full double precision in the outer
+	// frame as well, otherwise values such as float-backed Godot properties can
+	// round differently and fail the payload/payload_json equality check.
+	const CharString json = JSON::stringify(p_object, "", true, true).utf8();
 	if (json.length() == 0 || json.length() > (int)MAX_PAYLOAD_BYTES) {
 		return ERR_INVALID_DATA;
 	}

@@ -30,8 +30,17 @@
 
 #pragma once
 
+#ifdef WINDOWS_ENABLED
+#include "core/io/stream_peer_tcp.h"
+#include "core/io/tcp_server.h"
+using BridgeStreamPeer = StreamPeerTCP;
+using BridgeServer = TCPServer;
+#else
 #include "core/io/stream_peer_uds.h"
 #include "core/io/uds_server.h"
+using BridgeStreamPeer = StreamPeerUDS;
+using BridgeServer = UDSServer;
+#endif
 #include "core/variant/variant.h"
 
 class BridgeRuntime {
@@ -46,8 +55,11 @@ class BridgeRuntime {
 	String project_id;
 	String editor_session_id;
 	PackedByteArray token;
-	Ref<UDSServer> server;
+	Ref<BridgeServer> server;
 	int lock_fd = -1;
+#ifdef WINDOWS_ENABLED
+	void *lock_handle = nullptr;
+#endif
 	bool discovery_published = false;
 	bool token_published = false;
 
@@ -72,7 +84,7 @@ public:
 
 	bool is_listening() const;
 	bool is_connection_available() const;
-	Ref<StreamPeerUDS> take_connection();
+	Ref<BridgeStreamPeer> take_connection();
 
 	const String &get_canonical_project_root() const;
 	const String &get_project_id() const;

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  codex_bridge_service.h                                                */
+/*  editor_context_adapter.h                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,60 +30,26 @@
 
 #pragma once
 
-#include "bridge_revision_clock.h"
-#include "main_thread_dispatcher.h"
+#include "core/variant/variant.h"
 
-#include "editor/plugins/editor_plugin.h"
+class Node;
 
-#include "modules/codex_bridge/transport/bridge_transport_worker.h"
-
-class CodexBridgeService : public EditorPlugin {
-	GDCLASS(CodexBridgeService, EditorPlugin);
-
+class EditorContextAdapter {
 public:
-	enum State {
-		STATE_STOPPED,
-		STATE_STARTING,
-		STATE_RUNNING,
-		STATE_STOPPING,
-	};
+	static constexpr int MAX_VARIANT_DEPTH = 8;
+	static constexpr int MAX_CONTAINER_ITEMS = 1000;
+	static constexpr int MAX_SCENE_NODES = 1000;
+	static constexpr int MAX_STRING_CHARACTERS = 16384;
+	static constexpr int MAX_IDENTITY_CHARACTERS = 1024;
+	static constexpr int MAX_PROJECTED_VALUE_BYTES = 65536;
+	static constexpr int MAX_INSPECTOR_BYTES_PER_NODE = 262144;
+	static constexpr int MAX_TOTAL_INSPECTOR_BYTES = 4194304;
+
+	static String make_scene_id(const String &p_editor_session_id, const Node *p_scene_root);
+	static Error capture(const String &p_project_id, const String &p_editor_session_id, const Dictionary &p_revisions, Dictionary &r_snapshot);
 
 private:
-	static CodexBridgeService *singleton;
-
-	State state = STATE_STOPPED;
-	MainThreadDispatcher dispatcher;
-	BridgeTransportWorker transport_worker;
-	BridgeRevisionClock revision_clock;
-	bool editor_signals_connected = false;
-	bool scene_change_pending = false;
-	String pending_property;
-
-	static void _dispatch_command(const MainThreadDispatcher::Command &p_command, void *p_userdata);
-	Dictionary _make_context() const;
-	String _get_current_scene_id() const;
-	void _connect_editor_signals();
-	void _disconnect_editor_signals();
-	void _publish_event(const String &p_event_type, const String &p_property = String(), bool p_scene_mutation = false);
-	void _on_selection_changed();
-	void _on_scene_changed();
-	void _on_property_edited(const String &p_property);
-	void _on_undo_redo_version_changed();
-	void _flush_scene_change();
-	void _complete_snapshot(uint64_t p_request_id);
-
-protected:
-	void _notification(int p_what);
-
-public:
-	static CodexBridgeService *get_singleton();
-
-	Error start();
-	void stop();
-
-	State get_service_state() const;
-	MainThreadDispatcher &get_dispatcher();
-
-	CodexBridgeService();
-	~CodexBridgeService();
+	static String _make_opaque_id(const String &p_prefix, const String &p_domain, const String &p_value);
+	static String _bounded_identity(const String &p_value, bool &r_truncated);
+	static Variant _project_variant(const Variant &p_value, int p_depth, bool &r_truncated);
 };

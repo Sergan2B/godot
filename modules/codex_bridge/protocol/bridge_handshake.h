@@ -77,4 +77,5 @@ public:
 	Error handle_message(const Dictionary &p_message, uint64_t p_now_usec, Outcome &r_outcome);
 	bool has_timed_out(uint64_t p_now_usec) const;
 	State get_state() const;
+	const String &get_selected_protocol_version() const;
 };

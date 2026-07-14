@@ -41,6 +41,7 @@ public:
 		METHOD_INITIALIZE,
 		METHOD_PING,
 		METHOD_CAPABILITIES,
+		METHOD_EDITOR_SNAPSHOT,
 		METHOD_SHUTDOWN,
 	};
 
@@ -51,6 +52,7 @@ public:
 		Method method = METHOD_INITIALIZE;
 		uint64_t internal_request_id = 0;
 		uint64_t deadline_usec = 0;
+		Dictionary params;
 		bool cancel_dispatch = false;
 		bool close_after_response = false;
 	};
@@ -70,6 +72,7 @@ private:
 
 	String project_id;
 	String editor_session_id;
+	String protocol_version = "1.0";
 	HashSet<String> seen_request_ids;
 	HashMap<uint64_t, PendingRequest> pending_by_internal_id;
 	HashMap<String, uint64_t> pending_by_request_id;
@@ -89,21 +92,26 @@ private:
 	bool _validate_common_envelope(const Dictionary &p_message) const;
 	bool _validate_initialize_params(const Dictionary &p_params) const;
 	bool _validate_ping_params(const Dictionary &p_params) const;
+	bool _validate_snapshot_params(const Dictionary &p_params) const;
 	bool _validate_shutdown_params(const Dictionary &p_params) const;
 	void _remove_pending(uint64_t p_internal_request_id);
 	void _set_error_outcome(const String &p_request_id, const String &p_code, const String &p_message, bool p_retryable, Outcome &r_outcome) const;
 	Error _handle_request(const Dictionary &p_message, uint64_t p_now_usec, uint64_t p_internal_request_id, Outcome &r_outcome);
 	Error _handle_cancel(const Dictionary &p_message, Outcome &r_outcome);
+	Error _handle_ack(const Dictionary &p_message, Outcome &r_outcome);
 
 public:
 	BridgeRpcSession(const String &p_project_id, const String &p_editor_session_id);
 
 	Error handle_message(const Dictionary &p_message, uint64_t p_now_usec, uint64_t p_internal_request_id, Outcome &r_outcome);
 	Error complete(uint64_t p_internal_request_id, uint64_t p_now_usec, Outcome &r_outcome);
+	Error complete(uint64_t p_internal_request_id, uint64_t p_now_usec, const Dictionary &p_result_override, Outcome &r_outcome);
 	Error reject_dispatch(uint64_t p_internal_request_id, Outcome &r_outcome);
 	void expire_requests(uint64_t p_now_usec, Vector<Outcome> &r_outcomes);
 	void cancel_all(Vector<uint64_t> &r_internal_request_ids);
 
 	bool is_initialized() const;
+	void set_protocol_version(const String &p_protocol_version);
+	const String &get_protocol_version() const;
 	uint32_t get_in_flight_count() const;
 };

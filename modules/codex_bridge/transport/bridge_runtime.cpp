@@ -51,6 +51,13 @@
 #include <cstdio>
 #endif
 
+#ifdef WINDOWS_ENABLED
+#include <aclapi.h>
+#include <windows.h>
+
+#include <climits>
+#endif
+
 namespace {
 
 #ifdef UNIX_ENABLED
@@ -351,7 +358,13 @@ static bool validate_discovery_record(const Dictionary &p_discovery, const Strin
 		return false;
 	}
 	const Array versions = p_discovery["protocol_versions"];
-	return versions.size() == 1 && versions[0].get_type() == Variant::STRING && String(versions[0]) == "1.0";
+	bool has_supported_version = false;
+	for (int index = 0; index < versions.size(); index++) {
+		if (versions[index].get_type() == Variant::STRING && (String(versions[index]) == "1.0" || String(versions[index]) == "1.1")) {
+			has_supported_version = true;
+		}
+	}
+	return has_supported_version;
 }
 
 static bool probe_authenticated_endpoint(const String &p_project_root, const Dictionary &p_discovery) {
@@ -470,6 +483,488 @@ static Error read_discovery(const String &p_path, Dictionary &r_discovery) {
 
 #endif // UNIX_ENABLED
 
+#ifdef WINDOWS_ENABLED
+
+static constexpr uint64_t PROBE_TIMEOUT_USEC = 500000;
+
+static Char16String path_utf16(const String &p_path) {
+	return p_path.replace_char('/', '\\').utf16();
+}
+
+static bool path_exists_no_follow(const String &p_path) {
+	const Char16String path = path_utf16(p_path);
+	return GetFileAttributesW(reinterpret_cast<LPCWSTR>(path.get_data())) != INVALID_FILE_ATTRIBUTES;
+}
+
+static Error remove_path_no_follow(const String &p_path) {
+	const Char16String path = path_utf16(p_path);
+	const DWORD attributes = GetFileAttributesW(reinterpret_cast<LPCWSTR>(path.get_data()));
+	if (attributes == INVALID_FILE_ATTRIBUTES) {
+		return GetLastError() == ERROR_FILE_NOT_FOUND || GetLastError() == ERROR_PATH_NOT_FOUND ? OK : FAILED;
+	}
+	if ((attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) {
+		return ERR_UNAUTHORIZED;
+	}
+	return DeleteFileW(reinterpret_cast<LPCWSTR>(path.get_data())) ? OK : FAILED;
+}
+
+static bool current_user_sid(Vector<uint8_t> &r_sid) {
+	HANDLE token = nullptr;
+	if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+		return false;
+	}
+	DWORD size = 0;
+	GetTokenInformation(token, TokenUser, nullptr, 0, &size);
+	Vector<uint8_t> buffer;
+	buffer.resize(size);
+	const bool read = size > 0 && GetTokenInformation(token, TokenUser, buffer.ptrw(), size, &size);
+	CloseHandle(token);
+	if (!read) {
+		return false;
+	}
+	const PSID sid = reinterpret_cast<TOKEN_USER *>(buffer.ptrw())->User.Sid;
+	const DWORD sid_size = GetLengthSid(sid);
+	r_sid.resize(sid_size);
+	return CopySid(sid_size, r_sid.ptrw(), sid);
+}
+
+static bool well_known_sid(WELL_KNOWN_SID_TYPE p_type, Vector<uint8_t> &r_sid) {
+	DWORD size = SECURITY_MAX_SID_SIZE;
+	r_sid.resize(size);
+	if (!CreateWellKnownSid(p_type, nullptr, r_sid.ptrw(), &size)) {
+		return false;
+	}
+	r_sid.resize(size);
+	return true;
+}
+
+static Error set_private_acl(const String &p_path, bool p_directory) {
+	Vector<uint8_t> user_sid;
+	Vector<uint8_t> system_sid;
+	Vector<uint8_t> administrators_sid;
+	if (!current_user_sid(user_sid) || !well_known_sid(WinLocalSystemSid, system_sid) || !well_known_sid(WinBuiltinAdministratorsSid, administrators_sid)) {
+		return ERR_UNAUTHORIZED;
+	}
+	EXPLICIT_ACCESSW entries[3] = {};
+	PSID sids[3] = { user_sid.ptrw(), system_sid.ptrw(), administrators_sid.ptrw() };
+	for (int index = 0; index < 3; index++) {
+		entries[index].grfAccessPermissions = GENERIC_ALL;
+		entries[index].grfAccessMode = SET_ACCESS;
+		entries[index].grfInheritance = p_directory ? SUB_CONTAINERS_AND_OBJECTS_INHERIT : NO_INHERITANCE;
+		BuildTrusteeWithSidW(&entries[index].Trustee, sids[index]);
+	}
+	PACL acl = nullptr;
+	if (SetEntriesInAclW(3, entries, nullptr, &acl) != ERROR_SUCCESS) {
+		return ERR_UNAUTHORIZED;
+	}
+	Char16String path = path_utf16(p_path);
+	const DWORD result = SetNamedSecurityInfoW(reinterpret_cast<LPWSTR>(path.ptrw()), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, nullptr, nullptr, acl, nullptr);
+	LocalFree(acl);
+	return result == ERROR_SUCCESS ? OK : ERR_UNAUTHORIZED;
+}
+
+static bool validate_private_acl(const String &p_path, bool p_require_protected) {
+	Vector<uint8_t> user_sid;
+	Vector<uint8_t> system_sid;
+	Vector<uint8_t> administrators_sid;
+	if (!current_user_sid(user_sid) || !well_known_sid(WinLocalSystemSid, system_sid) || !well_known_sid(WinBuiltinAdministratorsSid, administrators_sid)) {
+		return false;
+	}
+	PSID owner = nullptr;
+	PACL acl = nullptr;
+	PSECURITY_DESCRIPTOR descriptor = nullptr;
+	Char16String path = path_utf16(p_path);
+	const DWORD result = GetNamedSecurityInfoW(reinterpret_cast<LPWSTR>(path.ptrw()), SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner, nullptr, &acl, nullptr, &descriptor);
+	if (result != ERROR_SUCCESS || !owner || !acl || !EqualSid(owner, user_sid.ptrw())) {
+		if (descriptor) {
+			LocalFree(descriptor);
+		}
+		return false;
+	}
+	SECURITY_DESCRIPTOR_CONTROL control = 0;
+	DWORD revision = 0;
+	if (!GetSecurityDescriptorControl(descriptor, &control, &revision) || (p_require_protected && (control & SE_DACL_PROTECTED) == 0)) {
+		LocalFree(descriptor);
+		return false;
+	}
+	bool user_allowed = false;
+	bool valid = true;
+	for (DWORD index = 0; index < acl->AceCount; index++) {
+		void *raw_ace = nullptr;
+		if (!GetAce(acl, index, &raw_ace)) {
+			valid = false;
+			break;
+		}
+		const ACE_HEADER *header = static_cast<const ACE_HEADER *>(raw_ace);
+		if (header->AceType != ACCESS_ALLOWED_ACE_TYPE) {
+			valid = false;
+			break;
+		}
+		const ACCESS_ALLOWED_ACE *ace = static_cast<const ACCESS_ALLOWED_ACE *>(raw_ace);
+		PSID sid = const_cast<DWORD *>(&ace->SidStart);
+		const bool is_user = EqualSid(sid, user_sid.ptrw());
+		if (!is_user && !EqualSid(sid, system_sid.ptrw()) && !EqualSid(sid, administrators_sid.ptrw())) {
+			valid = false;
+			break;
+		}
+		user_allowed = user_allowed || is_user;
+	}
+	LocalFree(descriptor);
+	return valid && user_allowed;
+}
+
+static Error ensure_private_directory(const String &p_directory) {
+	const Char16String path = path_utf16(p_directory);
+	DWORD attributes = GetFileAttributesW(reinterpret_cast<LPCWSTR>(path.get_data()));
+	if (attributes == INVALID_FILE_ATTRIBUTES) {
+		if (!CreateDirectoryW(reinterpret_cast<LPCWSTR>(path.get_data()), nullptr) || set_private_acl(p_directory, true) != OK) {
+			return ERR_CANT_CREATE;
+		}
+		attributes = GetFileAttributesW(reinterpret_cast<LPCWSTR>(path.get_data()));
+	}
+	if ((attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+		return ERR_INVALID_DATA;
+	}
+	return BridgeRuntime::validate_private_path(p_directory, BridgeRuntime::DIRECTORY_MODE, true);
+}
+
+static Error ensure_project_data_directory(const String &p_directory) {
+	const Char16String path = path_utf16(p_directory);
+	DWORD attributes = GetFileAttributesW(reinterpret_cast<LPCWSTR>(path.get_data()));
+	if (attributes == INVALID_FILE_ATTRIBUTES) {
+		if (!CreateDirectoryW(reinterpret_cast<LPCWSTR>(path.get_data()), nullptr)) {
+			return ERR_CANT_CREATE;
+		}
+		attributes = GetFileAttributesW(reinterpret_cast<LPCWSTR>(path.get_data()));
+	}
+	return (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 && (attributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0 ? OK : ERR_INVALID_DATA;
+}
+
+static Error write_handle_all(HANDLE p_handle, const uint8_t *p_bytes, size_t p_size) {
+	size_t written = 0;
+	while (written < p_size) {
+		const DWORD requested = static_cast<DWORD>(MIN<size_t>(p_size - written, UINT32_MAX));
+		DWORD chunk = 0;
+		if (!WriteFile(p_handle, p_bytes + written, requested, &chunk, nullptr) || chunk == 0) {
+			return ERR_FILE_CANT_WRITE;
+		}
+		written += chunk;
+	}
+	return OK;
+}
+
+static Error atomic_write_private_file(const String &p_target, const String &p_temporary, const uint8_t *p_bytes, size_t p_size, const String &p_parent_directory) {
+	remove_path_no_follow(p_temporary);
+	const Char16String temporary = path_utf16(p_temporary);
+	HANDLE file = CreateFileW(reinterpret_cast<LPCWSTR>(temporary.get_data()), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+	if (file == INVALID_HANDLE_VALUE) {
+		return ERR_CANT_CREATE;
+	}
+	Error error = set_private_acl(p_temporary, false);
+	if (error == OK) {
+		error = write_handle_all(file, p_bytes, p_size);
+	}
+	if (error == OK && !FlushFileBuffers(file)) {
+		error = ERR_FILE_CANT_WRITE;
+	}
+	CloseHandle(file);
+	if (error != OK) {
+		remove_path_no_follow(p_temporary);
+		return error;
+	}
+	const Char16String target = path_utf16(p_target);
+	if (!MoveFileExW(reinterpret_cast<LPCWSTR>(temporary.get_data()), reinterpret_cast<LPCWSTR>(target.get_data()), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+		remove_path_no_follow(p_temporary);
+		return ERR_CANT_CREATE;
+	}
+	error = BridgeRuntime::validate_private_path(p_target, BridgeRuntime::PRIVATE_FILE_MODE, false);
+	if (error != OK) {
+		remove_path_no_follow(p_target);
+	}
+	return error;
+}
+
+static Error read_private_file(const String &p_path, int p_expected_size, PackedByteArray &r_bytes) {
+	Error error = BridgeRuntime::validate_private_path(p_path, BridgeRuntime::PRIVATE_FILE_MODE, false);
+	if (error != OK) {
+		return error;
+	}
+	const Char16String path = path_utf16(p_path);
+	HANDLE file = CreateFileW(reinterpret_cast<LPCWSTR>(path.get_data()), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+	if (file == INVALID_HANDLE_VALUE) {
+		return ERR_CANT_OPEN;
+	}
+	LARGE_INTEGER size = {};
+	if (!GetFileSizeEx(file, &size) || size.QuadPart < 0 || size.QuadPart > BridgeFrameCodec::MAX_PAYLOAD_BYTES || (p_expected_size >= 0 && size.QuadPart != p_expected_size)) {
+		CloseHandle(file);
+		return ERR_INVALID_DATA;
+	}
+	r_bytes.resize(static_cast<int>(size.QuadPart));
+	int read = 0;
+	while (read < r_bytes.size()) {
+		DWORD chunk = 0;
+		if (!ReadFile(file, r_bytes.ptrw() + read, r_bytes.size() - read, &chunk, nullptr) || chunk == 0) {
+			CloseHandle(file);
+			r_bytes.clear();
+			return ERR_FILE_CANT_READ;
+		}
+		read += chunk;
+	}
+	CloseHandle(file);
+	return OK;
+}
+
+static bool is_process_alive(int64_t p_pid) {
+	if (p_pid <= 0 || p_pid > INT32_MAX) {
+		return false;
+	}
+	HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, static_cast<DWORD>(p_pid));
+	if (!process) {
+		return GetLastError() == ERROR_ACCESS_DENIED;
+	}
+	const bool alive = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+	CloseHandle(process);
+	return alive;
+}
+
+static bool is_lower_hex(const String &p_value, int p_length) {
+	if (p_value.length() != p_length) {
+		return false;
+	}
+	for (int index = 0; index < p_value.length(); index++) {
+		const char32_t character = p_value[index];
+		if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f'))) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool parse_loopback_endpoint(const String &p_endpoint, int &r_port) {
+	static const String prefix = "127.0.0.1:";
+	if (!p_endpoint.begins_with(prefix)) {
+		return false;
+	}
+	const String port = p_endpoint.trim_prefix(prefix);
+	if (!port.is_valid_int()) {
+		return false;
+	}
+	r_port = port.to_int();
+	return r_port > 0 && r_port <= 65535 && p_endpoint == prefix + itos(r_port);
+}
+
+static bool validate_relative_endpoint(const String &p_endpoint) {
+	int port = 0;
+	return parse_loopback_endpoint(p_endpoint, port);
+}
+
+static bool wait_for_connected(const Ref<BridgeStreamPeer> &p_peer, uint64_t p_deadline) {
+	while (OS::get_singleton()->get_ticks_usec() < p_deadline) {
+		if (p_peer->poll() != OK) {
+			return false;
+		}
+		if (p_peer->get_status() == BridgeStreamPeer::STATUS_CONNECTED) {
+			return true;
+		}
+		if (p_peer->get_status() == BridgeStreamPeer::STATUS_ERROR || p_peer->get_status() == BridgeStreamPeer::STATUS_NONE) {
+			return false;
+		}
+		OS::get_singleton()->delay_usec(1000);
+	}
+	return false;
+}
+
+static bool send_frame(const Ref<BridgeStreamPeer> &p_peer, const PackedByteArray &p_frame, uint64_t p_deadline) {
+	int offset = 0;
+	while (offset < p_frame.size() && OS::get_singleton()->get_ticks_usec() < p_deadline) {
+		int sent = 0;
+		if (p_peer->put_partial_data(p_frame.ptr() + offset, p_frame.size() - offset, sent) != OK) {
+			return false;
+		}
+		offset += sent;
+		if (sent == 0) {
+			OS::get_singleton()->delay_usec(1000);
+		}
+	}
+	return offset == p_frame.size();
+}
+
+static bool receive_object(const Ref<BridgeStreamPeer> &p_peer, uint64_t p_deadline, Dictionary &r_object) {
+	BridgeFrameCodec codec;
+	while (OS::get_singleton()->get_ticks_usec() < p_deadline) {
+		if (p_peer->poll() != OK || p_peer->get_status() != BridgeStreamPeer::STATUS_CONNECTED) {
+			return false;
+		}
+		const int available = p_peer->get_available_bytes();
+		if (available <= 0) {
+			OS::get_singleton()->delay_usec(1000);
+			continue;
+		}
+		PackedByteArray bytes;
+		bytes.resize(MIN(available, 65536));
+		int received = 0;
+		if (p_peer->get_partial_data(bytes.ptrw(), bytes.size(), received) != OK || received <= 0) {
+			return false;
+		}
+		Vector<PackedByteArray> frames;
+		if (codec.feed(bytes.ptr(), received, frames) != OK) {
+			return false;
+		}
+		if (!frames.is_empty()) {
+			return BridgeJson::parse_strict_object(frames[0], r_object) == OK;
+		}
+	}
+	return false;
+}
+
+static bool get_string_field(const Dictionary &p_object, const StringName &p_key, String &r_value) {
+	if (!p_object.has(p_key) || p_object[p_key].get_type() != Variant::STRING) {
+		return false;
+	}
+	r_value = p_object[p_key];
+	return true;
+}
+
+static bool get_bounded_integer_field(const Dictionary &p_object, const StringName &p_key, int64_t p_minimum, int64_t p_maximum, int64_t &r_value) {
+	if (!p_object.has(p_key)) {
+		return false;
+	}
+	const Variant value = p_object[p_key];
+	if (value.get_type() == Variant::INT) {
+		r_value = value;
+		return r_value >= p_minimum && r_value <= p_maximum;
+	}
+	if (value.get_type() != Variant::FLOAT) {
+		return false;
+	}
+	const double number = value;
+	if (number < static_cast<double>(p_minimum) || number > static_cast<double>(p_maximum)) {
+		return false;
+	}
+	r_value = static_cast<int64_t>(number);
+	return static_cast<double>(r_value) == number;
+}
+
+static bool validate_discovery_record(const Dictionary &p_discovery, const String &p_expected_project_id) {
+	String transport;
+	String endpoint;
+	String token_file;
+	String project_id;
+	String editor_session_id;
+	String created_at;
+	int64_t discovery_schema = 0;
+	int64_t pid = 0;
+	if (!get_bounded_integer_field(p_discovery, "discovery_schema", 1, 1, discovery_schema) ||
+			!get_bounded_integer_field(p_discovery, "pid", 1, INT32_MAX, pid) ||
+			!get_string_field(p_discovery, "transport", transport) || transport != "tcp_loopback" ||
+			!get_string_field(p_discovery, "endpoint", endpoint) || !validate_relative_endpoint(endpoint) ||
+			!get_string_field(p_discovery, "token_file", token_file) || token_file != ".godot/codex/session.token" ||
+			!get_string_field(p_discovery, "project_id", project_id) || project_id != p_expected_project_id || !project_id.begins_with("project:sha256:") || !is_lower_hex(project_id.trim_prefix("project:sha256:"), 64) ||
+			!get_string_field(p_discovery, "editor_session_id", editor_session_id) || !editor_session_id.begins_with("editor:") || !is_lower_hex(editor_session_id.trim_prefix("editor:"), 32) ||
+			!get_string_field(p_discovery, "created_at", created_at) || created_at.is_empty() || created_at.length() > 64 ||
+			!p_discovery.has("protocol_versions") || p_discovery["protocol_versions"].get_type() != Variant::ARRAY) {
+		return false;
+	}
+	const Array versions = p_discovery["protocol_versions"];
+	for (int index = 0; index < versions.size(); index++) {
+		if (versions[index].get_type() == Variant::STRING && (String(versions[index]) == "1.0" || String(versions[index]) == "1.1")) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool probe_authenticated_endpoint(const String &p_project_root, const Dictionary &p_discovery) {
+	String endpoint;
+	String token_relative;
+	String project_id;
+	String editor_session_id;
+	int port = 0;
+	if (!get_string_field(p_discovery, "endpoint", endpoint) || !parse_loopback_endpoint(endpoint, port) ||
+			!get_string_field(p_discovery, "token_file", token_relative) || token_relative != ".godot/codex/session.token" ||
+			!get_string_field(p_discovery, "project_id", project_id) || !get_string_field(p_discovery, "editor_session_id", editor_session_id)) {
+		return false;
+	}
+	PackedByteArray token;
+	if (read_private_file(p_project_root.path_join(token_relative), BridgeCrypto::RANDOM_VALUE_BYTES, token) != OK) {
+		return false;
+	}
+	Ref<BridgeStreamPeer> peer;
+	peer.instantiate();
+	if (peer->connect_to_host(IPAddress("127.0.0.1"), port) != OK) {
+		return false;
+	}
+	const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + PROBE_TIMEOUT_USEC;
+	if (!wait_for_connected(peer, deadline)) {
+		return false;
+	}
+	PackedByteArray client_nonce;
+	if (BridgeCrypto::random_bytes(BridgeCrypto::RANDOM_VALUE_BYTES, client_nonce) != OK) {
+		return false;
+	}
+	String client_nonce_encoded;
+	BridgeCrypto::base64url_encode_32(client_nonce, client_nonce_encoded);
+	Dictionary hello;
+	hello["handshake_version"] = "1.0";
+	hello["kind"] = "handshake.client_hello";
+	Array versions;
+	versions.push_back("1.0");
+	hello["supported_protocol_versions"] = versions;
+	hello["project_id"] = project_id;
+	hello["editor_session_id"] = editor_session_id;
+	hello["client_nonce"] = client_nonce_encoded;
+	PackedByteArray frame;
+	if (BridgeFrameCodec::encode_json(hello, frame) != OK || !send_frame(peer, frame, deadline)) {
+		return false;
+	}
+	Dictionary challenge;
+	String kind;
+	String server_nonce_encoded;
+	String server_proof_encoded;
+	String selected_version;
+	if (!receive_object(peer, deadline, challenge) || !get_string_field(challenge, "kind", kind) || kind != "handshake.server_challenge" ||
+			!get_string_field(challenge, "selected_protocol_version", selected_version) || selected_version != "1.0" ||
+			!get_string_field(challenge, "server_nonce", server_nonce_encoded) || !get_string_field(challenge, "server_proof", server_proof_encoded)) {
+		return false;
+	}
+	PackedByteArray server_nonce;
+	PackedByteArray received_server_proof;
+	PackedStringArray offered;
+	offered.push_back("1.0");
+	PackedByteArray transcript;
+	PackedByteArray expected_server_proof;
+	if (BridgeCrypto::base64url_decode_32(server_nonce_encoded, server_nonce) != OK || BridgeCrypto::base64url_decode_32(server_proof_encoded, received_server_proof) != OK ||
+			BridgeCrypto::build_handshake_transcript("1.0", offered, "1.0", project_id, editor_session_id, client_nonce, server_nonce, transcript) != OK ||
+			BridgeCrypto::handshake_proof(true, token, transcript, expected_server_proof) != OK || !BridgeCrypto::constant_time_equal(expected_server_proof, received_server_proof)) {
+		return false;
+	}
+	PackedByteArray client_proof;
+	String client_proof_encoded;
+	if (BridgeCrypto::handshake_proof(false, token, transcript, client_proof) != OK || BridgeCrypto::base64url_encode_32(client_proof, client_proof_encoded) != OK) {
+		return false;
+	}
+	Dictionary authenticate;
+	authenticate["handshake_version"] = "1.0";
+	authenticate["kind"] = "handshake.client_authenticate";
+	authenticate["selected_protocol_version"] = "1.0";
+	authenticate["project_id"] = project_id;
+	authenticate["editor_session_id"] = editor_session_id;
+	authenticate["client_proof"] = client_proof_encoded;
+	if (BridgeFrameCodec::encode_json(authenticate, frame) != OK || !send_frame(peer, frame, deadline)) {
+		return false;
+	}
+	Dictionary ready;
+	return receive_object(peer, deadline, ready) && get_string_field(ready, "kind", kind) && kind == "handshake.server_ready";
+}
+
+static Error read_discovery(const String &p_path, Dictionary &r_discovery) {
+	PackedByteArray bytes;
+	const Error error = read_private_file(p_path, -1, bytes);
+	return error == OK ? BridgeJson::parse_strict_object(bytes, r_discovery) : error;
+}
+
+#endif // WINDOWS_ENABLED
+
 } // namespace
 
 Error BridgeRuntime::canonicalize_project_root(const String &p_project_root, String &r_canonical_root) {
@@ -495,6 +990,47 @@ Error BridgeRuntime::canonicalize_project_root(const String &p_project_root, Str
 	}
 	r_canonical_root = canonical.is_empty() ? String("/") : canonical;
 	return OK;
+#elif defined(WINDOWS_ENABLED)
+	if (p_project_root.is_empty()) {
+		return ERR_INVALID_PARAMETER;
+	}
+	const Char16String source = path_utf16(p_project_root);
+	HANDLE directory = CreateFileW(reinterpret_cast<LPCWSTR>(source.get_data()), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+	if (directory == INVALID_HANDLE_VALUE) {
+		return ERR_FILE_NOT_FOUND;
+	}
+	BY_HANDLE_FILE_INFORMATION information = {};
+	if (!GetFileInformationByHandle(directory, &information) || (information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 || (information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) {
+		CloseHandle(directory);
+		return ERR_INVALID_DATA;
+	}
+	const DWORD length = GetFinalPathNameByHandleW(directory, nullptr, 0, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+	if (length == 0) {
+		CloseHandle(directory);
+		return ERR_CANT_RESOLVE;
+	}
+	Char16String resolved;
+	resolved.resize_uninitialized(length);
+	if (GetFinalPathNameByHandleW(directory, reinterpret_cast<LPWSTR>(resolved.ptrw()), length, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS) == 0) {
+		CloseHandle(directory);
+		return ERR_CANT_RESOLVE;
+	}
+	CloseHandle(directory);
+	String canonical = String::utf16(resolved.ptr()).replace_char('\\', '/');
+	if (canonical.begins_with("//?/UNC/")) {
+		canonical = "//" + canonical.trim_prefix("//?/UNC/");
+	} else {
+		canonical = canonical.trim_prefix("//?/");
+	}
+	canonical = canonical.trim_suffix("/");
+	const String project_file = canonical.path_join("project.godot");
+	const Char16String project_file_path = path_utf16(project_file);
+	const DWORD project_attributes = GetFileAttributesW(reinterpret_cast<LPCWSTR>(project_file_path.get_data()));
+	if (project_attributes == INVALID_FILE_ATTRIBUTES || (project_attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) != 0) {
+		return ERR_FILE_NOT_FOUND;
+	}
+	r_canonical_root = canonical;
+	return OK;
 #else
 	return ERR_UNAVAILABLE;
 #endif
@@ -511,13 +1047,27 @@ Error BridgeRuntime::validate_private_path(const String &p_path, uint32_t p_mode
 		return ERR_INVALID_DATA;
 	}
 	return OK;
+#elif defined(WINDOWS_ENABLED)
+	(void)p_mode;
+	if (p_socket) {
+		return ERR_INVALID_PARAMETER;
+	}
+	const Char16String path = path_utf16(p_path);
+	const DWORD attributes = GetFileAttributesW(reinterpret_cast<LPCWSTR>(path.get_data()));
+	if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 || !validate_private_acl(p_path, p_directory)) {
+		return ERR_UNAUTHORIZED;
+	}
+	if (p_directory != ((attributes & FILE_ATTRIBUTE_DIRECTORY) != 0)) {
+		return ERR_INVALID_DATA;
+	}
+	return OK;
 #else
 	return ERR_UNAVAILABLE;
 #endif
 }
 
 bool BridgeRuntime::probe_authenticated_runtime(const String &p_project_root) {
-#ifdef UNIX_ENABLED
+#if defined(UNIX_ENABLED) || defined(WINDOWS_ENABLED)
 	String canonical_root;
 	if (canonicalize_project_root(p_project_root, canonical_root) != OK) {
 		return false;
@@ -572,13 +1122,33 @@ Error BridgeRuntime::_acquire_lock() {
 		return ERR_ALREADY_IN_USE;
 	}
 	return OK;
+#elif defined(WINDOWS_ENABLED)
+	const bool existed = path_exists_no_follow(lock_path);
+	if (existed && validate_private_path(lock_path, PRIVATE_FILE_MODE, false) != OK) {
+		return ERR_UNAUTHORIZED;
+	}
+	const Char16String path = path_utf16(lock_path);
+	HANDLE handle = CreateFileW(reinterpret_cast<LPCWSTR>(path.get_data()), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_DELETE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+	if (handle == INVALID_HANDLE_VALUE) {
+		return GetLastError() == ERROR_SHARING_VIOLATION ? ERR_ALREADY_IN_USE : ERR_CANT_OPEN;
+	}
+	lock_handle = handle;
+	if (!existed && set_private_acl(lock_path, false) != OK) {
+		_release_lock();
+		return ERR_UNAUTHORIZED;
+	}
+	if (validate_private_path(lock_path, PRIVATE_FILE_MODE, false) != OK) {
+		_release_lock();
+		return ERR_UNAUTHORIZED;
+	}
+	return OK;
 #else
 	return ERR_UNAVAILABLE;
 #endif
 }
 
 Error BridgeRuntime::_remove_or_reject_stale_runtime() {
-#ifdef UNIX_ENABLED
+#if defined(UNIX_ENABLED) || defined(WINDOWS_ENABLED)
 	if ((path_exists_no_follow(discovery_path) && validate_private_path(discovery_path, PRIVATE_FILE_MODE, false) != OK) ||
 			(path_exists_no_follow(token_path) && validate_private_path(token_path, PRIVATE_FILE_MODE, false) != OK)) {
 		return ERR_UNAUTHORIZED;
@@ -595,6 +1165,7 @@ Error BridgeRuntime::_remove_or_reject_stale_runtime() {
 			return ERR_ALREADY_IN_USE;
 		}
 		String stale_endpoint;
+#ifdef UNIX_ENABLED
 		if (get_string_field(discovery, "endpoint", stale_endpoint) && validate_relative_endpoint(stale_endpoint)) {
 			const String stale_endpoint_path = canonical_project_root.path_join(stale_endpoint);
 			if (path_exists_no_follow(stale_endpoint_path) && validate_private_path(stale_endpoint_path, PRIVATE_FILE_MODE, false, true) != OK) {
@@ -602,6 +1173,7 @@ Error BridgeRuntime::_remove_or_reject_stale_runtime() {
 			}
 			remove_path_no_follow(stale_endpoint_path);
 		}
+#endif
 	}
 	remove_path_no_follow(discovery_path);
 	remove_path_no_follow(token_path);
@@ -621,6 +1193,18 @@ Error BridgeRuntime::_write_lock_metadata() {
 		return ERR_FILE_CANT_WRITE;
 	}
 	return sync_directory(codex_directory);
+#elif defined(WINDOWS_ENABLED)
+	ERR_FAIL_NULL_V(lock_handle, ERR_UNCONFIGURED);
+	Dictionary metadata;
+	metadata["editor_session_id"] = editor_session_id;
+	metadata["pid"] = OS::get_singleton()->get_process_id();
+	const CharString json = JSON::stringify(metadata, "", true).utf8();
+	HANDLE handle = static_cast<HANDLE>(lock_handle);
+	LARGE_INTEGER start = {};
+	if (!SetFilePointerEx(handle, start, nullptr, FILE_BEGIN) || !SetEndOfFile(handle) || write_handle_all(handle, reinterpret_cast<const uint8_t *>(json.get_data()), json.length()) != OK || !FlushFileBuffers(handle)) {
+		return ERR_FILE_CANT_WRITE;
+	}
+	return OK;
 #else
 	return ERR_UNAVAILABLE;
 #endif
@@ -646,13 +1230,29 @@ Error BridgeRuntime::_bind_server() {
 		return ERR_UNAUTHORIZED;
 	}
 	return OK;
+#elif defined(WINDOWS_ENABLED)
+	server.instantiate();
+	const Error error = server->listen(0, IPAddress("127.0.0.1"));
+	if (error != OK) {
+		server.unref();
+		return error;
+	}
+	const int port = server->get_local_port();
+	if (port <= 0 || port > 65535) {
+		server->stop();
+		server.unref();
+		return ERR_CANT_CREATE;
+	}
+	endpoint_relative_path = "127.0.0.1:" + itos(port);
+	endpoint_path = endpoint_relative_path;
+	return OK;
 #else
 	return ERR_UNAVAILABLE;
 #endif
 }
 
 Error BridgeRuntime::_publish_token() {
-#ifdef UNIX_ENABLED
+#if defined(UNIX_ENABLED) || defined(WINDOWS_ENABLED)
 	const String temporary = token_path + ".tmp-" + editor_session_id.trim_prefix("editor:");
 	const Error error = atomic_write_private_file(token_path, temporary, token.ptr(), token.size(), codex_directory);
 	if (error == OK) {
@@ -665,7 +1265,7 @@ Error BridgeRuntime::_publish_token() {
 }
 
 Error BridgeRuntime::_publish_discovery() {
-#ifdef UNIX_ENABLED
+#if defined(UNIX_ENABLED) || defined(WINDOWS_ENABLED)
 	Dictionary discovery;
 	discovery["created_at"] = Time::get_singleton()->get_datetime_string_from_system(true, false) + "Z";
 	discovery["discovery_schema"] = 1;
@@ -674,10 +1274,15 @@ Error BridgeRuntime::_publish_discovery() {
 	discovery["pid"] = OS::get_singleton()->get_process_id();
 	discovery["project_id"] = project_id;
 	Array versions;
+	versions.push_back("1.1");
 	versions.push_back("1.0");
 	discovery["protocol_versions"] = versions;
 	discovery["token_file"] = ".godot/codex/session.token";
+#ifdef WINDOWS_ENABLED
+	discovery["transport"] = "tcp_loopback";
+#else
 	discovery["transport"] = "uds";
+#endif
 	const CharString json = JSON::stringify(discovery, "", true).utf8();
 	const String temporary = discovery_path + ".tmp-" + editor_session_id.trim_prefix("editor:");
 	const Error error = atomic_write_private_file(discovery_path, temporary, reinterpret_cast<const uint8_t *>(json.get_data()), json.length(), codex_directory);
@@ -697,12 +1302,21 @@ void BridgeRuntime::_release_lock() {
 		close(lock_fd);
 		lock_fd = -1;
 	}
+#elif defined(WINDOWS_ENABLED)
+	if (lock_handle) {
+		CloseHandle(static_cast<HANDLE>(lock_handle));
+		lock_handle = nullptr;
+	}
 #endif
 }
 
 Error BridgeRuntime::initialize(const String &p_project_root) {
-	ERR_FAIL_COND_V(server.is_valid() || lock_fd >= 0, ERR_ALREADY_IN_USE);
-#ifdef UNIX_ENABLED
+	bool has_lock = lock_fd >= 0;
+#ifdef WINDOWS_ENABLED
+	has_lock = has_lock || lock_handle;
+#endif
+	ERR_FAIL_COND_V(server.is_valid() || has_lock, ERR_ALREADY_IN_USE);
+#if defined(UNIX_ENABLED) || defined(WINDOWS_ENABLED)
 	Error error = canonicalize_project_root(p_project_root, canonical_project_root);
 	if (error != OK) {
 		return error;
@@ -722,8 +1336,10 @@ Error BridgeRuntime::initialize(const String &p_project_root) {
 	discovery_path = codex_directory.path_join("bridge.json");
 	token_path = codex_directory.path_join("session.token");
 	lock_path = codex_directory.path_join("bridge.lock");
+#ifdef UNIX_ENABLED
 	endpoint_relative_path = ".godot/codex/run/bridge-" + session_hex + ".sock";
 	endpoint_path = canonical_project_root.path_join(endpoint_relative_path);
+#endif
 
 	error = ensure_project_data_directory(canonical_project_root.path_join(".godot"));
 	if (error == OK) {
@@ -764,14 +1380,16 @@ Error BridgeRuntime::initialize(const String &p_project_root) {
 }
 
 void BridgeRuntime::cleanup() {
-#ifdef UNIX_ENABLED
+#if defined(UNIX_ENABLED) || defined(WINDOWS_ENABLED)
 	if (server.is_valid()) {
 		server->stop();
 		server.unref();
 	}
+#ifdef UNIX_ENABLED
 	if (!endpoint_path.is_empty()) {
 		remove_path_no_follow(endpoint_path);
 	}
+#endif
 	if (discovery_published) {
 		Dictionary discovery;
 		String published_session;
@@ -779,14 +1397,24 @@ void BridgeRuntime::cleanup() {
 			remove_path_no_follow(discovery_path);
 		}
 	}
-	if (token_published && lock_fd >= 0) {
+	if (token_published && (lock_fd >= 0
+#ifdef WINDOWS_ENABLED
+				|| lock_handle
+#endif
+				)) {
 		remove_path_no_follow(token_path);
 	}
 	discovery_published = false;
 	token_published = false;
-	if (lock_fd >= 0) {
+	if (lock_fd >= 0
+#ifdef WINDOWS_ENABLED
+			|| lock_handle
+#endif
+			) {
 		remove_path_no_follow(lock_path);
+#ifdef UNIX_ENABLED
 		sync_directory(codex_directory);
+#endif
 	}
 	_release_lock();
 #endif
@@ -800,8 +1428,8 @@ bool BridgeRuntime::is_connection_available() const {
 	return server.is_valid() && server->is_connection_available();
 }
 
-Ref<StreamPeerUDS> BridgeRuntime::take_connection() {
-	return server.is_valid() ? server->take_connection() : Ref<StreamPeerUDS>();
+Ref<BridgeStreamPeer> BridgeRuntime::take_connection() {
+	return server.is_valid() ? server->take_connection() : Ref<BridgeStreamPeer>();
 }
 
 const String &BridgeRuntime::get_canonical_project_root() const {

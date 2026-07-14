@@ -32,7 +32,6 @@
 
 #include "bridge_runtime.h"
 
-#include "core/io/stream_peer_uds.h"
 #include "core/os/os.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
@@ -45,9 +44,12 @@
 namespace {
 
 static constexpr int MAX_CLIENTS = 16;
+static constexpr int MAX_OUTBOUND_BYTES = 33554432;
+static constexpr int MAX_NOTIFICATION_ENTRIES = 4096;
+static constexpr int MAX_NOTIFICATION_BYTES = 16777216;
 
 struct TransportClient {
-	Ref<StreamPeerUDS> peer;
+	Ref<BridgeStreamPeer> peer;
 	BridgeFrameCodec codec;
 	BridgeHandshakeSession handshake;
 	BridgeRpcSession rpc;
@@ -56,13 +58,16 @@ struct TransportClient {
 	bool close_after_write = false;
 	bool force_close = false;
 
-	TransportClient(const Ref<StreamPeerUDS> &p_peer, const PackedByteArray &p_token, const String &p_project_id, const String &p_editor_session_id, uint64_t p_accepted_at_usec, HashSet<String> *p_seen_client_nonces) :
+	TransportClient(const Ref<BridgeStreamPeer> &p_peer, const PackedByteArray &p_token, const String &p_project_id, const String &p_editor_session_id, uint64_t p_accepted_at_usec, HashSet<String> *p_seen_client_nonces) :
 			peer(p_peer), handshake(p_token, p_project_id, p_editor_session_id, p_accepted_at_usec, p_seen_client_nonces), rpc(p_project_id, p_editor_session_id) {}
 };
 
 static bool queue_response(TransportClient &r_client, const Dictionary &p_response) {
 	PackedByteArray response;
 	if (BridgeFrameCodec::encode_json(p_response, response) != OK) {
+		return false;
+	}
+	if (r_client.pending_write.size() + response.size() > MAX_OUTBOUND_BYTES) {
 		return false;
 	}
 	if (r_client.pending_write.is_empty()) {
@@ -81,6 +86,8 @@ static MainThreadDispatcher::CommandType command_type_for_method(BridgeRpcSessio
 			return MainThreadDispatcher::COMMAND_PING;
 		case BridgeRpcSession::METHOD_CAPABILITIES:
 			return MainThreadDispatcher::COMMAND_CAPABILITIES;
+		case BridgeRpcSession::METHOD_EDITOR_SNAPSHOT:
+			return MainThreadDispatcher::COMMAND_EDITOR_SNAPSHOT;
 		case BridgeRpcSession::METHOD_SHUTDOWN:
 			return MainThreadDispatcher::COMMAND_SHUTDOWN;
 	}
@@ -110,6 +117,7 @@ static bool apply_rpc_outcome(TransportClient &r_client, BridgeRpcSession::Outco
 		command.type = command_type_for_method(r_outcome.method);
 		command.request_id = r_outcome.internal_request_id;
 		command.deadline_usec = r_outcome.deadline_usec;
+		command.params = r_outcome.params;
 		bool expired = false;
 		const MainThreadDispatcher::EnqueueResult enqueue_result = enqueue_request(p_context, command, expired);
 		if (expired) {
@@ -149,7 +157,7 @@ static bool process_client(TransportClient &r_client, uint64_t p_now_usec, uint6
 	if (r_client.force_close) {
 		return false;
 	}
-	if (r_client.peer->poll() != OK || r_client.peer->get_status() != StreamPeerUDS::STATUS_CONNECTED) {
+	if (r_client.peer->poll() != OK || r_client.peer->get_status() != BridgeStreamPeer::STATUS_CONNECTED) {
 		return false;
 	}
 	if (r_client.handshake.has_timed_out(p_now_usec)) {
@@ -198,6 +206,9 @@ static bool process_client(TransportClient &r_client, uint64_t p_now_usec, uint6
 			if (r_client.handshake.handle_message(message, p_now_usec, outcome) != OK) {
 				return false;
 			}
+			if (r_client.handshake.get_state() == BridgeHandshakeSession::STATE_AUTHENTICATED) {
+				r_client.rpc.set_protocol_version(r_client.handshake.get_selected_protocol_version());
+			}
 			if (outcome.authentication_failed) {
 				register_auth_failure(r_auth_failures, p_now_usec, r_accept_blocked_until);
 			}
@@ -235,12 +246,21 @@ static void cancel_client_pending(TransportClient &r_client, BridgeTransportWork
 	}
 }
 
-static void drain_completions(BridgeTransportWorker::Context *p_context, Vector<uint64_t> &r_completions) {
+static void drain_completions(BridgeTransportWorker::Context *p_context, Vector<BridgeTransportWorker::Completion> &r_completions) {
 	MutexLock lock(p_context->completion_mutex);
 	while (!p_context->completed_requests.is_empty()) {
 		r_completions.push_back(p_context->completed_requests.front()->get());
 		p_context->completed_requests.pop_front();
 	}
+}
+
+static void drain_notifications(BridgeTransportWorker::Context *p_context, Vector<Dictionary> &r_notifications) {
+	MutexLock lock(p_context->notification_mutex);
+	while (!p_context->notifications.is_empty()) {
+		r_notifications.push_back(p_context->notifications.front()->get());
+		p_context->notifications.pop_front();
+	}
+	p_context->notification_bytes = 0;
 }
 
 static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRuntime &r_runtime) {
@@ -252,21 +272,41 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 
 	while (!p_context->stop_requested.is_set()) {
 		const uint64_t now_usec = OS::get_singleton()->get_ticks_usec();
-		Vector<uint64_t> completions;
+		Vector<BridgeTransportWorker::Completion> completions;
 		drain_completions(p_context, completions);
-		for (uint64_t completed_id : completions) {
+		for (const BridgeTransportWorker::Completion &completion : completions) {
 			for (TransportClient &client : clients) {
 				BridgeRpcSession::Outcome outcome;
-				if (client.rpc.complete(completed_id, now_usec, outcome) == OK) {
+				if (client.rpc.complete(completion.request_id, now_usec, completion.result, outcome) == OK) {
 					if (!apply_rpc_outcome(client, outcome, p_context)) {
 						client.force_close = true;
+					} else if (client.rpc.get_protocol_version() == "1.1") {
+						for (int message_index = 0; message_index < completion.server_messages.size(); message_index++) {
+							if (completion.server_messages[message_index].get_type() != Variant::DICTIONARY || !queue_response(client, Dictionary(completion.server_messages[message_index]))) {
+								client.force_close = true;
+								break;
+							}
+						}
 					}
 					break;
 				}
 			}
 		}
+		Vector<Dictionary> notifications;
+		drain_notifications(p_context, notifications);
+		for (TransportClient &client : clients) {
+			if (client.handshake.get_state() != BridgeHandshakeSession::STATE_AUTHENTICATED || !client.rpc.is_initialized() || client.rpc.get_protocol_version() != "1.1") {
+				continue;
+			}
+			for (const Dictionary &notification : notifications) {
+				if (!queue_response(client, notification)) {
+					client.force_close = true;
+					break;
+				}
+			}
+		}
 		while (r_runtime.is_connection_available()) {
-			Ref<StreamPeerUDS> peer = r_runtime.take_connection();
+			Ref<BridgeStreamPeer> peer = r_runtime.take_connection();
 			if (peer.is_null()) {
 				break;
 			}
@@ -306,6 +346,10 @@ void BridgeTransportWorker::_thread_main(void *p_userdata) {
 	BridgeRuntime runtime;
 	if (!worker_context->project_root.is_empty()) {
 		worker_context->startup_error = runtime.initialize(worker_context->project_root);
+		if (worker_context->startup_error == OK) {
+			worker_context->project_id = runtime.get_project_id();
+			worker_context->editor_session_id = runtime.get_editor_session_id();
+		}
 	}
 	worker_context->startup_done.set();
 	worker_context->startup.post();
@@ -417,13 +461,46 @@ void BridgeTransportWorker::wake() {
 }
 
 void BridgeTransportWorker::complete_request(uint64_t p_request_id) {
+	complete_request(p_request_id, Dictionary());
+}
+
+void BridgeTransportWorker::complete_request(uint64_t p_request_id, const Dictionary &p_result, const Array &p_server_messages) {
 	if (!context) {
 		return;
 	}
 	{
 		MutexLock lock(context->completion_mutex);
-		context->completed_requests.push_back(p_request_id);
+		Completion completion;
+		completion.request_id = p_request_id;
+		completion.result = p_result;
+		completion.server_messages = p_server_messages;
+		context->completed_requests.push_back(completion);
 	}
+}
+
+bool BridgeTransportWorker::publish_notification(const Dictionary &p_notification) {
+	if (!context) {
+		return false;
+	}
+	PackedByteArray encoded;
+	if (BridgeFrameCodec::encode_json(p_notification, encoded) != OK) {
+		return false;
+	}
+	MutexLock lock(context->notification_mutex);
+	if (context->notifications.size() >= MAX_NOTIFICATION_ENTRIES || context->notification_bytes + encoded.size() > MAX_NOTIFICATION_BYTES) {
+		return false;
+	}
+	context->notifications.push_back(p_notification);
+	context->notification_bytes += encoded.size();
+	return true;
+}
+
+String BridgeTransportWorker::get_project_id() const {
+	return context ? context->project_id : String();
+}
+
+String BridgeTransportWorker::get_editor_session_id() const {
+	return context ? context->editor_session_id : String();
 }
 
 bool BridgeTransportWorker::is_running() const {

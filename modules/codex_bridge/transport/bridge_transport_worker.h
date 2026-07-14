@@ -36,6 +36,7 @@
 #include "core/string/ustring.h"
 #include "core/templates/list.h"
 #include "core/templates/safe_refcount.h"
+#include "core/variant/variant.h"
 
 class MainThreadDispatcher;
 
@@ -51,6 +52,12 @@ public:
 	static constexpr uint64_t DEFAULT_START_TIMEOUT_USEC = 5000000;
 
 public:
+	struct Completion {
+		uint64_t request_id = 0;
+		Dictionary result;
+		Array server_messages;
+	};
+
 	struct Context {
 		SafeRefCount references;
 		SafeFlag stop_requested;
@@ -59,10 +66,15 @@ public:
 		Semaphore wakeup;
 		Semaphore startup;
 		String project_root;
+		String project_id;
+		String editor_session_id;
 		Mutex dispatcher_mutex;
 		MainThreadDispatcher *dispatcher = nullptr;
 		Mutex completion_mutex;
-		List<uint64_t> completed_requests;
+		List<Completion> completed_requests;
+		Mutex notification_mutex;
+		List<Dictionary> notifications;
+		uint64_t notification_bytes = 0;
 		Error startup_error = OK;
 
 		Context() {
@@ -84,6 +96,10 @@ public:
 	StopResult stop(uint64_t p_timeout_usec = DEFAULT_STOP_TIMEOUT_USEC);
 	void wake();
 	void complete_request(uint64_t p_request_id);
+	void complete_request(uint64_t p_request_id, const Dictionary &p_result, const Array &p_server_messages = Array());
+	bool publish_notification(const Dictionary &p_notification);
+	String get_project_id() const;
+	String get_editor_session_id() const;
 
 	bool is_running() const;
 

@@ -42,6 +42,7 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "core/os/os.h"
 #include "core/templates/local_vector.h"
 
+#include "modules/codex_bridge/editor/bridge_revision_clock.h"
 #include "modules/codex_bridge/editor/main_thread_dispatcher.h"
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
 #include "modules/codex_bridge/protocol/bridge_frame_codec.h"
@@ -98,7 +99,7 @@ public:
 	Error error = OK;
 
 	TemporaryBridgeProject() {
-		root = "/tmp/gcb_" + itos(OS::get_singleton()->get_process_id()) + "_" + itos(OS::get_singleton()->get_ticks_usec());
+		root = OS::get_singleton()->get_temp_path().path_join("gcb_" + itos(OS::get_singleton()->get_process_id()) + "_" + itos(OS::get_singleton()->get_ticks_usec()));
 		error = DirAccess::make_dir_absolute(root);
 		if (error != OK) {
 			return;
@@ -130,12 +131,17 @@ static PackedByteArray read_file_bytes(const String &p_path) {
 	return file->get_buffer(file->get_length());
 }
 
-#ifdef UNIX_ENABLED
+#if defined(UNIX_ENABLED) || defined(WINDOWS_ENABLED)
 
-static Ref<StreamPeerUDS> connect_test_client(const String &p_endpoint) {
-	Ref<StreamPeerUDS> peer;
+static Ref<BridgeStreamPeer> connect_test_client(const String &p_endpoint) {
+	Ref<BridgeStreamPeer> peer;
 	peer.instantiate();
+#ifdef WINDOWS_ENABLED
+	const String prefix = "127.0.0.1:";
+	if (!p_endpoint.begins_with(prefix) || peer->connect_to_host(IPAddress("127.0.0.1"), p_endpoint.trim_prefix(prefix).to_int()) != OK) {
+#else
 	if (peer->connect_to_host(p_endpoint) != OK) {
+#endif
 		peer.unref();
 		return peer;
 	}
@@ -145,7 +151,7 @@ static Ref<StreamPeerUDS> connect_test_client(const String &p_endpoint) {
 			peer.unref();
 			return peer;
 		}
-		if (peer->get_status() == StreamPeerUDS::STATUS_CONNECTED) {
+		if (peer->get_status() == BridgeStreamPeer::STATUS_CONNECTED) {
 			return peer;
 		}
 		OS::get_singleton()->delay_usec(1000);
@@ -154,7 +160,7 @@ static Ref<StreamPeerUDS> connect_test_client(const String &p_endpoint) {
 	return peer;
 }
 
-static bool send_test_object(const Ref<StreamPeerUDS> &p_peer, const Dictionary &p_object, int p_fragment_size = 0) {
+static bool send_test_object(const Ref<BridgeStreamPeer> &p_peer, const Dictionary &p_object, int p_fragment_size = 0) {
 	PackedByteArray frame;
 	if (BridgeFrameCodec::encode_json(p_object, frame) != OK) {
 		return false;
@@ -175,11 +181,11 @@ static bool send_test_object(const Ref<StreamPeerUDS> &p_peer, const Dictionary 
 	return offset == frame.size();
 }
 
-static bool receive_test_object(const Ref<StreamPeerUDS> &p_peer, Dictionary &r_object) {
+static bool receive_test_object(const Ref<BridgeStreamPeer> &p_peer, Dictionary &r_object) {
 	BridgeFrameCodec codec;
 	const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + 2000000;
 	while (OS::get_singleton()->get_ticks_usec() < deadline) {
-		if (p_peer->poll() != OK || p_peer->get_status() != StreamPeerUDS::STATUS_CONNECTED) {
+		if (p_peer->poll() != OK || p_peer->get_status() != BridgeStreamPeer::STATUS_CONNECTED) {
 			return false;
 		}
 		const int available = p_peer->get_available_bytes();
@@ -220,7 +226,7 @@ static Dictionary make_runtime_hello(const Dictionary &p_discovery, const String
 	return hello;
 }
 
-#endif // UNIX_ENABLED
+#endif // UNIX_ENABLED || WINDOWS_ENABLED
 
 TEST_CASE("[CodexBridge] Crypto matches the canonical handshake vector") {
 	const PackedByteArray token = bytes_from_range(0xa0, 32);
@@ -354,9 +360,9 @@ static Dictionary make_rpc_context(const String &p_project_id, const String &p_e
 	return context;
 }
 
-static Dictionary make_rpc_request(const String &p_request_id, const String &p_method, const Dictionary &p_params, const String &p_project_id, const String &p_editor_session_id, int64_t p_deadline_ms = 5000) {
+static Dictionary make_rpc_request(const String &p_request_id, const String &p_method, const Dictionary &p_params, const String &p_project_id, const String &p_editor_session_id, int64_t p_deadline_ms = 5000, const String &p_protocol_version = "1.0") {
 	Dictionary request;
-	request["protocol_version"] = "1.0";
+	request["protocol_version"] = p_protocol_version;
 	request["kind"] = "request";
 	request["request_id"] = p_request_id;
 	request["method"] = p_method;
@@ -376,7 +382,11 @@ static Dictionary make_initialize_params() {
 	params["client"] = client;
 	Array requested;
 	requested.push_back("bridge.lifecycle");
+#ifdef WINDOWS_ENABLED
+	requested.push_back("transport.tcp_loopback");
+#else
 	requested.push_back("transport.uds");
+#endif
 	params["requested_capabilities"] = requested;
 	return params;
 }
@@ -431,6 +441,21 @@ TEST_CASE("[CodexBridge] Mutual handshake authenticates both peers") {
 	CHECK(ready.response["kind"] == "handshake.server_ready");
 	CHECK(handshake.get_state() == BridgeHandshakeSession::STATE_AUTHENTICATED);
 	CHECK(handshake.handle_message(authenticate, 400, ready) == ERR_INVALID_DATA);
+}
+
+TEST_CASE("[CodexBridge] Handshake negotiates the compatible 1.1 minor") {
+	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
+	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
+	const PackedByteArray token = bytes_from_range(0xa0, 32);
+	const PackedByteArray nonce = bytes_from_range(0x20, 32);
+	String nonce_encoded;
+	REQUIRE(BridgeCrypto::base64url_encode_32(nonce, nonce_encoded) == OK);
+
+	BridgeHandshakeSession handshake(token, project_id, editor_session_id, 0);
+	BridgeHandshakeSession::Outcome challenge;
+	REQUIRE(handshake.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, "1.1"), 1, challenge) == OK);
+	CHECK(challenge.response["selected_protocol_version"] == "1.1");
+	CHECK(handshake.get_selected_protocol_version() == "1.1");
 }
 
 TEST_CASE("[CodexBridge] Handshake rejects binding, version, proof, replay, and timeout failures") {
@@ -575,6 +600,75 @@ TEST_CASE("[CodexBridge] RPC validates envelopes, parameters, and duplicate requ
 	CHECK(rpc.handle_message(server_response, 6, 8, outcome) == ERR_INVALID_DATA);
 }
 
+TEST_CASE("[CodexBridge] RPC 1.1 exposes editor sync and accepts an atomic snapshot result") {
+	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
+	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
+	BridgeRpcSession rpc(project_id, editor_session_id);
+	rpc.set_protocol_version("1.1");
+	BridgeRpcSession::Outcome outcome;
+
+	REQUIRE(rpc.handle_message(make_rpc_request("req:init-sync", "bridge.initialize", make_initialize_params(), project_id, editor_session_id, 5000, "1.1"), 0, 1, outcome) == OK);
+	Dictionary live_revisions;
+	live_revisions["editor_session_id"] = editor_session_id;
+	live_revisions["event_seq"] = 7;
+	live_revisions["project_revision"] = 3;
+	live_revisions["operation_seq"] = 0;
+	live_revisions["scene_revisions"] = Dictionary();
+	Dictionary initialize_override;
+	initialize_override["revisions"] = live_revisions;
+	REQUIRE(rpc.complete(1, 1, initialize_override, outcome) == OK);
+	const Dictionary initialize_result = outcome.response["result"];
+	CHECK(initialize_result["protocol_version"] == "1.1");
+	CHECK(Array(initialize_result["capabilities"]).size() == 6);
+	CHECK((int64_t)Dictionary(initialize_result["limits"])["snapshot_chunk_bytes"] == 524288);
+	CHECK((int64_t)Dictionary(initialize_result["revisions"])["event_seq"] == 7);
+
+	Dictionary snapshot_params;
+	Array domains;
+	domains.push_back("editor_context");
+	domains.push_back("editor_inspector");
+	snapshot_params["domains"] = domains;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:snapshot", "editor.snapshot.get", snapshot_params, project_id, editor_session_id, 5000, "1.1"), 2, 2, outcome) == OK);
+	CHECK(outcome.method == BridgeRpcSession::METHOD_EDITOR_SNAPSHOT);
+	CHECK(outcome.params == snapshot_params);
+	Dictionary snapshot_result;
+	snapshot_result["snapshot_id"] = "snapshot:0123456789abcdef0123456789abcdef";
+	snapshot_result["base_event_seq"] = 7;
+	snapshot_result["revisions"] = live_revisions;
+	REQUIRE(rpc.complete(2, 3, snapshot_result, outcome) == OK);
+	CHECK(Dictionary(outcome.response["result"])["snapshot_id"] == snapshot_result["snapshot_id"]);
+
+	Dictionary ack;
+	ack["protocol_version"] = "1.1";
+	ack["kind"] = "ack";
+	ack["ack_id"] = "ack:snapshot";
+	Dictionary ack_params;
+	ack_params["snapshot_id"] = snapshot_result["snapshot_id"];
+	ack_params["through_chunk"] = 0;
+	ack["params"] = ack_params;
+	ack["context"] = make_rpc_context(project_id, editor_session_id);
+	REQUIRE(rpc.handle_message(ack, 4, 3, outcome) == OK);
+	CHECK_FALSE(outcome.has_response);
+	ack["params"] = Dictionary();
+	CHECK(rpc.handle_message(ack, 5, 4, outcome) == ERR_INVALID_DATA);
+}
+
+TEST_CASE("[CodexBridge] Revision clock advances selection and scene domains monotonically") {
+	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
+	const String scene_id = "scene:0123456789abcdef0123456789abcdef";
+	BridgeRevisionClock revisions;
+	revisions.initialize(editor_session_id);
+	CHECK(revisions.record_selection_change() == 1);
+	CHECK(revisions.record_scene_change(scene_id) == 2);
+	CHECK(revisions.record_scene_change(scene_id) == 3);
+	CHECK(revisions.get_scene_revision(scene_id) == 2);
+	const Dictionary vector = revisions.get_revision_vector();
+	CHECK(vector["editor_session_id"] == editor_session_id);
+	CHECK((int64_t)vector["event_seq"] == 3);
+	CHECK((int64_t)vector["project_revision"] == 2);
+	CHECK((int64_t)Dictionary(vector["scene_revisions"])[scene_id] == 2);
+}
+
 TEST_CASE("[CodexBridge] RPC deadlines, cancellation, rejection, and in-flight limits are terminal once") {
 	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
@@ -716,11 +810,37 @@ TEST_CASE("[CodexBridge] Transport worker starts and stops repeatedly") {
 	CHECK(worker.stop() == BridgeTransportWorker::STOPPED);
 }
 
-#ifdef UNIX_ENABLED
+TEST_CASE("[CodexBridge] Notification journal enforces its negotiated entry bound") {
+	BridgeTransportWorker worker;
+	REQUIRE(worker.start() == OK);
+	Dictionary notification;
+	notification["protocol_version"] = "1.1";
+	notification["kind"] = "notification";
+	notification["method"] = "sync.event";
+	notification["params"] = Dictionary();
+	notification["context"] = Dictionary();
+	bool accepted = true;
+	for (int index = 0; index < 4096; index++) {
+		notification["sequence"] = index;
+		accepted = accepted && worker.publish_notification(notification);
+	}
+	CHECK(accepted);
+	CHECK_FALSE(worker.publish_notification(notification));
+	CHECK(worker.stop() == BridgeTransportWorker::STOPPED);
+}
 
-static Ref<StreamPeerUDS> connect_authenticated_test_client(const String &p_project_root, const Dictionary &p_discovery) {
-	const String endpoint = p_project_root.path_join(p_discovery["endpoint"]);
-	Ref<StreamPeerUDS> peer = connect_test_client(endpoint);
+#if defined(UNIX_ENABLED) || defined(WINDOWS_ENABLED)
+
+static String runtime_endpoint(const String &p_project_root, const Dictionary &p_discovery) {
+#ifdef WINDOWS_ENABLED
+	return p_discovery["endpoint"];
+#else
+	return p_project_root.path_join(p_discovery["endpoint"]);
+#endif
+}
+
+static Ref<BridgeStreamPeer> connect_authenticated_test_client(const String &p_project_root, const Dictionary &p_discovery) {
+	Ref<BridgeStreamPeer> peer = connect_test_client(runtime_endpoint(p_project_root, p_discovery));
 	if (peer.is_null()) {
 		return peer;
 	}
@@ -819,11 +939,11 @@ static Dictionary make_rpc_cancel(const String &p_request_id, const Dictionary &
 	return cancel;
 }
 
-static bool wait_for_disconnect(const Ref<StreamPeerUDS> &p_peer) {
+static bool wait_for_disconnect(const Ref<BridgeStreamPeer> &p_peer) {
 	const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + 2000000;
 	while (OS::get_singleton()->get_ticks_usec() < deadline) {
 		p_peer->poll();
-		if (p_peer->get_status() != StreamPeerUDS::STATUS_CONNECTED) {
+		if (p_peer->get_status() != BridgeStreamPeer::STATUS_CONNECTED) {
 			return true;
 		}
 		OS::get_singleton()->delay_usec(1000);
@@ -848,7 +968,9 @@ TEST_CASE("[CodexBridge] Private runtime publishes atomically and rotates sessio
 	CHECK(BridgeRuntime::validate_private_path(discovery_path, 0600, false) == OK);
 	CHECK(BridgeRuntime::validate_private_path(token_path, 0600, false) == OK);
 	CHECK(BridgeRuntime::validate_private_path(lock_path, 0600, false) == OK);
+#ifdef UNIX_ENABLED
 	CHECK(BridgeRuntime::validate_private_path(runtime.get_endpoint_path(), 0600, false, true) == OK);
+#endif
 
 	const PackedByteArray token = read_file_bytes(token_path);
 	REQUIRE(token.size() == 32);
@@ -859,7 +981,12 @@ TEST_CASE("[CodexBridge] Private runtime publishes atomically and rotates sessio
 	CHECK((int64_t)discovery["discovery_schema"] == 1);
 	CHECK(discovery["project_id"] == runtime.get_project_id());
 	CHECK(discovery["editor_session_id"] == runtime.get_editor_session_id());
+#ifdef WINDOWS_ENABLED
+	CHECK(discovery["transport"] == "tcp_loopback");
+	CHECK(String(discovery["endpoint"]).begins_with("127.0.0.1:"));
+#else
 	CHECK(discovery["transport"] == "uds");
+#endif
 	CHECK(discovery["token_file"] == ".godot/codex/session.token");
 	CHECK_FALSE(String(discovery["endpoint"]).is_absolute_path());
 	CHECK_FALSE(String(discovery["endpoint"]).contains(".."));
@@ -873,7 +1000,9 @@ TEST_CASE("[CodexBridge] Private runtime publishes atomically and rotates sessio
 	CHECK_FALSE(FileAccess::exists(discovery_path));
 	CHECK_FALSE(FileAccess::exists(token_path));
 	CHECK_FALSE(FileAccess::exists(lock_path));
+#ifdef UNIX_ENABLED
 	CHECK_FALSE(FileAccess::exists(runtime.get_endpoint_path()));
+#endif
 
 	BridgeRuntime next_session;
 	REQUIRE(next_session.initialize(project.root) == OK);
@@ -882,6 +1011,7 @@ TEST_CASE("[CodexBridge] Private runtime publishes atomically and rotates sessio
 	next_session.cleanup();
 }
 
+#ifdef UNIX_ENABLED
 TEST_CASE("[CodexBridge] Private runtime rejects permissive directories") {
 	TemporaryBridgeProject project;
 	REQUIRE(project.error == OK);
@@ -915,6 +1045,7 @@ TEST_CASE("[CodexBridge] Private runtime rejects permissive stale files") {
 	CHECK(FileAccess::exists(codex_dir.path_join("session.token")));
 	CHECK_FALSE(FileAccess::exists(codex_dir.path_join("bridge.json")));
 }
+#endif // UNIX_ENABLED
 
 TEST_CASE("[CodexBridge] Private runtime replaces only inactive unauthenticated stale ownership") {
 	TemporaryBridgeProject project;
@@ -934,27 +1065,35 @@ TEST_CASE("[CodexBridge] Private runtime replaces only inactive unauthenticated 
 	REQUIRE(write_error == OK);
 	discovery_file->store_string(JSON::stringify(stale_discovery, "", true));
 	discovery_file->close();
+#ifdef UNIX_ENABLED
 	REQUIRE(FileAccess::set_unix_permissions(codex_dir.path_join("bridge.json"), 0600) == OK);
+#endif
 	Ref<FileAccess> token_file = FileAccess::open(codex_dir.path_join("session.token"), FileAccess::WRITE, &write_error);
 	REQUIRE(write_error == OK);
 	token_file->store_buffer(stale_token);
 	token_file->close();
+#ifdef UNIX_ENABLED
 	REQUIRE(FileAccess::set_unix_permissions(codex_dir.path_join("session.token"), 0600) == OK);
+#endif
 	Ref<FileAccess> lock_file = FileAccess::open(codex_dir.path_join("bridge.lock"), FileAccess::WRITE, &write_error);
 	REQUIRE(write_error == OK);
 	lock_file->store_string("{\"pid\":2147483647}");
 	lock_file->close();
+#ifdef UNIX_ENABLED
 	REQUIRE(FileAccess::set_unix_permissions(codex_dir.path_join("bridge.lock"), 0600) == OK);
+#endif
 
 	BridgeRuntime recovered_runtime;
 	REQUIRE(recovered_runtime.initialize(project.root) == OK);
 	CHECK(recovered_runtime.get_editor_session_id() != stale_session);
 	CHECK_FALSE(BridgeCrypto::constant_time_equal(recovered_runtime.get_token(), stale_token));
+#ifdef UNIX_ENABLED
 	CHECK(BridgeRuntime::validate_private_path(recovered_runtime.get_endpoint_path(), 0600, false, true) == OK);
+#endif
 	recovered_runtime.cleanup();
 }
 
-TEST_CASE("[CodexBridge] Worker serves an authenticated UDS handshake and preserves active discovery") {
+TEST_CASE("[CodexBridge] Worker serves an authenticated local handshake and preserves active discovery") {
 	TemporaryBridgeProject project;
 	REQUIRE(project.error == OK);
 	BridgeTransportWorker worker;
@@ -974,7 +1113,7 @@ TEST_CASE("[CodexBridge] Worker serves an authenticated UDS handshake and preser
 	CHECK_FALSE(FileAccess::exists(project.root.path_join(".godot/codex/bridge.lock")));
 }
 
-TEST_CASE("[CodexBridge] UDS transport rejects wrong bindings, proof, version, and invalid framing") {
+TEST_CASE("[CodexBridge] Local transport rejects wrong bindings, proof, version, and invalid framing") {
 	TemporaryBridgeProject project;
 	REQUIRE(project.error == OK);
 	BridgeTransportWorker worker;
@@ -982,10 +1121,10 @@ TEST_CASE("[CodexBridge] UDS transport rejects wrong bindings, proof, version, a
 	const PackedByteArray discovery_bytes = read_file_bytes(project.root.path_join(".godot/codex/bridge.json"));
 	Dictionary discovery;
 	REQUIRE(BridgeJson::parse_strict_object(discovery_bytes, discovery) == OK);
-	const String endpoint = project.root.path_join(discovery["endpoint"]);
+	const String endpoint = runtime_endpoint(project.root, discovery);
 
 	String nonce;
-	Ref<StreamPeerUDS> client = connect_test_client(endpoint);
+	Ref<BridgeStreamPeer> client = connect_test_client(endpoint);
 	REQUIRE(client.is_valid());
 	REQUIRE(send_test_object(client, make_runtime_hello(discovery, "project:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "1.0", nonce), 1));
 	Dictionary response;
@@ -1027,17 +1166,17 @@ TEST_CASE("[CodexBridge] UDS transport rejects wrong bindings, proof, version, a
 	REQUIRE(client->put_partial_data(invalid_prefix, 4, sent) == OK);
 	REQUIRE(sent == 4);
 	const uint64_t disconnect_deadline = OS::get_singleton()->get_ticks_usec() + 1000000;
-	while (client->get_status() == StreamPeerUDS::STATUS_CONNECTED && OS::get_singleton()->get_ticks_usec() < disconnect_deadline) {
+	while (client->get_status() == BridgeStreamPeer::STATUS_CONNECTED && OS::get_singleton()->get_ticks_usec() < disconnect_deadline) {
 		client->poll();
 		OS::get_singleton()->delay_usec(1000);
 	}
-	CHECK(client->get_status() != StreamPeerUDS::STATUS_CONNECTED);
+	CHECK(client->get_status() != BridgeStreamPeer::STATUS_CONNECTED);
 
 	CHECK(BridgeRuntime::probe_authenticated_runtime(project.root));
 	CHECK(worker.stop() == BridgeTransportWorker::STOPPED);
 }
 
-TEST_CASE("[CodexBridge] UDS RPC completes initialize, ping, capabilities, duplicate, and shutdown lifecycle") {
+TEST_CASE("[CodexBridge] Local RPC completes initialize, ping, capabilities, duplicate, and shutdown lifecycle") {
 	TemporaryBridgeProject project;
 	REQUIRE(project.error == OK);
 	MainThreadDispatcher dispatcher;
@@ -1046,7 +1185,7 @@ TEST_CASE("[CodexBridge] UDS RPC completes initialize, ping, capabilities, dupli
 	REQUIRE(worker.start(project.root, &dispatcher) == OK);
 	Dictionary discovery;
 	REQUIRE(BridgeJson::parse_strict_object(read_file_bytes(project.root.path_join(".godot/codex/bridge.json")), discovery) == OK);
-	Ref<StreamPeerUDS> client = connect_authenticated_test_client(project.root, discovery);
+	Ref<BridgeStreamPeer> client = connect_authenticated_test_client(project.root, discovery);
 	REQUIRE(client.is_valid());
 
 	Dictionary response;
@@ -1056,7 +1195,18 @@ TEST_CASE("[CodexBridge] UDS RPC completes initialize, ping, capabilities, dupli
 	REQUIRE(response.has("result"));
 	const Dictionary initialize_result = response["result"];
 	CHECK(initialize_result["protocol_version"] == "1.0");
-	CHECK(Array(initialize_result["capabilities"]).size() == 2);
+	const Array initialize_capabilities = initialize_result["capabilities"];
+	CHECK(initialize_capabilities.size() == 2);
+	bool found_transport = false;
+	for (int index = 0; index < initialize_capabilities.size(); index++) {
+		const Dictionary capability = initialize_capabilities[index];
+#ifdef WINDOWS_ENABLED
+		found_transport = found_transport || capability.get("name", "") == "transport.tcp_loopback";
+#else
+		found_transport = found_transport || capability.get("name", "") == "transport.uds";
+#endif
+	}
+	CHECK(found_transport);
 	CHECK((int64_t)Dictionary(initialize_result["limits"])["main_thread_commands_per_frame"] == 8);
 
 	Dictionary ping_params;
@@ -1093,7 +1243,7 @@ TEST_CASE("[CodexBridge] UDS RPC completes initialize, ping, capabilities, dupli
 	dispatcher.begin_shutdown();
 }
 
-TEST_CASE("[CodexBridge] UDS RPC removes expired, cancelled, saturated, and disconnected work before dispatch") {
+TEST_CASE("[CodexBridge] Local RPC removes expired, cancelled, saturated, and disconnected work before dispatch") {
 	TemporaryBridgeProject project;
 	REQUIRE(project.error == OK);
 	MainThreadDispatcher dispatcher;
@@ -1102,7 +1252,7 @@ TEST_CASE("[CodexBridge] UDS RPC removes expired, cancelled, saturated, and disc
 	REQUIRE(worker.start(project.root, &dispatcher) == OK);
 	Dictionary discovery;
 	REQUIRE(BridgeJson::parse_strict_object(read_file_bytes(project.root.path_join(".godot/codex/bridge.json")), discovery) == OK);
-	Ref<StreamPeerUDS> client = connect_authenticated_test_client(project.root, discovery);
+	Ref<BridgeStreamPeer> client = connect_authenticated_test_client(project.root, discovery);
 	REQUIRE(client.is_valid());
 	Dictionary response;
 	REQUIRE(send_test_object(client, make_rpc_request("req:race-init", "bridge.initialize", make_initialize_params(), discovery["project_id"], discovery["editor_session_id"])));
@@ -1150,7 +1300,7 @@ TEST_CASE("[CodexBridge] UDS RPC removes expired, cancelled, saturated, and disc
 	dispatcher.begin_shutdown();
 }
 
-#endif // UNIX_ENABLED
+#endif // UNIX_ENABLED || WINDOWS_ENABLED
 
 } // namespace TestCodexBridge
 

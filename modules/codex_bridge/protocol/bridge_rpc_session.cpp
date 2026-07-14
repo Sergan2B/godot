@@ -77,6 +77,32 @@ static bool is_request_id(const String &p_value) {
 	return true;
 }
 
+static bool is_ack_id(const String &p_value) {
+	if (p_value.length() < 5 || p_value.length() > 128 || !p_value.begins_with("ack:")) {
+		return false;
+	}
+	for (int index = 4; index < p_value.length(); index++) {
+		const char32_t character = p_value[index];
+		if (!((character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') || character == '.' || character == '_' || character == '-')) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool is_snapshot_id(const String &p_value) {
+	if (p_value.length() != 41 || !p_value.begins_with("snapshot:")) {
+		return false;
+	}
+	for (int index = 9; index < p_value.length(); index++) {
+		const char32_t character = p_value[index];
+		if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f'))) {
+			return false;
+		}
+	}
+	return true;
+}
+
 static bool is_method_name(const String &p_value) {
 	if (p_value.is_empty() || p_value.length() > 128 || p_value[0] < 'a' || p_value[0] > 'z') {
 		return false;
@@ -135,7 +161,7 @@ Dictionary BridgeRpcSession::_make_error(const String &p_code, const String &p_m
 
 Dictionary BridgeRpcSession::_make_error_response(const String &p_request_id, const String &p_code, const String &p_message, bool p_retryable) const {
 	Dictionary response;
-	response["protocol_version"] = "1.0";
+	response["protocol_version"] = protocol_version;
 	response["kind"] = "response";
 	response["request_id"] = p_request_id;
 	response["context"] = _make_context();
@@ -145,7 +171,7 @@ Dictionary BridgeRpcSession::_make_error_response(const String &p_request_id, co
 
 Dictionary BridgeRpcSession::_make_result_response(const String &p_request_id, const Dictionary &p_result) const {
 	Dictionary response;
-	response["protocol_version"] = "1.0";
+	response["protocol_version"] = protocol_version;
 	response["kind"] = "response";
 	response["request_id"] = p_request_id;
 	response["context"] = _make_context();
@@ -161,10 +187,29 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 	lifecycle["readiness"] = "ready";
 	capabilities.push_back(lifecycle);
 	Dictionary transport;
+#ifdef WINDOWS_ENABLED
+	transport["name"] = "transport.tcp_loopback";
+#else
 	transport["name"] = "transport.uds";
+#endif
 	transport["version"] = "1.0";
 	transport["readiness"] = "ready";
 	capabilities.push_back(transport);
+	if (protocol_version == "1.1") {
+		const char *names[] = {
+			"editor.context",
+			"editor.inspector",
+			"sync.full_snapshot_v1",
+			"sync.event_stream_v1",
+		};
+		for (const char *name : names) {
+			Dictionary capability;
+			capability["name"] = name;
+			capability["version"] = "1.0";
+			capability["readiness"] = "ready";
+			capabilities.push_back(capability);
+		}
+	}
 	Dictionary result;
 	result["capabilities"] = capabilities;
 	return result;
@@ -179,6 +224,15 @@ Dictionary BridgeRpcSession::_make_limits() const {
 	limits["main_thread_commands_per_frame"] = (int64_t)MainThreadDispatcher::MAX_COMMANDS_PER_FRAME;
 	limits["main_thread_budget_us"] = (int64_t)MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME;
 	limits["ping_echo_bytes"] = (int64_t)MAX_PING_ECHO_BYTES;
+	if (protocol_version == "1.1") {
+		limits["hard_message_bytes"] = (int64_t)8388608;
+		limits["snapshot_chunk_bytes"] = (int64_t)524288;
+		limits["event_journal_entries"] = (int64_t)4096;
+		limits["event_journal_bytes"] = (int64_t)16777216;
+		limits["snapshot_window_bytes"] = (int64_t)33554432;
+		limits["variant_depth"] = (int64_t)8;
+		limits["container_items"] = (int64_t)1000;
+	}
 	return limits;
 }
 
@@ -194,7 +248,7 @@ Dictionary BridgeRpcSession::_make_revisions() const {
 
 bool BridgeRpcSession::_validate_common_envelope(const Dictionary &p_message) const {
 	String version;
-	if (!get_string(p_message, "protocol_version", version) || version != "1.0" || !p_message.has("context") || p_message["context"].get_type() != Variant::DICTIONARY) {
+	if (!get_string(p_message, "protocol_version", version) || version != protocol_version || !p_message.has("context") || p_message["context"].get_type() != Variant::DICTIONARY) {
 		return false;
 	}
 	const Dictionary context = p_message["context"];
@@ -243,6 +297,31 @@ bool BridgeRpcSession::_validate_ping_params(const Dictionary &p_params) const {
 	}
 	const String echo = p_params["echo"];
 	return echo.utf8().length() <= (int)MAX_PING_ECHO_BYTES;
+}
+
+bool BridgeRpcSession::_validate_snapshot_params(const Dictionary &p_params) const {
+	if (!p_params.has("domains")) {
+		return true;
+	}
+	if (p_params["domains"].get_type() != Variant::ARRAY) {
+		return false;
+	}
+	const Array domains = p_params["domains"];
+	if (domains.is_empty() || domains.size() > 8) {
+		return false;
+	}
+	HashSet<String> unique;
+	for (int index = 0; index < domains.size(); index++) {
+		if (domains[index].get_type() != Variant::STRING) {
+			return false;
+		}
+		const String domain = domains[index];
+		if ((domain != "editor_context" && domain != "editor_inspector") || unique.has(domain)) {
+			return false;
+		}
+		unique.insert(domain);
+	}
+	return true;
 }
 
 bool BridgeRpcSession::_validate_shutdown_params(const Dictionary &p_params) const {
@@ -332,6 +411,12 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 			method = METHOD_PING;
 		} else if (method_name == "bridge.capabilities") {
 			method = METHOD_CAPABILITIES;
+		} else if (method_name == "editor.snapshot.get" && protocol_version == "1.1") {
+			if (!_validate_snapshot_params(params)) {
+				_set_error_outcome(request_id, "invalid_request", "The snapshot parameters are invalid.", false, r_outcome);
+				return OK;
+			}
+			method = METHOD_EDITOR_SNAPSHOT;
 		} else if (method_name == "bridge.shutdown") {
 			if (!_validate_shutdown_params(params)) {
 				_set_error_outcome(request_id, "invalid_request", "The shutdown parameters are invalid.", false, r_outcome);
@@ -365,6 +450,7 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 	r_outcome.method = method;
 	r_outcome.internal_request_id = p_internal_request_id;
 	r_outcome.deadline_usec = pending.deadline_usec;
+	r_outcome.params = params;
 	return OK;
 }
 
@@ -391,6 +477,23 @@ Error BridgeRpcSession::_handle_cancel(const Dictionary &p_message, Outcome &r_o
 	return OK;
 }
 
+Error BridgeRpcSession::_handle_ack(const Dictionary &p_message, Outcome &r_outcome) {
+	if (protocol_version != "1.1" || !initialized || !_validate_common_envelope(p_message)) {
+		return ERR_INVALID_DATA;
+	}
+	String ack_id;
+	if (!get_string(p_message, "ack_id", ack_id) || !is_ack_id(ack_id) || !p_message.has("params") || p_message["params"].get_type() != Variant::DICTIONARY) {
+		return ERR_INVALID_DATA;
+	}
+	const Dictionary params = p_message["params"];
+	String snapshot_id;
+	int64_t through_chunk = 0;
+	if (params.size() != 2 || !get_string(params, "snapshot_id", snapshot_id) || !is_snapshot_id(snapshot_id) || !get_bounded_integer(params, "through_chunk", 0, 65535, through_chunk)) {
+		return ERR_INVALID_DATA;
+	}
+	return OK;
+}
+
 BridgeRpcSession::BridgeRpcSession(const String &p_project_id, const String &p_editor_session_id) :
 		project_id(p_project_id), editor_session_id(p_editor_session_id) {
 }
@@ -407,10 +510,17 @@ Error BridgeRpcSession::handle_message(const Dictionary &p_message, uint64_t p_n
 	if (kind == "cancel") {
 		return _handle_cancel(p_message, r_outcome);
 	}
+	if (kind == "ack") {
+		return _handle_ack(p_message, r_outcome);
+	}
 	return ERR_INVALID_DATA;
 }
 
 Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_usec, Outcome &r_outcome) {
+	return complete(p_internal_request_id, p_now_usec, Dictionary(), r_outcome);
+}
+
+Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_usec, const Dictionary &p_result_override, Outcome &r_outcome) {
 	r_outcome = Outcome();
 	PendingRequest *pending_pointer = pending_by_internal_id.getptr(p_internal_request_id);
 	if (!pending_pointer) {
@@ -427,7 +537,7 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 	switch (pending.method) {
 		case METHOD_INITIALIZE: {
 			result = _make_capabilities();
-			result["protocol_version"] = "1.0";
+			result["protocol_version"] = protocol_version;
 			result["project_id"] = project_id;
 			result["editor_session_id"] = editor_session_id;
 			result["limits"] = _make_limits();
@@ -441,11 +551,25 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 			result = _make_capabilities();
 			result["limits"] = _make_limits();
 		} break;
+		case METHOD_EDITOR_SNAPSHOT: {
+			if (p_result_override.is_empty()) {
+				_set_error_outcome(pending.request_id, "internal_error", "The editor snapshot was not produced.", true, r_outcome);
+				_remove_pending(p_internal_request_id);
+				return OK;
+			}
+			result = p_result_override;
+		} break;
 		case METHOD_SHUTDOWN: {
 			result["closing"] = true;
 			closing = true;
 			r_outcome.close_after_response = true;
 		} break;
+	}
+	if (pending.method != METHOD_EDITOR_SNAPSHOT && !p_result_override.is_empty()) {
+		const Array keys = p_result_override.keys();
+		for (int index = 0; index < keys.size(); index++) {
+			result[keys[index]] = p_result_override[keys[index]];
+		}
 	}
 	r_outcome.has_response = true;
 	r_outcome.response = _make_result_response(pending.request_id, result);
@@ -497,6 +621,16 @@ void BridgeRpcSession::cancel_all(Vector<uint64_t> &r_internal_request_ids) {
 
 bool BridgeRpcSession::is_initialized() const {
 	return initialized;
+}
+
+void BridgeRpcSession::set_protocol_version(const String &p_protocol_version) {
+	ERR_FAIL_COND_MSG(initialized, "The negotiated protocol version cannot change after initialization.");
+	ERR_FAIL_COND_MSG(p_protocol_version != "1.0" && p_protocol_version != "1.1", "Unsupported Bridge RPC protocol version.");
+	protocol_version = p_protocol_version;
+}
+
+const String &BridgeRpcSession::get_protocol_version() const {
+	return protocol_version;
 }
 
 uint32_t BridgeRpcSession::get_in_flight_count() const {

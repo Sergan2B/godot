@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  codex_bridge_service.h                                                */
+/*  bridge_revision_clock.cpp                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -28,62 +28,47 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#pragma once
-
 #include "bridge_revision_clock.h"
-#include "main_thread_dispatcher.h"
 
-#include "editor/plugins/editor_plugin.h"
+void BridgeRevisionClock::initialize(const String &p_editor_session_id) {
+	editor_session_id = p_editor_session_id;
+	event_seq = 0;
+	project_revision = 0;
+	operation_seq = 0;
+	scene_revisions.clear();
+}
 
-#include "modules/codex_bridge/transport/bridge_transport_worker.h"
+uint64_t BridgeRevisionClock::record_selection_change() {
+	return ++event_seq;
+}
 
-class CodexBridgeService : public EditorPlugin {
-	GDCLASS(CodexBridgeService, EditorPlugin);
+uint64_t BridgeRevisionClock::record_scene_change(const String &p_scene_id) {
+	++event_seq;
+	++project_revision;
+	uint64_t *scene_revision = scene_revisions.getptr(p_scene_id);
+	if (scene_revision) {
+		++(*scene_revision);
+	} else {
+		scene_revisions.insert(p_scene_id, 1);
+	}
+	return event_seq;
+}
 
-public:
-	enum State {
-		STATE_STOPPED,
-		STATE_STARTING,
-		STATE_RUNNING,
-		STATE_STOPPING,
-	};
+uint64_t BridgeRevisionClock::get_scene_revision(const String &p_scene_id) const {
+	const uint64_t *scene_revision = scene_revisions.getptr(p_scene_id);
+	return scene_revision ? *scene_revision : 0;
+}
 
-private:
-	static CodexBridgeService *singleton;
-
-	State state = STATE_STOPPED;
-	MainThreadDispatcher dispatcher;
-	BridgeTransportWorker transport_worker;
-	BridgeRevisionClock revision_clock;
-	bool editor_signals_connected = false;
-	bool scene_change_pending = false;
-	String pending_property;
-
-	static void _dispatch_command(const MainThreadDispatcher::Command &p_command, void *p_userdata);
-	Dictionary _make_context() const;
-	String _get_current_scene_id() const;
-	void _connect_editor_signals();
-	void _disconnect_editor_signals();
-	void _publish_event(const String &p_event_type, const String &p_property = String(), bool p_scene_mutation = false);
-	void _on_selection_changed();
-	void _on_scene_changed();
-	void _on_property_edited(const String &p_property);
-	void _on_undo_redo_version_changed();
-	void _flush_scene_change();
-	void _complete_snapshot(uint64_t p_request_id);
-
-protected:
-	void _notification(int p_what);
-
-public:
-	static CodexBridgeService *get_singleton();
-
-	Error start();
-	void stop();
-
-	State get_service_state() const;
-	MainThreadDispatcher &get_dispatcher();
-
-	CodexBridgeService();
-	~CodexBridgeService();
-};
+Dictionary BridgeRevisionClock::get_revision_vector() const {
+	Dictionary scenes;
+	for (const KeyValue<String, uint64_t> &entry : scene_revisions) {
+		scenes[entry.key] = (int64_t)entry.value;
+	}
+	Dictionary revisions;
+	revisions["editor_session_id"] = editor_session_id;
+	revisions["event_seq"] = (int64_t)event_seq;
+	revisions["project_revision"] = (int64_t)project_revision;
+	revisions["operation_seq"] = (int64_t)operation_seq;
+	revisions["scene_revisions"] = scenes;
+	return revisions;
+}

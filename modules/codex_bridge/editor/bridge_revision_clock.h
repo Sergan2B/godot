@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  codex_bridge_service.h                                                */
+/*  bridge_revision_clock.h                                               */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,60 +30,20 @@
 
 #pragma once
 
-#include "bridge_revision_clock.h"
-#include "main_thread_dispatcher.h"
+#include "core/templates/hash_map.h"
+#include "core/variant/variant.h"
 
-#include "editor/plugins/editor_plugin.h"
-
-#include "modules/codex_bridge/transport/bridge_transport_worker.h"
-
-class CodexBridgeService : public EditorPlugin {
-	GDCLASS(CodexBridgeService, EditorPlugin);
-
-public:
-	enum State {
-		STATE_STOPPED,
-		STATE_STARTING,
-		STATE_RUNNING,
-		STATE_STOPPING,
-	};
-
-private:
-	static CodexBridgeService *singleton;
-
-	State state = STATE_STOPPED;
-	MainThreadDispatcher dispatcher;
-	BridgeTransportWorker transport_worker;
-	BridgeRevisionClock revision_clock;
-	bool editor_signals_connected = false;
-	bool scene_change_pending = false;
-	String pending_property;
-
-	static void _dispatch_command(const MainThreadDispatcher::Command &p_command, void *p_userdata);
-	Dictionary _make_context() const;
-	String _get_current_scene_id() const;
-	void _connect_editor_signals();
-	void _disconnect_editor_signals();
-	void _publish_event(const String &p_event_type, const String &p_property = String(), bool p_scene_mutation = false);
-	void _on_selection_changed();
-	void _on_scene_changed();
-	void _on_property_edited(const String &p_property);
-	void _on_undo_redo_version_changed();
-	void _flush_scene_change();
-	void _complete_snapshot(uint64_t p_request_id);
-
-protected:
-	void _notification(int p_what);
+class BridgeRevisionClock {
+	String editor_session_id;
+	uint64_t event_seq = 0;
+	uint64_t project_revision = 0;
+	uint64_t operation_seq = 0;
+	HashMap<String, uint64_t> scene_revisions;
 
 public:
-	static CodexBridgeService *get_singleton();
-
-	Error start();
-	void stop();
-
-	State get_service_state() const;
-	MainThreadDispatcher &get_dispatcher();
-
-	CodexBridgeService();
-	~CodexBridgeService();
+	void initialize(const String &p_editor_session_id);
+	uint64_t record_selection_change();
+	uint64_t record_scene_change(const String &p_scene_id);
+	uint64_t get_scene_revision(const String &p_scene_id) const;
+	Dictionary get_revision_vector() const;
 };

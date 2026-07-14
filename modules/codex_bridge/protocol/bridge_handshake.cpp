@@ -134,6 +134,7 @@ Error BridgeHandshakeSession::_handle_client_hello(const Dictionary &p_message, 
 	HashSet<uint32_t> unique_majors;
 	offered_versions.clear();
 	bool supports_major_one = false;
+	uint32_t offered_major_one_minor = 0;
 	for (int index = 0; index < versions.size(); index++) {
 		if (versions[index].get_type() != Variant::STRING) {
 			state = STATE_CLOSED;
@@ -151,6 +152,7 @@ Error BridgeHandshakeSession::_handle_client_hello(const Dictionary &p_message, 
 		offered_versions.push_back(version);
 		if (major == 1) {
 			supports_major_one = true;
+			offered_major_one_minor = minor;
 		}
 	}
 	if (!supports_major_one) {
@@ -170,7 +172,7 @@ Error BridgeHandshakeSession::_handle_client_hello(const Dictionary &p_message, 
 		seen_client_nonces->insert(nonce_encoded);
 	}
 
-	selected_version = "1.0";
+	selected_version = offered_major_one_minor >= 1 ? "1.1" : "1.0";
 	Error error = BridgeCrypto::random_bytes(BridgeCrypto::RANDOM_VALUE_BYTES, server_nonce);
 	if (error != OK) {
 		state = STATE_CLOSED;
@@ -250,6 +252,7 @@ Error BridgeHandshakeSession::_handle_client_authenticate(const Dictionary &p_me
 
 BridgeHandshakeSession::BridgeHandshakeSession(const PackedByteArray &p_token, const String &p_project_id, const String &p_editor_session_id, uint64_t p_accepted_at_usec, HashSet<String> *p_seen_client_nonces) :
 		deadline_usec(p_accepted_at_usec + HANDSHAKE_TIMEOUT_USEC), token(p_token), project_id(p_project_id), editor_session_id(p_editor_session_id), seen_client_nonces(p_seen_client_nonces) {
+	supported_versions.push_back("1.1");
 	supported_versions.push_back("1.0");
 }
 
@@ -280,4 +283,8 @@ bool BridgeHandshakeSession::has_timed_out(uint64_t p_now_usec) const {
 
 BridgeHandshakeSession::State BridgeHandshakeSession::get_state() const {
 	return state;
+}
+
+const String &BridgeHandshakeSession::get_selected_protocol_version() const {
+	return selected_version;
 }
