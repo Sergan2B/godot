@@ -10,6 +10,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 4. [RELEASE-001-release-1.0-acceptance-and-evidence-plan.md](RELEASE-001-release-1.0-acceptance-and-evidence-plan.md) — release requirements and evidence rules.
 5. [ADR-000-fork-and-upstream-strategy.md](ADR-000-fork-and-upstream-strategy.md) — fork maintenance, branching, and versioning policy.
 6. [BUILDING_CODEX_FORK.md](../../BUILDING_CODEX_FORK.md) — reproducible local macOS build and verification.
+7. [SPRINT-0-BASELINE.md](SPRINT-0-BASELINE.md) — commit-bound local build and test evidence.
 
 ## Document status
 
@@ -20,6 +21,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | `ARCHITECTURE-001` | Draft for review 0.1 | `TEST-001` mapping and owners for D-01–D-04 |
 | `RELEASE-001` | Draft for review 0.1 | `TEST-001` evidence manifest |
 | `ADR-000` | Accepted | Revisit only if fork topology changes |
+| Sprint 0 local baseline | Passed | Remote CI is `not_run` until publication is authorized |
 
 ## Interim ownership
 
