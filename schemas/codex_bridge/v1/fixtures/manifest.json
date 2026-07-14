@@ -1,0 +1,323 @@
+{
+  "bundle_version": "1.0",
+  "cases": [
+    {
+      "expect": "valid",
+      "fixture": "valid/discovery.json",
+      "id": "schema.discovery.valid",
+      "kind": "schema",
+      "schema_ref": "discovery.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/handshake-client-hello.json",
+      "id": "schema.handshake.client-hello",
+      "kind": "schema",
+      "schema_ref": "handshake.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/handshake-server-challenge.json",
+      "id": "schema.handshake.server-challenge",
+      "kind": "schema",
+      "schema_ref": "handshake.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/handshake-client-authenticate.json",
+      "id": "schema.handshake.client-authenticate",
+      "kind": "schema",
+      "schema_ref": "handshake.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/handshake-server-ready.json",
+      "id": "schema.handshake.server-ready",
+      "kind": "schema",
+      "schema_ref": "handshake.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/handshake-protocol-mismatch.json",
+      "id": "schema.handshake.protocol-mismatch",
+      "kind": "schema",
+      "schema_ref": "handshake.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-initialize-request.json",
+      "id": "schema.lifecycle.initialize-request",
+      "kind": "schema",
+      "schema_ref": "lifecycle.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-initialize-response.json",
+      "id": "schema.rpc.initialize-response-envelope",
+      "kind": "schema",
+      "schema_ref": "rpc.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-initialize-response.json",
+      "id": "schema.lifecycle.initialize-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "lifecycle.schema.json#/$defs/initializeResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-ping-request.json",
+      "id": "schema.lifecycle.ping-request",
+      "kind": "schema",
+      "schema_ref": "lifecycle.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-ping-response.json",
+      "id": "schema.rpc.ping-response-envelope",
+      "kind": "schema",
+      "schema_ref": "rpc.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-ping-response.json",
+      "id": "schema.lifecycle.ping-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "lifecycle.schema.json#/$defs/pingResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-capabilities-request.json",
+      "id": "schema.lifecycle.capabilities-request",
+      "kind": "schema",
+      "schema_ref": "lifecycle.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-capabilities-response.json",
+      "id": "schema.rpc.capabilities-response-envelope",
+      "kind": "schema",
+      "schema_ref": "rpc.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-capabilities-response.json",
+      "id": "schema.lifecycle.capabilities-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "lifecycle.schema.json#/$defs/capabilitiesResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-shutdown-request.json",
+      "id": "schema.lifecycle.shutdown-request",
+      "kind": "schema",
+      "schema_ref": "lifecycle.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-shutdown-response.json",
+      "id": "schema.rpc.shutdown-response-envelope",
+      "kind": "schema",
+      "schema_ref": "rpc.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-shutdown-response.json",
+      "id": "schema.lifecycle.shutdown-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "lifecycle.schema.json#/$defs/shutdownResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-cancel.json",
+      "id": "schema.rpc.cancel",
+      "kind": "schema",
+      "schema_ref": "rpc.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-unknown-method-response.json",
+      "id": "schema.rpc.structured-error",
+      "kind": "schema",
+      "schema_ref": "rpc.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/rpc-compatible-optional-fields.json",
+      "id": "schema.compatibility.unknown-optional-fields",
+      "kind": "schema",
+      "schema_ref": "lifecycle.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/discovery-absolute-endpoint.json",
+      "id": "schema.discovery.absolute-endpoint",
+      "kind": "schema",
+      "schema_ref": "discovery.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/handshake-bad-nonce.json",
+      "id": "schema.handshake.bad-nonce",
+      "kind": "schema",
+      "schema_ref": "handshake.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/rpc-request-missing-method.json",
+      "id": "schema.rpc.missing-method",
+      "kind": "schema",
+      "schema_ref": "rpc.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/rpc-response-result-and-error.json",
+      "id": "schema.rpc.result-and-error",
+      "kind": "schema",
+      "schema_ref": "rpc.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/project-id.json",
+      "id": "vector.project-id.macos",
+      "kind": "project_id_vector"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/handshake.json",
+      "id": "vector.handshake.hmac-sha256",
+      "kind": "handshake_vector"
+    },
+    {
+      "expect": "valid",
+      "id": "sequence.lifecycle.happy-path",
+      "kind": "sequence",
+      "sequence": [
+        "valid/handshake-client-hello.json",
+        "valid/handshake-server-challenge.json",
+        "valid/handshake-client-authenticate.json",
+        "valid/handshake-server-ready.json",
+        "valid/rpc-initialize-request.json",
+        "valid/rpc-initialize-response.json",
+        "valid/rpc-ping-request.json",
+        "valid/rpc-ping-response.json",
+        "valid/rpc-capabilities-request.json",
+        "valid/rpc-capabilities-response.json",
+        "valid/rpc-shutdown-request.json",
+        "valid/rpc-shutdown-response.json"
+      ]
+    },
+    {
+      "error_code": "project_not_bound",
+      "expect": "protocol_error",
+      "id": "sequence.handshake.wrong-project",
+      "kind": "sequence",
+      "sequence": [
+        "valid/handshake-client-hello-wrong-project.json"
+      ]
+    },
+    {
+      "error_code": "unauthenticated",
+      "expect": "protocol_error",
+      "id": "sequence.handshake.wrong-proof",
+      "kind": "sequence",
+      "sequence": [
+        "valid/handshake-client-hello.json",
+        "valid/handshake-server-challenge.json",
+        "valid/handshake-client-authenticate-wrong-proof.json"
+      ]
+    },
+    {
+      "error_code": "protocol_mismatch",
+      "expect": "protocol_error",
+      "id": "sequence.handshake.major-mismatch",
+      "kind": "sequence",
+      "sequence": [
+        "valid/handshake-client-hello-major-2.json",
+        "valid/handshake-protocol-mismatch.json"
+      ]
+    },
+    {
+      "error_code": "duplicate_request_id",
+      "expect": "protocol_error",
+      "id": "sequence.rpc.duplicate-request-id",
+      "kind": "sequence",
+      "sequence": [
+        "valid/rpc-initialize-request.json",
+        "valid/rpc-initialize-response.json",
+        "valid/rpc-ping-request.json",
+        "valid/rpc-ping-response.json",
+        "valid/rpc-ping-request.json"
+      ]
+    },
+    {
+      "error_code": "cancelled",
+      "expect": "protocol_error",
+      "id": "sequence.rpc.cancel-pending",
+      "kind": "sequence",
+      "sequence": [
+        "valid/rpc-initialize-request.json",
+        "valid/rpc-initialize-response.json",
+        "valid/rpc-ping-pending-request.json",
+        "valid/rpc-cancel.json"
+      ]
+    },
+    {
+      "error_code": "method_not_found",
+      "expect": "protocol_error",
+      "id": "sequence.rpc.unknown-method",
+      "kind": "sequence",
+      "sequence": [
+        "valid/rpc-initialize-request.json",
+        "valid/rpc-initialize-response.json",
+        "valid/rpc-unknown-method-request.json",
+        "valid/rpc-unknown-method-response.json"
+      ]
+    },
+    {
+      "expect": "valid",
+      "fragment_mode": "repeat",
+      "fragment_sizes": [
+        1
+      ],
+      "id": "framing.fragmented-bytewise",
+      "kind": "framing",
+      "payload_fixture": "valid/rpc-ping-request.json"
+    },
+    {
+      "error_code": "invalid_frame",
+      "expect": "connection_close",
+      "generated_payload_bytes": 0,
+      "id": "framing.zero-length",
+      "kind": "framing",
+      "length_prefix_hex": "00000000"
+    },
+    {
+      "expect": "valid",
+      "generated_payload_bytes": 1048576,
+      "id": "framing.maximum-payload",
+      "kind": "framing",
+      "length_prefix_hex": "00100000",
+      "payload_generator": "json-padding-object"
+    },
+    {
+      "error_code": "message_too_large",
+      "expect": "connection_close",
+      "generated_payload_bytes": 1048577,
+      "id": "framing.oversized-payload",
+      "kind": "framing",
+      "length_prefix_hex": "00100001"
+    },
+    {
+      "error_code": "invalid_frame",
+      "expect": "connection_close",
+      "id": "framing.invalid-json",
+      "kind": "framing",
+      "payload_fixture": "invalid/invalid-json.txt"
+    }
+  ]
+}

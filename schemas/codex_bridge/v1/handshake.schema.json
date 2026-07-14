@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Bridge authenticated handshake messages",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/clientHello"
+    },
+    {
+      "$ref": "#/$defs/serverChallenge"
+    },
+    {
+      "$ref": "#/$defs/clientAuthenticate"
+    },
+    {
+      "$ref": "#/$defs/serverReady"
+    },
+    {
+      "$ref": "#/$defs/handshakeError"
+    }
+  ],
+  "$defs": {
+    "clientHello": {
+      "type": "object",
+      "required": [
+        "handshake_version",
+        "kind",
+        "supported_protocol_versions",
+        "project_id",
+        "editor_session_id",
+        "client_nonce"
+      ],
+      "properties": {
+        "handshake_version": {
+          "$ref": "common.schema.json#/$defs/handshakeVersion"
+        },
+        "kind": {
+          "const": "handshake.client_hello"
+        },
+        "supported_protocol_versions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.schema.json#/$defs/protocolVersion"
+          }
+        },
+        "project_id": {
+          "$ref": "common.schema.json#/$defs/projectId"
+        },
+        "editor_session_id": {
+          "$ref": "common.schema.json#/$defs/editorSessionId"
+        },
+        "client_nonce": {
+          "$ref": "common.schema.json#/$defs/base64Url32"
+        }
+      },
+      "additionalProperties": true
+    },
+    "serverChallenge": {
+      "type": "object",
+      "required": [
+        "handshake_version",
+        "kind",
+        "selected_protocol_version",
+        "project_id",
+        "editor_session_id",
+        "server_nonce",
+        "server_proof"
+      ],
+      "properties": {
+        "handshake_version": {
+          "$ref": "common.schema.json#/$defs/handshakeVersion"
+        },
+        "kind": {
+          "const": "handshake.server_challenge"
+        },
+        "selected_protocol_version": {
+          "$ref": "common.schema.json#/$defs/protocolVersionV1"
+        },
+        "project_id": {
+          "$ref": "common.schema.json#/$defs/projectId"
+        },
+        "editor_session_id": {
+          "$ref": "common.schema.json#/$defs/editorSessionId"
+        },
+        "server_nonce": {
+          "$ref": "common.schema.json#/$defs/base64Url32"
+        },
+        "server_proof": {
+          "$ref": "common.schema.json#/$defs/base64Url32"
+        }
+      },
+      "additionalProperties": true
+    },
+    "clientAuthenticate": {
+      "type": "object",
+      "required": [
+        "handshake_version",
+        "kind",
+        "selected_protocol_version",
+        "project_id",
+        "editor_session_id",
+        "client_proof"
+      ],
+      "properties": {
+        "handshake_version": {
+          "$ref": "common.schema.json#/$defs/handshakeVersion"
+        },
+        "kind": {
+          "const": "handshake.client_authenticate"
+        },
+        "selected_protocol_version": {
+          "$ref": "common.schema.json#/$defs/protocolVersionV1"
+        },
+        "project_id": {
+          "$ref": "common.schema.json#/$defs/projectId"
+        },
+        "editor_session_id": {
+          "$ref": "common.schema.json#/$defs/editorSessionId"
+        },
+        "client_proof": {
+          "$ref": "common.schema.json#/$defs/base64Url32"
+        }
+      },
+      "additionalProperties": true
+    },
+    "serverReady": {
+      "type": "object",
+      "required": [
+        "handshake_version",
+        "kind",
+        "selected_protocol_version",
+        "project_id",
+        "editor_session_id"
+      ],
+      "properties": {
+        "handshake_version": {
+          "$ref": "common.schema.json#/$defs/handshakeVersion"
+        },
+        "kind": {
+          "const": "handshake.server_ready"
+        },
+        "selected_protocol_version": {
+          "$ref": "common.schema.json#/$defs/protocolVersionV1"
+        },
+        "project_id": {
+          "$ref": "common.schema.json#/$defs/projectId"
+        },
+        "editor_session_id": {
+          "$ref": "common.schema.json#/$defs/editorSessionId"
+        }
+      },
+      "additionalProperties": true
+    },
+    "handshakeError": {
+      "type": "object",
+      "required": [
+        "handshake_version",
+        "kind",
+        "error"
+      ],
+      "properties": {
+        "handshake_version": {
+          "$ref": "common.schema.json#/$defs/handshakeVersion"
+        },
+        "kind": {
+          "const": "handshake.error"
+        },
+        "error": {
+          "$ref": "common.schema.json#/$defs/error"
+        },
+        "supported_protocol_versions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.schema.json#/$defs/protocolVersion"
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

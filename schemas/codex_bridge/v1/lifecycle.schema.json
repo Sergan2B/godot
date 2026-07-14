@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Bridge Sprint 1 lifecycle methods",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/initializeRequest"
+    },
+    {
+      "$ref": "#/$defs/pingRequest"
+    },
+    {
+      "$ref": "#/$defs/capabilitiesRequest"
+    },
+    {
+      "$ref": "#/$defs/shutdownRequest"
+    }
+  ],
+  "$defs": {
+    "clientInfo": {
+      "type": "object",
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "additionalProperties": true
+    },
+    "initializeParams": {
+      "type": "object",
+      "required": [
+        "client"
+      ],
+      "properties": {
+        "client": {
+          "$ref": "#/$defs/clientInfo"
+        },
+        "requested_capabilities": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "initializeResult": {
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "project_id",
+        "editor_session_id",
+        "capabilities",
+        "limits",
+        "revisions"
+      ],
+      "properties": {
+        "protocol_version": {
+          "$ref": "common.schema.json#/$defs/protocolVersionV1"
+        },
+        "project_id": {
+          "$ref": "common.schema.json#/$defs/projectId"
+        },
+        "editor_session_id": {
+          "$ref": "common.schema.json#/$defs/editorSessionId"
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "common.schema.json#/$defs/capability"
+          }
+        },
+        "limits": {
+          "$ref": "common.schema.json#/$defs/limits"
+        },
+        "revisions": {
+          "$ref": "common.schema.json#/$defs/revisionVector"
+        }
+      },
+      "additionalProperties": true
+    },
+    "pingParams": {
+      "type": "object",
+      "required": [
+        "echo"
+      ],
+      "properties": {
+        "echo": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": true
+    },
+    "pingResult": {
+      "$ref": "#/$defs/pingParams"
+    },
+    "capabilitiesParams": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "capabilitiesResult": {
+      "type": "object",
+      "required": [
+        "capabilities",
+        "limits"
+      ],
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "common.schema.json#/$defs/capability"
+          }
+        },
+        "limits": {
+          "$ref": "common.schema.json#/$defs/limits"
+        }
+      },
+      "additionalProperties": true
+    },
+    "shutdownParams": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "additionalProperties": true
+    },
+    "shutdownResult": {
+      "type": "object",
+      "required": [
+        "closing"
+      ],
+      "properties": {
+        "closing": {
+          "const": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "initializeRequest": {
+      "allOf": [
+        {
+          "$ref": "rpc.schema.json#/$defs/request"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "bridge.initialize"
+            },
+            "params": {
+              "$ref": "#/$defs/initializeParams"
+            }
+          }
+        }
+      ]
+    },
+    "pingRequest": {
+      "allOf": [
+        {
+          "$ref": "rpc.schema.json#/$defs/request"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "bridge.ping"
+            },
+            "params": {
+              "$ref": "#/$defs/pingParams"
+            }
+          }
+        }
+      ]
+    },
+    "capabilitiesRequest": {
+      "allOf": [
+        {
+          "$ref": "rpc.schema.json#/$defs/request"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "bridge.capabilities"
+            },
+            "params": {
+              "$ref": "#/$defs/capabilitiesParams"
+            }
+          }
+        }
+      ]
+    },
+    "shutdownRequest": {
+      "allOf": [
+        {
+          "$ref": "rpc.schema.json#/$defs/request"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "bridge.shutdown"
+            },
+            "params": {
+              "$ref": "#/$defs/shutdownParams"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

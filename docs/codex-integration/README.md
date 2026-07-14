@@ -9,8 +9,11 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 3. [ARCHITECTURE-001-bridge-sidecar-index-and-evidence-plan.md](ARCHITECTURE-001-bridge-sidecar-index-and-evidence-plan.md) — component boundaries and foundation backlog.
 4. [RELEASE-001-release-1.0-acceptance-and-evidence-plan.md](RELEASE-001-release-1.0-acceptance-and-evidence-plan.md) — release requirements and evidence rules.
 5. [ADR-000-fork-and-upstream-strategy.md](ADR-000-fork-and-upstream-strategy.md) — fork maintenance, branching, and versioning policy.
-6. [BUILDING_CODEX_FORK.md](../../BUILDING_CODEX_FORK.md) — reproducible local macOS build and verification.
-7. [SPRINT-0-BASELINE.md](SPRINT-0-BASELINE.md) — commit-bound local build and test evidence.
+6. [ADR-001-component-boundaries-and-sidecar-language.md](ADR-001-component-boundaries-and-sidecar-language.md) — C++/Rust boundaries, dependency policy, packaging, and monorepo topology.
+7. [PROTOCOL-001-bridge-rpc-v1.md](PROTOCOL-001-bridge-rpc-v1.md) — Bridge RPC 1.0 framing, discovery, authentication, lifecycle, and compatibility.
+8. [BUILDING_CODEX_FORK.md](../../BUILDING_CODEX_FORK.md) — reproducible local macOS build and verification.
+9. [SPRINT-0-BASELINE.md](SPRINT-0-BASELINE.md) — commit-bound local build and test evidence.
+10. [SPRINT-1-STAGE-2.md](SPRINT-1-STAGE-2.md) — editor-only module, lifecycle, dispatcher, and build-guard evidence.
 
 ## Document status
 
@@ -18,10 +21,13 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 |---|---|---|
 | `MASTER_SPRINT_ROADMAP` | Review candidate 1.0 | Updated from actual sprint evidence |
 | `PRODUCT-001` | Approved 1.0 | Re-review on scope or invariant change |
-| `ARCHITECTURE-001` | Draft for review 0.1 | `TEST-001` mapping and owners for D-01–D-04 |
+| `ARCHITECTURE-001` | Draft for review 0.1 | `TEST-001` mapping and independent component/security review |
 | `RELEASE-001` | Draft for review 0.1 | `TEST-001` evidence manifest |
 | `ADR-000` | Accepted | Revisit only if fork topology changes |
+| `ADR-001` | Accepted | Verify the decision in the first Rust/C++ skeletons |
+| `PROTOCOL-001` | Accepted for Sprint 1 | C++/Rust conformance suite and implementation evidence |
 | Sprint 0 local baseline | Passed | Remote CI is `not_run` until publication is authorized |
+| Sprint 1 Stage 2 local evidence | Passed | Stage 3 discovery and authenticated macOS UDS transport |
 
 ## Interim ownership
 

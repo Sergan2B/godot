@@ -173,7 +173,7 @@ Discovery, token, index, sessions, revisions и transactions изолирова�
 
 Поле отсутствует, если слой не запущен или не участвовал в ответе. `project_revision` монотонно меняется при любом принятом изменении индексируемого проекта. `scene_revision` меняется при live structural/property edit независимо от сохранения. Новый editor/game process всегда получает новый session ID.
 
-Точный способ вычисления `project_id` и хранения счётчиков фиксируется в `PROTOCOL-001` и `INDEX-001`; наружу не должен попадать абсолютный путь, если он не нужен пользователю.
+[PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) фиксирует domain-separated SHA-256 `project_id` и session-scoped bridge counters для v1; `INDEX-001` позднее определяет persistent index revision/epoch. Наружу не должен попадать абсолютный путь, если он не нужен пользователю.
 
 ### 6.3. Правила наложения состояния
 
@@ -734,8 +734,8 @@ identity/revisions → bridge handshake → first live slice
 После обязательных Sprint 0 артефактов из мастер-плана:
 
 1. Утвердить `PRODUCT-001` и назначить владельцев сквозных инвариантов.
-2. В ADR-001 зафиксировать component boundaries и язык sidecar.
-3. В `PROTOCOL-001` определить handshake, project binding, revision envelope, errors и resync.
+2. [Выполнено] В [ADR-001](ADR-001-component-boundaries-and-sidecar-language.md) зафиксировать component boundaries и язык sidecar.
+3. [Выполнено] В [PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) определить handshake, project binding, session-scoped revision envelope, errors и framing.
 4. Создать fixture taxonomy: resource rename, inherited scene, dirty overlay, runtime error, transaction fault.
 5. Создать protocol conformance client и canonical JSON normalizer.
 6. Реализовать `initialize/ping/capabilities/shutdown` без MCP.
@@ -822,6 +822,8 @@ identity/revisions → bridge handshake → first live slice
 
 ## 19. Открытые решения и дедлайны
 
+Решения о языке/packaging sidecar, Bridge RPC encoding/authentication, project fingerprint и session-scoped revisions закрыты [ADR-001](ADR-001-component-boundaries-and-sidecar-language.md) и [PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) 2026-07-14. Persistent index epoch остаётся частью будущего `INDEX-001`.
+
 | Решение | Где фиксируется | Не позднее |
 |---|---|---:|
 | Язык и packaging sidecar | ADR-001 | До реализации S1 sidecar skeleton |
@@ -844,8 +846,8 @@ identity/revisions → bridge handshake → first live slice
 | Документ | Что он обязан конкретизировать из PRODUCT-001 |
 |---|---|
 | [ARCHITECTURE-001-bridge-sidecar-index-and-evidence-plan.md](ARCHITECTURE-001-bridge-sidecar-index-and-evidence-plan.md) | Сквозные component boundaries, lifecycle, revisions/snapshots, index/evidence contract и implementation backlog |
-| ADR-001 | Process/component boundaries и запрет параллельных semantic implementations |
-| PROTOCOL-001 | Handshake, token, revisions, events, resync, errors, backpressure |
+| [ADR-001](ADR-001-component-boundaries-and-sidecar-language.md) | Process/component boundaries и запрет параллельных semantic implementations |
+| [PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) | Handshake, token, framing, session-scoped revisions, lifecycle errors и compatibility |
 | MCP-001 | Общая query/operation schema, resources, approvals, capability mapping |
 | INDEX-001 | Entity/relation storage, revisions, migrations, invalidation |
 | SCENE-001 | Scene/node identity, inheritance, instances, overrides, connections |

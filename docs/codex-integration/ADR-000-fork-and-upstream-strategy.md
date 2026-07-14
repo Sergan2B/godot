@@ -48,7 +48,7 @@ If a sync fails after publication, revert the sync merge. Do not rewrite the int
 
 - The engine keeps the upstream Godot version (`4.8-dev` at the initial base). Codex builds use `BUILD_NAME=codex`; the exact Git SHA is part of every evidence record.
 - The bridge module and sidecar have independent Semantic Versions, beginning at `0.1.0` when their artifacts first exist.
-- Bridge RPC and MCP schemas use `major.minor`, beginning at `0.1`. Before 1.0, a breaking change increments the minor version and includes a migration note. At and after 1.0, a breaking change increments the major version.
+- Bridge RPC and MCP schemas use independent `major.minor` versions. Bridge RPC starts at `1.0` because Sprint 1 establishes its first wire-compatibility boundary; every breaking Bridge RPC change increments the major version. MCP starts at `0.1`; before MCP 1.0, a breaking change increments its minor version and includes a migration note, and at/after 1.0 it increments the major version.
 - Index and transaction formats declare their own schema versions and migration or rebuild behavior.
 - Compatibility evidence records the Godot SHA, bridge version, sidecar version, Bridge RPC version, MCP schema version, index version, fixture revision, platform, and artifact hash. A component that does not yet exist is recorded as `not_applicable`, not assigned a fictional version.
 

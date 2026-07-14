@@ -1,13 +1,13 @@
 # Godot × Codex Integration — мастер-план спринтов до релиза 1.0
 
-**Статус:** Review candidate 1.0  
-**Дата:** 2026-07-14  
-**Базовый репозиторий:** `Sergan2B/godot`  
-**Базовый коммит на момент создания документа:** `2c089e9bf0b8712d0bc444c2ceaf9c543ed9c777`  
-**Базовая версия движка:** Godot 4.8-dev  
-**Основная платформа разработки:** macOS  
-**Целевые платформы релиза 1.0:** macOS, Windows, Linux  
-**Базовая длительность спринта:** 2 недели, кроме Sprint 0  
+**Статус:** Review candidate 1.0
+**Дата:** 2026-07-14
+**Базовый репозиторий:** `Sergan2B/godot`
+**Базовый коммит на момент создания документа:** `2c089e9bf0b8712d0bc444c2ceaf9c543ed9c777`
+**Базовая версия движка:** Godot 4.8-dev
+**Основная платформа разработки:** macOS
+**Целевые платформы релиза 1.0:** macOS, Windows, Linux
+**Базовая длительность спринта:** 2 недели, кроме Sprint 0
 
 ---
 
@@ -338,7 +338,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 0 — Bootstrap и воспроизводимая база
 
-**Длительность:** 1 неделя  
+**Длительность:** 1 неделя
 **Milestone:** Build Baseline
 
 #### Цель
@@ -380,7 +380,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 1 — Архитектурный каркас и protocol skeleton
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Internal Bridge Skeleton
 
 #### Цель
@@ -417,7 +417,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 2 — Первый end-to-end MCP vertical slice
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Architecture Proof / M0
 
 #### Цель
@@ -457,7 +457,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 3 — ResourceUID и граф файловых зависимостей
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Static Index Foundation
 
 #### Цель
@@ -495,7 +495,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 4 — Семантика сцен и node graph
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Scene Understanding
 
 #### Цель
@@ -533,7 +533,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 5 — GDScript symbols и программные связи
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Script Semantics
 
 #### Цель
@@ -570,7 +570,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 6 — Find usages, evidence и контекст для Codex
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Semantic Alpha / M1
 
 #### Цель
@@ -608,7 +608,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 7 — Полный live editor context
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Live Editor Alpha
 
 #### Цель
@@ -648,7 +648,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 8 — Runtime и EditorDebugger
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Diagnostic MVP / M2
 
 #### Цель
@@ -685,7 +685,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 9 — Безопасные editor transactions
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Write Foundation
 
 #### Цель
@@ -722,7 +722,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 10 — Составные изменения и автоматическая валидация
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Read/Write Beta Foundation / M3
 
 #### Цель
@@ -759,7 +759,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 11 — Продуктизация внешнего Codex
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** External Codex Beta
 
 #### Цель
@@ -798,7 +798,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 12 — Встроенный Codex client shell
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Embedded Client Alpha
 
 #### Цель
@@ -835,7 +835,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 13 — Встроенный UX, approvals и diff
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Embedded Beta / M4
 
 #### Цель
@@ -872,7 +872,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 14 — Performance, надёжность и безопасность
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Production Hardening
 
 #### Цель
@@ -913,7 +913,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 15 — Windows, Linux и packaging
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Cross-platform Feature Complete
 
 #### Цель
@@ -951,7 +951,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 16 — Beta validation и реальная эксплуатация
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** Public/Closed Beta / M5
 
 #### Цель
@@ -991,7 +991,7 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 
 ### Sprint 17 — Release Candidate и стабильный релиз 1.0
 
-**Длительность:** 2 недели  
+**Длительность:** 2 недели
 **Milestone:** RC → Stable 1.0 / M6
 
 #### Цель
@@ -1331,8 +1331,8 @@ S8 и S9 могут идти параллельно после S7, но S10 пр
 Сквозной технический contract разделов 5.1–5.5 и issue-ready plan вынесены в [ARCHITECTURE-001-bridge-sidecar-index-and-evidence-plan.md](ARCHITECTURE-001-bridge-sidecar-index-and-evidence-plan.md). Он связывает перечисленные ниже ADR/specs, но не заменяет их wire/API детали.
 
 1. `ADR-000-fork-and-upstream-strategy.md`
-2. `ADR-001-component-boundaries-and-sidecar-language.md`
-3. `PROTOCOL-001-bridge-rpc-v1.md`
+2. [ADR-001-component-boundaries-and-sidecar-language.md](ADR-001-component-boundaries-and-sidecar-language.md)
+3. [PROTOCOL-001-bridge-rpc-v1.md](PROTOCOL-001-bridge-rpc-v1.md)
 4. `MCP-001-tools-resources-and-approvals.md`
 5. `INDEX-001-semantic-graph-and-storage.md`
 6. `SCENE-001-scene-node-resource-model.md`
@@ -1394,4 +1394,6 @@ S8 и S9 могут идти параллельно после S7, но S10 пр
 
 ## 19. Следующее действие
 
-После утверждения `PRODUCT-001` первым архитектурным дочерним документом должен стать `ADR-000-fork-and-upstream-strategy.md`, после него — `BUILDING_CODEX_FORK.md` и `ADR-001-component-boundaries-and-sidecar-language.md`. Только после их утверждения начинается код Sprint 1.
+[ADR-001](ADR-001-component-boundaries-and-sidecar-language.md), [PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) и канонический bundle `schemas/codex_bridge/v1` закрывают первый foundation-этап Sprint 1. Editor-only `modules/codex_bridge`, build guards, service/worker lifecycle и bounded main-thread dispatcher закрывают второй этап по локальному evidence [SPRINT-1-STAGE-2](SPRINT-1-STAGE-2.md).
+
+Следующее действие — этап 3 Sprint 1: реализовать private discovery и защищённый macOS UDS transport с project-local lock, атомарной публикацией runtime-файлов, правами `0700`/`0600`, rotating token и mutual HMAC handshake. MCP, production sidecar, semantic index и чтение сцен по-прежнему не начинаются раньше назначенных спринтов.

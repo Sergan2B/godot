@@ -27,8 +27,8 @@
 
 Документ является авторитетным для границ компонентов и их сквозного взаимодействия. Он не заменяет:
 
-- `ADR-001` — выбор языка, packaging и topology sidecar;
-- `PROTOCOL-001` — окончательный wire encoding, framing и schema Bridge RPC v1;
+- [ADR-001](ADR-001-component-boundaries-and-sidecar-language.md) — выбор языка, packaging и topology sidecar;
+- [PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) — окончательный wire encoding, framing и schema Bridge RPC v1;
 - `MCP-001` — model-facing tools, resources и approval annotations;
 - `INDEX-001` — физическую schema, storage engine и migrations;
 - `EVIDENCE-001` — полный source vocabulary и правила агрегации;
@@ -305,7 +305,7 @@ Sidecar:
 | `Redactor` | Token/path/value/log sanitation |
 | `HealthReporter` | Status, progress, queue/latency metrics без project content |
 
-Выбор языка, runtime и repository topology делается в `ADR-001`. Независимо от выбора production artifact должен быть отдельным single-binary process без требования устанавливать language runtime пользователю.
+[ADR-001](ADR-001-component-boundaries-and-sidecar-language.md) выбирает Rust stable, locked dependencies и monorepo topology. Production artifact остаётся отдельным single-binary process без требования устанавливать language runtime пользователю.
 
 ### 6.3. Sidecar state machine
 
@@ -502,7 +502,7 @@ Capability содержит version и optional limits. Наличие capabilit
 - Coalescing не меняет итоговую revision и сообщает покрытый диапазон sequence.
 - Event gap, rollback невозможного batch или несовпадение session немедленно инвалидирует current overlay.
 
-Session-scoped counters являются безопасным baseline v1. `D-03` может выбрать persistent project revision epoch, но клиент всё равно обязан сравнивать revision вместе с `project_id` и session/epoch coordinate; одно числовое значение никогда не доказывает freshness между editor processes.
+[PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) фиксирует session-scoped counters как baseline v1: они не переживают restart editor. Будущая persistent epoch может появиться только как отдельное versioned решение; клиент в любом случае сравнивает revision вместе с `project_id` и session/epoch coordinate, а одно числовое значение никогда не доказывает freshness между editor processes.
 
 ### 7.8. Full snapshot и resync
 
@@ -903,23 +903,31 @@ modules/codex_bridge/
 │   ├── variant_projector.*
 │   └── schema_version.*
 ├── transport/
+│   ├── bridge_transport_worker.*
 │   ├── bridge_transport_server.*
 │   ├── uds_transport.*
 │   └── windows_transport.*
-└── tests/
 ```
 
-Общие schemas и conformance fixtures размещаются так, чтобы их могли собирать C++ bridge и sidecar без копирования вручную. Точное место sidecar и generated code определяется `ADR-001`; рекомендуемая логическая структура:
+Godot C++ tests находятся в `tests/codex/`, чтобы стандартный test force-link builder включал их в общий test binary и `MODULE_CODEX_BRIDGE_ENABLED` guard сохранял opt-out сборку. Канонические schemas и conformance fixtures находятся в `schemas/codex_bridge/`, чтобы C++ bridge и Rust-клиенты использовали их без ручного копирования. [ADR-001](ADR-001-component-boundaries-and-sidecar-language.md) фиксирует production workspace в `godot-codex-mcp/`, а conformance client — в `tests/codex/`:
 
 ```text
 godot-codex-mcp/
-├── bridge-client/
-├── index/
-├── semantic-model/
-├── mcp-server/
-├── transactions/
-├── schemas/
-└── tests/fixtures/
+├── Cargo.toml
+├── Cargo.lock
+├── rust-toolchain.toml
+└── crates/
+    ├── bridge-client/
+    ├── index/
+    ├── semantic-model/
+    ├── mcp-server/
+    ├── transactions/
+    └── godot-codex-mcp/
+
+schemas/codex_bridge/
+└── v1/
+
+tests/codex/
 ```
 
 Build обязан доказывать отсутствие active module code в export/non-editor target.
@@ -1007,6 +1015,8 @@ ADR/schema/fixtures
 
 P0 foundation tasks до `MCP-001A` образуют минимальный M0 vertical slice. P1 задачи не должны расширять scope P0 до доказанного `R1-01`.
 
+Фактический статус на 2026-07-14: `BRG-001` и `BRG-002` локально закрыты evidence [SPRINT-1-STAGE-2](SPRINT-1-STAGE-2.md). Remote CI и review gate ещё не запускались; `RPC-001` является следующим implementation task.
+
 ### 16.4. Definition of Ready для implementation task
 
 Task готова к разработке, если:
@@ -1050,14 +1060,16 @@ Task завершена, если:
 | Blind retry | Duplicate destructive apply | Idempotency key + `in_doubt` status reconciliation |
 | Two semantic implementations | Dock/App расходятся | Один sidecar/index/MCP contract + parity comparator |
 
-## 18. Открытые решения и дедлайны
+## 18. Решения и дедлайны
 
-| ID | Решение | Документ | Срок | Блокирует |
-|---|---|---|---:|---|
-| `D-01` | Язык, dependency policy, single-binary packaging и repo topology sidecar | ADR-001 | До `SIDE-001` | S1 skeleton |
-| `D-02` | Wire encoding/framing и schema generation | PROTOCOL-001 | До `RPC-003` | Conformance tests |
-| `D-03` | Project fingerprint и cross-session revision persistence | PROTOCOL-001/INDEX-001 | До S2 acceptance | Cache/reconnect |
-| `D-04` | HMAC/proof algorithm и token storage details | PROTOCOL-001/SECURITY-001 | До `RPC-002` | Auth implementation |
+Foundation-решения `D-01`–`D-04` закрыты первым этапом Sprint 1. Остальные решения остаются открытыми до указанных gates.
+
+| ID | Решение | Документ | Статус/срок | Блокирует |
+|---|---|---|---|---|
+| `D-01` | Язык, dependency policy, single-binary packaging и repo topology sidecar | [ADR-001](ADR-001-component-boundaries-and-sidecar-language.md) | Закрыто 2026-07-14 | S1 skeleton |
+| `D-02` | Wire encoding/framing и schema generation | [PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) | Закрыто 2026-07-14 | Conformance tests |
+| `D-03` | Project fingerprint и cross-session revision persistence | [PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) / INDEX-001 | v1 закрыто: session-scoped; index epoch позднее | Cache/reconnect |
+| `D-04` | HMAC/proof algorithm и token storage details | [PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) / SECURITY-001 | v1 закрыто; security review продолжается | Auth implementation |
 | `D-05` | SQLite или directory/segment store | INDEX-001 | Первая половина S3 | Persistent index |
 | `D-06` | Persistent node/subresource identity | SCENE-001 | До конца S4 | Cross-revision node facts |
 | `D-07` | GDScript LSP cache reuse vs independent analyzer adapter | SCRIPT-001 | До S5 acceptance | Symbol performance/correctness |

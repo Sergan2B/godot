@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Bridge RPC envelope",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/response"
+    },
+    {
+      "$ref": "#/$defs/cancel"
+    }
+  ],
+  "$defs": {
+    "request": {
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "kind",
+        "request_id",
+        "method",
+        "params",
+        "context"
+      ],
+      "properties": {
+        "protocol_version": {
+          "$ref": "common.schema.json#/$defs/protocolVersionV1"
+        },
+        "kind": {
+          "const": "request"
+        },
+        "request_id": {
+          "$ref": "common.schema.json#/$defs/requestId"
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9_.-]*$"
+        },
+        "deadline_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30000,
+          "default": 5000
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "context": {
+          "$ref": "common.schema.json#/$defs/context"
+        }
+      },
+      "additionalProperties": true
+    },
+    "response": {
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "kind",
+        "request_id",
+        "context"
+      ],
+      "properties": {
+        "protocol_version": {
+          "$ref": "common.schema.json#/$defs/protocolVersionV1"
+        },
+        "kind": {
+          "const": "response"
+        },
+        "request_id": {
+          "$ref": "common.schema.json#/$defs/requestId"
+        },
+        "result": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "error": {
+          "$ref": "common.schema.json#/$defs/error"
+        },
+        "context": {
+          "$ref": "common.schema.json#/$defs/context"
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "result"
+          ],
+          "not": {
+            "required": [
+              "error"
+            ]
+          }
+        },
+        {
+          "required": [
+            "error"
+          ],
+          "not": {
+            "required": [
+              "result"
+            ]
+          }
+        }
+      ],
+      "additionalProperties": true
+    },
+    "cancel": {
+      "type": "object",
+      "required": [
+        "protocol_version",
+        "kind",
+        "request_id",
+        "context"
+      ],
+      "properties": {
+        "protocol_version": {
+          "$ref": "common.schema.json#/$defs/protocolVersionV1"
+        },
+        "kind": {
+          "const": "cancel"
+        },
+        "request_id": {
+          "$ref": "common.schema.json#/$defs/requestId"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "context": {
+          "$ref": "common.schema.json#/$defs/context"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

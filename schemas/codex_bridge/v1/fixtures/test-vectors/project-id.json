@@ -1,0 +1,9 @@
+{
+  "canonical_root": "/fixtures/codex-smoke",
+  "canonical_root_utf8_hex": "2f66697874757265732f636f6465782d736d6f6b65",
+  "domain_separator_hex": "676f646f742d636f6465782d70726f6a6563742d69642f763100",
+  "expected_project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd",
+  "hash": "sha256",
+  "profile": "macos-posix-realpath-utf8-v1",
+  "vector_version": "1.0"
+}

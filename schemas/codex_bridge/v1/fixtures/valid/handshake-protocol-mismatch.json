@@ -1,0 +1,17 @@
+{
+  "error": {
+    "code": "protocol_mismatch",
+    "data": {
+      "supported_protocol_versions": [
+        "1.0"
+      ]
+    },
+    "message": "No compatible Bridge RPC major version is available.",
+    "retryable": false
+  },
+  "handshake_version": "1.0",
+  "kind": "handshake.error",
+  "supported_protocol_versions": [
+    "1.0"
+  ]
+}
