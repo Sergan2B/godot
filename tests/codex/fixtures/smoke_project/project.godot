@@ -1,0 +1,21 @@
+; Engine configuration file.
+; Keep this fixture minimal and deterministic. It is opened by the Sprint 0
+; build baseline and becomes the live-selection seed in Sprint 2.
+
+config_version=5
+
+[application]
+
+config/name="Codex Smoke Fixture"
+run/main_scene="res://main.tscn"
+run/flush_stdout_on_print=true
+
+[display]
+
+window/size/viewport_width=640
+window/size/viewport_height=360
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

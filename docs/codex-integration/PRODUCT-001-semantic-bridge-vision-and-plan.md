@@ -1,6 +1,6 @@
 # PRODUCT-001 — Единый семантический мост Godot × Codex
 
-**Статус:** Draft for review 0.1
+**Статус:** Approved 1.0
 
 **Дата:** 2026-07-14
 
@@ -8,7 +8,7 @@
 
 **Целевой релиз:** 1.0
 
-**Владельцы решения:** Product, Engine/Editor, Sidecar/Protocol, Codex Client, QA/Security — назначаются до начала Sprint 1
+**Владельцы решения:** `Sergan2B` временно совмещает роли Product, Engine/Editor, Sidecar/Protocol, Codex Client и QA/Security до их делегирования
 
 ---
 
@@ -428,7 +428,7 @@ Handshake bridge и MCP обязан различать как минимум:
 
 - entity IDs и graph facts;
 - confidence/evidence и revision vector;
-- normalised errors/status;
+- normalized errors/status;
 - transaction preconditions и semantic preview;
 - approval classification;
 - post-apply validation result.
@@ -750,7 +750,7 @@ identity/revisions → bridge handshake → first live slice
 - schema/contract tests для Bridge RPC и MCP;
 - golden graph tests для resources/scenes/scripts;
 - integration tests bridge ↔ sidecar без модели;
-- parity tests поверх normalised MCP responses;
+- parity tests поверх normalized MCP responses;
 - E2E tests с реальным editor/runtime/process lifecycle;
 - fault-injection tests для apply, disconnect, crash и corrupt cache;
 - manual acceptance только там, где UX или platform packaging нельзя доказать ниже.

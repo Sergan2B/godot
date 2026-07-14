@@ -44,6 +44,9 @@ jobs:
 
       - name: Setup Python and SCons
         uses: ./.github/actions/godot-deps
+        with:
+          python-version: "3.14.1"
+          scons-version: "4.10.1"
 
       - name: Download pre-built ANGLE
         shell: sh
@@ -116,3 +119,10 @@ jobs:
           ${{ matrix.bin }} --version
           ${{ matrix.bin }} --help
           ${{ matrix.bin }} --test --force-colors
+
+      - name: Codex smoke fixture
+        if: matrix.target == 'editor'
+        run: |
+          ${{ matrix.bin }} --headless --import --path tests/codex/fixtures/smoke_project
+          ${{ matrix.bin }} --headless --editor --path tests/codex/fixtures/smoke_project --quit-after 2
+          ${{ matrix.bin }} --headless --path tests/codex/fixtures/smoke_project --quit-after 2
