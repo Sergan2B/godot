@@ -1,0 +1,12 @@
+; Canonical Sprint 3 resource graph fixture.
+; Keep this project free of scripts and addons used by production code.
+config_version=5
+
+[application]
+
+config/name="Codex Resource Graph Fixture"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

@@ -9,6 +9,11 @@ use crate::error::{ConformanceError, Result, fail, require};
 use crate::json::{parse_strict, parse_strict_object};
 use crate::protocol::{build_handshake_transcript, handshake_proof, project_id_for_root};
 
+#[cfg(test)]
+mod resource_graph_contract {
+    include!("resource_graph_contract.rs");
+}
+
 const SCHEMA_BASE_URI: &str = "https://godot-codex.local/schema/v1/";
 const SCHEMA_FILES: [&str; 7] = [
     "common.schema.json",

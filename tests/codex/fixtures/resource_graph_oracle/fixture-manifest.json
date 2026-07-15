@@ -1,0 +1,336 @@
+{
+  "schema_version": 1,
+  "fixture_version": 1,
+  "required_godot": "4.8",
+  "resources": [
+    {
+      "oracle_id": "imported_icon",
+      "path": "res://assets/imported_icon.svg",
+      "uid": "uid://dge6ajgl8jg04",
+      "format": "imported",
+      "type": "CompressedTexture2D",
+      "imported": true,
+      "import_state": "valid",
+      "hash_mode": "exact_sha256",
+      "dependencies": []
+    },
+    {
+      "oracle_id": "chain_mid",
+      "path": "res://resources/chain_mid.tres",
+      "uid": "uid://c",
+      "format": "tres",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": [
+        {
+          "uid": "uid://b",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "target": "shared_leaf",
+          "resolution": "resolved"
+        }
+      ]
+    },
+    {
+      "oracle_id": "chain_root",
+      "path": "res://resources/chain_root.tres",
+      "uid": "uid://d",
+      "format": "tres",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": [
+        {
+          "uid": "uid://c",
+          "fallback_path": "res://resources/chain_mid.tres",
+          "target": "chain_mid",
+          "resolution": "resolved"
+        }
+      ]
+    },
+    {
+      "oracle_id": "cycle_a",
+      "path": "res://resources/cycle_a.tres",
+      "uid": "uid://i",
+      "format": "tres",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": [
+        {
+          "uid": "uid://j",
+          "fallback_path": "res://resources/cycle_b.tres",
+          "target": "cycle_b",
+          "resolution": "resolved"
+        }
+      ]
+    },
+    {
+      "oracle_id": "cycle_b",
+      "path": "res://resources/cycle_b.tres",
+      "uid": "uid://j",
+      "format": "tres",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": [
+        {
+          "uid": "uid://i",
+          "fallback_path": "res://resources/cycle_a.tres",
+          "target": "cycle_a",
+          "resolution": "resolved"
+        }
+      ]
+    },
+    {
+      "oracle_id": "fan_in_a",
+      "path": "res://resources/fan_in_a.tres",
+      "uid": "uid://g",
+      "format": "tres",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": [
+        {
+          "uid": "uid://b",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "target": "shared_leaf",
+          "resolution": "resolved"
+        }
+      ]
+    },
+    {
+      "oracle_id": "fan_in_b",
+      "path": "res://resources/fan_in_b.res",
+      "uid": "uid://h",
+      "format": "res",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "runtime_sha256",
+      "dependencies": [
+        {
+          "uid": "uid://b",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "target": "shared_leaf",
+          "resolution": "resolved"
+        }
+      ]
+    },
+    {
+      "oracle_id": "fan_out",
+      "path": "res://resources/fan_out.tres",
+      "uid": "uid://f",
+      "format": "tres",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": [
+        {
+          "uid": "uid://b",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "target": "shared_leaf",
+          "resolution": "resolved"
+        },
+        {
+          "uid": "uid://e",
+          "fallback_path": "res://resources/unique_leaf.res",
+          "target": "unique_leaf",
+          "resolution": "resolved"
+        }
+      ]
+    },
+    {
+      "oracle_id": "missing_owner",
+      "path": "res://resources/missing_owner.tres",
+      "uid": "uid://l",
+      "format": "tres",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": [
+        {
+          "uid": null,
+          "fallback_path": "res://missing/not_created.tres",
+          "target": null,
+          "resolution": "missing"
+        }
+      ]
+    },
+    {
+      "oracle_id": "orphan",
+      "path": "res://resources/orphan.tres",
+      "uid": "uid://k",
+      "format": "tres",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": []
+    },
+    {
+      "oracle_id": "shared_leaf",
+      "path": "res://resources/shared_leaf.tres",
+      "uid": "uid://b",
+      "format": "tres",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": []
+    },
+    {
+      "oracle_id": "space_unicode",
+      "path": "res://resources/space and_юникод.tres",
+      "uid": "uid://p",
+      "format": "tres",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": []
+    },
+    {
+      "oracle_id": "stale_uid_owner",
+      "path": "res://resources/stale_uid_owner.tres",
+      "uid": "uid://m",
+      "format": "tres",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": [
+        {
+          "uid": "uid://0",
+          "fallback_path": "res://missing/stale_target.tres",
+          "target": null,
+          "resolution": "stale_uid"
+        }
+      ]
+    },
+    {
+      "oracle_id": "twin_a",
+      "path": "res://resources/twin_a.tres",
+      "uid": null,
+      "format": "tres",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": []
+    },
+    {
+      "oracle_id": "twin_b",
+      "path": "res://resources/twin_b.tres",
+      "uid": null,
+      "format": "tres",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": []
+    },
+    {
+      "oracle_id": "unique_leaf",
+      "path": "res://resources/unique_leaf.res",
+      "uid": "uid://e",
+      "format": "res",
+      "type": "Resource",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "runtime_sha256",
+      "dependencies": []
+    },
+    {
+      "oracle_id": "binary_scene",
+      "path": "res://scenes/binary_scene.scn",
+      "uid": "uid://r",
+      "format": "scn",
+      "type": "PackedScene",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "runtime_sha256",
+      "dependencies": [
+        {
+          "uid": "uid://b",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "target": "shared_leaf",
+          "resolution": "resolved"
+        }
+      ]
+    },
+    {
+      "oracle_id": "text_scene",
+      "path": "res://scenes/text_scene.tscn",
+      "uid": "uid://q",
+      "format": "tscn",
+      "type": "PackedScene",
+      "imported": false,
+      "import_state": "not_imported",
+      "hash_mode": "exact_sha256",
+      "dependencies": [
+        {
+          "uid": "uid://b",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "target": "shared_leaf",
+          "resolution": "resolved"
+        }
+      ]
+    }
+  ],
+  "phases": [
+    {
+      "name": "base",
+      "mutation": "none",
+      "assertions": ["full_graph_matches"]
+    },
+    {
+      "name": "rename_uid",
+      "mutation": "move shared_leaf and update every fallback reference",
+      "assertions": ["same_entity_id", "reverse_owners_update", "no_full_rebuild"]
+    },
+    {
+      "name": "rename_uidless",
+      "mutation": "move twin_a without a UID",
+      "assertions": ["old_identity_removed", "new_identity_inserted"]
+    },
+    {
+      "name": "delete",
+      "mutation": "remove unique_leaf",
+      "assertions": ["stale_uid_edge_preserved", "inbound_diagnostic_active"]
+    },
+    {
+      "name": "re_add",
+      "mutation": "delete and restore unique_leaf at the same path and UID",
+      "assertions": ["delete_then_upsert", "same_uid_entity_id", "diagnostic_resolved"]
+    },
+    {
+      "name": "reimport",
+      "mutation": "change imported SVG source bytes",
+      "assertions": ["same_uid_entity_id", "content_generation_changes", "import_valid"]
+    },
+    {
+      "name": "content_edit",
+      "mutation": "change shared_leaf source bytes",
+      "assertions": ["same_uid_entity_id", "content_generation_changes"]
+    },
+    {
+      "name": "journal_gap",
+      "mutation": "omit one event from the synthetic transition trace",
+      "assertions": ["resource_journal_gap", "full_snapshot_required", "no_guessed_delta"]
+    }
+  ],
+  "exclusions": [
+    ".godot/",
+    ".godot/imported/",
+    "resource_graph_oracle/",
+    "absolute_host_paths"
+  ]
+}

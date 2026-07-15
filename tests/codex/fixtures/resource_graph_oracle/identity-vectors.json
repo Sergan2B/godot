@@ -1,0 +1,163 @@
+{
+  "schema_version": 1,
+  "algorithms": {
+    "uid_domain": "godot-codex/resource-entity/uid/v1\\0",
+    "path_content_domain": "godot-codex/resource-entity/path-content/v1\\0",
+    "content_generation": "sha256:<lowercase-hex>"
+  },
+  "path_vectors": [
+    {
+      "name": "canonical",
+      "input": "res://resources/shared_leaf.tres",
+      "valid": true,
+      "display_path": "res://resources/shared_leaf.tres",
+      "comparison_path": "res://resources/shared_leaf.tres"
+    },
+    {
+      "name": "dot-and-repeat",
+      "input": "res://resources//./shared_leaf.tres",
+      "valid": true,
+      "display_path": "res://resources/shared_leaf.tres",
+      "comparison_path": "res://resources/shared_leaf.tres"
+    },
+    {
+      "name": "unicode-nfc",
+      "input": "res://resources/café.tres",
+      "valid": true,
+      "display_path": "res://resources/café.tres",
+      "comparison_path": "res://resources/café.tres"
+    },
+    {
+      "name": "traversal",
+      "input": "res://resources/../project.godot",
+      "valid": false,
+      "error": "invalid_path_traversal"
+    },
+    {
+      "name": "absolute-posix",
+      "input": "/tmp/project/resource.tres",
+      "valid": false,
+      "error": "invalid_path_scheme"
+    },
+    {
+      "name": "absolute-windows",
+      "input": "C:\\project\\resource.tres",
+      "valid": false,
+      "error": "invalid_path_scheme"
+    },
+    {
+      "name": "backslash",
+      "input": "res://resources\\shared_leaf.tres",
+      "valid": false,
+      "error": "invalid_path_separator"
+    },
+    {
+      "name": "trailing-directory",
+      "input": "res://resources/",
+      "valid": false,
+      "error": "invalid_resource_path"
+    },
+    {
+      "name": "empty",
+      "input": "res://",
+      "valid": false,
+      "error": "invalid_resource_path"
+    },
+    {
+      "name": "wrong-scheme-case",
+      "input": "RES://resources/shared_leaf.tres",
+      "valid": false,
+      "error": "invalid_path_scheme"
+    }
+  ],
+  "identity_vectors": [
+    {
+      "name": "uid-shared-before-rename",
+      "kind": "resource_uid",
+      "uid": "uid://b",
+      "path": "res://resources/shared_leaf.tres",
+      "expected_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4"
+    },
+    {
+      "name": "uid-shared-after-rename",
+      "kind": "resource_uid",
+      "uid": "uid://b",
+      "path": "res://resources/renamed/shared_leaf_renamed.tres",
+      "expected_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+      "same_identity_as": "uid-shared-before-rename"
+    },
+    {
+      "name": "uid-unique-leaf",
+      "kind": "resource_uid",
+      "uid": "uid://e",
+      "expected_entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao"
+    },
+    {
+      "name": "uid-imported-source",
+      "kind": "resource_uid",
+      "uid": "uid://dge6ajgl8jg04",
+      "expected_entity_id": "godot:resource:uid:v1:cwdeNTQvwj4EF5WfnHb0Zi72F8VnvU9l1tNL6QIkg80"
+    },
+    {
+      "name": "fallback-twin-a",
+      "kind": "path_content_generation",
+      "path": "res://resources/twin_a.tres",
+      "content_generation": "sha256:fafcb0d8e42db11c2ba8594f4e69c53df9e0f80510c1d6219c2e91e14a76f088",
+      "expected_entity_id": "godot:resource:path-content:v1:XuczqVJxwza63igVfT_Z5twGbddffjmBZt4YPk2F7qI"
+    },
+    {
+      "name": "fallback-twin-b-equal-bytes",
+      "kind": "path_content_generation",
+      "path": "res://resources/twin_b.tres",
+      "content_generation": "sha256:fafcb0d8e42db11c2ba8594f4e69c53df9e0f80510c1d6219c2e91e14a76f088",
+      "expected_entity_id": "godot:resource:path-content:v1:RBk-i9HLfnCbcaxjD3gICkvq25a-e68gwWAZKXNjua4",
+      "different_identity_from": "fallback-twin-a"
+    },
+    {
+      "name": "fallback-twin-a-after-rename",
+      "kind": "path_content_generation",
+      "path": "res://resources/renamed/twin_a.tres",
+      "content_generation": "sha256:fafcb0d8e42db11c2ba8594f4e69c53df9e0f80510c1d6219c2e91e14a76f088",
+      "expected_entity_id": "godot:resource:path-content:v1:ID3NwDvISOdEUOMtAVhVntyXF_6q0KSM7elN4AkMypw",
+      "different_identity_from": "fallback-twin-a"
+    }
+  ],
+  "diagnostic_vectors": [
+    {
+      "name": "path-only-missing",
+      "observation": "res://missing/not_created.tres",
+      "code": "missing_dependency",
+      "silent_rebind": false
+    },
+    {
+      "name": "unresolvable-uid",
+      "observation": "uid://0 -> res://missing/stale_target.tres",
+      "code": "stale_resource_uid",
+      "silent_rebind": false
+    },
+    {
+      "name": "uid-path-disagreement",
+      "observation": "UID mapping and fallback identify different existing resources",
+      "code": "resource_uid_path_mismatch",
+      "silent_rebind": false
+    },
+    {
+      "name": "duplicate-uid",
+      "observation": "two resources claim one canonical UID",
+      "code": "duplicate_resource_uid",
+      "silent_rebind": false
+    },
+    {
+      "name": "unicode-normalization-collision",
+      "observation": "two display paths share one NFC comparison key",
+      "code": "path_normalization_collision",
+      "silent_rebind": false
+    },
+    {
+      "name": "subresource-persistent-identity",
+      "observation": "Sprint 3 resource graph requests a persistent subresource key",
+      "code": "capability_unavailable",
+      "silent_rebind": false
+    }
+  ]
+}

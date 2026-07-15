@@ -21,6 +21,36 @@ The unit suite parses and validates the canonical JSON Schema/fixture bundle
 directly from `schemas/codex_bridge/v1`; it also reproduces the project-ID and
 mutual HMAC vectors. Schemas and fixtures are not copied into the Rust source.
 
+## Sprint 3 resource graph contract
+
+Stage 1 adds a storage-independent resource graph oracle under
+`fixtures/resource_graph_oracle` and a Godot project under
+`fixtures/resource_graph_project`. The fixture covers text/binary resources,
+text/binary scenes as resources, an imported SVG, chain/fan-in/fan-out/cycle/orphan
+topologies, missing/stale references, equal-content UID-less resources, Unicode paths,
+and deterministic mutation phases.
+
+Run the contract-only tests without launching Godot:
+
+```sh
+python3 -m unittest tests.codex.test_resource_graph_contract
+cargo test --manifest-path tests/codex/Cargo.toml \
+  --locked --offline resource_graph_contract
+```
+
+Run the complete Draft 2020-12, identity, restore, Godot API projection, mutation, and
+redaction gate with an enabled editor build:
+
+```sh
+python3 tests/codex/resource_graph_fixture.py validate --all-phases \
+  --godot-bin bin/godot.macos.editor.dev.arm64
+```
+
+The harness always works in a marked short-path temporary copy. It never mutates the
+canonical project during validation and refuses to replace an unmarked directory. The
+machine-readable result is written to
+`evidence/sprint-3-stage-1-contracts.json`.
+
 ## Live suite
 
 Open a short-path copy of `fixtures/smoke_project` in an enabled macOS editor

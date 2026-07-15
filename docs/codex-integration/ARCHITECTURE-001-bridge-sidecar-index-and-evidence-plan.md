@@ -1015,7 +1015,7 @@ ADR/schema/fixtures
 
 P0 foundation tasks до `MCP-001A` образуют минимальный M0 vertical slice. P1 задачи не должны расширять scope P0 до доказанного `R1-01`.
 
-Фактический статус на 2026-07-14: `BRG-001` и `BRG-002` локально закрыты evidence [SPRINT-1-STAGE-2](SPRINT-1-STAGE-2.md). Remote CI и review gate ещё не запускались; `RPC-001` является следующим implementation task.
+Фактический статус на 2026-07-15: foundation через `MCP-001A` локально закрыт evidence Sprint 1 и [SPRINT-2-EVIDENCE](SPRINT-2-EVIDENCE.md), включая live Windows/macOS vertical slice. Следующий implementation scope — `IDX-001A`, `ADP-002` и `IDX-002` по [SPRINT-3-PLAN](SPRINT-3-PLAN.md); storage decision `D-05` фиксируется не позднее пятого рабочего дня Sprint 3.
 
 ### 16.4. Definition of Ready для implementation task
 

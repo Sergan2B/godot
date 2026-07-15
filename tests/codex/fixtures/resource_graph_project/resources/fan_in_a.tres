@@ -1,0 +1,7 @@
+[gd_resource type="Resource" load_steps=2 format=3 uid="uid://g"]
+
+[ext_resource type="Resource" uid="uid://b" path="res://resources/shared_leaf.tres" id="1_shared"]
+
+[resource]
+resource_name = "fan_in_a"
+metadata/dependency = ExtResource("1_shared")

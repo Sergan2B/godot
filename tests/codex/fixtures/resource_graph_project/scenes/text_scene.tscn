@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://q"]
+
+[ext_resource type="Resource" uid="uid://b" path="res://resources/shared_leaf.tres" id="1_shared"]
+
+[node name="TextScene" type="Node"]
+metadata/shared = ExtResource("1_shared")

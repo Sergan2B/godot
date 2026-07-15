@@ -1,0 +1,78 @@
+{
+  "checks": [
+    "strict_json",
+    "draft_2020_12_schemas",
+    "identity_vectors",
+    "path_security_vectors",
+    "golden_graph",
+    "direct_reverse_parity",
+    "godot_api_projection",
+    "mutation_transitions",
+    "restore_idempotence",
+    "path_redaction"
+  ],
+  "fixture_version": 1,
+  "godot_version": "4.8.dev.codex.cae21453b",
+  "golden_sha256": "2fca88e7e1bdd283a8543fa665d9875384fb741a47bc46451cc45b4e39cb7987",
+  "identity_vectors_sha256": "e2facc5cc1d8d056f022c1509dbc70d2c033808916f1ba091bc105d556ee1879",
+  "phases": [
+    {
+      "dependencies": 12,
+      "diagnostics": 2,
+      "name": "base",
+      "resources": 18,
+      "status": "passed"
+    },
+    {
+      "dependencies": 12,
+      "diagnostics": 2,
+      "name": "rename_uid",
+      "resources": 18,
+      "status": "passed"
+    },
+    {
+      "dependencies": 12,
+      "diagnostics": 2,
+      "name": "rename_uidless",
+      "resources": 18,
+      "status": "passed"
+    },
+    {
+      "dependencies": 12,
+      "diagnostics": 3,
+      "name": "delete",
+      "resources": 17,
+      "status": "passed"
+    },
+    {
+      "dependencies": 12,
+      "diagnostics": 2,
+      "name": "re_add",
+      "resources": 18,
+      "status": "passed"
+    },
+    {
+      "dependencies": 12,
+      "diagnostics": 2,
+      "name": "reimport",
+      "resources": 18,
+      "status": "passed"
+    },
+    {
+      "dependencies": 12,
+      "diagnostics": 2,
+      "name": "content_edit",
+      "resources": 18,
+      "status": "passed"
+    },
+    {
+      "dependencies": 12,
+      "diagnostics": 2,
+      "name": "journal_gap",
+      "resources": 18,
+      "status": "passed"
+    }
+  ],
+  "schema_version": 1,
+  "status": "passed"
+}

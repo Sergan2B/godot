@@ -1,0 +1,7 @@
+[gd_resource type="Resource" load_steps=2 format=3 uid="uid://l"]
+
+[ext_resource type="Resource" path="res://missing/not_created.tres" id="1_missing"]
+
+[resource]
+resource_name = "missing_owner"
+metadata/dependency = ExtResource("1_missing")

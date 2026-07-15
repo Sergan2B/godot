@@ -1,0 +1,7 @@
+[gd_resource type="Resource" load_steps=2 format=3 uid="uid://m"]
+
+[ext_resource type="Resource" uid="uid://0" path="res://missing/stale_target.tres" id="1_stale"]
+
+[resource]
+resource_name = "stale_uid_owner"
+metadata/dependency = ExtResource("1_stale")

@@ -1,0 +1,4080 @@
+{
+  "fixture_version": 1,
+  "phases": [
+    {
+      "dependencies": [
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "chain_mid",
+          "source_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
+          "fallback_path": "res://resources/chain_mid.tres",
+          "resolution": "resolved",
+          "resolved_target": "chain_mid",
+          "resolved_target_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "source": "chain_root",
+          "source_entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "target_uid": "uid://c"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
+          "fallback_path": "res://resources/cycle_b.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_b",
+          "resolved_target_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "source": "cycle_a",
+          "source_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "target_uid": "uid://j"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
+          "fallback_path": "res://resources/cycle_a.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_a",
+          "resolved_target_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "source": "cycle_b",
+          "source_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "target_uid": "uid://i"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_a",
+          "source_entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_b",
+          "source_entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
+          "fallback_path": "res://resources/unique_leaf.res",
+          "resolution": "resolved",
+          "resolved_target": "unique_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://e"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
+          "fallback_path": "res://missing/not_created.tres",
+          "resolution": "missing",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "missing_owner",
+          "source_entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "target_uid": null
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
+          "fallback_path": "res://missing/stale_target.tres",
+          "resolution": "stale_uid",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "stale_uid_owner",
+          "source_entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "target_uid": "uid://0"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "binary_scene",
+          "source_entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "text_scene",
+          "source_entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "target_uid": "uid://b"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "missing_dependency",
+          "silent_rebind": false,
+          "source": "missing_owner",
+          "target_reference": "res://missing/not_created.tres"
+        },
+        {
+          "code": "stale_resource_uid",
+          "silent_rebind": false,
+          "source": "stale_uid_owner",
+          "target_reference": "uid://0"
+        }
+      ],
+      "exclusions": [
+        ".godot/",
+        ".godot/imported/",
+        "resource_graph_oracle/",
+        "absolute_host_paths"
+      ],
+      "expected_direct_queries": {
+        "binary_scene": [
+          "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY"
+        ],
+        "chain_mid": [
+          "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs"
+        ],
+        "chain_root": [
+          "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80"
+        ],
+        "cycle_a": [
+          "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA"
+        ],
+        "cycle_b": [
+          "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo"
+        ],
+        "fan_in_a": [
+          "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE"
+        ],
+        "fan_in_b": [
+          "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s"
+        ],
+        "fan_out": [
+          "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk"
+        ],
+        "imported_icon": [],
+        "missing_owner": [
+          "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks"
+        ],
+        "orphan": [],
+        "shared_leaf": [],
+        "space_unicode": [],
+        "stale_uid_owner": [
+          "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY"
+        ],
+        "text_scene": [
+          "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0"
+        ],
+        "twin_a": [],
+        "twin_b": [],
+        "unique_leaf": []
+      },
+      "name": "base",
+      "resources": [
+        {
+          "content_generation": "sha256:cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3",
+          "entity_id": "godot:resource:uid:v1:cwdeNTQvwj4EF5WfnHb0Zi72F8VnvU9l1tNL6QIkg80",
+          "format": "imported",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "valid",
+          "imported": true,
+          "oracle_id": "imported_icon",
+          "path": "res://assets/imported_icon.svg",
+          "type": "CompressedTexture2D",
+          "uid": "uid://dge6ajgl8jg04"
+        },
+        {
+          "content_generation": "sha256:acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105",
+          "entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_mid",
+          "path": "res://resources/chain_mid.tres",
+          "type": "Resource",
+          "uid": "uid://c"
+        },
+        {
+          "content_generation": "sha256:bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16",
+          "entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_root",
+          "path": "res://resources/chain_root.tres",
+          "type": "Resource",
+          "uid": "uid://d"
+        },
+        {
+          "content_generation": "sha256:01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055",
+          "entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_a",
+          "path": "res://resources/cycle_a.tres",
+          "type": "Resource",
+          "uid": "uid://i"
+        },
+        {
+          "content_generation": "sha256:ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a",
+          "entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_b",
+          "path": "res://resources/cycle_b.tres",
+          "type": "Resource",
+          "uid": "uid://j"
+        },
+        {
+          "content_generation": "sha256:98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427",
+          "entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_a",
+          "path": "res://resources/fan_in_a.tres",
+          "type": "Resource",
+          "uid": "uid://g"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_b",
+          "path": "res://resources/fan_in_b.res",
+          "type": "Resource",
+          "uid": "uid://h"
+        },
+        {
+          "content_generation": "sha256:f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68",
+          "entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_out",
+          "path": "res://resources/fan_out.tres",
+          "type": "Resource",
+          "uid": "uid://f"
+        },
+        {
+          "content_generation": "sha256:9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66",
+          "entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "missing_owner",
+          "path": "res://resources/missing_owner.tres",
+          "type": "Resource",
+          "uid": "uid://l"
+        },
+        {
+          "content_generation": "sha256:64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd",
+          "entity_id": "godot:resource:uid:v1:WdQDJ1JZFBVXHb5TfT3HHvmPfPPgqpxgnaLwFsDiIis",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "orphan",
+          "path": "res://resources/orphan.tres",
+          "type": "Resource",
+          "uid": "uid://k"
+        },
+        {
+          "content_generation": "sha256:a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71",
+          "entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "shared_leaf",
+          "path": "res://resources/shared_leaf.tres",
+          "type": "Resource",
+          "uid": "uid://b"
+        },
+        {
+          "content_generation": "sha256:883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf",
+          "entity_id": "godot:resource:uid:v1:KyMQx-i4cRRfBqh8ebB8s3pl-XIByTYELgPiiV1XwPI",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "space_unicode",
+          "path": "res://resources/space and_юникод.tres",
+          "type": "Resource",
+          "uid": "uid://p"
+        },
+        {
+          "content_generation": "sha256:840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd",
+          "entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "stale_uid_owner",
+          "path": "res://resources/stale_uid_owner.tres",
+          "type": "Resource",
+          "uid": "uid://m"
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:nBivvrzqL_Gu1UbZLo0zCAtHGBZKiUdhfL6gHW2xWg4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_a",
+          "path": "res://resources/twin_a.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:MJnv4DxgOU0VYo-lHI0riCIn33JzveqOHAh_qLkePp0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_b",
+          "path": "res://resources/twin_b.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "unique_leaf",
+          "path": "res://resources/unique_leaf.res",
+          "type": "Resource",
+          "uid": "uid://e"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "format": "scn",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "binary_scene",
+          "path": "res://scenes/binary_scene.scn",
+          "type": "PackedScene",
+          "uid": "uid://r"
+        },
+        {
+          "content_generation": "sha256:be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824",
+          "entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "format": "tscn",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "text_scene",
+          "path": "res://scenes/text_scene.tscn",
+          "type": "PackedScene",
+          "uid": "uid://q"
+        }
+      ],
+      "transition": {
+        "assertions": [
+          "full_graph_matches"
+        ],
+        "from": null,
+        "mutation": "none"
+      }
+    },
+    {
+      "dependencies": [
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
+          "fallback_path": "res://resources/renamed/shared_leaf_renamed.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "chain_mid",
+          "source_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
+          "fallback_path": "res://resources/chain_mid.tres",
+          "resolution": "resolved",
+          "resolved_target": "chain_mid",
+          "resolved_target_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "source": "chain_root",
+          "source_entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "target_uid": "uid://c"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
+          "fallback_path": "res://resources/cycle_b.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_b",
+          "resolved_target_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "source": "cycle_a",
+          "source_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "target_uid": "uid://j"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
+          "fallback_path": "res://resources/cycle_a.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_a",
+          "resolved_target_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "source": "cycle_b",
+          "source_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "target_uid": "uid://i"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
+          "fallback_path": "res://resources/renamed/shared_leaf_renamed.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_a",
+          "source_entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
+          "fallback_path": "res://resources/renamed/shared_leaf_renamed.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_b",
+          "source_entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "fallback_path": "res://resources/renamed/shared_leaf_renamed.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
+          "fallback_path": "res://resources/unique_leaf.res",
+          "resolution": "resolved",
+          "resolved_target": "unique_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://e"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
+          "fallback_path": "res://missing/not_created.tres",
+          "resolution": "missing",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "missing_owner",
+          "source_entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "target_uid": null
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
+          "fallback_path": "res://missing/stale_target.tres",
+          "resolution": "stale_uid",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "stale_uid_owner",
+          "source_entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "target_uid": "uid://0"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
+          "fallback_path": "res://resources/renamed/shared_leaf_renamed.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "binary_scene",
+          "source_entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
+          "fallback_path": "res://resources/renamed/shared_leaf_renamed.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "text_scene",
+          "source_entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "target_uid": "uid://b"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "missing_dependency",
+          "silent_rebind": false,
+          "source": "missing_owner",
+          "target_reference": "res://missing/not_created.tres"
+        },
+        {
+          "code": "stale_resource_uid",
+          "silent_rebind": false,
+          "source": "stale_uid_owner",
+          "target_reference": "uid://0"
+        }
+      ],
+      "exclusions": [
+        ".godot/",
+        ".godot/imported/",
+        "resource_graph_oracle/",
+        "absolute_host_paths"
+      ],
+      "expected_direct_queries": {
+        "binary_scene": [
+          "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY"
+        ],
+        "chain_mid": [
+          "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs"
+        ],
+        "chain_root": [
+          "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80"
+        ],
+        "cycle_a": [
+          "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA"
+        ],
+        "cycle_b": [
+          "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo"
+        ],
+        "fan_in_a": [
+          "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE"
+        ],
+        "fan_in_b": [
+          "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s"
+        ],
+        "fan_out": [
+          "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk"
+        ],
+        "imported_icon": [],
+        "missing_owner": [
+          "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks"
+        ],
+        "orphan": [],
+        "shared_leaf": [],
+        "space_unicode": [],
+        "stale_uid_owner": [
+          "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY"
+        ],
+        "text_scene": [
+          "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0"
+        ],
+        "twin_a": [],
+        "twin_b": [],
+        "unique_leaf": []
+      },
+      "name": "rename_uid",
+      "resources": [
+        {
+          "content_generation": "sha256:cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3",
+          "entity_id": "godot:resource:uid:v1:cwdeNTQvwj4EF5WfnHb0Zi72F8VnvU9l1tNL6QIkg80",
+          "format": "imported",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "valid",
+          "imported": true,
+          "oracle_id": "imported_icon",
+          "path": "res://assets/imported_icon.svg",
+          "type": "CompressedTexture2D",
+          "uid": "uid://dge6ajgl8jg04"
+        },
+        {
+          "content_generation": "sha256:57d94318862de620d25e8b5216cb92d4fd3bddd678713e4518f48cb22121ac67",
+          "entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "57d94318862de620d25e8b5216cb92d4fd3bddd678713e4518f48cb22121ac67"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_mid",
+          "path": "res://resources/chain_mid.tres",
+          "type": "Resource",
+          "uid": "uid://c"
+        },
+        {
+          "content_generation": "sha256:bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16",
+          "entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_root",
+          "path": "res://resources/chain_root.tres",
+          "type": "Resource",
+          "uid": "uid://d"
+        },
+        {
+          "content_generation": "sha256:01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055",
+          "entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_a",
+          "path": "res://resources/cycle_a.tres",
+          "type": "Resource",
+          "uid": "uid://i"
+        },
+        {
+          "content_generation": "sha256:ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a",
+          "entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_b",
+          "path": "res://resources/cycle_b.tres",
+          "type": "Resource",
+          "uid": "uid://j"
+        },
+        {
+          "content_generation": "sha256:45fdba63f8a8986b2b760d21b3d70acbef290637eb04d151f33ece96dafd2951",
+          "entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "45fdba63f8a8986b2b760d21b3d70acbef290637eb04d151f33ece96dafd2951"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_a",
+          "path": "res://resources/fan_in_a.tres",
+          "type": "Resource",
+          "uid": "uid://g"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_b",
+          "path": "res://resources/fan_in_b.res",
+          "type": "Resource",
+          "uid": "uid://h"
+        },
+        {
+          "content_generation": "sha256:4a9b395be565008ab7c417ac945ec0af68805ac8fa9feffe04f425948dcd9e53",
+          "entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "4a9b395be565008ab7c417ac945ec0af68805ac8fa9feffe04f425948dcd9e53"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_out",
+          "path": "res://resources/fan_out.tres",
+          "type": "Resource",
+          "uid": "uid://f"
+        },
+        {
+          "content_generation": "sha256:9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66",
+          "entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "missing_owner",
+          "path": "res://resources/missing_owner.tres",
+          "type": "Resource",
+          "uid": "uid://l"
+        },
+        {
+          "content_generation": "sha256:64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd",
+          "entity_id": "godot:resource:uid:v1:WdQDJ1JZFBVXHb5TfT3HHvmPfPPgqpxgnaLwFsDiIis",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "orphan",
+          "path": "res://resources/orphan.tres",
+          "type": "Resource",
+          "uid": "uid://k"
+        },
+        {
+          "content_generation": "sha256:a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71",
+          "entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "shared_leaf",
+          "path": "res://resources/renamed/shared_leaf_renamed.tres",
+          "type": "Resource",
+          "uid": "uid://b"
+        },
+        {
+          "content_generation": "sha256:883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf",
+          "entity_id": "godot:resource:uid:v1:KyMQx-i4cRRfBqh8ebB8s3pl-XIByTYELgPiiV1XwPI",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "space_unicode",
+          "path": "res://resources/space and_юникод.tres",
+          "type": "Resource",
+          "uid": "uid://p"
+        },
+        {
+          "content_generation": "sha256:840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd",
+          "entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "stale_uid_owner",
+          "path": "res://resources/stale_uid_owner.tres",
+          "type": "Resource",
+          "uid": "uid://m"
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:nBivvrzqL_Gu1UbZLo0zCAtHGBZKiUdhfL6gHW2xWg4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_a",
+          "path": "res://resources/twin_a.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:MJnv4DxgOU0VYo-lHI0riCIn33JzveqOHAh_qLkePp0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_b",
+          "path": "res://resources/twin_b.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "unique_leaf",
+          "path": "res://resources/unique_leaf.res",
+          "type": "Resource",
+          "uid": "uid://e"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "format": "scn",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "binary_scene",
+          "path": "res://scenes/binary_scene.scn",
+          "type": "PackedScene",
+          "uid": "uid://r"
+        },
+        {
+          "content_generation": "sha256:5ee937907639dd576e1b5ebd74e4ed11f3508a1a7d56ccb69b349a7e41876c95",
+          "entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "format": "tscn",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "5ee937907639dd576e1b5ebd74e4ed11f3508a1a7d56ccb69b349a7e41876c95"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "text_scene",
+          "path": "res://scenes/text_scene.tscn",
+          "type": "PackedScene",
+          "uid": "uid://q"
+        }
+      ],
+      "transition": {
+        "assertions": [
+          "same_entity_id",
+          "reverse_owners_update",
+          "no_full_rebuild"
+        ],
+        "from": "base",
+        "mutation": "move shared_leaf and update every fallback reference"
+      }
+    },
+    {
+      "dependencies": [
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "chain_mid",
+          "source_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
+          "fallback_path": "res://resources/chain_mid.tres",
+          "resolution": "resolved",
+          "resolved_target": "chain_mid",
+          "resolved_target_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "source": "chain_root",
+          "source_entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "target_uid": "uid://c"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
+          "fallback_path": "res://resources/cycle_b.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_b",
+          "resolved_target_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "source": "cycle_a",
+          "source_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "target_uid": "uid://j"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
+          "fallback_path": "res://resources/cycle_a.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_a",
+          "resolved_target_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "source": "cycle_b",
+          "source_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "target_uid": "uid://i"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_a",
+          "source_entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_b",
+          "source_entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
+          "fallback_path": "res://resources/unique_leaf.res",
+          "resolution": "resolved",
+          "resolved_target": "unique_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://e"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
+          "fallback_path": "res://missing/not_created.tres",
+          "resolution": "missing",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "missing_owner",
+          "source_entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "target_uid": null
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
+          "fallback_path": "res://missing/stale_target.tres",
+          "resolution": "stale_uid",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "stale_uid_owner",
+          "source_entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "target_uid": "uid://0"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "binary_scene",
+          "source_entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "text_scene",
+          "source_entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "target_uid": "uid://b"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "missing_dependency",
+          "silent_rebind": false,
+          "source": "missing_owner",
+          "target_reference": "res://missing/not_created.tres"
+        },
+        {
+          "code": "stale_resource_uid",
+          "silent_rebind": false,
+          "source": "stale_uid_owner",
+          "target_reference": "uid://0"
+        }
+      ],
+      "exclusions": [
+        ".godot/",
+        ".godot/imported/",
+        "resource_graph_oracle/",
+        "absolute_host_paths"
+      ],
+      "expected_direct_queries": {
+        "binary_scene": [
+          "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY"
+        ],
+        "chain_mid": [
+          "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs"
+        ],
+        "chain_root": [
+          "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80"
+        ],
+        "cycle_a": [
+          "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA"
+        ],
+        "cycle_b": [
+          "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo"
+        ],
+        "fan_in_a": [
+          "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE"
+        ],
+        "fan_in_b": [
+          "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s"
+        ],
+        "fan_out": [
+          "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk"
+        ],
+        "imported_icon": [],
+        "missing_owner": [
+          "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks"
+        ],
+        "orphan": [],
+        "shared_leaf": [],
+        "space_unicode": [],
+        "stale_uid_owner": [
+          "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY"
+        ],
+        "text_scene": [
+          "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0"
+        ],
+        "twin_a": [],
+        "twin_b": [],
+        "unique_leaf": []
+      },
+      "name": "rename_uidless",
+      "resources": [
+        {
+          "content_generation": "sha256:cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3",
+          "entity_id": "godot:resource:uid:v1:cwdeNTQvwj4EF5WfnHb0Zi72F8VnvU9l1tNL6QIkg80",
+          "format": "imported",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "valid",
+          "imported": true,
+          "oracle_id": "imported_icon",
+          "path": "res://assets/imported_icon.svg",
+          "type": "CompressedTexture2D",
+          "uid": "uid://dge6ajgl8jg04"
+        },
+        {
+          "content_generation": "sha256:acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105",
+          "entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_mid",
+          "path": "res://resources/chain_mid.tres",
+          "type": "Resource",
+          "uid": "uid://c"
+        },
+        {
+          "content_generation": "sha256:bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16",
+          "entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_root",
+          "path": "res://resources/chain_root.tres",
+          "type": "Resource",
+          "uid": "uid://d"
+        },
+        {
+          "content_generation": "sha256:01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055",
+          "entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_a",
+          "path": "res://resources/cycle_a.tres",
+          "type": "Resource",
+          "uid": "uid://i"
+        },
+        {
+          "content_generation": "sha256:ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a",
+          "entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_b",
+          "path": "res://resources/cycle_b.tres",
+          "type": "Resource",
+          "uid": "uid://j"
+        },
+        {
+          "content_generation": "sha256:98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427",
+          "entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_a",
+          "path": "res://resources/fan_in_a.tres",
+          "type": "Resource",
+          "uid": "uid://g"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_b",
+          "path": "res://resources/fan_in_b.res",
+          "type": "Resource",
+          "uid": "uid://h"
+        },
+        {
+          "content_generation": "sha256:f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68",
+          "entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_out",
+          "path": "res://resources/fan_out.tres",
+          "type": "Resource",
+          "uid": "uid://f"
+        },
+        {
+          "content_generation": "sha256:9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66",
+          "entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "missing_owner",
+          "path": "res://resources/missing_owner.tres",
+          "type": "Resource",
+          "uid": "uid://l"
+        },
+        {
+          "content_generation": "sha256:64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd",
+          "entity_id": "godot:resource:uid:v1:WdQDJ1JZFBVXHb5TfT3HHvmPfPPgqpxgnaLwFsDiIis",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "orphan",
+          "path": "res://resources/orphan.tres",
+          "type": "Resource",
+          "uid": "uid://k"
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:DF1UDabZXq2-j1YVisVSeMz55tWb9_4kKSIhjLlhc-w",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_a",
+          "path": "res://resources/renamed/twin_a.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "content_generation": "sha256:a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71",
+          "entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "shared_leaf",
+          "path": "res://resources/shared_leaf.tres",
+          "type": "Resource",
+          "uid": "uid://b"
+        },
+        {
+          "content_generation": "sha256:883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf",
+          "entity_id": "godot:resource:uid:v1:KyMQx-i4cRRfBqh8ebB8s3pl-XIByTYELgPiiV1XwPI",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "space_unicode",
+          "path": "res://resources/space and_юникод.tres",
+          "type": "Resource",
+          "uid": "uid://p"
+        },
+        {
+          "content_generation": "sha256:840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd",
+          "entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "stale_uid_owner",
+          "path": "res://resources/stale_uid_owner.tres",
+          "type": "Resource",
+          "uid": "uid://m"
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:MJnv4DxgOU0VYo-lHI0riCIn33JzveqOHAh_qLkePp0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_b",
+          "path": "res://resources/twin_b.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "unique_leaf",
+          "path": "res://resources/unique_leaf.res",
+          "type": "Resource",
+          "uid": "uid://e"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "format": "scn",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "binary_scene",
+          "path": "res://scenes/binary_scene.scn",
+          "type": "PackedScene",
+          "uid": "uid://r"
+        },
+        {
+          "content_generation": "sha256:be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824",
+          "entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "format": "tscn",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "text_scene",
+          "path": "res://scenes/text_scene.tscn",
+          "type": "PackedScene",
+          "uid": "uid://q"
+        }
+      ],
+      "transition": {
+        "assertions": [
+          "old_identity_removed",
+          "new_identity_inserted"
+        ],
+        "from": "base",
+        "mutation": "move twin_a without a UID"
+      }
+    },
+    {
+      "dependencies": [
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "chain_mid",
+          "source_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
+          "fallback_path": "res://resources/chain_mid.tres",
+          "resolution": "resolved",
+          "resolved_target": "chain_mid",
+          "resolved_target_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "source": "chain_root",
+          "source_entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "target_uid": "uid://c"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
+          "fallback_path": "res://resources/cycle_b.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_b",
+          "resolved_target_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "source": "cycle_a",
+          "source_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "target_uid": "uid://j"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
+          "fallback_path": "res://resources/cycle_a.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_a",
+          "resolved_target_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "source": "cycle_b",
+          "source_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "target_uid": "uid://i"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_a",
+          "source_entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_b",
+          "source_entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
+          "fallback_path": "res://resources/unique_leaf.res",
+          "resolution": "stale_uid",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://e"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
+          "fallback_path": "res://missing/not_created.tres",
+          "resolution": "missing",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "missing_owner",
+          "source_entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "target_uid": null
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
+          "fallback_path": "res://missing/stale_target.tres",
+          "resolution": "stale_uid",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "stale_uid_owner",
+          "source_entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "target_uid": "uid://0"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "binary_scene",
+          "source_entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "text_scene",
+          "source_entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "target_uid": "uid://b"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "missing_dependency",
+          "silent_rebind": false,
+          "source": "missing_owner",
+          "target_reference": "res://missing/not_created.tres"
+        },
+        {
+          "code": "stale_resource_uid",
+          "silent_rebind": false,
+          "source": "fan_out",
+          "target_reference": "uid://e"
+        },
+        {
+          "code": "stale_resource_uid",
+          "silent_rebind": false,
+          "source": "stale_uid_owner",
+          "target_reference": "uid://0"
+        }
+      ],
+      "exclusions": [
+        ".godot/",
+        ".godot/imported/",
+        "resource_graph_oracle/",
+        "absolute_host_paths"
+      ],
+      "expected_direct_queries": {
+        "binary_scene": [
+          "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY"
+        ],
+        "chain_mid": [
+          "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs"
+        ],
+        "chain_root": [
+          "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80"
+        ],
+        "cycle_a": [
+          "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA"
+        ],
+        "cycle_b": [
+          "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo"
+        ],
+        "fan_in_a": [
+          "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE"
+        ],
+        "fan_in_b": [
+          "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s"
+        ],
+        "fan_out": [
+          "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk"
+        ],
+        "imported_icon": [],
+        "missing_owner": [
+          "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks"
+        ],
+        "orphan": [],
+        "shared_leaf": [],
+        "space_unicode": [],
+        "stale_uid_owner": [
+          "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY"
+        ],
+        "text_scene": [
+          "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0"
+        ],
+        "twin_a": [],
+        "twin_b": []
+      },
+      "name": "delete",
+      "resources": [
+        {
+          "content_generation": "sha256:cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3",
+          "entity_id": "godot:resource:uid:v1:cwdeNTQvwj4EF5WfnHb0Zi72F8VnvU9l1tNL6QIkg80",
+          "format": "imported",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "valid",
+          "imported": true,
+          "oracle_id": "imported_icon",
+          "path": "res://assets/imported_icon.svg",
+          "type": "CompressedTexture2D",
+          "uid": "uid://dge6ajgl8jg04"
+        },
+        {
+          "content_generation": "sha256:acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105",
+          "entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_mid",
+          "path": "res://resources/chain_mid.tres",
+          "type": "Resource",
+          "uid": "uid://c"
+        },
+        {
+          "content_generation": "sha256:bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16",
+          "entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_root",
+          "path": "res://resources/chain_root.tres",
+          "type": "Resource",
+          "uid": "uid://d"
+        },
+        {
+          "content_generation": "sha256:01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055",
+          "entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_a",
+          "path": "res://resources/cycle_a.tres",
+          "type": "Resource",
+          "uid": "uid://i"
+        },
+        {
+          "content_generation": "sha256:ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a",
+          "entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_b",
+          "path": "res://resources/cycle_b.tres",
+          "type": "Resource",
+          "uid": "uid://j"
+        },
+        {
+          "content_generation": "sha256:98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427",
+          "entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_a",
+          "path": "res://resources/fan_in_a.tres",
+          "type": "Resource",
+          "uid": "uid://g"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_b",
+          "path": "res://resources/fan_in_b.res",
+          "type": "Resource",
+          "uid": "uid://h"
+        },
+        {
+          "content_generation": "sha256:f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68",
+          "entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_out",
+          "path": "res://resources/fan_out.tres",
+          "type": "Resource",
+          "uid": "uid://f"
+        },
+        {
+          "content_generation": "sha256:9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66",
+          "entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "missing_owner",
+          "path": "res://resources/missing_owner.tres",
+          "type": "Resource",
+          "uid": "uid://l"
+        },
+        {
+          "content_generation": "sha256:64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd",
+          "entity_id": "godot:resource:uid:v1:WdQDJ1JZFBVXHb5TfT3HHvmPfPPgqpxgnaLwFsDiIis",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "orphan",
+          "path": "res://resources/orphan.tres",
+          "type": "Resource",
+          "uid": "uid://k"
+        },
+        {
+          "content_generation": "sha256:a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71",
+          "entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "shared_leaf",
+          "path": "res://resources/shared_leaf.tres",
+          "type": "Resource",
+          "uid": "uid://b"
+        },
+        {
+          "content_generation": "sha256:883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf",
+          "entity_id": "godot:resource:uid:v1:KyMQx-i4cRRfBqh8ebB8s3pl-XIByTYELgPiiV1XwPI",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "space_unicode",
+          "path": "res://resources/space and_юникод.tres",
+          "type": "Resource",
+          "uid": "uid://p"
+        },
+        {
+          "content_generation": "sha256:840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd",
+          "entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "stale_uid_owner",
+          "path": "res://resources/stale_uid_owner.tres",
+          "type": "Resource",
+          "uid": "uid://m"
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:nBivvrzqL_Gu1UbZLo0zCAtHGBZKiUdhfL6gHW2xWg4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_a",
+          "path": "res://resources/twin_a.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:MJnv4DxgOU0VYo-lHI0riCIn33JzveqOHAh_qLkePp0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_b",
+          "path": "res://resources/twin_b.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "format": "scn",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "binary_scene",
+          "path": "res://scenes/binary_scene.scn",
+          "type": "PackedScene",
+          "uid": "uid://r"
+        },
+        {
+          "content_generation": "sha256:be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824",
+          "entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "format": "tscn",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "text_scene",
+          "path": "res://scenes/text_scene.tscn",
+          "type": "PackedScene",
+          "uid": "uid://q"
+        }
+      ],
+      "transition": {
+        "assertions": [
+          "stale_uid_edge_preserved",
+          "inbound_diagnostic_active"
+        ],
+        "from": "base",
+        "mutation": "remove unique_leaf"
+      }
+    },
+    {
+      "dependencies": [
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "chain_mid",
+          "source_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
+          "fallback_path": "res://resources/chain_mid.tres",
+          "resolution": "resolved",
+          "resolved_target": "chain_mid",
+          "resolved_target_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "source": "chain_root",
+          "source_entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "target_uid": "uid://c"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
+          "fallback_path": "res://resources/cycle_b.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_b",
+          "resolved_target_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "source": "cycle_a",
+          "source_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "target_uid": "uid://j"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
+          "fallback_path": "res://resources/cycle_a.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_a",
+          "resolved_target_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "source": "cycle_b",
+          "source_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "target_uid": "uid://i"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_a",
+          "source_entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_b",
+          "source_entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
+          "fallback_path": "res://resources/unique_leaf.res",
+          "resolution": "resolved",
+          "resolved_target": "unique_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://e"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
+          "fallback_path": "res://missing/not_created.tres",
+          "resolution": "missing",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "missing_owner",
+          "source_entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "target_uid": null
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
+          "fallback_path": "res://missing/stale_target.tres",
+          "resolution": "stale_uid",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "stale_uid_owner",
+          "source_entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "target_uid": "uid://0"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "binary_scene",
+          "source_entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "text_scene",
+          "source_entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "target_uid": "uid://b"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "missing_dependency",
+          "silent_rebind": false,
+          "source": "missing_owner",
+          "target_reference": "res://missing/not_created.tres"
+        },
+        {
+          "code": "stale_resource_uid",
+          "silent_rebind": false,
+          "source": "stale_uid_owner",
+          "target_reference": "uid://0"
+        }
+      ],
+      "exclusions": [
+        ".godot/",
+        ".godot/imported/",
+        "resource_graph_oracle/",
+        "absolute_host_paths"
+      ],
+      "expected_direct_queries": {
+        "binary_scene": [
+          "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY"
+        ],
+        "chain_mid": [
+          "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs"
+        ],
+        "chain_root": [
+          "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80"
+        ],
+        "cycle_a": [
+          "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA"
+        ],
+        "cycle_b": [
+          "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo"
+        ],
+        "fan_in_a": [
+          "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE"
+        ],
+        "fan_in_b": [
+          "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s"
+        ],
+        "fan_out": [
+          "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk"
+        ],
+        "imported_icon": [],
+        "missing_owner": [
+          "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks"
+        ],
+        "orphan": [],
+        "shared_leaf": [],
+        "space_unicode": [],
+        "stale_uid_owner": [
+          "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY"
+        ],
+        "text_scene": [
+          "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0"
+        ],
+        "twin_a": [],
+        "twin_b": [],
+        "unique_leaf": []
+      },
+      "name": "re_add",
+      "resources": [
+        {
+          "content_generation": "sha256:cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3",
+          "entity_id": "godot:resource:uid:v1:cwdeNTQvwj4EF5WfnHb0Zi72F8VnvU9l1tNL6QIkg80",
+          "format": "imported",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "valid",
+          "imported": true,
+          "oracle_id": "imported_icon",
+          "path": "res://assets/imported_icon.svg",
+          "type": "CompressedTexture2D",
+          "uid": "uid://dge6ajgl8jg04"
+        },
+        {
+          "content_generation": "sha256:acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105",
+          "entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_mid",
+          "path": "res://resources/chain_mid.tres",
+          "type": "Resource",
+          "uid": "uid://c"
+        },
+        {
+          "content_generation": "sha256:bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16",
+          "entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_root",
+          "path": "res://resources/chain_root.tres",
+          "type": "Resource",
+          "uid": "uid://d"
+        },
+        {
+          "content_generation": "sha256:01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055",
+          "entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_a",
+          "path": "res://resources/cycle_a.tres",
+          "type": "Resource",
+          "uid": "uid://i"
+        },
+        {
+          "content_generation": "sha256:ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a",
+          "entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_b",
+          "path": "res://resources/cycle_b.tres",
+          "type": "Resource",
+          "uid": "uid://j"
+        },
+        {
+          "content_generation": "sha256:98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427",
+          "entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_a",
+          "path": "res://resources/fan_in_a.tres",
+          "type": "Resource",
+          "uid": "uid://g"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_b",
+          "path": "res://resources/fan_in_b.res",
+          "type": "Resource",
+          "uid": "uid://h"
+        },
+        {
+          "content_generation": "sha256:f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68",
+          "entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_out",
+          "path": "res://resources/fan_out.tres",
+          "type": "Resource",
+          "uid": "uid://f"
+        },
+        {
+          "content_generation": "sha256:9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66",
+          "entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "missing_owner",
+          "path": "res://resources/missing_owner.tres",
+          "type": "Resource",
+          "uid": "uid://l"
+        },
+        {
+          "content_generation": "sha256:64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd",
+          "entity_id": "godot:resource:uid:v1:WdQDJ1JZFBVXHb5TfT3HHvmPfPPgqpxgnaLwFsDiIis",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "orphan",
+          "path": "res://resources/orphan.tres",
+          "type": "Resource",
+          "uid": "uid://k"
+        },
+        {
+          "content_generation": "sha256:a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71",
+          "entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "shared_leaf",
+          "path": "res://resources/shared_leaf.tres",
+          "type": "Resource",
+          "uid": "uid://b"
+        },
+        {
+          "content_generation": "sha256:883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf",
+          "entity_id": "godot:resource:uid:v1:KyMQx-i4cRRfBqh8ebB8s3pl-XIByTYELgPiiV1XwPI",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "space_unicode",
+          "path": "res://resources/space and_юникод.tres",
+          "type": "Resource",
+          "uid": "uid://p"
+        },
+        {
+          "content_generation": "sha256:840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd",
+          "entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "stale_uid_owner",
+          "path": "res://resources/stale_uid_owner.tres",
+          "type": "Resource",
+          "uid": "uid://m"
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:nBivvrzqL_Gu1UbZLo0zCAtHGBZKiUdhfL6gHW2xWg4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_a",
+          "path": "res://resources/twin_a.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:MJnv4DxgOU0VYo-lHI0riCIn33JzveqOHAh_qLkePp0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_b",
+          "path": "res://resources/twin_b.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "unique_leaf",
+          "path": "res://resources/unique_leaf.res",
+          "type": "Resource",
+          "uid": "uid://e"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "format": "scn",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "binary_scene",
+          "path": "res://scenes/binary_scene.scn",
+          "type": "PackedScene",
+          "uid": "uid://r"
+        },
+        {
+          "content_generation": "sha256:be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824",
+          "entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "format": "tscn",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "text_scene",
+          "path": "res://scenes/text_scene.tscn",
+          "type": "PackedScene",
+          "uid": "uid://q"
+        }
+      ],
+      "transition": {
+        "assertions": [
+          "delete_then_upsert",
+          "same_uid_entity_id",
+          "diagnostic_resolved"
+        ],
+        "from": "base",
+        "mutation": "delete and restore unique_leaf at the same path and UID"
+      }
+    },
+    {
+      "dependencies": [
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "chain_mid",
+          "source_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
+          "fallback_path": "res://resources/chain_mid.tres",
+          "resolution": "resolved",
+          "resolved_target": "chain_mid",
+          "resolved_target_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "source": "chain_root",
+          "source_entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "target_uid": "uid://c"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
+          "fallback_path": "res://resources/cycle_b.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_b",
+          "resolved_target_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "source": "cycle_a",
+          "source_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "target_uid": "uid://j"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
+          "fallback_path": "res://resources/cycle_a.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_a",
+          "resolved_target_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "source": "cycle_b",
+          "source_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "target_uid": "uid://i"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_a",
+          "source_entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_b",
+          "source_entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
+          "fallback_path": "res://resources/unique_leaf.res",
+          "resolution": "resolved",
+          "resolved_target": "unique_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://e"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
+          "fallback_path": "res://missing/not_created.tres",
+          "resolution": "missing",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "missing_owner",
+          "source_entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "target_uid": null
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
+          "fallback_path": "res://missing/stale_target.tres",
+          "resolution": "stale_uid",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "stale_uid_owner",
+          "source_entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "target_uid": "uid://0"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "binary_scene",
+          "source_entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "text_scene",
+          "source_entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "target_uid": "uid://b"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "missing_dependency",
+          "silent_rebind": false,
+          "source": "missing_owner",
+          "target_reference": "res://missing/not_created.tres"
+        },
+        {
+          "code": "stale_resource_uid",
+          "silent_rebind": false,
+          "source": "stale_uid_owner",
+          "target_reference": "uid://0"
+        }
+      ],
+      "exclusions": [
+        ".godot/",
+        ".godot/imported/",
+        "resource_graph_oracle/",
+        "absolute_host_paths"
+      ],
+      "expected_direct_queries": {
+        "binary_scene": [
+          "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY"
+        ],
+        "chain_mid": [
+          "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs"
+        ],
+        "chain_root": [
+          "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80"
+        ],
+        "cycle_a": [
+          "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA"
+        ],
+        "cycle_b": [
+          "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo"
+        ],
+        "fan_in_a": [
+          "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE"
+        ],
+        "fan_in_b": [
+          "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s"
+        ],
+        "fan_out": [
+          "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk"
+        ],
+        "imported_icon": [],
+        "missing_owner": [
+          "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks"
+        ],
+        "orphan": [],
+        "shared_leaf": [],
+        "space_unicode": [],
+        "stale_uid_owner": [
+          "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY"
+        ],
+        "text_scene": [
+          "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0"
+        ],
+        "twin_a": [],
+        "twin_b": [],
+        "unique_leaf": []
+      },
+      "name": "reimport",
+      "resources": [
+        {
+          "content_generation": "sha256:b24cfdfe95706f8c5d76c8345688efb38aa6298ca24691a6a2dea20dc88293d1",
+          "entity_id": "godot:resource:uid:v1:cwdeNTQvwj4EF5WfnHb0Zi72F8VnvU9l1tNL6QIkg80",
+          "format": "imported",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "b24cfdfe95706f8c5d76c8345688efb38aa6298ca24691a6a2dea20dc88293d1"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "valid",
+          "imported": true,
+          "oracle_id": "imported_icon",
+          "path": "res://assets/imported_icon.svg",
+          "type": "CompressedTexture2D",
+          "uid": "uid://dge6ajgl8jg04"
+        },
+        {
+          "content_generation": "sha256:acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105",
+          "entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_mid",
+          "path": "res://resources/chain_mid.tres",
+          "type": "Resource",
+          "uid": "uid://c"
+        },
+        {
+          "content_generation": "sha256:bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16",
+          "entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_root",
+          "path": "res://resources/chain_root.tres",
+          "type": "Resource",
+          "uid": "uid://d"
+        },
+        {
+          "content_generation": "sha256:01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055",
+          "entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_a",
+          "path": "res://resources/cycle_a.tres",
+          "type": "Resource",
+          "uid": "uid://i"
+        },
+        {
+          "content_generation": "sha256:ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a",
+          "entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_b",
+          "path": "res://resources/cycle_b.tres",
+          "type": "Resource",
+          "uid": "uid://j"
+        },
+        {
+          "content_generation": "sha256:98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427",
+          "entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_a",
+          "path": "res://resources/fan_in_a.tres",
+          "type": "Resource",
+          "uid": "uid://g"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_b",
+          "path": "res://resources/fan_in_b.res",
+          "type": "Resource",
+          "uid": "uid://h"
+        },
+        {
+          "content_generation": "sha256:f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68",
+          "entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_out",
+          "path": "res://resources/fan_out.tres",
+          "type": "Resource",
+          "uid": "uid://f"
+        },
+        {
+          "content_generation": "sha256:9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66",
+          "entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "missing_owner",
+          "path": "res://resources/missing_owner.tres",
+          "type": "Resource",
+          "uid": "uid://l"
+        },
+        {
+          "content_generation": "sha256:64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd",
+          "entity_id": "godot:resource:uid:v1:WdQDJ1JZFBVXHb5TfT3HHvmPfPPgqpxgnaLwFsDiIis",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "orphan",
+          "path": "res://resources/orphan.tres",
+          "type": "Resource",
+          "uid": "uid://k"
+        },
+        {
+          "content_generation": "sha256:a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71",
+          "entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "shared_leaf",
+          "path": "res://resources/shared_leaf.tres",
+          "type": "Resource",
+          "uid": "uid://b"
+        },
+        {
+          "content_generation": "sha256:883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf",
+          "entity_id": "godot:resource:uid:v1:KyMQx-i4cRRfBqh8ebB8s3pl-XIByTYELgPiiV1XwPI",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "space_unicode",
+          "path": "res://resources/space and_юникод.tres",
+          "type": "Resource",
+          "uid": "uid://p"
+        },
+        {
+          "content_generation": "sha256:840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd",
+          "entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "stale_uid_owner",
+          "path": "res://resources/stale_uid_owner.tres",
+          "type": "Resource",
+          "uid": "uid://m"
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:nBivvrzqL_Gu1UbZLo0zCAtHGBZKiUdhfL6gHW2xWg4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_a",
+          "path": "res://resources/twin_a.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:MJnv4DxgOU0VYo-lHI0riCIn33JzveqOHAh_qLkePp0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_b",
+          "path": "res://resources/twin_b.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "unique_leaf",
+          "path": "res://resources/unique_leaf.res",
+          "type": "Resource",
+          "uid": "uid://e"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "format": "scn",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "binary_scene",
+          "path": "res://scenes/binary_scene.scn",
+          "type": "PackedScene",
+          "uid": "uid://r"
+        },
+        {
+          "content_generation": "sha256:be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824",
+          "entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "format": "tscn",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "text_scene",
+          "path": "res://scenes/text_scene.tscn",
+          "type": "PackedScene",
+          "uid": "uid://q"
+        }
+      ],
+      "transition": {
+        "assertions": [
+          "same_uid_entity_id",
+          "content_generation_changes",
+          "import_valid"
+        ],
+        "from": "base",
+        "mutation": "change imported SVG source bytes"
+      }
+    },
+    {
+      "dependencies": [
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "chain_mid",
+          "source_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
+          "fallback_path": "res://resources/chain_mid.tres",
+          "resolution": "resolved",
+          "resolved_target": "chain_mid",
+          "resolved_target_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "source": "chain_root",
+          "source_entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "target_uid": "uid://c"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
+          "fallback_path": "res://resources/cycle_b.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_b",
+          "resolved_target_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "source": "cycle_a",
+          "source_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "target_uid": "uid://j"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
+          "fallback_path": "res://resources/cycle_a.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_a",
+          "resolved_target_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "source": "cycle_b",
+          "source_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "target_uid": "uid://i"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_a",
+          "source_entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_b",
+          "source_entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
+          "fallback_path": "res://resources/unique_leaf.res",
+          "resolution": "resolved",
+          "resolved_target": "unique_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://e"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
+          "fallback_path": "res://missing/not_created.tres",
+          "resolution": "missing",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "missing_owner",
+          "source_entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "target_uid": null
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
+          "fallback_path": "res://missing/stale_target.tres",
+          "resolution": "stale_uid",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "stale_uid_owner",
+          "source_entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "target_uid": "uid://0"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "binary_scene",
+          "source_entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "text_scene",
+          "source_entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "target_uid": "uid://b"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "missing_dependency",
+          "silent_rebind": false,
+          "source": "missing_owner",
+          "target_reference": "res://missing/not_created.tres"
+        },
+        {
+          "code": "stale_resource_uid",
+          "silent_rebind": false,
+          "source": "stale_uid_owner",
+          "target_reference": "uid://0"
+        }
+      ],
+      "exclusions": [
+        ".godot/",
+        ".godot/imported/",
+        "resource_graph_oracle/",
+        "absolute_host_paths"
+      ],
+      "expected_direct_queries": {
+        "binary_scene": [
+          "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY"
+        ],
+        "chain_mid": [
+          "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs"
+        ],
+        "chain_root": [
+          "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80"
+        ],
+        "cycle_a": [
+          "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA"
+        ],
+        "cycle_b": [
+          "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo"
+        ],
+        "fan_in_a": [
+          "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE"
+        ],
+        "fan_in_b": [
+          "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s"
+        ],
+        "fan_out": [
+          "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk"
+        ],
+        "imported_icon": [],
+        "missing_owner": [
+          "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks"
+        ],
+        "orphan": [],
+        "shared_leaf": [],
+        "space_unicode": [],
+        "stale_uid_owner": [
+          "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY"
+        ],
+        "text_scene": [
+          "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0"
+        ],
+        "twin_a": [],
+        "twin_b": [],
+        "unique_leaf": []
+      },
+      "name": "content_edit",
+      "resources": [
+        {
+          "content_generation": "sha256:cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3",
+          "entity_id": "godot:resource:uid:v1:cwdeNTQvwj4EF5WfnHb0Zi72F8VnvU9l1tNL6QIkg80",
+          "format": "imported",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "valid",
+          "imported": true,
+          "oracle_id": "imported_icon",
+          "path": "res://assets/imported_icon.svg",
+          "type": "CompressedTexture2D",
+          "uid": "uid://dge6ajgl8jg04"
+        },
+        {
+          "content_generation": "sha256:acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105",
+          "entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_mid",
+          "path": "res://resources/chain_mid.tres",
+          "type": "Resource",
+          "uid": "uid://c"
+        },
+        {
+          "content_generation": "sha256:bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16",
+          "entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_root",
+          "path": "res://resources/chain_root.tres",
+          "type": "Resource",
+          "uid": "uid://d"
+        },
+        {
+          "content_generation": "sha256:01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055",
+          "entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_a",
+          "path": "res://resources/cycle_a.tres",
+          "type": "Resource",
+          "uid": "uid://i"
+        },
+        {
+          "content_generation": "sha256:ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a",
+          "entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_b",
+          "path": "res://resources/cycle_b.tres",
+          "type": "Resource",
+          "uid": "uid://j"
+        },
+        {
+          "content_generation": "sha256:98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427",
+          "entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_a",
+          "path": "res://resources/fan_in_a.tres",
+          "type": "Resource",
+          "uid": "uid://g"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_b",
+          "path": "res://resources/fan_in_b.res",
+          "type": "Resource",
+          "uid": "uid://h"
+        },
+        {
+          "content_generation": "sha256:f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68",
+          "entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_out",
+          "path": "res://resources/fan_out.tres",
+          "type": "Resource",
+          "uid": "uid://f"
+        },
+        {
+          "content_generation": "sha256:9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66",
+          "entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "missing_owner",
+          "path": "res://resources/missing_owner.tres",
+          "type": "Resource",
+          "uid": "uid://l"
+        },
+        {
+          "content_generation": "sha256:64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd",
+          "entity_id": "godot:resource:uid:v1:WdQDJ1JZFBVXHb5TfT3HHvmPfPPgqpxgnaLwFsDiIis",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "orphan",
+          "path": "res://resources/orphan.tres",
+          "type": "Resource",
+          "uid": "uid://k"
+        },
+        {
+          "content_generation": "sha256:13f3929d8a051f2ac7a46f597bd016e3a3ffd506cda346b998aa2857bce416dc",
+          "entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "13f3929d8a051f2ac7a46f597bd016e3a3ffd506cda346b998aa2857bce416dc"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "shared_leaf",
+          "path": "res://resources/shared_leaf.tres",
+          "type": "Resource",
+          "uid": "uid://b"
+        },
+        {
+          "content_generation": "sha256:883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf",
+          "entity_id": "godot:resource:uid:v1:KyMQx-i4cRRfBqh8ebB8s3pl-XIByTYELgPiiV1XwPI",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "space_unicode",
+          "path": "res://resources/space and_юникод.tres",
+          "type": "Resource",
+          "uid": "uid://p"
+        },
+        {
+          "content_generation": "sha256:840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd",
+          "entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "stale_uid_owner",
+          "path": "res://resources/stale_uid_owner.tres",
+          "type": "Resource",
+          "uid": "uid://m"
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:nBivvrzqL_Gu1UbZLo0zCAtHGBZKiUdhfL6gHW2xWg4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_a",
+          "path": "res://resources/twin_a.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:MJnv4DxgOU0VYo-lHI0riCIn33JzveqOHAh_qLkePp0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_b",
+          "path": "res://resources/twin_b.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "unique_leaf",
+          "path": "res://resources/unique_leaf.res",
+          "type": "Resource",
+          "uid": "uid://e"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "format": "scn",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "binary_scene",
+          "path": "res://scenes/binary_scene.scn",
+          "type": "PackedScene",
+          "uid": "uid://r"
+        },
+        {
+          "content_generation": "sha256:be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824",
+          "entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "format": "tscn",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "text_scene",
+          "path": "res://scenes/text_scene.tscn",
+          "type": "PackedScene",
+          "uid": "uid://q"
+        }
+      ],
+      "transition": {
+        "assertions": [
+          "same_uid_entity_id",
+          "content_generation_changes"
+        ],
+        "from": "base",
+        "mutation": "change shared_leaf source bytes"
+      }
+    },
+    {
+      "dependencies": [
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "chain_mid",
+          "source_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
+          "fallback_path": "res://resources/chain_mid.tres",
+          "resolution": "resolved",
+          "resolved_target": "chain_mid",
+          "resolved_target_entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "source": "chain_root",
+          "source_entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "target_uid": "uid://c"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
+          "fallback_path": "res://resources/cycle_b.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_b",
+          "resolved_target_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "source": "cycle_a",
+          "source_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "target_uid": "uid://j"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
+          "fallback_path": "res://resources/cycle_a.tres",
+          "resolution": "resolved",
+          "resolved_target": "cycle_a",
+          "resolved_target_entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "source": "cycle_b",
+          "source_entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "target_uid": "uid://i"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_a",
+          "source_entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_in_b",
+          "source_entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
+          "fallback_path": "res://resources/unique_leaf.res",
+          "resolution": "resolved",
+          "resolved_target": "unique_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "source": "fan_out",
+          "source_entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "target_uid": "uid://e"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
+          "fallback_path": "res://missing/not_created.tres",
+          "resolution": "missing",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "missing_owner",
+          "source_entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "target_uid": null
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
+          "fallback_path": "res://missing/stale_target.tres",
+          "resolution": "stale_uid",
+          "resolved_target": null,
+          "resolved_target_entity_id": null,
+          "source": "stale_uid_owner",
+          "source_entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "target_uid": "uid://0"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "binary_scene",
+          "source_entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "target_uid": "uid://b"
+        },
+        {
+          "authority": "godot_resource_loader",
+          "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
+          "fallback_path": "res://resources/shared_leaf.tres",
+          "resolution": "resolved",
+          "resolved_target": "shared_leaf",
+          "resolved_target_entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "source": "text_scene",
+          "source_entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "target_uid": "uid://b"
+        }
+      ],
+      "diagnostics": [
+        {
+          "code": "missing_dependency",
+          "silent_rebind": false,
+          "source": "missing_owner",
+          "target_reference": "res://missing/not_created.tres"
+        },
+        {
+          "code": "stale_resource_uid",
+          "silent_rebind": false,
+          "source": "stale_uid_owner",
+          "target_reference": "uid://0"
+        }
+      ],
+      "exclusions": [
+        ".godot/",
+        ".godot/imported/",
+        "resource_graph_oracle/",
+        "absolute_host_paths"
+      ],
+      "expected_direct_queries": {
+        "binary_scene": [
+          "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY"
+        ],
+        "chain_mid": [
+          "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs"
+        ],
+        "chain_root": [
+          "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80"
+        ],
+        "cycle_a": [
+          "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA"
+        ],
+        "cycle_b": [
+          "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo"
+        ],
+        "fan_in_a": [
+          "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE"
+        ],
+        "fan_in_b": [
+          "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s"
+        ],
+        "fan_out": [
+          "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
+          "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk"
+        ],
+        "imported_icon": [],
+        "missing_owner": [
+          "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks"
+        ],
+        "orphan": [],
+        "shared_leaf": [],
+        "space_unicode": [],
+        "stale_uid_owner": [
+          "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY"
+        ],
+        "text_scene": [
+          "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0"
+        ],
+        "twin_a": [],
+        "twin_b": [],
+        "unique_leaf": []
+      },
+      "name": "journal_gap",
+      "resources": [
+        {
+          "content_generation": "sha256:cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3",
+          "entity_id": "godot:resource:uid:v1:cwdeNTQvwj4EF5WfnHb0Zi72F8VnvU9l1tNL6QIkg80",
+          "format": "imported",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "cbe3886b900be4304e100be3b491d6ef4ad842a2dc1d658b2fa967425d5abac3"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "valid",
+          "imported": true,
+          "oracle_id": "imported_icon",
+          "path": "res://assets/imported_icon.svg",
+          "type": "CompressedTexture2D",
+          "uid": "uid://dge6ajgl8jg04"
+        },
+        {
+          "content_generation": "sha256:acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105",
+          "entity_id": "godot:resource:uid:v1:h0_yNQI_BLAsMWEtDgmVOSpxGQsGI9HI47ssVIwmrAo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "acbdea7df4293e8f564b3b150825005f432b9fb71fa9cc7c9b6a7270711d0105"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_mid",
+          "path": "res://resources/chain_mid.tres",
+          "type": "Resource",
+          "uid": "uid://c"
+        },
+        {
+          "content_generation": "sha256:bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16",
+          "entity_id": "godot:resource:uid:v1:rPvfE81OUstwlREbvP4yr6AhPLWPElqa9GVcfUFo_7Q",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "bbdc8c1b10529a49b387988b74ee2b49947e9a5532e8116b65339b3b6cfbba16"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "chain_root",
+          "path": "res://resources/chain_root.tres",
+          "type": "Resource",
+          "uid": "uid://d"
+        },
+        {
+          "content_generation": "sha256:01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055",
+          "entity_id": "godot:resource:uid:v1:n8lXpA2RQ0zB2ebNSLm-BmcLEZp76UiiIFeAROmOkJo",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "01ec997f1a8ee1fdc9d707d613cddfcdf7567de450157878a9ce14285f77b055"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_a",
+          "path": "res://resources/cycle_a.tres",
+          "type": "Resource",
+          "uid": "uid://i"
+        },
+        {
+          "content_generation": "sha256:ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a",
+          "entity_id": "godot:resource:uid:v1:oQJXHMd_0vCC2Pr7kTo-Vqm3SjBIToQ7QNT4BgzGApQ",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "ae4046b045fa08a7596c486aea8179248243116c572de29f63ffe1d7700b711a"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "cycle_b",
+          "path": "res://resources/cycle_b.tres",
+          "type": "Resource",
+          "uid": "uid://j"
+        },
+        {
+          "content_generation": "sha256:98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427",
+          "entity_id": "godot:resource:uid:v1:SecXtmafBrMkes_rd1fNjPcHq5SEiCPnX7rY97zdUG4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "98d20d9ea82a8d2971f88d7e3a17fb19de849f1b6ceba5650eb7d808dd690427"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_a",
+          "path": "res://resources/fan_in_a.tres",
+          "type": "Resource",
+          "uid": "uid://g"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:b-ejyU6vckFbAoZYPHwr5p6LbZD5DKS8kwFBSVbuVZM",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_in_b",
+          "path": "res://resources/fan_in_b.res",
+          "type": "Resource",
+          "uid": "uid://h"
+        },
+        {
+          "content_generation": "sha256:f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68",
+          "entity_id": "godot:resource:uid:v1:_saCgtH_LXwFt9xPOJX9eqs-6-Jo2MN1u4ImEByXWVU",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "f0fb8268a426dbe755d6afcc797dbfebbc4eabab622ca56cd978997d138cbf68"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "fan_out",
+          "path": "res://resources/fan_out.tres",
+          "type": "Resource",
+          "uid": "uid://f"
+        },
+        {
+          "content_generation": "sha256:9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66",
+          "entity_id": "godot:resource:uid:v1:B7xRDe53HesFyq9X1ecma5lEM5CzmyahgpF516bigq0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "9361a1a2f5d9007616998dcff675aeeef6c7652bb16fcfd56a35a6c98c0b0f66"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "missing_owner",
+          "path": "res://resources/missing_owner.tres",
+          "type": "Resource",
+          "uid": "uid://l"
+        },
+        {
+          "content_generation": "sha256:64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd",
+          "entity_id": "godot:resource:uid:v1:WdQDJ1JZFBVXHb5TfT3HHvmPfPPgqpxgnaLwFsDiIis",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "64301943ef9b976e0d34456fceae3f0f512f4d88f78a9687c5d455d676fb63dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "orphan",
+          "path": "res://resources/orphan.tres",
+          "type": "Resource",
+          "uid": "uid://k"
+        },
+        {
+          "content_generation": "sha256:a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71",
+          "entity_id": "godot:resource:uid:v1:9yWqfTIjHm9QQNXjsLoOwef_VTZRuXNhgO46kfXgs-4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "a97ddac0e65539fdf20955a48dd53ca46790555df6a416b24e1036cff3a6ee71"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "shared_leaf",
+          "path": "res://resources/shared_leaf.tres",
+          "type": "Resource",
+          "uid": "uid://b"
+        },
+        {
+          "content_generation": "sha256:883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf",
+          "entity_id": "godot:resource:uid:v1:KyMQx-i4cRRfBqh8ebB8s3pl-XIByTYELgPiiV1XwPI",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "883588f62a866fc51bc0801f003dc3ece36d6529d6cb68a9d860029aaac4bcbf"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "space_unicode",
+          "path": "res://resources/space and_юникод.tres",
+          "type": "Resource",
+          "uid": "uid://p"
+        },
+        {
+          "content_generation": "sha256:840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd",
+          "entity_id": "godot:resource:uid:v1:WB-jm7Yr7sYeWJTAVYLVUGbCuOUgYGW4FVv1ETAAswg",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "840d00feb0976c46fe9a36c32e685cc755ed59b1806372fcb4b977850f7895dd"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "stale_uid_owner",
+          "path": "res://resources/stale_uid_owner.tres",
+          "type": "Resource",
+          "uid": "uid://m"
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:nBivvrzqL_Gu1UbZLo0zCAtHGBZKiUdhfL6gHW2xWg4",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_a",
+          "path": "res://resources/twin_a.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "content_generation": "sha256:12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab",
+          "entity_id": "godot:resource:path-content:v1:MJnv4DxgOU0VYo-lHI0riCIn33JzveqOHAh_qLkePp0",
+          "format": "tres",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "12b198ee000d84fc8505efb19db1291f993ba8caaa7943a7ee166bb0b5063dab"
+          },
+          "identity_scope": "content_revision",
+          "identity_strength": "path_content_generation",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "twin_b",
+          "path": "res://resources/twin_b.tres",
+          "type": "Resource",
+          "uid": null
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:2DreYtecpMXh3D0nhb51sBZExbM628s42Dfk2WEr_ao",
+          "format": "res",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "unique_leaf",
+          "path": "res://resources/unique_leaf.res",
+          "type": "Resource",
+          "uid": "uid://e"
+        },
+        {
+          "entity_id": "godot:resource:uid:v1:PQ7bDuNT1KE0DDqn2s5xD4HO1-WiIfcX3ag0OD_LKdg",
+          "format": "scn",
+          "hash_assertion": {
+            "mode": "runtime_sha256"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "binary_scene",
+          "path": "res://scenes/binary_scene.scn",
+          "type": "PackedScene",
+          "uid": "uid://r"
+        },
+        {
+          "content_generation": "sha256:be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824",
+          "entity_id": "godot:resource:uid:v1:KMsn9dTLZ_JCQBZMI-akJKolGRgYQb7PeNJubxjM1yI",
+          "format": "tscn",
+          "hash_assertion": {
+            "mode": "exact_sha256",
+            "sha256": "be4d97bdf9ffc2d38cdfdbb4ab9a028110e2fc7100daf6a6ccc70db25a330824"
+          },
+          "identity_scope": "persistent",
+          "identity_strength": "resource_uid",
+          "import_state": "not_imported",
+          "imported": false,
+          "oracle_id": "text_scene",
+          "path": "res://scenes/text_scene.tscn",
+          "type": "PackedScene",
+          "uid": "uid://q"
+        }
+      ],
+      "transition": {
+        "assertions": [
+          "resource_journal_gap",
+          "full_snapshot_required",
+          "no_guessed_delta"
+        ],
+        "from": "base",
+        "mutation": "omit one event from the synthetic transition trace"
+      }
+    }
+  ],
+  "required_godot": "4.8",
+  "schema_version": 1
+}

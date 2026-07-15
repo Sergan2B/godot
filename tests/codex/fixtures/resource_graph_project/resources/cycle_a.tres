@@ -1,0 +1,7 @@
+[gd_resource type="Resource" load_steps=2 format=3 uid="uid://i"]
+
+[ext_resource type="Resource" uid="uid://j" path="res://resources/cycle_b.tres" id="1_cycle"]
+
+[resource]
+resource_name = "cycle_a"
+metadata/dependency = ExtResource("1_cycle")

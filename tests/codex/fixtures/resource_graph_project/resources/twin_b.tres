@@ -1,0 +1,5 @@
+[gd_resource type="Resource" format=3]
+
+[resource]
+resource_name = "identical_twin"
+metadata/value = 42

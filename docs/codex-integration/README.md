@@ -20,6 +20,9 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 14. [MCP-001-project-scoped-read-tools.md](MCP-001-project-scoped-read-tools.md) — Sprint 2 MCP contract for project-scoped read tools.
 15. [SPRINT-2-USAGE.md](SPRINT-2-USAGE.md) — build, Codex configuration, smoke workflow, and verification commands.
 16. [SPRINT-2-EVIDENCE.md](SPRINT-2-EVIDENCE.md) — implemented scope and reproducible Windows/macOS live verification.
+17. [SPRINT-3-PLAN.md](SPRINT-3-PLAN.md) — implementation-ready ResourceUID, dependency graph, persistent index, and evidence plan.
+18. [SPRINT-3-STAGE-1-PLAN.md](SPRINT-3-STAGE-1-PLAN.md) — executable `INDEX-001`, identity-rule, fixture, and golden-graph plan for `S3-01`/`S3-02`.
+19. [INDEX-001-semantic-index-storage-and-migrations.md](INDEX-001-semantic-index-storage-and-migrations.md) — frozen resource identity/logical-index contract; measured physical storage decision remains `D-05`.
 
 ## Document status
 
@@ -38,6 +41,9 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | Sprint 1 Stage 4 local evidence | Passed | Superseded by Stage 5 evidence |
 | Sprint 1 Stage 5 local evidence | Passed and committed locally | Separately authorized publication and remote CI |
 | Sprint 2 implementation | Windows x86_64 and macOS arm64 live editor→bridge→sidecar→MCP evidence complete | Optional external Codex UX capture; Sprint 3 implementation |
+| Sprint 3 plan | Implementation-ready | Execute `S3-01`–`S3-10`; freeze storage decision `D-05` by day 5 |
+| Sprint 3 Stage 1 | Complete and locally verified | Execute `S3-03` storage spike; freeze `D-05` by Sprint day 5 |
+| `INDEX-001` resource contract | Frozen; `D-05` pending | Run SQLite vs segment-store spike without changing frozen identity/graph semantics |
 
 ## Interim ownership
 

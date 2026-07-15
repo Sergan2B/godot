@@ -1,0 +1,9 @@
+[gd_resource type="Resource" load_steps=3 format=3 uid="uid://f"]
+
+[ext_resource type="Resource" uid="uid://b" path="res://resources/shared_leaf.tres" id="1_shared"]
+[ext_resource type="Resource" uid="uid://e" path="res://resources/unique_leaf.res" id="2_unique"]
+
+[resource]
+resource_name = "fan_out"
+metadata/shared = ExtResource("1_shared")
+metadata/unique = ExtResource("2_unique")

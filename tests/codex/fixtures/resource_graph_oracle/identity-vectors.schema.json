@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godotengine.org/codex/resource-graph/identity-vectors.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "algorithms",
+    "path_vectors",
+    "identity_vectors",
+    "diagnostic_vectors"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "algorithms": {
+      "type": "object",
+      "required": ["uid_domain", "path_content_domain", "content_generation"],
+      "properties": {
+        "uid_domain": {"type": "string", "minLength": 1},
+        "path_content_domain": {"type": "string", "minLength": 1},
+        "content_generation": {"const": "sha256:<lowercase-hex>"}
+      },
+      "additionalProperties": false
+    },
+    "path_vectors": {
+      "type": "array",
+      "minItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["name", "input", "valid"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "input": {"type": "string"},
+          "valid": {"type": "boolean"},
+          "display_path": {"type": "string", "pattern": "^res://"},
+          "comparison_path": {"type": "string", "pattern": "^res://"},
+          "error": {"type": "string", "minLength": 1}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"valid": {"const": true}}},
+            "then": {"required": ["display_path", "comparison_path"]},
+            "else": {"required": ["error"]}
+          }
+        ],
+        "additionalProperties": false
+      }
+    },
+    "identity_vectors": {
+      "type": "array",
+      "minItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["name", "kind", "expected_entity_id"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["resource_uid", "path_content_generation"]},
+          "uid": {"type": "string", "pattern": "^uid://"},
+          "path": {"type": "string", "pattern": "^res://"},
+          "content_generation": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "expected_entity_id": {"type": "string", "pattern": "^godot:resource:"},
+          "same_identity_as": {"type": "string", "minLength": 1},
+          "different_identity_from": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "diagnostic_vectors": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["name", "observation", "code", "silent_rebind"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "observation": {"type": "string", "minLength": 1},
+          "code": {"type": "string", "minLength": 1},
+          "silent_rebind": {"const": false}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
