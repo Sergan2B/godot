@@ -61,7 +61,7 @@ python tests\codex\sprint2_live_smoke.py `
   --timeout 40
 ```
 
-The harness also retains the macOS arm64 UDS profile:
+The macOS arm64 UDS profile is live-verified as well:
 
 ```sh
 mkdir -p /tmp/gcb-s2
@@ -71,11 +71,12 @@ python3 tests/codex/sprint2_live_smoke.py \
   --godot /path/to/Godot.app/Contents/MacOS/Godot \
   --sidecar godot-codex-mcp/target/release/godot-codex-mcp \
   --project-root /tmp/gcb-s2/project \
-  --evidence tests/codex/evidence/sprint-2-live-smoke.json
+  --evidence tests/codex/evidence/sprint-2-live-smoke-macos.json
 ```
 
 The harness launches the editor and sidecar, speaks MCP over stdio, asserts the
 exact node/type/owner/script and both live values, requires dirty state and
 increasing event/scene revisions, verifies that a new snapshot generation is
-used, and atomically writes a normalized evidence artifact. It fails closed on
+used, requires all per-session runtime artifacts to disappear after editor
+exit, and atomically writes a normalized evidence artifact. It fails closed on
 hosts other than Windows x86_64 and macOS arm64.

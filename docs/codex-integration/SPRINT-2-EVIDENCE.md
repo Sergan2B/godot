@@ -1,14 +1,14 @@
 # Sprint 2 evidence — first MCP vertical slice
 
-**Recorded:** 2026-07-14
+**Recorded:** 2026-07-14 (Windows); 2026-07-15 (macOS)
 
-**Local host:** Windows x86_64
+**Local hosts:** Windows x86_64; macOS 26.5.2 arm64
 
-**Target runtime:** Windows x86_64 (`tcp_loopback`); macOS arm64 UDS retained
+**Target runtimes:** Windows x86_64 (`tcp_loopback`); macOS arm64 (`uds`)
 
 ## Implemented scope
 
-- Bridge RPC 1.1 negotiation, editor snapshot transfer, checksums, acknowledgements,
+- Bridge RPC 1.1 negotiation, editor snapshot transfer, checksums, acknowledgments,
   bounded event invalidation, and revision vectors;
 - main-thread editor adapters for the current scene, selection, unsaved Inspector
   values, NodePath, owner, script, dirty state, and bounded Variant projection;
@@ -37,6 +37,24 @@ python -m SCons platform=windows target=editor dev_build=yes tests=yes \
 Result: PASS. The full editor and console binaries linked successfully. A final
 incremental build recompiled `test_codex_bridge.cpp`, `codex_bridge_service.cpp`,
 and `editor_context_adapter.cpp` after the last source changes.
+
+### macOS editor build and CodexBridge tests
+
+```text
+BUILD_NAME=codex .venv/bin/scons platform=macos arch=arm64 target=editor \
+  dev_mode=yes dev_build=yes tests=yes vulkan=no accesskit=no angle=no -j8
+bin/godot.macos.editor.dev.arm64 --test \
+  '--test-case=*[CodexBridge]*' --no-colors
+```
+
+Result: PASS. The strict Apple Silicon editor build linked with warnings as
+errors. The focused suite passed 26 test cases and 636 assertions with no
+failures. Its temporary project now uses short `/tmp` roots on macOS so the
+project-local endpoint remains below `sockaddr_un.sun_path`; failed setup is
+also guarded from cascading into a test-process crash.
+
+The full macOS Godot suite also passed: 1,431 test cases and 421,793 assertions,
+with three declared skips and no failures.
 
 ### CodexBridge unit tests
 
@@ -79,6 +97,12 @@ cargo build --release -p godot-codex-mcp
 
 Result: PASS — 15 tests, zero Clippy warnings, successful native Windows and
 macOS arm64 compile checks, and a successful optimized sidecar build.
+
+The production workspace was rerun natively on macOS arm64: formatting passed,
+14 platform-applicable tests passed, Clippy emitted no warnings under
+`-D warnings`, and the optimized `godot-codex-mcp` binary built successfully.
+The separate locked Sprint 1 conformance workspace passed its eight offline
+schema, fixture, discovery, framing, authentication-vector, and trace tests.
 
 The model-free vertical-slice test feeds the canonical checksum-verified Bridge
 RPC 1.1 snapshot into the semantic replica and invokes the selected-nodes MCP
@@ -156,6 +180,29 @@ The editor removed `bridge.json`, `session.token`, and `bridge.lock` on exit,
 the scene remained unsaved during both observations, and `main.tscn` was
 byte-identical before and after the run.
 
+## macOS live end-to-end gate
+
+The same model-free harness passed on macOS arm64 through the production Unix
+Domain Socket profile and wrote
+`tests/codex/evidence/sprint-2-live-smoke-macos.json`.
+
+```text
+platform: macos-arm64
+disk value: 240.0
+first live value: 275.0, event_seq 4, scene_revision 2
+second live value: 310.0, event_seq 5, scene_revision 3
+snapshot IDs: distinct
+status: pass
+```
+
+The editor binary was built from this tree with SHA-256
+`cbff618c8049f481a58623ba4097350b6c2868b45479cec4dfb4780088de1cb6`;
+the release sidecar SHA-256 was
+`b2deec40779bdee29b4ba4d58f84c5961c18e8ddf1b835fd60fcbe4ad494bc7f`.
+After editor exit, `bridge.json`, `session.token`, `bridge.lock`, and the UDS
+endpoint were absent; only the empty private `codex/run` directories remained.
+The copied fixture's `main.tscn` was byte-identical before and after the run.
+
 ## Optional human-facing Codex gate
 
 The final human gate then uses an external Codex task. Follow
@@ -166,6 +213,6 @@ and a monotonically increasing scene revision after a second edit.
 Archive the prompt, tool calls, normalized responses and UX capture using
 `tests/codex/evidence/sprint-2-live-checklist.md`.
 
-The automated production Windows transport gate is complete. The external
-Codex checklist remains useful as a separate UX acceptance record, but is no
-longer blocked on a macOS host.
+The automated production transport gate is complete on Windows x86_64 and
+macOS arm64. The external Codex checklist remains useful as a separate optional
+UX acceptance record and does not block the Sprint 2 Architecture Proof.

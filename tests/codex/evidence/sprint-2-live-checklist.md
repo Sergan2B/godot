@@ -1,18 +1,20 @@
 # Sprint 2 live acceptance checklist
 
-**Status:** AUTOMATED PASS on Windows x86_64 — optional external Codex UX gate pending
+**Status:** AUTOMATED PASS on Windows x86_64 and macOS arm64 — optional external Codex UX gate pending
 
 ## Environment
 
 - [x] Windows 11 `10.0.26200`, x86_64 host recorded
+- [x] macOS `26.5.2`, arm64 host recorded
 - [x] custom Godot commit/build command recorded in `SPRINT-2-EVIDENCE.md`
 - [x] `godot-codex-mcp 0.1.0` recorded
 - [x] canonical fixture path `tests/codex/fixtures/smoke_project` recorded
 - [x] automated `sprint2_live_smoke.py` evidence attached
+- [x] macOS evidence attached as `sprint-2-live-smoke-macos.json`
 
 ## Automated model-free gate
 
-- [x] `tests/codex/evidence/sprint-2-live-smoke.json` reports `status: pass`
+- [x] Windows and macOS live-smoke evidence report `status: pass`
 - [x] first value is `275.0`, second value is `310.0`, disk value is `240.0`
 - [x] second `event_seq` and `scene_revision` are larger
 - [x] snapshot IDs differ
@@ -45,6 +47,7 @@
 ## Evidence to archive
 
 - [x] normalized MCP observations for both requests in `sprint-2-live-smoke.json`
+- [x] normalized macOS MCP observations in `sprint-2-live-smoke-macos.json`
 - [ ] pre/post editor snapshots or Inspector captures
 - [ ] redacted protocol/tool-call trace
 - [ ] short UX recording or screenshots

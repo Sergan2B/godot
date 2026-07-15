@@ -99,7 +99,12 @@ public:
 	Error error = OK;
 
 	TemporaryBridgeProject() {
-		root = OS::get_singleton()->get_temp_path().path_join("gcb_" + itos(OS::get_singleton()->get_process_id()) + "_" + itos(OS::get_singleton()->get_ticks_usec()));
+		String temporary_root = OS::get_singleton()->get_temp_path();
+#ifdef MACOS_ENABLED
+		// NSTemporaryDirectory is too long for a project-local sockaddr_un path.
+		temporary_root = "/tmp";
+#endif
+		root = temporary_root.path_join("gcb_" + itos(OS::get_singleton()->get_process_id()) + "_" + itos(OS::get_singleton()->get_ticks_usec()));
 		error = DirAccess::make_dir_absolute(root);
 		if (error != OK) {
 			return;
@@ -161,6 +166,9 @@ static Ref<BridgeStreamPeer> connect_test_client(const String &p_endpoint) {
 }
 
 static bool send_test_object(const Ref<BridgeStreamPeer> &p_peer, const Dictionary &p_object, int p_fragment_size = 0) {
+	if (p_peer.is_null()) {
+		return false;
+	}
 	PackedByteArray frame;
 	if (BridgeFrameCodec::encode_json(p_object, frame) != OK) {
 		return false;
@@ -182,6 +190,9 @@ static bool send_test_object(const Ref<BridgeStreamPeer> &p_peer, const Dictiona
 }
 
 static bool receive_test_object(const Ref<BridgeStreamPeer> &p_peer, Dictionary &r_object) {
+	if (p_peer.is_null()) {
+		return false;
+	}
 	BridgeFrameCodec codec;
 	const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + 2000000;
 	while (OS::get_singleton()->get_ticks_usec() < deadline) {
@@ -940,6 +951,9 @@ static Dictionary make_rpc_cancel(const String &p_request_id, const Dictionary &
 }
 
 static bool wait_for_disconnect(const Ref<BridgeStreamPeer> &p_peer) {
+	if (p_peer.is_null()) {
+		return false;
+	}
 	const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + 2000000;
 	while (OS::get_singleton()->get_ticks_usec() < deadline) {
 		p_peer->poll();

@@ -1,0 +1,55 @@
+{
+  "disk_value": 240.0,
+  "first": {
+    "editor_session_id": "editor:8f66eba642e0c02bb641d361e7a4d697",
+    "event_seq": 4,
+    "godot_type": "CharacterBody2D",
+    "node_id": "node:a17d69872c5da92024f0ead40b0808c7",
+    "node_path": "Player",
+    "owner_path": ".",
+    "project_id": "project:sha256:2073d3eaa46f447a163543e4dc2b76495b2f2a4957d6ad9202f21486c631bfc6",
+    "property": {
+      "freshness": "current",
+      "name": "movement_speed",
+      "source": "live_editor_property",
+      "value": 275.0
+    },
+    "scene_dirty": true,
+    "scene_id": "scene:fae0caf8644febf7cd3fc5a3f46a6338",
+    "scene_revision": 2,
+    "script_path": "res://player.gd",
+    "snapshot_id": "snapshot:923c896cfab005566b89c1c0b8f73420"
+  },
+  "godot_version": "4.8.dev.codex.cae21453b",
+  "host": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "mcp_protocol": "2025-11-25",
+  "platform": "macos-arm64",
+  "schema_version": "1.0",
+  "second": {
+    "editor_session_id": "editor:8f66eba642e0c02bb641d361e7a4d697",
+    "event_seq": 5,
+    "godot_type": "CharacterBody2D",
+    "node_id": "node:a17d69872c5da92024f0ead40b0808c7",
+    "node_path": "Player",
+    "owner_path": ".",
+    "project_id": "project:sha256:2073d3eaa46f447a163543e4dc2b76495b2f2a4957d6ad9202f21486c631bfc6",
+    "property": {
+      "freshness": "current",
+      "name": "movement_speed",
+      "source": "live_editor_property",
+      "value": 310.0
+    },
+    "scene_dirty": true,
+    "scene_id": "scene:fae0caf8644febf7cd3fc5a3f46a6338",
+    "scene_revision": 3,
+    "script_path": "res://player.gd",
+    "snapshot_id": "snapshot:beb16d0befba9e1021bd6d0e695b0733"
+  },
+  "sidecar_version": "godot-codex-mcp 0.1.0",
+  "status": "pass",
+  "tools": [
+    "godot_get_current_scene",
+    "godot_get_editor_state",
+    "godot_get_selected_nodes"
+  ]
+}

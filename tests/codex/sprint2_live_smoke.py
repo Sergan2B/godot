@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Model-free Sprint 2 live editor → bridge → sidecar → MCP smoke test."""
 
 from __future__ import annotations
@@ -13,8 +12,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any
-
+from typing import Any, cast
 
 MCP_PROTOCOL = "2025-11-25"
 TOOL_NAMES = {
@@ -93,22 +91,19 @@ class McpClient:
     def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         request_id = self.next_id
         self.next_id += 1
-        self._send(
-            {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "method": method,
-                "params": params,
-            }
-        )
+        self._send({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": method,
+            "params": params,
+        })
         deadline = time.monotonic() + self.timeout
         while time.monotonic() < deadline:
             if request_id in self.pending:
                 return self.pending.pop(request_id)
             if self.process.process.poll() is not None:
                 raise SmokeFailure(
-                    f"sidecar exited with {self.process.process.returncode}: "
-                    + " | ".join(self.process.tail[-10:])
+                    f"sidecar exited with {self.process.process.returncode}: " + " | ".join(self.process.tail[-10:])
                 )
             try:
                 line = self.process.lines.get(timeout=0.1)
@@ -132,7 +127,7 @@ def wait_for_json(path: Path, phase: int, timeout: float) -> dict[str, Any]:
             if "error" in value:
                 raise SmokeFailure(f"editor automation failed: {value['error']}")
             if value.get("phase") == phase:
-                return value
+                return cast(dict[str, Any], value)
         except (FileNotFoundError, json.JSONDecodeError) as error:
             last_error = error
         time.sleep(0.05)
@@ -174,9 +169,7 @@ def selected_observation(content: dict[str, Any], expected: float) -> dict[str, 
     properties = node.get("properties")
     if not isinstance(properties, list):
         return None
-    property_value = next(
-        (item for item in properties if item.get("name") == "movement_speed"), None
-    )
+    property_value = next((item for item in properties if item.get("name") == "movement_speed"), None)
     if (
         property_value is None
         or property_value.get("value") != expected
@@ -188,13 +181,9 @@ def selected_observation(content: dict[str, Any], expected: float) -> dict[str, 
     revisions = content.get("revision_vector")
     if not isinstance(revisions, dict) or not isinstance(revisions.get("event_seq"), int):
         return None
-    if not isinstance(content.get("project_id"), str) or not content["project_id"].startswith(
-        "project:sha256:"
-    ):
+    if not isinstance(content.get("project_id"), str) or not content["project_id"].startswith("project:sha256:"):
         return None
-    if not isinstance(content.get("editor_session_id"), str) or not content[
-        "editor_session_id"
-    ].startswith("editor:"):
+    if not isinstance(content.get("editor_session_id"), str) or not content["editor_session_id"].startswith("editor:"):
         return None
     return {
         "snapshot_id": content.get("snapshot_id"),
@@ -243,9 +232,7 @@ def poll_observation(client: McpClient, expected: float, timeout: float) -> dict
 def atomic_json(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     temporary.replace(path)
 
 
@@ -282,9 +269,7 @@ def main() -> int:
     elif sys.platform == "darwin" and machine in {"arm64", "aarch64"}:
         platform_tag = "macos-arm64"
     else:
-        raise SmokeFailure(
-            "the Sprint 2 live gate requires Windows x86_64 or macOS arm64"
-        )
+        raise SmokeFailure("the Sprint 2 live gate requires Windows x86_64 or macOS arm64")
     project_root = arguments.project_root.resolve(strict=True)
     godot = arguments.godot.resolve(strict=True)
     sidecar = arguments.sidecar.resolve(strict=True)
@@ -317,6 +302,18 @@ def main() -> int:
             time.sleep(0.05)
         if not discovery.is_file():
             raise SmokeFailure("bridge discovery did not appear")
+
+        discovery_record = json.loads(discovery.read_text(encoding="utf-8"))
+        runtime_paths = [
+            discovery,
+            project_root / ".godot/codex/session.token",
+            project_root / ".godot/codex/bridge.lock",
+        ]
+        if discovery_record.get("transport") == "uds":
+            endpoint = Path(str(discovery_record.get("endpoint", "")))
+            if endpoint.is_absolute() or ".." in endpoint.parts:
+                raise SmokeFailure("bridge discovery contains an unsafe UDS endpoint")
+            runtime_paths.append(project_root / endpoint)
 
         mcp = LineProcess(
             [str(sidecar), "--project-root", str(project_root)],
@@ -363,6 +360,9 @@ def main() -> int:
         disk_after = scene_path.read_text(encoding="utf-8")
         if disk_after != disk_before:
             raise SmokeFailure("the live smoke unexpectedly changed main.tscn on disk")
+        remaining_runtime_paths = [path.name for path in runtime_paths if path.exists()]
+        if remaining_runtime_paths:
+            raise SmokeFailure("editor left runtime artifacts after exit: " + ", ".join(remaining_runtime_paths))
 
         atomic_json(
             arguments.evidence,

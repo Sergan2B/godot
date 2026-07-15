@@ -1,6 +1,6 @@
 # Sprint 2 usage — live Godot read tools in Codex
 
-**Status:** Windows x86_64 implementation and automated live gate complete
+**Status:** Windows x86_64 and macOS arm64 automated live gates complete
 
 ## Prerequisites
 
@@ -76,7 +76,7 @@ python3 tests/codex/sprint2_live_smoke.py \
   --godot /path/to/Godot.app/Contents/MacOS/Godot \
   --sidecar godot-codex-mcp/target/release/godot-codex-mcp \
   --project-root /tmp/gcb-s2/project \
-  --evidence tests/codex/evidence/sprint-2-live-smoke.json
+  --evidence tests/codex/evidence/sprint-2-live-smoke-macos.json
 ```
 
 The fixture plugin is opt-in and remains inert outside this harness. The test
@@ -110,8 +110,9 @@ cargo test --workspace --all-targets --manifest-path godot-codex-mcp/Cargo.toml
 cargo clippy --workspace --all-targets --manifest-path godot-codex-mcp/Cargo.toml -- -D warnings
 ```
 
-The automated Windows gate is recorded in
-`tests/codex/evidence/sprint-2-live-smoke.json`. The optional human-facing
-external-Codex workflow is recorded separately in
+The automated Windows and macOS gates are recorded in
+`tests/codex/evidence/sprint-2-live-smoke.json` and
+`tests/codex/evidence/sprint-2-live-smoke-macos.json`. The optional
+human-facing external-Codex workflow is recorded separately in
 `tests/codex/evidence/sprint-2-live-checklist.md`; it uses the same exact-root
 configuration and three read-only tools.

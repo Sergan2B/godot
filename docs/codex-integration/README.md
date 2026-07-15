@@ -19,7 +19,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 13. [SPRINT-1-STAGE-5.md](SPRINT-1-STAGE-5.md) — Rust conformance client, canonical redacted trace, and final local Sprint 1 evidence.
 14. [MCP-001-project-scoped-read-tools.md](MCP-001-project-scoped-read-tools.md) — Sprint 2 MCP contract for project-scoped read tools.
 15. [SPRINT-2-USAGE.md](SPRINT-2-USAGE.md) — build, Codex configuration, smoke workflow, and verification commands.
-16. [SPRINT-2-EVIDENCE.md](SPRINT-2-EVIDENCE.md) — implemented scope, reproducible local verification, and the remaining macOS live gate.
+16. [SPRINT-2-EVIDENCE.md](SPRINT-2-EVIDENCE.md) — implemented scope and reproducible Windows/macOS live verification.
 
 ## Document status
 
@@ -37,7 +37,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | Sprint 1 Stage 3 local evidence | Passed | Superseded by Stage 4 evidence |
 | Sprint 1 Stage 4 local evidence | Passed | Superseded by Stage 5 evidence |
 | Sprint 1 Stage 5 local evidence | Passed and committed locally | Separately authorized publication and remote CI |
-| Sprint 2 implementation | Windows x86_64 live editor→bridge→sidecar→MCP evidence complete; macOS-arm64 compile check retained | Optional external Codex UX capture |
+| Sprint 2 implementation | Windows x86_64 and macOS arm64 live editor→bridge→sidecar→MCP evidence complete | Optional external Codex UX capture; Sprint 3 implementation |
 
 ## Interim ownership
 
