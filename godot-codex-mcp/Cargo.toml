@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/bridge-client",
+  "crates/index-store",
   "crates/semantic-model",
   "crates/mcp-server",
   "crates/godot-codex-mcp",

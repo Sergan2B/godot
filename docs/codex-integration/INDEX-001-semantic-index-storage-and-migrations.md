@@ -1,6 +1,6 @@
 # INDEX-001 — semantic index contract, storage, and migrations
 
-**Status:** Resource contract frozen; storage decision `D-05` pending
+**Status:** Resource contract frozen; local `D-05` selects the segment store
 
 **Version:** 0.1
 
@@ -9,7 +9,8 @@
 **Parent:** [SPRINT-3-PLAN.md](SPRINT-3-PLAN.md)
 
 **Stage evidence:**
-[SPRINT-3-STAGE-1-PLAN.md](SPRINT-3-STAGE-1-PLAN.md), `S3-01`/`S3-02`
+[SPRINT-3-STAGE-1-PLAN.md](SPRINT-3-STAGE-1-PLAN.md), `S3-01`/`S3-02`;
+[SPRINT-3-STAGE-2-PLAN.md](SPRINT-3-STAGE-2-PLAN.md), `S3-03`/`D-05`
 
 ## 1. Purpose and normative language
 
@@ -22,10 +23,10 @@ The terms **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative. A produ
 store that cannot satisfy a MUST reports the defined diagnostic or invalidation; it does
 not guess a result and label it exact.
 
-`D-05` will choose SQLite or the measured segment store during `S3-03`. Table names,
-SQL, files, pages, segments, and backend cursors are deliberately absent from this
-contract. The chosen backend MUST implement the observable guarantees below without
-changing entity IDs, graph meaning, ordering, or recovery behavior.
+`D-05` selects the measured immutable segment store for the local implementation stream.
+Table names, SQL, files, pages, segments, and backend cursors remain absent from the
+public contract. The chosen backend MUST implement the observable guarantees below
+without changing entity IDs, graph meaning, ordering, or recovery behavior.
 
 ## 2. Scope and non-goals
 
@@ -355,8 +356,41 @@ the same source generation and target schema, validates all invariants, and acti
 only after durable success. Cancellation, crash, or failed validation preserves the
 prior generation. If no safe migration exists, the cache is quarantined and rebuilt.
 
-`D-05` must record backend-specific locking, flush, schema metadata, and migration steps
-without weakening these rules.
+### 11.1 `D-05` physical segment-store decision
+
+`D-05` freezes the measured current candidate layout as production physical schema
+`segment-v1`. It lives at `.godot/codex/index/` and uses immutable, content-addressed
+`.seg` files plus sorted offset indexes. Resources, source documents, direct edges,
+reverse edges, diagnostics, tombstones, and the materialized resource lookup are
+partitioned into 256 stable shards by the first byte of a SHA-256 key. Generation
+manifests bind the project, logical schema, physical version, checkpoint, validation
+digest, and every referenced segment digest.
+
+One writer holds `.godot/codex/index.lock`; a competing writer receives `store_busy`.
+Data and indexes are written as new files and flushed before their staging manifest is
+renamed into `generations/`. Activation writes a new uniquely named commit marker only
+after the generation manifest and header are durable. Readers choose the latest valid
+marker, verify the manifest digest and every referenced segment, and therefore observe
+only the complete old or complete new generation. Retention keeps the active and one
+retired generation and removes unreferenced immutable segments.
+
+Startup ignores incomplete staging state. A corrupt marker, manifest, segment, lookup,
+project binding, or incompatible physical version is never returned as current and is
+quarantined/rebuilt without changing project resources. Inside the test-only spike,
+`physical_version=1` is the legacy migration fixture that resolves resource lookups from
+primary records, while the measured candidate is `physical_version=2`. Its idempotent
+v1-to-v2 migration creates a new generation with materialized lookup shards, validates
+an identical logical graph, and activates it through the same marker protocol. The
+production implementation starts its own version namespace at `segment-v1` rather than
+shipping the deliberately obsolete spike fixture.
+
+Bundled SQLite also passed all local correctness gates, but it was rejected for this
+decision because its measured rename write amplification (`23,438.15x` versus
+`316.07x`), bounded artifact size (`212.38 MiB` versus `45.49 MiB`), rename p95
+(`1,618.29 ms` versus `478.45 ms`), and dependency/binary impact were materially worse.
+The segment store's slower full build did not outweigh those results under the frozen
+weighted rule. Windows/Linux process-level portability remains `not_run`; it is a
+separate later validation gate, not remote-CI evidence for this local decision.
 
 ## 12. Direct query contract
 
@@ -450,8 +484,25 @@ edges remain observable; neither resolves to a similarly named file.
 | Resource identity/path/content algorithms | Frozen by `S3-01` | Complete |
 | Logical graph/revision/generation/query contract | Frozen by `S3-01` | Complete |
 | Golden fixture/oracle format | Frozen by `S3-02` | Complete |
-| `D-05` persistent backend and physical migration | Pending measured `S3-03` spike | Sprint day 5 |
+| `D-05` persistent backend and physical migration | Segment store selected by full local macOS matrix | Complete locally; Windows/Linux portability `not_run` |
 | `D-06` node/subresource persistent identity | Deferred to `SCENE-001` | Sprint 4 |
+
+### 15.1 `S3-03` execution status
+
+The storage-neutral crate, bundled-SQLite candidate, immutable segment candidate, and
+the shared benchmark/fault harness are implemented. Full macOS evidence on 2026-07-15
+passes all 12 correctness, recovery, migration, locking, packaging, stress, and SLO
+gates plus all 13 detailed hard-kill/cancellation/corruption coordinates for both
+candidates. Under the frozen weighted rule the local score is `0.3508`
+(`95% CI 0.3474–0.3556`) for SQLite and `0.8122` (`95% CI 0.8118–0.8138`)
+for the segment store.
+
+The canonical local report at `tests/codex/evidence/sprint-3-storage-spike.json` records
+`chosen_backend=segment`, the source-tree digest, every raw sample, and the deterministic
+decision reason. This freezes `D-05` for subsequent local Sprint 3 implementation.
+Windows/Linux results have not been produced and are not implied by this decision.
+Exact commands, candidate layouts, raw metrics, and the remaining portability boundary
+are recorded in [SPRINT-3-STAGE-2-PLAN.md](SPRINT-3-STAGE-2-PLAN.md).
 
 ## 16. Contract acceptance
 
