@@ -30,6 +30,13 @@ func _run() -> void:
 		if mutation_count > 1:
 			marker += "-%d" % (mutation_index + 1)
 		while not FileAccess.file_exists(marker):
+			# Acceptance may stop an editor before the first mutation (the base
+			# reopen gate) or while unwinding an earlier contract failure. Honour
+			# that request here so Godot can run the Bridge shutdown path instead
+			# of being terminated with live discovery/token/lock artifacts.
+			if FileAccess.file_exists(DONE_MARKER):
+				quit(0)
+				return
 			await process_frame
 
 		if not external_mutation and mutation_index == 0:
