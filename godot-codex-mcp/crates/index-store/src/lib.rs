@@ -4,7 +4,14 @@
 //! Physical stores implement these interfaces without changing the observable
 //! generation, revision, validation, and query rules.
 
+mod segment;
+
 use std::collections::{BTreeMap, BTreeSet};
+
+pub use segment::{
+    IndexReadSnapshot, SEGMENT_PHYSICAL_VERSION, SegmentFaultInjection, SegmentFaultMode,
+    SegmentFaultPoint, SegmentIndexReader, SegmentIndexStore, SegmentStore, SegmentTransaction,
+};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -854,7 +861,10 @@ fn update_field(hasher: &mut Sha256, value: &str) {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
+    use tempfile::TempDir;
 
     fn generation() -> IndexGeneration {
         let resource = |id: &str, uid: &str, path: &str| ResourceEntity {
@@ -919,6 +929,40 @@ mod tests {
         generation
     }
 
+    fn renamed_batch(base: &IndexGeneration) -> IncrementalBatch {
+        let mut resource = base.resources[0].clone();
+        resource.display_path = "res://renamed-a.tres".to_owned();
+        resource.comparison_path = resource.display_path.clone();
+        resource.resource_revision = 2;
+        let mut document = base.source_documents[0].clone();
+        document.comparison_path = resource.comparison_path.clone();
+        IncrementalBatch {
+            project_id: base.project_id.clone(),
+            base_generation_id: base.generation_id.clone(),
+            generation_id: "generation-2".to_owned(),
+            index_revision: 2,
+            creation_reason: "incremental_rename".to_owned(),
+            checkpoint: IngestionCheckpoint {
+                editor_session_id: "session-1".to_owned(),
+                resource_revision: 2,
+                project_revision: 2,
+                index_revision: 2,
+                source_complete: true,
+                snapshot_checksum: "sha256:snapshot-2".to_owned(),
+            },
+            upsert_resources: vec![resource],
+            remove_resource_entity_ids: Vec::new(),
+            upsert_source_documents: vec![document],
+            remove_source_document_entity_ids: Vec::new(),
+            upsert_dependencies: Vec::new(),
+            remove_dependency_edge_ids: Vec::new(),
+            upsert_diagnostics: Vec::new(),
+            remove_diagnostic_ids: Vec::new(),
+            upsert_tombstones: Vec::new(),
+            remove_tombstone_entity_ids: Vec::new(),
+        }
+    }
+
     #[test]
     fn validates_and_queries_direct_reverse_parity() {
         let generation = generation();
@@ -975,37 +1019,7 @@ mod tests {
     #[test]
     fn applies_incremental_batch_against_exact_base_generation() {
         let base = generation();
-        let mut resource = base.resources[0].clone();
-        resource.display_path = "res://renamed-a.tres".to_owned();
-        resource.comparison_path = resource.display_path.clone();
-        resource.resource_revision = 2;
-        let mut document = base.source_documents[0].clone();
-        document.comparison_path = resource.comparison_path.clone();
-        let batch = IncrementalBatch {
-            project_id: base.project_id.clone(),
-            base_generation_id: base.generation_id.clone(),
-            generation_id: "generation-2".to_owned(),
-            index_revision: 2,
-            creation_reason: "incremental_rename".to_owned(),
-            checkpoint: IngestionCheckpoint {
-                editor_session_id: "session-1".to_owned(),
-                resource_revision: 2,
-                project_revision: 2,
-                index_revision: 2,
-                source_complete: true,
-                snapshot_checksum: "sha256:snapshot-2".to_owned(),
-            },
-            upsert_resources: vec![resource],
-            remove_resource_entity_ids: Vec::new(),
-            upsert_source_documents: vec![document],
-            remove_source_document_entity_ids: Vec::new(),
-            upsert_dependencies: Vec::new(),
-            remove_dependency_edge_ids: Vec::new(),
-            upsert_diagnostics: Vec::new(),
-            remove_diagnostic_ids: Vec::new(),
-            upsert_tombstones: Vec::new(),
-            remove_tombstone_entity_ids: Vec::new(),
-        };
+        let batch = renamed_batch(&base);
         let next = base
             .apply_incremental_batch(&batch)
             .expect("incremental batch");
@@ -1025,6 +1039,106 @@ mod tests {
         assert!(matches!(
             base.apply_incremental_batch(&wrong_base),
             Err(StoreError::ValidationFailed(reason)) if reason.contains("base generation")
+        ));
+    }
+
+    #[test]
+    fn segment_store_publishes_atomic_reader_snapshots() {
+        let temp = TempDir::new().expect("temp");
+        let base = generation();
+        let mut store = SegmentStore::open(temp.path(), &base.project_id).expect("store");
+        store.activate(&base, None).expect("activate base");
+        let reader = store.reader();
+        let pinned = reader.snapshot().expect("pinned base");
+
+        let next = base
+            .apply_incremental_batch(&renamed_batch(&base))
+            .expect("next generation");
+        store.activate(&next, None).expect("activate next");
+
+        assert_eq!(pinned.generation().generation_id, "generation-1");
+        assert_eq!(
+            reader
+                .snapshot()
+                .expect("current")
+                .generation()
+                .generation_id,
+            "generation-2"
+        );
+        assert_eq!(
+            pinned
+                .resource(&ResourceSelector::Uid("uid://a".to_owned()))
+                .expect("old entity")
+                .display_path,
+            "res://a.tres"
+        );
+    }
+
+    #[test]
+    fn segment_store_cancel_and_writer_contention_preserve_active_generation() {
+        let temp = TempDir::new().expect("temp");
+        let base = generation();
+        let mut store = SegmentStore::open(temp.path(), &base.project_id).expect("store");
+        store.activate(&base, None).expect("activate base");
+        assert!(matches!(
+            SegmentStore::open(temp.path(), &base.project_id),
+            Err(StoreError::StoreBusy)
+        ));
+        let next = base
+            .apply_incremental_batch(&renamed_batch(&base))
+            .expect("next generation");
+        assert_eq!(
+            store.activate(
+                &next,
+                Some(SegmentFaultInjection {
+                    point: SegmentFaultPoint::PreCommit,
+                    mode: SegmentFaultMode::Cancel,
+                }),
+            ),
+            Err(StoreError::Cancelled)
+        );
+        assert_eq!(
+            store.active_generation().expect("active").generation_id,
+            "generation-1"
+        );
+    }
+
+    #[test]
+    fn segment_store_reopens_migrates_and_detects_corruption() {
+        let temp = TempDir::new().expect("temp");
+        let base = generation();
+        {
+            let mut store =
+                SegmentStore::open_with_version(temp.path(), &base.project_id, 0).expect("legacy");
+            store.activate(&base, None).expect("legacy activation");
+            assert_eq!(store.physical_version().expect("legacy version"), 0);
+            store.migrate_current().expect("migration");
+            assert_eq!(
+                store.physical_version().expect("current version"),
+                SEGMENT_PHYSICAL_VERSION
+            );
+        }
+        {
+            let store = SegmentStore::open(temp.path(), &base.project_id).expect("reopen");
+            assert_eq!(
+                store.metadata().expect("metadata").index_revision,
+                base.index_revision + 1
+            );
+        }
+
+        let segments = temp.path().join(".godot/codex/index/segments");
+        let segment = fs::read_dir(segments)
+            .expect("segments")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| path.extension().is_some_and(|extension| extension == "seg"))
+            .expect("segment file");
+        let mut bytes = fs::read(&segment).expect("segment bytes");
+        bytes[0] ^= 0xff;
+        fs::write(segment, bytes).expect("corrupt segment");
+        assert!(matches!(
+            SegmentStore::open(temp.path(), &base.project_id),
+            Err(StoreError::CorruptStore(_))
         ));
     }
 }
