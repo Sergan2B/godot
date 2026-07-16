@@ -174,6 +174,20 @@ fn is_sync_invalidation(value: &Value) -> Result<bool, BridgeError> {
 }
 
 #[cfg(any(unix, windows, test))]
+fn sync_invalidation_affects_editor(value: &Value) -> bool {
+    match value.get("method").and_then(Value::as_str) {
+        Some("sync.event") => {
+            value.pointer("/params/event_type").and_then(Value::as_str)
+                != Some("resource_graph_changed")
+        }
+        Some("sync.invalidated") => {
+            value.pointer("/params/reason").and_then(Value::as_str) != Some("resource_journal_gap")
+        }
+        _ => false,
+    }
+}
+
+#[cfg(any(unix, windows, test))]
 fn valid_snapshot_limits(value: &Value) -> bool {
     let bounded = |key: &str, maximum: u64| {
         value
@@ -454,7 +468,9 @@ impl Session {
             let message = self.stream.receive_with_timeout(timeout).await?;
             validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
             if is_sync_invalidation(&message)? {
-                self.resync_requested = true;
+                if sync_invalidation_affects_editor(&message) {
+                    self.resync_requested = true;
+                }
                 continue;
             }
             return Ok(message);
@@ -688,34 +704,43 @@ impl Session {
         &mut self,
         replicator: &SnapshotReplicator,
     ) -> Result<(), BridgeError> {
-        let message = self.stream.receive().await?;
-        validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
-        let method = message.get("method").and_then(Value::as_str);
-        match method {
-            Some("sync.event") => {
-                let event_seq = message
-                    .pointer("/params/event_seq")
-                    .and_then(Value::as_u64)
-                    .ok_or_else(|| BridgeError::Invalid("event sequence is missing".to_owned()))?;
-                let current = replicator.read().map_err(|error| {
-                    BridgeError::Invalid(format!("event arrived without a ready replica: {error}"))
-                })?;
-                if event_seq != current.revisions.event_seq + 1 {
-                    replicator.invalidate("event sequence gap");
-                } else {
-                    replicator.invalidate(format!("editor event {event_seq} requires resnapshot"));
+        loop {
+            let message = self.stream.receive().await?;
+            validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
+            let method = message.get("method").and_then(Value::as_str);
+            match method {
+                Some("sync.event") if !sync_invalidation_affects_editor(&message) => continue,
+                Some("sync.event") => {
+                    let event_seq = message
+                        .pointer("/params/event_seq")
+                        .and_then(Value::as_u64)
+                        .ok_or_else(|| {
+                            BridgeError::Invalid("event sequence is missing".to_owned())
+                        })?;
+                    let current = replicator.read().map_err(|error| {
+                        BridgeError::Invalid(format!(
+                            "event arrived without a ready replica: {error}"
+                        ))
+                    })?;
+                    if event_seq != current.revisions.event_seq + 1 {
+                        replicator.invalidate("event sequence gap");
+                    } else {
+                        replicator
+                            .invalidate(format!("editor event {event_seq} requires resnapshot"));
+                    }
+                    return Ok(());
                 }
-                Ok(())
+                Some("sync.invalidated") if !sync_invalidation_affects_editor(&message) => continue,
+                Some("sync.invalidated") => {
+                    let reason = message
+                        .pointer("/params/reason")
+                        .and_then(Value::as_str)
+                        .unwrap_or("sync invalidated");
+                    replicator.invalidate(reason);
+                    return Ok(());
+                }
+                _ => return Err(BridgeError::Invalid("unexpected server message".to_owned())),
             }
-            Some("sync.invalidated") => {
-                let reason = message
-                    .pointer("/params/reason")
-                    .and_then(Value::as_str)
-                    .unwrap_or("sync invalidated");
-                replicator.invalidate(reason);
-                Ok(())
-            }
-            _ => Err(BridgeError::Invalid("unexpected server message".to_owned())),
         }
     }
 }
@@ -829,6 +854,26 @@ mod tests {
             }))
             .is_err()
         );
+        assert!(!sync_invalidation_affects_editor(&json!({
+            "kind": "notification",
+            "method": "sync.event",
+            "params": {"event_seq": 8, "event_type": "resource_graph_changed"}
+        })));
+        assert!(!sync_invalidation_affects_editor(&json!({
+            "kind": "notification",
+            "method": "sync.invalidated",
+            "params": {"reason": "resource_journal_gap"}
+        })));
+        assert!(sync_invalidation_affects_editor(&json!({
+            "kind": "notification",
+            "method": "sync.event",
+            "params": {"event_seq": 9, "event_type": "scene_changed"}
+        })));
+        assert!(sync_invalidation_affects_editor(&json!({
+            "kind": "notification",
+            "method": "sync.invalidated",
+            "params": {"reason": "journal_overflow"}
+        })));
 
         let response: Value = serde_json::from_str(include_str!(
             "../../../../schemas/codex_bridge/v1/fixtures/valid/rpc-snapshot-response.json"
