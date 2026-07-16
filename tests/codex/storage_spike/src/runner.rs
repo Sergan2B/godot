@@ -2266,6 +2266,18 @@ mod tests {
     }
 
     #[test]
+    fn evidence_json_round_trip_preserves_exact_float_bits() {
+        // This value is an observed bootstrap CI bound. Without serde_json's
+        // `float_roundtrip` parser it reloads one ULP away and makes a canonical
+        // merge fail its own typed equality check during validation.
+        let recorded = f64::from_bits(0x3fd7_be66_f167_5bda);
+        let encoded = serde_json::to_vec(&recorded).expect("serialize evidence float");
+        let decoded: f64 = serde_json::from_slice(&encoded).expect("deserialize evidence float");
+
+        assert_eq!(decoded.to_bits(), recorded.to_bits());
+    }
+
+    #[test]
     fn combined_validation_rejects_hand_authored_scores_and_intervals() {
         let temp = TempDir::new().expect("temp");
         let inputs: Vec<_> = ["linux", "macos", "windows"]
