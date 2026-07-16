@@ -360,7 +360,7 @@ static bool validate_discovery_record(const Dictionary &p_discovery, const Strin
 	const Array versions = p_discovery["protocol_versions"];
 	bool has_supported_version = false;
 	for (int index = 0; index < versions.size(); index++) {
-		if (versions[index].get_type() == Variant::STRING && (String(versions[index]) == "1.0" || String(versions[index]) == "1.1")) {
+		if (versions[index].get_type() == Variant::STRING && (String(versions[index]) == "1.0" || String(versions[index]) == "1.1" || String(versions[index]) == "1.2")) {
 			has_supported_version = true;
 		}
 	}
@@ -867,7 +867,7 @@ static bool validate_discovery_record(const Dictionary &p_discovery, const Strin
 	}
 	const Array versions = p_discovery["protocol_versions"];
 	for (int index = 0; index < versions.size(); index++) {
-		if (versions[index].get_type() == Variant::STRING && (String(versions[index]) == "1.0" || String(versions[index]) == "1.1")) {
+		if (versions[index].get_type() == Variant::STRING && (String(versions[index]) == "1.0" || String(versions[index]) == "1.1" || String(versions[index]) == "1.2")) {
 			return true;
 		}
 	}
@@ -1274,6 +1274,7 @@ Error BridgeRuntime::_publish_discovery() {
 	discovery["pid"] = OS::get_singleton()->get_process_id();
 	discovery["project_id"] = project_id;
 	Array versions;
+	versions.push_back("1.2");
 	versions.push_back("1.1");
 	versions.push_back("1.0");
 	discovery["protocol_versions"] = versions;

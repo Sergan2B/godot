@@ -34,11 +34,13 @@
 #include "core/crypto/crypto_core.h"
 #include "core/io/json.h"
 #include "core/object/callable_mp.h"
+#include "core/os/os.h"
 #include "core/string/print_string.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/editor_data.h"
 #include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
+#include "editor/file_system/editor_file_system.h"
 #include "modules/codex_bridge/editor/editor_context_adapter.h"
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
 
@@ -88,6 +90,23 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 		case MainThreadDispatcher::COMMAND_EDITOR_SNAPSHOT:
 			service->_complete_snapshot(p_command.request_id);
 			break;
+		case MainThreadDispatcher::COMMAND_RESOURCE_SNAPSHOT: {
+			Dictionary error_data;
+			const Error error = service->resource_graph_adapter.begin_snapshot(p_command.request_id, OS::get_singleton()->get_ticks_usec(), error_data);
+			if (error == ERR_BUSY) {
+				service->transport_worker.complete_request_error(p_command.request_id, "resource_snapshot_in_progress", "A resource graph snapshot is already in progress.", true, error_data);
+			} else if (error == ERR_OUT_OF_MEMORY) {
+				service->transport_worker.complete_request_error(p_command.request_id, "resource_limit_exceeded", "The editor resource catalog exceeds a negotiated hard limit.", false);
+			} else if (error != OK) {
+				service->transport_worker.complete_request_error(p_command.request_id, "resource_catalog_building", "The editor resource catalog is still building.", true);
+			}
+		} break;
+		case MainThreadDispatcher::COMMAND_RESOURCE_DELTA:
+			service->_complete_resource_delta(p_command.request_id, (uint64_t)(int64_t)p_command.params["after_resource_revision"]);
+			break;
+		case MainThreadDispatcher::COMMAND_CANCEL:
+			service->resource_graph_adapter.cancel_snapshot(p_command.request_id);
+			break;
 		case MainThreadDispatcher::COMMAND_PING:
 		case MainThreadDispatcher::COMMAND_SHUTDOWN:
 			service->transport_worker.complete_request(p_command.request_id);
@@ -122,6 +141,11 @@ void CodexBridgeService::_connect_editor_signals() {
 		EditorUndoRedoManager::get_singleton()->connect(SNAME("version_changed"), callable_mp(this, &CodexBridgeService::_on_undo_redo_version_changed));
 		EditorUndoRedoManager::get_singleton()->connect(SNAME("history_changed"), callable_mp(this, &CodexBridgeService::_on_undo_redo_version_changed));
 	}
+	if (EditorFileSystem::get_singleton()) {
+		EditorFileSystem::get_singleton()->connect(SNAME("filesystem_changed"), callable_mp(this, &CodexBridgeService::_on_filesystem_changed));
+		EditorFileSystem::get_singleton()->connect(SNAME("resources_reimported"), callable_mp(this, &CodexBridgeService::_on_resources_reimported));
+		EditorFileSystem::get_singleton()->connect(SNAME("resources_reload"), callable_mp(this, &CodexBridgeService::_on_resources_reload));
+	}
 	editor_signals_connected = true;
 }
 
@@ -144,6 +168,15 @@ void CodexBridgeService::_disconnect_editor_signals() {
 	}
 	if (EditorUndoRedoManager::get_singleton() && EditorUndoRedoManager::get_singleton()->is_connected(SNAME("history_changed"), callable_mp(this, &CodexBridgeService::_on_undo_redo_version_changed))) {
 		EditorUndoRedoManager::get_singleton()->disconnect(SNAME("history_changed"), callable_mp(this, &CodexBridgeService::_on_undo_redo_version_changed));
+	}
+	if (EditorFileSystem::get_singleton() && EditorFileSystem::get_singleton()->is_connected(SNAME("filesystem_changed"), callable_mp(this, &CodexBridgeService::_on_filesystem_changed))) {
+		EditorFileSystem::get_singleton()->disconnect(SNAME("filesystem_changed"), callable_mp(this, &CodexBridgeService::_on_filesystem_changed));
+	}
+	if (EditorFileSystem::get_singleton() && EditorFileSystem::get_singleton()->is_connected(SNAME("resources_reimported"), callable_mp(this, &CodexBridgeService::_on_resources_reimported))) {
+		EditorFileSystem::get_singleton()->disconnect(SNAME("resources_reimported"), callable_mp(this, &CodexBridgeService::_on_resources_reimported));
+	}
+	if (EditorFileSystem::get_singleton() && EditorFileSystem::get_singleton()->is_connected(SNAME("resources_reload"), callable_mp(this, &CodexBridgeService::_on_resources_reload))) {
+		EditorFileSystem::get_singleton()->disconnect(SNAME("resources_reload"), callable_mp(this, &CodexBridgeService::_on_resources_reload));
 	}
 	editor_signals_connected = false;
 }
@@ -207,6 +240,22 @@ void CodexBridgeService::_on_undo_redo_version_changed() {
 	if (!scene_change_pending) {
 		scene_change_pending = true;
 		callable_mp(this, &CodexBridgeService::_flush_scene_change).call_deferred();
+	}
+}
+
+void CodexBridgeService::_on_filesystem_changed() {
+	resource_graph_adapter.request_refresh();
+}
+
+void CodexBridgeService::_on_resources_reimported(const Vector<String> &p_paths) {
+	resource_graph_adapter.mark_reimported(p_paths);
+}
+
+void CodexBridgeService::_on_resources_reload(const PackedStringArray &p_paths) {
+	// Reload signals identify affected paths, but a resumable full diff remains
+	// the correctness fallback for moves, removals, and dependency fan-out.
+	if (!p_paths.is_empty()) {
+		resource_graph_adapter.request_refresh();
 	}
 }
 
@@ -321,6 +370,84 @@ void CodexBridgeService::_complete_snapshot(uint64_t p_request_id) {
 	transport_worker.complete_request(p_request_id, result, messages);
 }
 
+void CodexBridgeService::_complete_resource_delta(uint64_t p_request_id, uint64_t p_after_resource_revision) {
+	const ResourceDeltaJournal::QueryResult query = resource_graph_adapter.query_delta(p_after_resource_revision);
+	if (query.status == ResourceDeltaJournal::QUERY_FUTURE) {
+		Dictionary data;
+		data["requested_after"] = (int64_t)p_after_resource_revision;
+		data["current_resource_revision"] = (int64_t)query.current_resource_revision;
+		transport_worker.complete_request_error(p_request_id, "invalid_revision", "The requested resource revision is in the future.", false, data);
+		return;
+	}
+	if (query.status == ResourceDeltaJournal::QUERY_GAP) {
+		Dictionary data;
+		data["requested_after"] = (int64_t)p_after_resource_revision;
+		data["oldest_available"] = (int64_t)query.oldest_available_resource_revision;
+		data["current_resource_revision"] = (int64_t)query.current_resource_revision;
+		transport_worker.complete_request_error(p_request_id, "resource_journal_gap", "The requested resource delta is no longer available.", true, data);
+		return;
+	}
+	Dictionary result;
+	result["current_resource_revision"] = (int64_t)query.current_resource_revision;
+	if (query.status == ResourceDeltaJournal::QUERY_CURRENT) {
+		result["status"] = "current";
+	} else {
+		result["status"] = "batch";
+		result["batch"] = query.batch;
+	}
+	transport_worker.complete_request(p_request_id, result);
+}
+
+void CodexBridgeService::_process_resource_graph(uint64_t p_budget_usec) {
+	if (resource_graph_adapter.is_snapshot_active()) {
+		ResourceGraphAdapter::SnapshotCompletion snapshot;
+		if (resource_graph_adapter.process_snapshot(OS::get_singleton()->get_ticks_usec(), p_budget_usec, snapshot) && snapshot.ready) {
+			if (snapshot.is_error) {
+				transport_worker.complete_request_error(snapshot.request_id, snapshot.error_code, snapshot.error_message, snapshot.error_retryable, snapshot.error_data);
+				return;
+			}
+			for (int index = 0; index < snapshot.server_messages.size(); index++) {
+				Dictionary message = snapshot.server_messages[index];
+				message["context"] = _make_context();
+				snapshot.server_messages[index] = message;
+			}
+			transport_worker.complete_request(snapshot.request_id, snapshot.result, snapshot.server_messages);
+		}
+		return;
+	}
+
+	ResourceGraphAdapter::RefreshOutcome refresh;
+	if (resource_graph_adapter.process_refresh(p_budget_usec, refresh)) {
+		if (refresh.changed) {
+			Dictionary params;
+			params["event_seq"] = refresh.revisions["event_seq"];
+			params["event_type"] = "resource_graph_changed";
+			params["resource_revision"] = (int64_t)refresh.current_resource_revision;
+			params["revisions"] = refresh.revisions;
+			Dictionary notification;
+			notification["protocol_version"] = "1.2";
+			notification["kind"] = "notification";
+			notification["method"] = "sync.event";
+			notification["params"] = params;
+			notification["context"] = _make_context();
+			transport_worker.publish_notification(notification);
+		}
+		if (refresh.invalidated) {
+			Dictionary params;
+			params["reason"] = "resource_journal_gap";
+			params["last_contiguous_resource_revision"] = (int64_t)refresh.last_contiguous_resource_revision;
+			params["current_resource_revision"] = (int64_t)refresh.current_resource_revision;
+			Dictionary notification;
+			notification["protocol_version"] = "1.2";
+			notification["kind"] = "notification";
+			notification["method"] = "sync.invalidated";
+			notification["params"] = params;
+			notification["context"] = _make_context();
+			transport_worker.publish_notification(notification);
+		}
+	}
+}
+
 void CodexBridgeService::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
@@ -328,7 +455,14 @@ void CodexBridgeService::_notification(int p_what) {
 		} break;
 		case NOTIFICATION_PROCESS: {
 			if (state == STATE_RUNNING) {
-				dispatcher.process(_dispatch_command, this);
+				const bool resource_work = resource_graph_adapter.has_pending_work();
+				const uint64_t dispatcher_budget = resource_work ?
+						MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME - ResourceGraphAdapter::RESOURCE_BUDGET_USEC :
+						MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME;
+				dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
+				if (resource_work) {
+					_process_resource_graph(ResourceGraphAdapter::RESOURCE_BUDGET_USEC);
+				}
 			}
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
@@ -362,6 +496,7 @@ Error CodexBridgeService::start() {
 	}
 
 	revision_clock.initialize(transport_worker.get_editor_session_id());
+	resource_graph_adapter.initialize(&revision_clock);
 	_connect_editor_signals();
 	state = STATE_RUNNING;
 	print_verbose("[codex_bridge] Service started.");
@@ -375,6 +510,7 @@ void CodexBridgeService::stop() {
 
 	state = STATE_STOPPING;
 	_disconnect_editor_signals();
+	resource_graph_adapter.shutdown();
 	scene_change_pending = false;
 	pending_property.clear();
 	dispatcher.begin_shutdown();

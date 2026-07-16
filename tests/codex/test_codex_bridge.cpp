@@ -44,6 +44,7 @@ TEST_FORCE_LINK(test_codex_bridge)
 
 #include "modules/codex_bridge/editor/bridge_revision_clock.h"
 #include "modules/codex_bridge/editor/main_thread_dispatcher.h"
+#include "modules/codex_bridge/editor/resource_delta_journal.h"
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
 #include "modules/codex_bridge/protocol/bridge_frame_codec.h"
 #include "modules/codex_bridge/protocol/bridge_handshake.h"
@@ -469,6 +470,20 @@ TEST_CASE("[CodexBridge] Handshake negotiates the compatible 1.1 minor") {
 	CHECK(handshake.get_selected_protocol_version() == "1.1");
 }
 
+TEST_CASE("[CodexBridge] Handshake caps future major-one minors at Bridge RPC 1.2") {
+	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
+	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
+	const PackedByteArray token = bytes_from_range(0xa0, 32);
+	String nonce_encoded;
+	REQUIRE(BridgeCrypto::base64url_encode_32(bytes_from_range(0x40, 32), nonce_encoded) == OK);
+
+	BridgeHandshakeSession handshake(token, project_id, editor_session_id, 0);
+	BridgeHandshakeSession::Outcome challenge;
+	REQUIRE(handshake.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, "1.9"), 1, challenge) == OK);
+	CHECK(challenge.response["selected_protocol_version"] == "1.2");
+	CHECK(handshake.get_selected_protocol_version() == "1.2");
+}
+
 TEST_CASE("[CodexBridge] Handshake rejects binding, version, proof, replay, and timeout failures") {
 	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
@@ -664,6 +679,70 @@ TEST_CASE("[CodexBridge] RPC 1.1 exposes editor sync and accepts an atomic snaps
 	CHECK(rpc.handle_message(ack, 5, 4, outcome) == ERR_INVALID_DATA);
 }
 
+TEST_CASE("[CodexBridge] RPC 1.2 exposes strict resource graph snapshot and delta methods") {
+	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
+	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
+	BridgeRpcSession rpc(project_id, editor_session_id);
+	rpc.set_protocol_version("1.2");
+	BridgeRpcSession::Outcome outcome;
+
+	REQUIRE(rpc.handle_message(make_rpc_request("req:init-resource", "bridge.initialize", make_initialize_params(), project_id, editor_session_id, 5000, "1.2"), 0, 1, outcome) == OK);
+	REQUIRE(rpc.complete(1, 1, outcome) == OK);
+	const Dictionary initialize_result = outcome.response["result"];
+	CHECK(initialize_result["protocol_version"] == "1.2");
+	CHECK(Array(initialize_result["capabilities"]).size() == 8);
+	CHECK((int64_t)Dictionary(initialize_result["limits"])["resource_records"] == 250000);
+	CHECK((int64_t)Dictionary(initialize_result["revisions"])["resource_revision"] == 1);
+
+	REQUIRE(rpc.handle_message(make_rpc_request("req:resource-snapshot", "resource.snapshot.get", Dictionary(), project_id, editor_session_id, 5000, "1.2"), 2, 2, outcome) == OK);
+	CHECK(outcome.method == BridgeRpcSession::METHOD_RESOURCE_SNAPSHOT);
+	CHECK(outcome.deadline_usec == 120000002);
+	Dictionary snapshot_result;
+	snapshot_result["snapshot_id"] = "snapshot:0123456789abcdef0123456789abcdef";
+	snapshot_result["domain"] = "resource_graph";
+	REQUIRE(rpc.complete(2, 3, snapshot_result, outcome) == OK);
+	CHECK(Dictionary(outcome.response["result"])["domain"] == "resource_graph");
+
+	Dictionary delta_params;
+	delta_params["after_resource_revision"] = (int64_t)1;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:resource-delta", "resource.delta.get", delta_params, project_id, editor_session_id, 5000, "1.2"), 4, 3, outcome) == OK);
+	CHECK(outcome.method == BridgeRpcSession::METHOD_RESOURCE_DELTA);
+	Dictionary delta_result;
+	delta_result["status"] = "current";
+	delta_result["current_resource_revision"] = (int64_t)1;
+	REQUIRE(rpc.complete(3, 5, delta_result, outcome) == OK);
+	CHECK(Dictionary(outcome.response["result"])["status"] == "current");
+
+	Dictionary invalid_delta = delta_params;
+	invalid_delta["unknown"] = true;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:invalid-resource-delta", "resource.delta.get", invalid_delta, project_id, editor_session_id, 5000, "1.2"), 6, 4, outcome) == OK);
+	CHECK(rpc_error_code(outcome) == "invalid_request");
+
+	Dictionary ack;
+	ack["protocol_version"] = "1.2";
+	ack["kind"] = "ack";
+	ack["ack_id"] = "ack:resource-snapshot";
+	Dictionary ack_params;
+	ack_params["snapshot_id"] = snapshot_result["snapshot_id"];
+	ack_params["domain"] = "resource_graph";
+	ack_params["through_chunk"] = 0;
+	ack["params"] = ack_params;
+	ack["context"] = make_rpc_context(project_id, editor_session_id);
+	CHECK(rpc.handle_message(ack, 7, 5, outcome) == OK);
+}
+
+TEST_CASE("[CodexBridge] Resource methods fail explicitly after a 1.1 downgrade") {
+	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
+	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
+	BridgeRpcSession rpc(project_id, editor_session_id);
+	rpc.set_protocol_version("1.1");
+	BridgeRpcSession::Outcome outcome;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:init-downgrade", "bridge.initialize", make_initialize_params(), project_id, editor_session_id, 5000, "1.1"), 0, 1, outcome) == OK);
+	REQUIRE(rpc.complete(1, 1, outcome) == OK);
+	REQUIRE(rpc.handle_message(make_rpc_request("req:no-resource", "resource.snapshot.get", Dictionary(), project_id, editor_session_id, 5000, "1.1"), 2, 2, outcome) == OK);
+	CHECK(rpc_error_code(outcome) == "capability_unavailable");
+}
+
 TEST_CASE("[CodexBridge] Revision clock advances selection and scene domains monotonically") {
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
 	const String scene_id = "scene:0123456789abcdef0123456789abcdef";
@@ -677,7 +756,137 @@ TEST_CASE("[CodexBridge] Revision clock advances selection and scene domains mon
 	CHECK(vector["editor_session_id"] == editor_session_id);
 	CHECK((int64_t)vector["event_seq"] == 3);
 	CHECK((int64_t)vector["project_revision"] == 2);
+	CHECK((int64_t)vector["resource_revision"] == 1);
 	CHECK((int64_t)Dictionary(vector["scene_revisions"])[scene_id] == 2);
+	CHECK(revisions.record_resource_change() == 2);
+}
+
+static Dictionary make_resource_ref(const String &p_uid, const String &p_path = String()) {
+	Dictionary resource_ref;
+	if (!p_uid.is_empty()) {
+		resource_ref["uid"] = p_uid;
+	} else {
+		resource_ref["uid_missing"] = true;
+		resource_ref["path"] = p_path;
+	}
+	return resource_ref;
+}
+
+static Dictionary make_resource_value(const Dictionary &p_resource_ref, const String &p_path, int64_t p_marker) {
+	Dictionary resource;
+	resource["resource_ref"] = p_resource_ref;
+	resource["path"] = p_path;
+	resource["marker"] = p_marker;
+	Dictionary value;
+	value["resource"] = resource;
+	value["dependencies"] = Array();
+	return value;
+}
+
+static Dictionary make_upsert(const Dictionary &p_resource_ref, const String &p_path, int64_t p_marker) {
+	Dictionary operation;
+	operation["kind"] = "upsert";
+	operation["value"] = make_resource_value(p_resource_ref, p_path, p_marker);
+	return operation;
+}
+
+TEST_CASE("[CodexBridge] Resource delta journal coalesces and distinguishes current gap and future") {
+	ResourceDeltaJournal journal;
+	journal.initialize(1);
+	const Dictionary stable_ref = make_resource_ref("uid://a");
+	const Dictionary temporary_ref = make_resource_ref(String(), "res://temporary.tres");
+	Array operations;
+	operations.push_back(make_upsert(stable_ref, "res://old.tres", 1));
+	operations.push_back(make_upsert(stable_ref, "res://old.tres", 2));
+	operations.push_back(make_upsert(temporary_ref, "res://temporary.tres", 1));
+	Dictionary remove_temporary;
+	remove_temporary["kind"] = "remove";
+	remove_temporary["resource_ref"] = temporary_ref;
+	remove_temporary["path"] = "res://temporary.tres";
+	operations.push_back(remove_temporary);
+
+	Dictionary batch;
+	bool invalidated = false;
+	REQUIRE(journal.commit(2, operations, HashSet<String>(), batch, invalidated) == OK);
+	CHECK_FALSE(invalidated);
+	const Array coalesced = batch["operations"];
+	REQUIRE(coalesced.size() == 1);
+	const Dictionary latest_resource = Dictionary(Dictionary(coalesced[0])["value"])["resource"];
+	CHECK((int64_t)latest_resource["marker"] == 2);
+	CHECK(journal.query_after(2).status == ResourceDeltaJournal::QUERY_CURRENT);
+	CHECK(journal.query_after(1).status == ResourceDeltaJournal::QUERY_BATCH);
+	CHECK(journal.query_after(0).status == ResourceDeltaJournal::QUERY_GAP);
+	CHECK(journal.query_after(3).status == ResourceDeltaJournal::QUERY_FUTURE);
+}
+
+TEST_CASE("[CodexBridge] Resource delta journal collapses UID move chains and evicts at its entry bound") {
+	ResourceDeltaJournal journal;
+	journal.initialize(1);
+	const Dictionary resource_ref = make_resource_ref("uid://b");
+	HashSet<String> preexisting;
+	preexisting.insert(ResourceDeltaJournal::resource_ref_key(resource_ref));
+	Array moves;
+	Dictionary first;
+	first["kind"] = "move";
+	first["uid"] = "uid://b";
+	first["from_path"] = "res://a.tres";
+	first["to_path"] = "res://b.tres";
+	first["value"] = make_resource_value(resource_ref, "res://b.tres", 1);
+	moves.push_back(first);
+	Dictionary second = first.duplicate(true);
+	second["from_path"] = "res://b.tres";
+	second["to_path"] = "res://c.tres";
+	second["value"] = make_resource_value(resource_ref, "res://c.tres", 2);
+	moves.push_back(second);
+	Dictionary batch;
+	bool invalidated = false;
+	REQUIRE(journal.commit(2, moves, preexisting, batch, invalidated) == OK);
+	const Dictionary move = Array(batch["operations"])[0];
+	CHECK(move["from_path"] == "res://a.tres");
+	CHECK(move["to_path"] == "res://c.tres");
+
+	for (uint64_t revision = 3; revision <= ResourceDeltaJournal::MAX_ENTRIES + 2; revision++) {
+		Array update;
+		update.push_back(make_upsert(resource_ref, "res://c.tres", revision));
+		REQUIRE(journal.commit(revision, update, preexisting, batch, invalidated) == OK);
+	}
+	CHECK(journal.get_entry_count() == ResourceDeltaJournal::MAX_ENTRIES);
+	CHECK(journal.query_after(1).status == ResourceDeltaJournal::QUERY_GAP);
+	CHECK(journal.query_after(2).status == ResourceDeltaJournal::QUERY_BATCH);
+}
+
+TEST_CASE("[CodexBridge] Resource delta journal keeps one slot across add remove add and invalidates oversized batches") {
+	ResourceDeltaJournal journal;
+	journal.initialize(1);
+	const Dictionary resource_ref = make_resource_ref(String(), "res://temporary.tres");
+	Array operations;
+	operations.push_back(make_upsert(resource_ref, "res://temporary.tres", 1));
+	Dictionary remove;
+	remove["kind"] = "remove";
+	remove["resource_ref"] = resource_ref;
+	remove["path"] = "res://temporary.tres";
+	operations.push_back(remove);
+	operations.push_back(make_upsert(resource_ref, "res://temporary.tres", 2));
+	Dictionary batch;
+	bool invalidated = false;
+	REQUIRE(journal.commit(2, operations, HashSet<String>(), batch, invalidated) == OK);
+	const Array coalesced = batch["operations"];
+	REQUIRE(coalesced.size() == 1);
+	const Dictionary latest_resource = Dictionary(Dictionary(coalesced[0])["value"])["resource"];
+	CHECK((int64_t)latest_resource["marker"] == 2);
+
+	Array oversized;
+	Dictionary oversized_upsert = make_upsert(resource_ref, "res://temporary.tres", 3);
+	Dictionary oversized_value = oversized_upsert["value"];
+	Dictionary oversized_resource = oversized_value["resource"];
+	oversized_resource["test_payload"] = String("x").repeat(ResourceDeltaJournal::MAX_BATCH_BYTES);
+	oversized_value["resource"] = oversized_resource;
+	oversized_upsert["value"] = oversized_value;
+	oversized.push_back(oversized_upsert);
+	REQUIRE(journal.commit(3, oversized, HashSet<String>(), batch, invalidated) == OK);
+	CHECK(invalidated);
+	CHECK(journal.get_entry_count() == 0);
+	CHECK(journal.query_after(2).status == ResourceDeltaJournal::QUERY_GAP);
 }
 
 TEST_CASE("[CodexBridge] RPC deadlines, cancellation, rejection, and in-flight limits are terminal once") {

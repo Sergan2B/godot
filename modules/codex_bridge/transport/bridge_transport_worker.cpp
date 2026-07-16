@@ -45,8 +45,22 @@ namespace {
 
 static constexpr int MAX_CLIENTS = 16;
 static constexpr int MAX_OUTBOUND_BYTES = 33554432;
+static constexpr uint64_t SNAPSHOT_TIMEOUT_USEC = 120000000;
 static constexpr int MAX_NOTIFICATION_ENTRIES = 4096;
 static constexpr int MAX_NOTIFICATION_BYTES = 16777216;
+
+struct SnapshotStreamState {
+	bool active = false;
+	uint64_t internal_request_id = 0;
+	String request_id;
+	String snapshot_id;
+	Array messages;
+	int next_message = 0;
+	int last_acked_chunk = -1;
+	Vector<uint64_t> sent_chunk_bytes;
+	uint64_t unacked_bytes = 0;
+	uint64_t deadline_usec = 0;
+};
 
 struct TransportClient {
 	Ref<BridgeStreamPeer> peer;
@@ -57,23 +71,135 @@ struct TransportClient {
 	int write_offset = 0;
 	bool close_after_write = false;
 	bool force_close = false;
+	SnapshotStreamState snapshot_stream;
 
 	TransportClient(const Ref<BridgeStreamPeer> &p_peer, const PackedByteArray &p_token, const String &p_project_id, const String &p_editor_session_id, uint64_t p_accepted_at_usec, HashSet<String> *p_seen_client_nonces) :
 			peer(p_peer), handshake(p_token, p_project_id, p_editor_session_id, p_accepted_at_usec, p_seen_client_nonces), rpc(p_project_id, p_editor_session_id) {}
 };
 
-static bool queue_response(TransportClient &r_client, const Dictionary &p_response) {
-	PackedByteArray response;
-	if (BridgeFrameCodec::encode_json(p_response, response) != OK) {
-		return false;
-	}
-	if (r_client.pending_write.size() + response.size() > MAX_OUTBOUND_BYTES) {
+static bool encode_response(const Dictionary &p_response, PackedByteArray &r_response) {
+	return BridgeFrameCodec::encode_json(p_response, r_response) == OK;
+}
+
+static bool queue_encoded_response(TransportClient &r_client, const PackedByteArray &p_response) {
+	if (r_client.pending_write.size() + p_response.size() > MAX_OUTBOUND_BYTES) {
 		return false;
 	}
 	if (r_client.pending_write.is_empty()) {
-		r_client.pending_write = response;
+		r_client.pending_write = p_response;
 	} else {
-		r_client.pending_write.append_array(response);
+		r_client.pending_write.append_array(p_response);
+	}
+	return true;
+}
+
+static bool queue_response(TransportClient &r_client, const Dictionary &p_response) {
+	PackedByteArray response;
+	if (!encode_response(p_response, response)) {
+		return false;
+	}
+	return queue_encoded_response(r_client, response);
+}
+
+static void sanitize_revision_vector_for_protocol(Dictionary &r_message, const String &p_protocol_version) {
+	if (p_protocol_version == "1.2") {
+		return;
+	}
+	if (r_message.has("revisions") && r_message["revisions"].get_type() == Variant::DICTIONARY) {
+		Dictionary revisions = r_message["revisions"];
+		revisions.erase("resource_revision");
+		r_message["revisions"] = revisions;
+	}
+	if (r_message.has("params") && r_message["params"].get_type() == Variant::DICTIONARY) {
+		Dictionary params = r_message["params"];
+		if (params.has("revisions") && params["revisions"].get_type() == Variant::DICTIONARY) {
+			Dictionary revisions = params["revisions"];
+			revisions.erase("resource_revision");
+			params["revisions"] = revisions;
+			r_message["params"] = params;
+		}
+	}
+}
+
+static bool pump_snapshot_stream(TransportClient &r_client) {
+	SnapshotStreamState &stream = r_client.snapshot_stream;
+	while (stream.active && stream.next_message < stream.messages.size()) {
+		if (stream.messages[stream.next_message].get_type() != Variant::DICTIONARY) {
+			return false;
+		}
+		Dictionary message = stream.messages[stream.next_message];
+		message["protocol_version"] = r_client.rpc.get_protocol_version();
+		sanitize_revision_vector_for_protocol(message, r_client.rpc.get_protocol_version());
+		PackedByteArray encoded;
+		if (!encode_response(message, encoded)) {
+			return false;
+		}
+		const bool is_chunk = String(message.get("kind", String())) == "chunk";
+		int64_t chunk_index = -1;
+		if (is_chunk) {
+			if (!message.has("chunk_index") || message["chunk_index"].get_type() != Variant::INT) {
+				return false;
+			}
+			chunk_index = message["chunk_index"];
+			if (chunk_index != (int64_t)stream.sent_chunk_bytes.size() || stream.unacked_bytes + encoded.size() > (uint64_t)MAX_OUTBOUND_BYTES) {
+				break;
+			}
+		}
+		if (!queue_encoded_response(r_client, encoded)) {
+			break;
+		}
+		if (is_chunk) {
+			stream.sent_chunk_bytes.push_back(encoded.size());
+			stream.unacked_bytes += encoded.size();
+		}
+		stream.next_message++;
+	}
+	return true;
+}
+
+static bool start_snapshot_stream(TransportClient &r_client, uint64_t p_internal_request_id, const String &p_request_id, const Array &p_messages, uint64_t p_now_usec) {
+	if (p_messages.is_empty()) {
+		return true;
+	}
+	if (r_client.snapshot_stream.active || p_messages[0].get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+	const Dictionary first = p_messages[0];
+	if (!first.has("params") || first["params"].get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+	const Dictionary params = first["params"];
+	if (!params.has("snapshot_id") || params["snapshot_id"].get_type() != Variant::STRING) {
+		return false;
+	}
+	r_client.snapshot_stream.active = true;
+	r_client.snapshot_stream.internal_request_id = p_internal_request_id;
+	r_client.snapshot_stream.request_id = p_request_id;
+	r_client.snapshot_stream.snapshot_id = params["snapshot_id"];
+	r_client.snapshot_stream.messages = p_messages;
+	r_client.snapshot_stream.deadline_usec = p_now_usec + SNAPSHOT_TIMEOUT_USEC;
+	return pump_snapshot_stream(r_client);
+}
+
+static bool acknowledge_snapshot_stream(TransportClient &r_client, const String &p_snapshot_id, int64_t p_through_chunk, uint64_t &r_terminal_request_id) {
+	r_terminal_request_id = 0;
+	SnapshotStreamState &stream = r_client.snapshot_stream;
+	if (!stream.active) {
+		return true;
+	}
+	if (stream.snapshot_id != p_snapshot_id || p_through_chunk < stream.last_acked_chunk || p_through_chunk >= (int64_t)stream.sent_chunk_bytes.size()) {
+		return false;
+	}
+	for (int index = stream.last_acked_chunk + 1; index <= p_through_chunk; index++) {
+		stream.unacked_bytes -= stream.sent_chunk_bytes[index];
+	}
+	stream.last_acked_chunk = p_through_chunk;
+	if (!pump_snapshot_stream(r_client)) {
+		return false;
+	}
+	if (stream.next_message == stream.messages.size() && stream.last_acked_chunk + 1 == (int)stream.sent_chunk_bytes.size()) {
+		r_terminal_request_id = stream.internal_request_id;
+		stream = SnapshotStreamState();
 	}
 	return true;
 }
@@ -88,6 +214,10 @@ static MainThreadDispatcher::CommandType command_type_for_method(BridgeRpcSessio
 			return MainThreadDispatcher::COMMAND_CAPABILITIES;
 		case BridgeRpcSession::METHOD_EDITOR_SNAPSHOT:
 			return MainThreadDispatcher::COMMAND_EDITOR_SNAPSHOT;
+		case BridgeRpcSession::METHOD_RESOURCE_SNAPSHOT:
+			return MainThreadDispatcher::COMMAND_RESOURCE_SNAPSHOT;
+		case BridgeRpcSession::METHOD_RESOURCE_DELTA:
+			return MainThreadDispatcher::COMMAND_RESOURCE_DELTA;
 		case BridgeRpcSession::METHOD_SHUTDOWN:
 			return MainThreadDispatcher::COMMAND_SHUTDOWN;
 	}
@@ -96,7 +226,16 @@ static MainThreadDispatcher::CommandType command_type_for_method(BridgeRpcSessio
 
 static bool cancel_dispatched_request(BridgeTransportWorker::Context *p_context, uint64_t p_request_id) {
 	MutexLock lock(p_context->dispatcher_mutex);
-	return p_context->dispatcher && p_context->dispatcher->cancel(p_request_id);
+	if (!p_context->dispatcher) {
+		return false;
+	}
+	if (p_context->dispatcher->cancel(p_request_id)) {
+		return true;
+	}
+	MainThreadDispatcher::Command cancellation;
+	cancellation.type = MainThreadDispatcher::COMMAND_CANCEL;
+	cancellation.request_id = p_request_id;
+	return p_context->dispatcher->enqueue(cancellation) == MainThreadDispatcher::ENQUEUE_OK;
 }
 
 static MainThreadDispatcher::EnqueueResult enqueue_request(BridgeTransportWorker::Context *p_context, const MainThreadDispatcher::Command &p_command, bool &r_expired) {
@@ -109,6 +248,20 @@ static MainThreadDispatcher::EnqueueResult enqueue_request(BridgeTransportWorker
 }
 
 static bool apply_rpc_outcome(TransportClient &r_client, BridgeRpcSession::Outcome &r_outcome, BridgeTransportWorker::Context *p_context) {
+	if (r_outcome.cancel_stream && r_client.snapshot_stream.active && r_client.snapshot_stream.request_id == r_outcome.stream_request_id) {
+		const uint64_t internal_request_id = r_client.snapshot_stream.internal_request_id;
+		r_client.snapshot_stream = SnapshotStreamState();
+		cancel_dispatched_request(p_context, internal_request_id);
+	}
+	if (r_outcome.ack_received) {
+		uint64_t terminal_request_id = 0;
+		if (!acknowledge_snapshot_stream(r_client, r_outcome.ack_snapshot_id, r_outcome.ack_through_chunk, terminal_request_id)) {
+			return false;
+		}
+		if (terminal_request_id != 0) {
+			cancel_dispatched_request(p_context, terminal_request_id);
+		}
+	}
 	if (r_outcome.cancel_dispatch) {
 		cancel_dispatched_request(p_context, r_outcome.internal_request_id);
 	}
@@ -161,6 +314,9 @@ static bool process_client(TransportClient &r_client, uint64_t p_now_usec, uint6
 		return false;
 	}
 	if (r_client.handshake.has_timed_out(p_now_usec)) {
+		return false;
+	}
+	if (r_client.snapshot_stream.active && p_now_usec >= r_client.snapshot_stream.deadline_usec) {
 		return false;
 	}
 	if (r_client.handshake.get_state() == BridgeHandshakeSession::STATE_AUTHENTICATED) {
@@ -235,10 +391,17 @@ static bool process_client(TransportClient &r_client, uint64_t p_now_usec, uint6
 			}
 		}
 	}
+	if (!pump_snapshot_stream(r_client)) {
+		return false;
+	}
 	return true;
 }
 
 static void cancel_client_pending(TransportClient &r_client, BridgeTransportWorker::Context *p_context) {
+	if (r_client.snapshot_stream.active) {
+		cancel_dispatched_request(p_context, r_client.snapshot_stream.internal_request_id);
+		r_client.snapshot_stream = SnapshotStreamState();
+	}
 	Vector<uint64_t> pending;
 	r_client.rpc.cancel_all(pending);
 	for (uint64_t internal_id : pending) {
@@ -277,15 +440,18 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 		for (const BridgeTransportWorker::Completion &completion : completions) {
 			for (TransportClient &client : clients) {
 				BridgeRpcSession::Outcome outcome;
-				if (client.rpc.complete(completion.request_id, now_usec, completion.result, outcome) == OK) {
+				const Error completion_error = completion.is_error ?
+						client.rpc.complete_error(completion.request_id, completion.error_code, completion.error_message, completion.error_retryable, completion.error_data, outcome) :
+						client.rpc.complete(completion.request_id, now_usec, completion.result, outcome);
+				if (completion_error == OK) {
 					if (!apply_rpc_outcome(client, outcome, p_context)) {
+						cancel_dispatched_request(p_context, completion.request_id);
 						client.force_close = true;
-					} else if (client.rpc.get_protocol_version() == "1.1") {
-						for (int message_index = 0; message_index < completion.server_messages.size(); message_index++) {
-							if (completion.server_messages[message_index].get_type() != Variant::DICTIONARY || !queue_response(client, Dictionary(completion.server_messages[message_index]))) {
-								client.force_close = true;
-								break;
-							}
+					} else if (!completion.server_messages.is_empty() && (client.rpc.get_protocol_version() == "1.1" || client.rpc.get_protocol_version() == "1.2")) {
+						const String request_id = outcome.response.get("request_id", String());
+						if (request_id.is_empty() || !start_snapshot_stream(client, completion.request_id, request_id, completion.server_messages, now_usec)) {
+							cancel_dispatched_request(p_context, completion.request_id);
+							client.force_close = true;
 						}
 					}
 					break;
@@ -295,11 +461,18 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 		Vector<Dictionary> notifications;
 		drain_notifications(p_context, notifications);
 		for (TransportClient &client : clients) {
-			if (client.handshake.get_state() != BridgeHandshakeSession::STATE_AUTHENTICATED || !client.rpc.is_initialized() || client.rpc.get_protocol_version() != "1.1") {
+			if (client.handshake.get_state() != BridgeHandshakeSession::STATE_AUTHENTICATED || !client.rpc.is_initialized() || (client.rpc.get_protocol_version() != "1.1" && client.rpc.get_protocol_version() != "1.2")) {
 				continue;
 			}
 			for (const Dictionary &notification : notifications) {
-				if (!queue_response(client, notification)) {
+				const String notification_version = notification.get("protocol_version", "1.1");
+				if (notification_version == "1.2" && client.rpc.get_protocol_version() != "1.2") {
+					continue;
+				}
+				Dictionary client_notification = notification;
+				client_notification["protocol_version"] = client.rpc.get_protocol_version();
+				sanitize_revision_vector_for_protocol(client_notification, client.rpc.get_protocol_version());
+				if (!queue_response(client, client_notification)) {
 					client.force_close = true;
 					break;
 				}
@@ -476,6 +649,21 @@ void BridgeTransportWorker::complete_request(uint64_t p_request_id, const Dictio
 		completion.server_messages = p_server_messages;
 		context->completed_requests.push_back(completion);
 	}
+}
+
+void BridgeTransportWorker::complete_request_error(uint64_t p_request_id, const String &p_code, const String &p_message, bool p_retryable, const Dictionary &p_data) {
+	if (!context) {
+		return;
+	}
+	MutexLock lock(context->completion_mutex);
+	Completion completion;
+	completion.request_id = p_request_id;
+	completion.is_error = true;
+	completion.error_code = p_code;
+	completion.error_message = p_message;
+	completion.error_retryable = p_retryable;
+	completion.error_data = p_data;
+	context->completed_requests.push_back(completion);
 }
 
 bool BridgeTransportWorker::publish_notification(const Dictionary &p_notification) {

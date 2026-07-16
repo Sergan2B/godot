@@ -151,21 +151,24 @@ Dictionary BridgeRpcSession::_make_context() const {
 	return context;
 }
 
-Dictionary BridgeRpcSession::_make_error(const String &p_code, const String &p_message, bool p_retryable) const {
+Dictionary BridgeRpcSession::_make_error(const String &p_code, const String &p_message, bool p_retryable, const Dictionary &p_data) const {
 	Dictionary error;
 	error["code"] = p_code;
 	error["message"] = p_message;
 	error["retryable"] = p_retryable;
+	if (!p_data.is_empty()) {
+		error["data"] = p_data;
+	}
 	return error;
 }
 
-Dictionary BridgeRpcSession::_make_error_response(const String &p_request_id, const String &p_code, const String &p_message, bool p_retryable) const {
+Dictionary BridgeRpcSession::_make_error_response(const String &p_request_id, const String &p_code, const String &p_message, bool p_retryable, const Dictionary &p_data) const {
 	Dictionary response;
 	response["protocol_version"] = protocol_version;
 	response["kind"] = "response";
 	response["request_id"] = p_request_id;
 	response["context"] = _make_context();
-	response["error"] = _make_error(p_code, p_message, p_retryable);
+	response["error"] = _make_error(p_code, p_message, p_retryable, p_data);
 	return response;
 }
 
@@ -195,12 +198,25 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 	transport["version"] = "1.0";
 	transport["readiness"] = "ready";
 	capabilities.push_back(transport);
-	if (protocol_version == "1.1") {
+	if (protocol_version == "1.1" || protocol_version == "1.2") {
 		const char *names[] = {
 			"editor.context",
 			"editor.inspector",
 			"sync.full_snapshot_v1",
 			"sync.event_stream_v1",
+		};
+		for (const char *name : names) {
+			Dictionary capability;
+			capability["name"] = name;
+			capability["version"] = "1.0";
+			capability["readiness"] = "ready";
+			capabilities.push_back(capability);
+		}
+	}
+	if (protocol_version == "1.2") {
+		const char *names[] = {
+			"resource.uid_dependencies",
+			"resource.incremental_index",
 		};
 		for (const char *name : names) {
 			Dictionary capability;
@@ -224,7 +240,7 @@ Dictionary BridgeRpcSession::_make_limits() const {
 	limits["main_thread_commands_per_frame"] = (int64_t)MainThreadDispatcher::MAX_COMMANDS_PER_FRAME;
 	limits["main_thread_budget_us"] = (int64_t)MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME;
 	limits["ping_echo_bytes"] = (int64_t)MAX_PING_ECHO_BYTES;
-	if (protocol_version == "1.1") {
+	if (protocol_version == "1.1" || protocol_version == "1.2") {
 		limits["hard_message_bytes"] = (int64_t)8388608;
 		limits["snapshot_chunk_bytes"] = (int64_t)524288;
 		limits["event_journal_entries"] = (int64_t)4096;
@@ -232,6 +248,18 @@ Dictionary BridgeRpcSession::_make_limits() const {
 		limits["snapshot_window_bytes"] = (int64_t)33554432;
 		limits["variant_depth"] = (int64_t)8;
 		limits["container_items"] = (int64_t)1000;
+	}
+	if (protocol_version == "1.2") {
+		limits["resource_records"] = (int64_t)250000;
+		limits["resource_dependencies"] = (int64_t)2000000;
+		limits["resource_dependencies_per_record"] = (int64_t)4096;
+		limits["resource_path_bytes"] = (int64_t)1024;
+		limits["resource_snapshot_chunk_bytes"] = (int64_t)524288;
+		limits["resource_delta_batch_bytes"] = (int64_t)524288;
+		limits["resource_journal_entries"] = (int64_t)4096;
+		limits["resource_journal_bytes"] = (int64_t)16777216;
+		limits["resource_snapshot_timeout_ms"] = (int64_t)120000;
+		limits["resource_snapshot_concurrency"] = (int64_t)1;
 	}
 	return limits;
 }
@@ -242,6 +270,9 @@ Dictionary BridgeRpcSession::_make_revisions() const {
 	revisions["event_seq"] = (int64_t)0;
 	revisions["project_revision"] = (int64_t)0;
 	revisions["operation_seq"] = (int64_t)0;
+	if (protocol_version == "1.2") {
+		revisions["resource_revision"] = (int64_t)1;
+	}
 	revisions["scene_revisions"] = Dictionary();
 	return revisions;
 }
@@ -322,6 +353,15 @@ bool BridgeRpcSession::_validate_snapshot_params(const Dictionary &p_params) con
 		unique.insert(domain);
 	}
 	return true;
+}
+
+bool BridgeRpcSession::_validate_resource_snapshot_params(const Dictionary &p_params) const {
+	return p_params.is_empty();
+}
+
+bool BridgeRpcSession::_validate_resource_delta_params(const Dictionary &p_params) const {
+	int64_t after_resource_revision = 0;
+	return p_params.size() == 1 && get_bounded_integer(p_params, "after_resource_revision", 0, 9007199254740991LL, after_resource_revision);
 }
 
 bool BridgeRpcSession::_validate_shutdown_params(const Dictionary &p_params) const {
@@ -411,12 +451,32 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 			method = METHOD_PING;
 		} else if (method_name == "bridge.capabilities") {
 			method = METHOD_CAPABILITIES;
-		} else if (method_name == "editor.snapshot.get" && protocol_version == "1.1") {
+		} else if (method_name == "editor.snapshot.get" && (protocol_version == "1.1" || protocol_version == "1.2")) {
 			if (!_validate_snapshot_params(params)) {
 				_set_error_outcome(request_id, "invalid_request", "The snapshot parameters are invalid.", false, r_outcome);
 				return OK;
 			}
 			method = METHOD_EDITOR_SNAPSHOT;
+		} else if (method_name == "resource.snapshot.get") {
+			if (protocol_version != "1.2") {
+				_set_error_outcome(request_id, "capability_unavailable", "Resource graph snapshots require Bridge RPC 1.2.", false, r_outcome);
+				return OK;
+			}
+			if (!_validate_resource_snapshot_params(params)) {
+				_set_error_outcome(request_id, "invalid_request", "The resource snapshot parameters are invalid.", false, r_outcome);
+				return OK;
+			}
+			method = METHOD_RESOURCE_SNAPSHOT;
+		} else if (method_name == "resource.delta.get") {
+			if (protocol_version != "1.2") {
+				_set_error_outcome(request_id, "capability_unavailable", "Resource graph deltas require Bridge RPC 1.2.", false, r_outcome);
+				return OK;
+			}
+			if (!_validate_resource_delta_params(params)) {
+				_set_error_outcome(request_id, "invalid_request", "The resource delta parameters are invalid.", false, r_outcome);
+				return OK;
+			}
+			method = METHOD_RESOURCE_DELTA;
 		} else if (method_name == "bridge.shutdown") {
 			if (!_validate_shutdown_params(params)) {
 				_set_error_outcome(request_id, "invalid_request", "The shutdown parameters are invalid.", false, r_outcome);
@@ -432,6 +492,9 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 	if (pending_by_internal_id.size() >= MAX_IN_FLIGHT_REQUESTS) {
 		_set_error_outcome(request_id, "overloaded", "The RPC connection has too many requests in flight.", true, r_outcome);
 		return OK;
+	}
+	if (method == METHOD_RESOURCE_SNAPSHOT) {
+		deadline_ms = 120000;
 	}
 
 	PendingRequest pending;
@@ -465,6 +528,8 @@ Error BridgeRpcSession::_handle_cancel(const Dictionary &p_message, Outcome &r_o
 			return ERR_INVALID_DATA;
 		}
 	}
+	r_outcome.cancel_stream = true;
+	r_outcome.stream_request_id = request_id;
 	const uint64_t *internal_id = pending_by_request_id.getptr(request_id);
 	if (!internal_id) {
 		return OK;
@@ -478,7 +543,7 @@ Error BridgeRpcSession::_handle_cancel(const Dictionary &p_message, Outcome &r_o
 }
 
 Error BridgeRpcSession::_handle_ack(const Dictionary &p_message, Outcome &r_outcome) {
-	if (protocol_version != "1.1" || !initialized || !_validate_common_envelope(p_message)) {
+	if ((protocol_version != "1.1" && protocol_version != "1.2") || !initialized || !_validate_common_envelope(p_message)) {
 		return ERR_INVALID_DATA;
 	}
 	String ack_id;
@@ -488,9 +553,20 @@ Error BridgeRpcSession::_handle_ack(const Dictionary &p_message, Outcome &r_outc
 	const Dictionary params = p_message["params"];
 	String snapshot_id;
 	int64_t through_chunk = 0;
-	if (params.size() != 2 || !get_string(params, "snapshot_id", snapshot_id) || !is_snapshot_id(snapshot_id) || !get_bounded_integer(params, "through_chunk", 0, 65535, through_chunk)) {
+	if (!get_string(params, "snapshot_id", snapshot_id) || !is_snapshot_id(snapshot_id) || !get_bounded_integer(params, "through_chunk", 0, 65535, through_chunk)) {
 		return ERR_INVALID_DATA;
 	}
+	if (params.has("domain")) {
+		String domain;
+		if (protocol_version != "1.2" || params.size() != 3 || !get_string(params, "domain", domain) || domain != "resource_graph") {
+			return ERR_INVALID_DATA;
+		}
+	} else if (params.size() != 2) {
+		return ERR_INVALID_DATA;
+	}
+	r_outcome.ack_received = true;
+	r_outcome.ack_snapshot_id = snapshot_id;
+	r_outcome.ack_through_chunk = through_chunk;
 	return OK;
 }
 
@@ -559,20 +635,46 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 			}
 			result = p_result_override;
 		} break;
+		case METHOD_RESOURCE_SNAPSHOT:
+		case METHOD_RESOURCE_DELTA: {
+			if (p_result_override.is_empty()) {
+				_set_error_outcome(pending.request_id, "internal_error", "The resource graph response was not produced.", true, r_outcome);
+				_remove_pending(p_internal_request_id);
+				return OK;
+			}
+			result = p_result_override;
+		} break;
 		case METHOD_SHUTDOWN: {
 			result["closing"] = true;
 			closing = true;
 			r_outcome.close_after_response = true;
 		} break;
 	}
-	if (pending.method != METHOD_EDITOR_SNAPSHOT && !p_result_override.is_empty()) {
+	if (pending.method != METHOD_EDITOR_SNAPSHOT && pending.method != METHOD_RESOURCE_SNAPSHOT && pending.method != METHOD_RESOURCE_DELTA && !p_result_override.is_empty()) {
 		const Array keys = p_result_override.keys();
 		for (int index = 0; index < keys.size(); index++) {
 			result[keys[index]] = p_result_override[keys[index]];
 		}
 	}
+	if (protocol_version != "1.2" && result.has("revisions") && result["revisions"].get_type() == Variant::DICTIONARY) {
+		Dictionary revisions = result["revisions"];
+		revisions.erase("resource_revision");
+		result["revisions"] = revisions;
+	}
 	r_outcome.has_response = true;
 	r_outcome.response = _make_result_response(pending.request_id, result);
+	_remove_pending(p_internal_request_id);
+	return OK;
+}
+
+Error BridgeRpcSession::complete_error(uint64_t p_internal_request_id, const String &p_code, const String &p_message, bool p_retryable, const Dictionary &p_data, Outcome &r_outcome) {
+	r_outcome = Outcome();
+	PendingRequest *pending = pending_by_internal_id.getptr(p_internal_request_id);
+	if (!pending) {
+		return ERR_DOES_NOT_EXIST;
+	}
+	r_outcome.has_response = true;
+	r_outcome.response = _make_error_response(pending->request_id, p_code, p_message, p_retryable, p_data);
 	_remove_pending(p_internal_request_id);
 	return OK;
 }
@@ -625,7 +727,7 @@ bool BridgeRpcSession::is_initialized() const {
 
 void BridgeRpcSession::set_protocol_version(const String &p_protocol_version) {
 	ERR_FAIL_COND_MSG(initialized, "The negotiated protocol version cannot change after initialization.");
-	ERR_FAIL_COND_MSG(p_protocol_version != "1.0" && p_protocol_version != "1.1", "Unsupported Bridge RPC protocol version.");
+	ERR_FAIL_COND_MSG(p_protocol_version != "1.0" && p_protocol_version != "1.1" && p_protocol_version != "1.2", "Unsupported Bridge RPC protocol version.");
 	protocol_version = p_protocol_version;
 }
 

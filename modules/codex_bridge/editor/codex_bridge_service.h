@@ -32,6 +32,7 @@
 
 #include "bridge_revision_clock.h"
 #include "main_thread_dispatcher.h"
+#include "resource_graph_adapter.h"
 
 #include "editor/plugins/editor_plugin.h"
 
@@ -55,6 +56,7 @@ private:
 	MainThreadDispatcher dispatcher;
 	BridgeTransportWorker transport_worker;
 	BridgeRevisionClock revision_clock;
+	ResourceGraphAdapter resource_graph_adapter;
 	bool editor_signals_connected = false;
 	bool scene_change_pending = false;
 	String pending_property;
@@ -69,8 +71,13 @@ private:
 	void _on_scene_changed();
 	void _on_property_edited(const String &p_property);
 	void _on_undo_redo_version_changed();
+	void _on_filesystem_changed();
+	void _on_resources_reimported(const Vector<String> &p_paths);
+	void _on_resources_reload(const PackedStringArray &p_paths);
 	void _flush_scene_change();
 	void _complete_snapshot(uint64_t p_request_id);
+	void _complete_resource_delta(uint64_t p_request_id, uint64_t p_after_resource_revision);
+	void _process_resource_graph(uint64_t p_budget_usec);
 
 protected:
 	void _notification(int p_what);

@@ -42,6 +42,8 @@ public:
 		METHOD_PING,
 		METHOD_CAPABILITIES,
 		METHOD_EDITOR_SNAPSHOT,
+		METHOD_RESOURCE_SNAPSHOT,
+		METHOD_RESOURCE_DELTA,
 		METHOD_SHUTDOWN,
 	};
 
@@ -54,6 +56,11 @@ public:
 		uint64_t deadline_usec = 0;
 		Dictionary params;
 		bool cancel_dispatch = false;
+		bool cancel_stream = false;
+		String stream_request_id;
+		bool ack_received = false;
+		String ack_snapshot_id;
+		int64_t ack_through_chunk = -1;
 		bool close_after_response = false;
 	};
 
@@ -82,8 +89,8 @@ private:
 	uint64_t shutdown_pending_id = 0;
 
 	Dictionary _make_context() const;
-	Dictionary _make_error(const String &p_code, const String &p_message, bool p_retryable) const;
-	Dictionary _make_error_response(const String &p_request_id, const String &p_code, const String &p_message, bool p_retryable) const;
+	Dictionary _make_error(const String &p_code, const String &p_message, bool p_retryable, const Dictionary &p_data = Dictionary()) const;
+	Dictionary _make_error_response(const String &p_request_id, const String &p_code, const String &p_message, bool p_retryable, const Dictionary &p_data = Dictionary()) const;
 	Dictionary _make_result_response(const String &p_request_id, const Dictionary &p_result) const;
 	Dictionary _make_capabilities() const;
 	Dictionary _make_limits() const;
@@ -93,6 +100,8 @@ private:
 	bool _validate_initialize_params(const Dictionary &p_params) const;
 	bool _validate_ping_params(const Dictionary &p_params) const;
 	bool _validate_snapshot_params(const Dictionary &p_params) const;
+	bool _validate_resource_snapshot_params(const Dictionary &p_params) const;
+	bool _validate_resource_delta_params(const Dictionary &p_params) const;
 	bool _validate_shutdown_params(const Dictionary &p_params) const;
 	void _remove_pending(uint64_t p_internal_request_id);
 	void _set_error_outcome(const String &p_request_id, const String &p_code, const String &p_message, bool p_retryable, Outcome &r_outcome) const;
@@ -106,6 +115,7 @@ public:
 	Error handle_message(const Dictionary &p_message, uint64_t p_now_usec, uint64_t p_internal_request_id, Outcome &r_outcome);
 	Error complete(uint64_t p_internal_request_id, uint64_t p_now_usec, Outcome &r_outcome);
 	Error complete(uint64_t p_internal_request_id, uint64_t p_now_usec, const Dictionary &p_result_override, Outcome &r_outcome);
+	Error complete_error(uint64_t p_internal_request_id, const String &p_code, const String &p_message, bool p_retryable, const Dictionary &p_data, Outcome &r_outcome);
 	Error reject_dispatch(uint64_t p_internal_request_id, Outcome &r_outcome);
 	void expire_requests(uint64_t p_now_usec, Vector<Outcome> &r_outcomes);
 	void cancel_all(Vector<uint64_t> &r_internal_request_ids);

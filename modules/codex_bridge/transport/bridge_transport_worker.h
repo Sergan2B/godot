@@ -56,6 +56,11 @@ public:
 		uint64_t request_id = 0;
 		Dictionary result;
 		Array server_messages;
+		bool is_error = false;
+		String error_code;
+		String error_message;
+		bool error_retryable = false;
+		Dictionary error_data;
 	};
 
 	struct Context {
@@ -97,6 +102,7 @@ public:
 	void wake();
 	void complete_request(uint64_t p_request_id);
 	void complete_request(uint64_t p_request_id, const Dictionary &p_result, const Array &p_server_messages = Array());
+	void complete_request_error(uint64_t p_request_id, const String &p_code, const String &p_message, bool p_retryable, const Dictionary &p_data = Dictionary());
 	bool publish_notification(const Dictionary &p_notification);
 	String get_project_id() const;
 	String get_editor_session_id() const;

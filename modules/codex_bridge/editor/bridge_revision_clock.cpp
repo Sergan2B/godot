@@ -35,6 +35,9 @@ void BridgeRevisionClock::initialize(const String &p_editor_session_id) {
 	event_seq = 0;
 	project_revision = 0;
 	operation_seq = 0;
+	// Resource graph revision 1 represents the initial editor filesystem
+	// catalog, even when the catalog is empty.
+	resource_revision = 1;
 	scene_revisions.clear();
 }
 
@@ -54,9 +57,19 @@ uint64_t BridgeRevisionClock::record_scene_change(const String &p_scene_id) {
 	return event_seq;
 }
 
+uint64_t BridgeRevisionClock::record_resource_change() {
+	++event_seq;
+	++project_revision;
+	return ++resource_revision;
+}
+
 uint64_t BridgeRevisionClock::get_scene_revision(const String &p_scene_id) const {
 	const uint64_t *scene_revision = scene_revisions.getptr(p_scene_id);
 	return scene_revision ? *scene_revision : 0;
+}
+
+uint64_t BridgeRevisionClock::get_resource_revision() const {
+	return resource_revision;
 }
 
 Dictionary BridgeRevisionClock::get_revision_vector() const {
@@ -69,6 +82,7 @@ Dictionary BridgeRevisionClock::get_revision_vector() const {
 	revisions["event_seq"] = (int64_t)event_seq;
 	revisions["project_revision"] = (int64_t)project_revision;
 	revisions["operation_seq"] = (int64_t)operation_seq;
+	revisions["resource_revision"] = (int64_t)resource_revision;
 	revisions["scene_revisions"] = scenes;
 	return revisions;
 }
