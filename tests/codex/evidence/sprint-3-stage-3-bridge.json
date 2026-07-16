@@ -1,0 +1,131 @@
+{
+  "canonical_fixture_unchanged": true,
+  "execution": "local",
+  "fixture_digest_after": "b5a5ca587c6c776afd0f1a842df000794385e334b0dbb2bd6c721b51783b7d4b",
+  "fixture_digest_before": "b5a5ca587c6c776afd0f1a842df000794385e334b0dbb2bd6c721b51783b7d4b",
+  "phases": [
+    {
+      "delta_operation_counts": [],
+      "delta_statuses": [],
+      "dependency_count": 12,
+      "diagnostic_count": 2,
+      "passed": true,
+      "phase": "base",
+      "protocol_version": "1.2",
+      "resource_count": 18,
+      "snapshot_checksum": "ca2183b300caa2d77c1a0870e5af41ec9ec2b8e65160e29debed1d1d45d30b3a"
+    },
+    {
+      "delta_operation_counts": [
+        7
+      ],
+      "delta_statuses": [
+        "batch"
+      ],
+      "dependency_count": 12,
+      "diagnostic_count": 2,
+      "passed": true,
+      "phase": "rename_uid",
+      "protocol_version": "1.2",
+      "resource_count": 18,
+      "snapshot_checksum": "ca2183b300caa2d77c1a0870e5af41ec9ec2b8e65160e29debed1d1d45d30b3a"
+    },
+    {
+      "delta_operation_counts": [
+        2
+      ],
+      "delta_statuses": [
+        "batch"
+      ],
+      "dependency_count": 12,
+      "diagnostic_count": 2,
+      "passed": true,
+      "phase": "rename_uidless",
+      "protocol_version": "1.2",
+      "resource_count": 18,
+      "snapshot_checksum": "ca2183b300caa2d77c1a0870e5af41ec9ec2b8e65160e29debed1d1d45d30b3a"
+    },
+    {
+      "delta_operation_counts": [
+        2
+      ],
+      "delta_statuses": [
+        "batch"
+      ],
+      "dependency_count": 12,
+      "diagnostic_count": 2,
+      "passed": true,
+      "phase": "delete",
+      "protocol_version": "1.2",
+      "resource_count": 18,
+      "snapshot_checksum": "ca2183b300caa2d77c1a0870e5af41ec9ec2b8e65160e29debed1d1d45d30b3a"
+    },
+    {
+      "delta_operation_counts": [
+        2,
+        2
+      ],
+      "delta_statuses": [
+        "batch",
+        "batch"
+      ],
+      "dependency_count": 12,
+      "diagnostic_count": 2,
+      "passed": true,
+      "phase": "re_add",
+      "protocol_version": "1.2",
+      "resource_count": 18,
+      "snapshot_checksum": "ca2183b300caa2d77c1a0870e5af41ec9ec2b8e65160e29debed1d1d45d30b3a"
+    },
+    {
+      "delta_operation_counts": [
+        1
+      ],
+      "delta_statuses": [
+        "batch"
+      ],
+      "dependency_count": 12,
+      "diagnostic_count": 2,
+      "passed": true,
+      "phase": "reimport",
+      "protocol_version": "1.2",
+      "resource_count": 18,
+      "snapshot_checksum": "ca2183b300caa2d77c1a0870e5af41ec9ec2b8e65160e29debed1d1d45d30b3a"
+    },
+    {
+      "delta_operation_counts": [
+        1
+      ],
+      "delta_statuses": [
+        "batch"
+      ],
+      "dependency_count": 12,
+      "diagnostic_count": 2,
+      "passed": true,
+      "phase": "content_edit",
+      "protocol_version": "1.2",
+      "resource_count": 18,
+      "snapshot_checksum": "ca2183b300caa2d77c1a0870e5af41ec9ec2b8e65160e29debed1d1d45d30b3a"
+    },
+    {
+      "delta_operation_counts": [
+        0
+      ],
+      "delta_statuses": [
+        "gap"
+      ],
+      "dependency_count": 12,
+      "diagnostic_count": 2,
+      "passed": true,
+      "phase": "journal_gap",
+      "protocol_version": "1.2",
+      "resource_count": 18,
+      "snapshot_checksum": "ca2183b300caa2d77c1a0870e5af41ec9ec2b8e65160e29debed1d1d45d30b3a"
+    }
+  ],
+  "platform": "macOS arm64",
+  "remote_ci": false,
+  "result": "passed",
+  "schema_version": 1,
+  "stage": "Sprint 3 Stage 3"
+}

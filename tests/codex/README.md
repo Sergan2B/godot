@@ -110,3 +110,20 @@ increasing event/scene revisions, verifies that a new snapshot generation is
 used, requires all per-session runtime artifacts to disappear after editor
 exit, and atomically writes a normalized evidence artifact. It fails closed on
 hosts other than Windows x86_64 and macOS arm64.
+
+## Sprint 3 Stage 3 resource bridge gate
+
+The Stage 3 harness starts a fresh short-path editor project for every Stage 1
+oracle phase, consumes the Bridge RPC 1.2 snapshot through the production Rust
+client, applies the mutation outside the canonical fixture, and verifies the
+resulting delta. It also forces a live oversized batch to prove typed
+journal-gap fallback.
+
+```sh
+python3 tests/codex/sprint3_stage3_live.py \
+  --godot bin/godot.macos.editor.dev.arm64
+```
+
+The canonical project digest must remain unchanged. Normalized local evidence
+is written to `evidence/sprint-3-stage-3-bridge.json`; remote CI and unrun
+platforms are not inferred from this gate.
