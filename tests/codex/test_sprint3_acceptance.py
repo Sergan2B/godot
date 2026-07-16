@@ -33,7 +33,7 @@ from sprint3_stage4_index_mcp import (
     IndexMcpGateError,
     parse_bridge_telemetry,
     require_local_host_for_qualifying_evidence,
-    require_tool_error,
+    require_schema_rejection,
     validate_tool_registry,
     verify_current_oracle,
     wait_for_current,
@@ -338,7 +338,7 @@ class Sprint3AcceptanceTests(unittest.TestCase):
         require_local_host_for_qualifying_evidence(False, {"CI": "true"})
         require_local_host_for_qualifying_evidence(True, {})
 
-    def test_schema_negative_requires_json_rpc_invalid_params(self) -> None:
+    def test_schema_negative_requires_pinned_rmcp_tool_error(self) -> None:
         class Client:
             def __init__(self, response: dict[str, object]) -> None:
                 self.response = response
@@ -346,30 +346,71 @@ class Sprint3AcceptanceTests(unittest.TestCase):
             def request(self, _method: str, _params: dict[str, object]) -> dict[str, object]:
                 return self.response
 
-        require_tool_error(
-            Client({"error": {"code": -32602, "message": "Invalid params"}}),  # type: ignore[arg-type]
+        require_schema_rejection(
+            Client(  # type: ignore[arg-type]
+                {
+                    "result": {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "failed to deserialize parameters: unknown field `unknown_member`, "
+                                    "expected one of `resource`, `limit`, `cursor`"
+                                ),
+                            }
+                        ],
+                        "isError": True,
+                    }
+                }
+            ),
             "godot_get_resource_dependencies",
             {"unknown_member": True},
-            allow_protocol_rejection=True,
         )
         rejected = (
+            {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "failed to deserialize parameters: unknown field `unknown_member`, "
+                                "expected one of `resource`, `limit`, `cursor`"
+                            ),
+                        }
+                    ],
+                    "isError": False,
+                }
+            },
             {"error": {"code": -32603, "message": "Internal error"}},
-            {"error": {"code": -32602.0, "message": "Invalid params with a non-integer code"}},
+            {"error": {"code": -32602, "message": "Invalid params"}},
             {
                 "result": {
                     "isError": True,
-                    "structuredContent": {"error": {"code": "internal_error"}},
+                    "structuredContent": {"error": {"code": "invalid_params"}},
+                }
+            },
+            {
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "failed to deserialize parameters: unknown field `different_member`, "
+                                "expected one of `resource`, `limit`, `cursor`"
+                            ),
+                        }
+                    ],
+                    "isError": True,
                 }
             },
         )
         for response in rejected:
             with self.subTest(response=response):
-                with self.assertRaisesRegex(IndexMcpGateError, "JSON-RPC InvalidParams"):
-                    require_tool_error(
+                with self.assertRaisesRegex(IndexMcpGateError, "pinned rmcp schema-rejection envelope"):
+                    require_schema_rejection(
                         Client(response),  # type: ignore[arg-type]
                         "godot_get_resource_dependencies",
                         {"unknown_member": True},
-                        allow_protocol_rejection=True,
                     )
 
     def test_rejects_duplicate_entries_in_five_tool_registry(self) -> None:

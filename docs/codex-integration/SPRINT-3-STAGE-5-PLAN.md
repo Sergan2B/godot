@@ -69,7 +69,10 @@ the resource is restored; its final step is bound to the canonical re-add oracle
 ## 4. Evidence-only telemetry
 
 Bridge RPC remains version 1.2 and the MCP registry remains exactly five read-only
-tools. When `GODOT_CODEX_EVIDENCE_TELEMETRY=1`, each editor process records the elapsed
+tools. Closed resource-tool inputs are live-probed against the pinned `rmcp 2.2.0`
+schema-rejection envelope: one exact serde error text block, `isError: true`, and no
+structured business result or JSON-RPC protocol error. When
+`GODOT_CODEX_EVIDENCE_TELEMETRY=1`, each editor process records the elapsed
 Bridge main-thread work for busy frames in a 16,384-sample bounded in-memory buffer and
 emits one normalized, non-sensitive JSON record at shutdown. The base phase therefore
 requires two records, one from each side of the editor-and-sidecar reopen; every other

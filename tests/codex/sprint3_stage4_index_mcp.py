@@ -67,6 +67,9 @@ RESOURCE_TOOLS = (
     "godot_get_resource_dependencies",
     "godot_find_resource_owners",
 )
+RMCP_UNKNOWN_MEMBER_REJECTION_TEXT = (
+    "failed to deserialize parameters: unknown field `unknown_member`, expected one of `resource`, `limit`, `cursor`"
+)
 MCP_CONTRACT_FIELDS = {
     "closed_input_schemas",
     "cross_project_cursor_rejected",
@@ -409,32 +412,37 @@ def require_tool_error(
     client: McpClient,
     name: str,
     arguments: dict[str, Any],
-    expected_code: str | None = None,
-    *,
-    allow_protocol_rejection: bool = False,
+    expected_code: str,
 ) -> None:
     response = client.request("tools/call", {"name": name, "arguments": arguments})
     require_redacted(response, f"{name} negative MCP output", allow_session_identity=True)
     if "error" in response:
-        error = response.get("error")
-        error_code = error.get("code") if isinstance(error, dict) else None
-        if (
-            allow_protocol_rejection
-            and isinstance(error_code, int)
-            and not isinstance(error_code, bool)
-            and error_code == -32602
-        ):
-            return
-        if allow_protocol_rejection:
-            raise IndexMcpGateError(f"{name} did not reject the negative query as JSON-RPC InvalidParams")
         raise IndexMcpGateError(f"{name} returned a protocol error instead of {expected_code}")
-    if allow_protocol_rejection:
-        raise IndexMcpGateError(f"{name} did not reject the negative query as JSON-RPC InvalidParams")
     result = response.get("result")
     content = result.get("structuredContent") if isinstance(result, dict) else None
     code = content.get("error", {}).get("code") if isinstance(content, dict) else None
     if not isinstance(result, dict) or result.get("isError") is not True or code != expected_code:
         raise IndexMcpGateError(f"{name} did not reject the negative query as {expected_code}")
+
+
+def require_schema_rejection(
+    client: McpClient,
+    name: str,
+    arguments: dict[str, Any],
+) -> None:
+    response = client.request("tools/call", {"name": name, "arguments": arguments})
+    require_redacted(response, f"{name} schema-negative MCP output", allow_session_identity=True)
+    expected_result = {
+        "content": [
+            {
+                "type": "text",
+                "text": RMCP_UNKNOWN_MEMBER_REJECTION_TEXT,
+            }
+        ],
+        "isError": True,
+    }
+    if "error" in response or response.get("result") != expected_result:
+        raise IndexMcpGateError(f"{name} did not return the pinned rmcp schema-rejection envelope")
 
 
 def issue_probe_cursor(
@@ -464,11 +472,10 @@ def probe_base_mcp_contract(
         require_tool_error(client, tool, {"resource": resource, "limit": 0}, "invalid_limit")
         require_tool_error(client, tool, {"resource": resource, "limit": 201}, "invalid_limit")
         require_tool_error(client, tool, {"resource": "res://../project.godot", "limit": 50}, "invalid_path")
-        require_tool_error(
+        require_schema_rejection(
             client,
             tool,
             {"resource": resource, "limit": 1, "unknown_member": True},
-            allow_protocol_rejection=True,
         )
 
     cursor, project_id = issue_probe_cursor(
