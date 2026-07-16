@@ -137,11 +137,11 @@ mod unix {
             || !record
                 .protocol_versions
                 .iter()
-                .any(|version| version == "1.1")
+                .any(|version| matches!(version.as_str(), "1.0" | "1.1" | "1.2"))
             || !valid_editor_session_id(&record.editor_session_id)
         {
             return Err(BridgeError::Invalid(
-                "discovery record is incompatible with Bridge RPC 1.1".to_owned(),
+                "discovery record has no supported Bridge RPC major-one version".to_owned(),
             ));
         }
 
@@ -323,11 +323,11 @@ mod windows {
             || !record
                 .protocol_versions
                 .iter()
-                .any(|version| version == "1.1")
+                .any(|version| matches!(version.as_str(), "1.0" | "1.1" | "1.2"))
             || !valid_editor_session_id(&record.editor_session_id)
         {
             return Err(BridgeError::Invalid(
-                "discovery record is incompatible with Bridge RPC 1.1".to_owned(),
+                "discovery record has no supported Bridge RPC major-one version".to_owned(),
             ));
         }
 

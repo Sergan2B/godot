@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 
 #[cfg(any(unix, windows, test))]
@@ -41,6 +42,18 @@ pub enum BridgeError {
     Unsupported,
     #[error("bridge I/O timed out")]
     Timeout,
+    #[error("bridge capability {capability} is unavailable after negotiating {negotiated_version}")]
+    CapabilityUnavailable {
+        capability: &'static str,
+        negotiated_version: String,
+    },
+    #[error("bridge RPC failed with {code}: {message}")]
+    Rpc {
+        code: String,
+        message: String,
+        retryable: bool,
+        data: Value,
+    },
 }
 
 impl BridgeError {
@@ -54,6 +67,8 @@ impl BridgeError {
             Self::Replica(_) => "Godot bridge snapshot validation failed",
             Self::Unsupported => "Godot bridge transport is unavailable on this platform",
             Self::Timeout => "Godot bridge timed out",
+            Self::CapabilityUnavailable { .. } => "Godot bridge capability is unavailable",
+            Self::Rpc { .. } => "Godot bridge request failed",
         }
     }
 }
@@ -182,14 +197,18 @@ fn valid_snapshot_limits(value: &Value) -> bool {
 }
 
 #[cfg(any(unix, windows))]
-fn validate_context(value: &Value, discovery: &Discovery) -> Result<(), BridgeError> {
+fn validate_context(
+    value: &Value,
+    discovery: &Discovery,
+    protocol_version: &str,
+) -> Result<(), BridgeError> {
     if value.pointer("/context/project_id").and_then(Value::as_str)
         != Some(discovery.project_id.as_str())
         || value
             .pointer("/context/editor_session_id")
             .and_then(Value::as_str)
             != Some(discovery.editor_session_id.as_str())
-        || value.get("protocol_version").and_then(Value::as_str) != Some("1.1")
+        || value.get("protocol_version").and_then(Value::as_str) != Some(protocol_version)
     {
         return Err(BridgeError::Invalid(
             "RPC context binding mismatch".to_owned(),
@@ -284,19 +303,21 @@ impl FrameStream {
 }
 
 #[cfg(any(unix, windows))]
-struct Session {
+pub(crate) struct Session {
     discovery: Discovery,
     stream: FrameStream,
     next_request: u64,
     resync_requested: bool,
+    selected_protocol_version: String,
+    capabilities: BTreeSet<String>,
 }
 
 #[cfg(any(unix, windows))]
 impl Session {
-    async fn connect(project_root: &Path) -> Result<Self, BridgeError> {
+    pub(crate) async fn connect(project_root: &Path) -> Result<Self, BridgeError> {
         let discovery = Discovery::load(project_root)?;
         let mut stream = FrameStream::connect(&discovery.endpoint).await?;
-        let offered_versions = vec!["1.1".to_owned()];
+        let offered_versions = vec!["1.2".to_owned()];
         let mut client_nonce = [0_u8; 32];
         getrandom::fill(&mut client_nonce)
             .map_err(|error| BridgeError::Invalid(format!("client nonce failed: {error}")))?;
@@ -310,8 +331,10 @@ impl Session {
         });
         stream.send(&hello).await?;
         let challenge = stream.receive_timed().await?;
+        let selected_protocol_version =
+            required_str(&challenge, "selected_protocol_version")?.to_owned();
         if required_str(&challenge, "kind")? != "handshake.server_challenge"
-            || required_str(&challenge, "selected_protocol_version")? != "1.1"
+            || !matches!(selected_protocol_version.as_str(), "1.0" | "1.1" | "1.2")
             || required_str(&challenge, "project_id")? != discovery.project_id
             || required_str(&challenge, "editor_session_id")? != discovery.editor_session_id
         {
@@ -320,7 +343,7 @@ impl Session {
         let server_nonce = decode_base64url_32(required_str(&challenge, "server_nonce")?)?;
         let transcript = handshake_transcript(
             &offered_versions,
-            "1.1",
+            &selected_protocol_version,
             &discovery,
             &client_nonce,
             &server_nonce,
@@ -336,7 +359,7 @@ impl Session {
         let authenticate = json!({
             "handshake_version": "1.0",
             "kind": "handshake.client_authenticate",
-            "selected_protocol_version": "1.1",
+            "selected_protocol_version": selected_protocol_version,
             "project_id": discovery.project_id,
             "editor_session_id": discovery.editor_session_id,
             "client_proof": base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
@@ -346,7 +369,7 @@ impl Session {
         stream.send(&authenticate).await?;
         let ready = stream.receive_timed().await?;
         if required_str(&ready, "kind")? != "handshake.server_ready"
-            || required_str(&ready, "selected_protocol_version")? != "1.1"
+            || required_str(&ready, "selected_protocol_version")? != selected_protocol_version
             || required_str(&ready, "project_id")? != discovery.project_id
             || required_str(&ready, "editor_session_id")? != discovery.editor_session_id
         {
@@ -359,40 +382,44 @@ impl Session {
             stream,
             next_request: 1,
             resync_requested: false,
+            selected_protocol_version,
+            capabilities: BTreeSet::new(),
         };
+        let mut requested_capabilities = vec!["bridge.lifecycle", transport_capability];
+        if session.selected_protocol_version != "1.0" {
+            requested_capabilities.extend([
+                "editor.context",
+                "editor.inspector",
+                "sync.full_snapshot_v1",
+                "sync.event_stream_v1",
+            ]);
+        }
+        if session.selected_protocol_version == "1.2" {
+            requested_capabilities
+                .extend(["resource.uid_dependencies", "resource.incremental_index"]);
+        }
         let initialize = session
             .request(
                 "bridge.initialize",
                 json!({
                     "client": {"name": "godot-codex-mcp", "version": env!("CARGO_PKG_VERSION")},
-                    "requested_capabilities": [
-                        "bridge.lifecycle",
-                        transport_capability,
-                        "editor.context",
-                        "editor.inspector",
-                        "sync.full_snapshot_v1",
-                        "sync.event_stream_v1"
-                    ]
+                    "requested_capabilities": requested_capabilities,
                 }),
             )
             .await?;
-        for capability in [
-            transport_capability,
-            "editor.context",
-            "editor.inspector",
-            "sync.full_snapshot_v1",
-            "sync.event_stream_v1",
-        ] {
-            let found = initialize
-                .pointer("/result/capabilities")
-                .and_then(Value::as_array)
-                .is_some_and(|capabilities| {
-                    capabilities.iter().any(|entry| {
-                        entry.get("name").and_then(Value::as_str) == Some(capability)
-                            && entry.get("readiness").and_then(Value::as_str) == Some("ready")
-                    })
-                });
-            if !found {
+        let capabilities = initialize
+            .pointer("/result/capabilities")
+            .and_then(Value::as_array)
+            .ok_or_else(|| BridgeError::Invalid("capabilities are missing".to_owned()))?;
+        for entry in capabilities {
+            if entry.get("readiness").and_then(Value::as_str) == Some("ready")
+                && let Some(name) = entry.get("name").and_then(Value::as_str)
+            {
+                session.capabilities.insert(name.to_owned());
+            }
+        }
+        for capability in requested_capabilities {
+            if !session.capabilities.contains(capability) {
                 return Err(BridgeError::Invalid(format!(
                     "required capability is unavailable: {capability}"
                 )));
@@ -401,17 +428,17 @@ impl Session {
         Ok(session)
     }
 
-    fn context(&self) -> Value {
+    pub(crate) fn context(&self) -> Value {
         json!({
             "project_id": self.discovery.project_id,
             "editor_session_id": self.discovery.editor_session_id,
         })
     }
 
-    async fn receive_non_sync_timed(&mut self) -> Result<Value, BridgeError> {
+    pub(crate) async fn receive_non_sync_timed(&mut self) -> Result<Value, BridgeError> {
         loop {
             let message = self.stream.receive_timed().await?;
-            validate_context(&message, &self.discovery)?;
+            validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
             if is_sync_invalidation(&message)? {
                 self.resync_requested = true;
                 continue;
@@ -420,11 +447,15 @@ impl Session {
         }
     }
 
-    async fn request(&mut self, method: &str, params: Value) -> Result<Value, BridgeError> {
+    pub(crate) async fn request(
+        &mut self,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, BridgeError> {
         let request_id = format!("req:mcp-{:016x}", self.next_request);
         self.next_request += 1;
         let request = json!({
-            "protocol_version": "1.1",
+            "protocol_version": self.selected_protocol_version,
             "kind": "request",
             "request_id": request_id,
             "method": method,
@@ -440,12 +471,81 @@ impl Session {
             return Err(BridgeError::Invalid("unexpected RPC response".to_owned()));
         }
         if let Some(error) = response.get("error") {
-            return Err(BridgeError::Invalid(format!("RPC error: {error}")));
+            return Err(BridgeError::Rpc {
+                code: error
+                    .get("code")
+                    .and_then(Value::as_str)
+                    .unwrap_or("invalid_error")
+                    .to_owned(),
+                message: error
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Bridge RPC failed")
+                    .to_owned(),
+                retryable: error
+                    .get("retryable")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                data: error.get("data").cloned().unwrap_or_else(|| json!({})),
+            });
         }
         Ok(response)
     }
 
+    pub(crate) fn protocol_version(&self) -> &str {
+        &self.selected_protocol_version
+    }
+
+    pub(crate) fn capabilities(&self) -> &BTreeSet<String> {
+        &self.capabilities
+    }
+
+    pub(crate) async fn send_ack(
+        &mut self,
+        snapshot_id: &str,
+        domain: Option<&str>,
+        through_chunk: usize,
+    ) -> Result<(), BridgeError> {
+        let mut params = json!({
+            "snapshot_id": snapshot_id,
+            "through_chunk": through_chunk,
+        });
+        if let Some(domain) = domain {
+            params["domain"] = json!(domain);
+        }
+        let ack = json!({
+            "protocol_version": self.selected_protocol_version,
+            "kind": "ack",
+            "ack_id": format!("ack:snapshot-{:016x}", self.next_request),
+            "params": params,
+            "context": self.context(),
+        });
+        self.next_request += 1;
+        self.stream.send(&ack).await
+    }
+
+    pub(crate) async fn send_cancel(
+        &mut self,
+        request_id: &str,
+        reason: &str,
+    ) -> Result<(), BridgeError> {
+        let cancel = json!({
+            "protocol_version": self.selected_protocol_version,
+            "kind": "cancel",
+            "request_id": request_id,
+            "reason": reason,
+            "context": self.context(),
+        });
+        self.stream.send(&cancel).await
+    }
+
     async fn snapshot(&mut self, replicator: &SnapshotReplicator) -> Result<bool, BridgeError> {
+        if self.selected_protocol_version == "1.0" {
+            return Err(BridgeError::CapabilityUnavailable {
+                capability: "sync.full_snapshot_v1",
+                negotiated_version: self.selected_protocol_version.clone(),
+            });
+        }
         let response = self
             .request(
                 "editor.snapshot.get",
@@ -515,6 +615,7 @@ impl Session {
                 return Err(BridgeError::Invalid("chunk order mismatch".to_owned()));
             }
             replicator.push_chunk(chunk)?;
+            self.send_ack(&snapshot_id, None, expected_index).await?;
         }
 
         let end = self.receive_non_sync_timed().await?;
@@ -533,22 +634,11 @@ impl Session {
             checksum: required_str(end_params, "checksum")?.to_owned(),
             revisions: serde_json::from_value(end_params["revisions"].clone())?,
         })?;
-        let ack = json!({
-            "protocol_version": "1.1",
-            "kind": "ack",
-            "ack_id": format!("ack:snapshot-{:016x}", self.next_request),
-            "params": {
-                "snapshot_id": snapshot_id,
-                "through_chunk": chunk_count - 1,
-            },
-            "context": self.context(),
-        });
         let needs_resync = self.resync_requested;
         if needs_resync {
             self.resync_requested = false;
             replicator.invalidate("editor changed during snapshot transfer");
         }
-        self.stream.send(&ack).await?;
         Ok(needs_resync)
     }
 
@@ -557,7 +647,7 @@ impl Session {
         replicator: &SnapshotReplicator,
     ) -> Result<(), BridgeError> {
         let message = self.stream.receive().await?;
-        validate_context(&message, &self.discovery)?;
+        validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
         let method = message.get("method").and_then(Value::as_str);
         match method {
             Some("sync.event") => {
