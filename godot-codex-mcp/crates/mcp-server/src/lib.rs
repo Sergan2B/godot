@@ -302,7 +302,7 @@ fn resource_success(
         "evidence": {
             "source": "persistent_segment_index",
             "source_complete": generation.checkpoint.source_complete,
-            "authorities": ["editor_file_system", "resource_loader_dependencies"],
+            "authorities": ["editor_file_system", "godot_resource_loader"],
         },
     });
     response[match tool {
@@ -642,7 +642,7 @@ mod tests {
             resolved_target_path: Some(format!("res://{target}.tres")),
             relation: "references".to_owned(),
             declared_type: Some("Resource".to_owned()),
-            authority: "resource_loader_dependencies".to_owned(),
+            authority: "godot_resource_loader".to_owned(),
             resolution: DependencyResolution::Resolved,
             resource_revision: 1,
         };
@@ -659,7 +659,7 @@ mod tests {
                 resolved_target_path: None,
                 relation: "references".to_owned(),
                 declared_type: Some("Resource".to_owned()),
-                authority: "resource_loader_dependencies".to_owned(),
+                authority: "godot_resource_loader".to_owned(),
                 resolution: DependencyResolution::Missing,
                 resource_revision: 1,
             });

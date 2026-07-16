@@ -326,7 +326,7 @@ impl ResourceNormalizer {
                 resolved_target_path,
                 relation: "references".to_owned(),
                 declared_type: observation.declared_type.clone(),
-                authority: observation.authority.clone(),
+                authority: logical_dependency_authority(&observation.authority)?.to_owned(),
                 resolution,
                 resource_revision: observation.resource_revision,
             });
@@ -988,7 +988,7 @@ fn normalize_dependency_observation(
         resolved_target_path: None,
         relation: "references".to_owned(),
         declared_type: observation.declared_type.clone(),
-        authority: observation.authority.clone(),
+        authority: logical_dependency_authority(&observation.authority)?.to_owned(),
         resolution: match observation.resolution {
             BridgeDependencyResolution::Resolved => DependencyResolution::Resolved,
             BridgeDependencyResolution::Missing => DependencyResolution::Missing,
@@ -1037,6 +1037,14 @@ fn reconcile_dependency(
         return Err(IndexerError::ObservationConflict("dependency_authority"));
     }
     Ok(())
+}
+
+fn logical_dependency_authority(value: &str) -> Result<&'static str, IndexerError> {
+    if value == "resource_loader_dependencies" {
+        Ok("godot_resource_loader")
+    } else {
+        Err(IndexerError::ObservationConflict("dependency_authority"))
+    }
 }
 
 fn logical_snapshot_checksum(
@@ -1535,6 +1543,10 @@ mod tests {
             .unwrap();
         assert_eq!(generation.resources.len(), 2);
         assert_eq!(generation.dependencies.len(), 1);
+        assert_eq!(
+            generation.dependencies[0].authority,
+            "godot_resource_loader"
+        );
         assert_eq!(
             generation.dependencies[0].resolution,
             DependencyResolution::Resolved
