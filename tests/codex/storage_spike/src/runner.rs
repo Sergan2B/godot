@@ -398,6 +398,7 @@ fn decision_profile_valid(run: &StorageSpikeEvidence) -> bool {
     if run.schema_version != 2
         || run.decision != "D-05"
         || run.profile != "decision"
+        || required_architecture(&run.os) != Some(run.architecture.as_str())
         || run.seed != SYNTHETIC_SEED
         || run.git_commit == "unknown"
         || !run.source_tree_sha256.starts_with("sha256:")
@@ -488,6 +489,14 @@ fn decision_profile_valid(run: &StorageSpikeEvidence) -> bool {
     }
     let (chosen, reason) = choose_backend(&recomputed);
     run.chosen_backend == chosen && run.decision_reason == reason
+}
+
+fn required_architecture(os: &str) -> Option<&'static str> {
+    match os {
+        "linux" | "windows" => Some("x86_64"),
+        "macos" => Some("aarch64"),
+        _ => None,
+    }
 }
 
 fn cross_platform_summaries(runs: &[StorageSpikeEvidence]) -> Vec<CombinedBackendEvidence> {
@@ -2160,7 +2169,9 @@ mod tests {
             source_tree_sha256: "sha256:fixture-source".to_owned(),
             rustc: "rustc 1.94.1 (fixture)".to_owned(),
             os: os.to_owned(),
-            architecture: "fixture".to_owned(),
+            architecture: required_architecture(os)
+                .expect("fixture OS must be a required acceptance coordinate")
+                .to_owned(),
             host: HostEvidence {
                 runner: "local".to_owned(),
                 logical_cpus: 1,
@@ -2195,6 +2206,14 @@ mod tests {
         let mut remote = valid.clone();
         remote.host.runner = "hosted-ci".to_owned();
         assert!(!decision_profile_valid(&remote));
+
+        let mut wrong_architecture = valid.clone();
+        wrong_architecture.architecture = "x86_64".to_owned();
+        assert!(!decision_profile_valid(&wrong_architecture));
+
+        let mut unsupported_os = valid.clone();
+        unsupported_os.os = "freebsd".to_owned();
+        assert!(!decision_profile_valid(&unsupported_os));
 
         let mut tampered = valid;
         tampered.backends[0].weighted_score = 0.123;
@@ -2262,6 +2281,20 @@ mod tests {
         let blocked = merge_platform_evidence(&temp.path().join("blocked.json"), &inputs)
             .expect("merge blocked evidence");
         assert!(!blocked.cross_platform_complete);
+        assert_eq!(blocked.chosen_backend, "blocked");
+
+        let mut wrong_architecture = decision_run("linux");
+        wrong_architecture.architecture = "aarch64".to_owned();
+        fs::write(
+            quick_path,
+            serde_json::to_vec(&wrong_architecture).expect("serialize wrong architecture"),
+        )
+        .expect("write wrong architecture evidence");
+        let blocked =
+            merge_platform_evidence(&temp.path().join("blocked-architecture.json"), &inputs)
+                .expect("merge wrong-architecture evidence");
+        assert!(!blocked.cross_platform_complete);
+        assert!(blocked.backend_summaries.is_empty());
         assert_eq!(blocked.chosen_backend, "blocked");
     }
 
