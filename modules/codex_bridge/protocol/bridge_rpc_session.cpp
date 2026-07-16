@@ -738,3 +738,7 @@ const String &BridgeRpcSession::get_protocol_version() const {
 uint32_t BridgeRpcSession::get_in_flight_count() const {
 	return pending_by_internal_id.size();
 }
+
+bool BridgeRpcSession::has_pending_request(uint64_t p_internal_request_id) const {
+	return pending_by_internal_id.has(p_internal_request_id);
+}

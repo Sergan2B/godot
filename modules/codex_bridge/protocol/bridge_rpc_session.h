@@ -124,4 +124,5 @@ public:
 	void set_protocol_version(const String &p_protocol_version);
 	const String &get_protocol_version() const;
 	uint32_t get_in_flight_count() const;
+	bool has_pending_request(uint64_t p_internal_request_id) const;
 };

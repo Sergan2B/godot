@@ -10,6 +10,9 @@
 
 #include "core/crypto/crypto_core.h"
 #include "core/io/json.h"
+#include "core/object/worker_thread_pool.h"
+#include "core/os/thread.h"
+
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
 
 namespace {
@@ -40,6 +43,126 @@ static Dictionary operation_resource_ref(const Dictionary &p_operation) {
 }
 
 } // namespace
+
+struct ResourceDeltaJournal::FallbackCleanupThread {
+	Thread thread;
+	SafeFlag completed;
+};
+
+struct ResourceDeltaJournal::RetiredVariant {
+	Variant value;
+	FallbackCleanupThread *fallback = nullptr;
+};
+
+ResourceDeltaJournal::~ResourceDeltaJournal() {
+	while (_retire_front_batch()) {
+	}
+	_wait_for_cleanup();
+}
+
+void ResourceDeltaJournal::_destroy_retired_variant_thread(void *p_userdata) {
+	RetiredVariant *retired = static_cast<RetiredVariant *>(p_userdata);
+	FallbackCleanupThread *fallback = retired->fallback;
+	retired->value = Variant();
+	memdelete(retired);
+	if (fallback) {
+		fallback->completed.set();
+	}
+}
+
+void ResourceDeltaJournal::_schedule_retired_variant(RetiredVariant *p_retired) {
+	ERR_FAIL_NULL(p_retired);
+	_reap_cleanup_step();
+	WorkerThreadPool *worker_pool = WorkerThreadPool::get_singleton();
+	if (worker_pool) {
+		const WorkerThreadPool::TaskID task = worker_pool->add_native_task(
+				_destroy_retired_variant_thread,
+				p_retired,
+				false,
+				SNAME("CodexResourceDtoCleanup"));
+		cleanup_tasks.push_back(task);
+		return;
+	}
+
+#ifdef THREADS_ENABLED
+	FallbackCleanupThread *fallback = memnew(FallbackCleanupThread);
+	p_retired->fallback = fallback;
+	fallback->thread.start(_destroy_retired_variant_thread, p_retired);
+	cleanup_threads.push_back(fallback);
+#else
+	_destroy_retired_variant_thread(p_retired);
+#endif
+}
+
+void ResourceDeltaJournal::_retire_dictionary(Dictionary &r_value) {
+	if (r_value.is_empty()) {
+		r_value = Dictionary();
+		return;
+	}
+	RetiredVariant *retired = memnew(RetiredVariant);
+	retired->value = r_value;
+	r_value = Dictionary();
+	_schedule_retired_variant(retired);
+}
+
+void ResourceDeltaJournal::_retire_array(Array &r_value) {
+	if (r_value.is_empty()) {
+		r_value = Array();
+		return;
+	}
+	RetiredVariant *retired = memnew(RetiredVariant);
+	retired->value = r_value;
+	r_value = Array();
+	_schedule_retired_variant(retired);
+}
+
+bool ResourceDeltaJournal::_retire_front_batch() {
+	List<StoredBatch>::Element *front = batches.front();
+	if (!front) {
+		return false;
+	}
+	_retire_dictionary(front->get().value);
+	batches.pop_front();
+	return true;
+}
+
+void ResourceDeltaJournal::_reap_cleanup_step() {
+	WorkerThreadPool *worker_pool = WorkerThreadPool::get_singleton();
+	List<int64_t>::Element *task = cleanup_tasks.front();
+	if (worker_pool && task && worker_pool->is_task_completed(task->get())) {
+		worker_pool->wait_for_task_completion(task->get());
+		cleanup_tasks.pop_front();
+	}
+	List<FallbackCleanupThread *>::Element *fallback_element = cleanup_threads.front();
+	if (fallback_element && fallback_element->get()->completed.is_set()) {
+		FallbackCleanupThread *fallback = fallback_element->get();
+		fallback->thread.wait_to_finish();
+		cleanup_threads.pop_front();
+		memdelete(fallback);
+	}
+}
+
+void ResourceDeltaJournal::_wait_for_cleanup() {
+	WorkerThreadPool *worker_pool = WorkerThreadPool::get_singleton();
+	while (!cleanup_tasks.is_empty()) {
+		const int64_t task = cleanup_tasks.front()->get();
+		if (worker_pool) {
+			worker_pool->wait_for_task_completion(task);
+		}
+		cleanup_tasks.pop_front();
+	}
+	while (!cleanup_threads.is_empty()) {
+		FallbackCleanupThread *fallback = cleanup_threads.front()->get();
+		fallback->thread.wait_to_finish();
+		cleanup_threads.pop_front();
+		memdelete(fallback);
+	}
+}
+
+void ResourceDeltaJournal::_retire_prepared_batch(PreparedBatch &r_prepared) {
+	_retire_dictionary(r_prepared.value);
+	r_prepared.encoded_bytes = 0;
+}
 
 String ResourceDeltaJournal::_resource_ref_key(const Dictionary &p_resource_ref) {
 	if (p_resource_ref.has("uid") && p_resource_ref["uid"].get_type() == Variant::STRING) {
@@ -73,9 +196,11 @@ Dictionary ResourceDeltaJournal::_without_internal_fields(const Dictionary &p_op
 }
 
 void ResourceDeltaJournal::initialize(uint64_t p_initial_resource_revision) {
-	batches.clear();
+	while (_retire_front_batch()) {
+	}
 	total_bytes = 0;
 	current_resource_revision = p_initial_resource_revision;
+	invalidating = false;
 }
 
 Array ResourceDeltaJournal::coalesce_operations(const Array &p_operations, const HashSet<String> &p_preexisting_keys) {
@@ -137,9 +262,19 @@ String ResourceDeltaJournal::resource_ref_key(const Dictionary &p_resource_ref) 
 }
 
 Error ResourceDeltaJournal::commit(uint64_t p_next_resource_revision, uint64_t p_project_revision, const Array &p_operations, const HashSet<String> &p_preexisting_keys, Dictionary &r_batch, bool &r_invalidated) {
-	r_batch.clear();
-	r_invalidated = false;
-	ERR_FAIL_COND_V(p_next_resource_revision != current_resource_revision + 1, ERR_INVALID_PARAMETER);
+	PreparedBatch prepared;
+	const Error prepare_error = prepare_batch(p_next_resource_revision, p_operations, p_preexisting_keys, prepared);
+	if (prepare_error != OK) {
+		r_batch.clear();
+		r_invalidated = false;
+		return prepare_error;
+	}
+	return commit_prepared(p_next_resource_revision, p_project_revision, prepared, r_batch, r_invalidated);
+}
+
+Error ResourceDeltaJournal::prepare_batch(uint64_t p_next_resource_revision, const Array &p_operations, const HashSet<String> &p_preexisting_keys, PreparedBatch &r_prepared) {
+	r_prepared = PreparedBatch();
+	ERR_FAIL_COND_V(p_next_resource_revision == 0, ERR_INVALID_PARAMETER);
 
 	const Array operations = coalesce_operations(p_operations, p_preexisting_keys);
 	ERR_FAIL_COND_V(operations.is_empty(), ERR_INVALID_PARAMETER);
@@ -148,19 +283,37 @@ Error ResourceDeltaJournal::commit(uint64_t p_next_resource_revision, uint64_t p
 	const String checksum = sha256_hex_utf8(operations_json);
 	Dictionary batch;
 	batch["batch_id"] = "resource-batch:" + sha256_hex_utf8(String::num_uint64(p_next_resource_revision) + ":" + operations_json).left(32);
-	batch["previous_resource_revision"] = (int64_t)current_resource_revision;
+	batch["previous_resource_revision"] = (int64_t)(p_next_resource_revision - 1);
 	batch["resource_revision"] = (int64_t)p_next_resource_revision;
-	batch["project_revision"] = (int64_t)p_project_revision;
+	// Reserve the widest schema-valid value so the prepared size remains a
+	// conservative upper bound when main-thread publication fills the current
+	// project revision.
+	batch["project_revision"] = (int64_t)9007199254740991LL;
 	batch["operations"] = operations;
 	batch["source_complete"] = true;
 	batch["checksum"] = checksum;
+	r_prepared.encoded_bytes = JSON::stringify(batch, "", true, true).utf8().length();
+	r_prepared.value = batch;
+	return OK;
+}
 
-	const uint64_t encoded_bytes = JSON::stringify(batch, "", true, true).utf8().length();
+Error ResourceDeltaJournal::commit_prepared(uint64_t p_next_resource_revision, uint64_t p_project_revision, const PreparedBatch &p_prepared, Dictionary &r_batch, bool &r_invalidated) {
+	r_batch.clear();
+	r_invalidated = false;
+	ERR_FAIL_COND_V(invalidating, ERR_BUSY);
+	ERR_FAIL_COND_V(p_next_resource_revision != current_resource_revision + 1, ERR_INVALID_PARAMETER);
+	ERR_FAIL_COND_V(p_prepared.value.is_empty() || p_prepared.encoded_bytes == 0, ERR_INVALID_PARAMETER);
+	Dictionary batch = p_prepared.value;
+	ERR_FAIL_COND_V(!batch.has("previous_resource_revision") || (uint64_t)(int64_t)batch["previous_resource_revision"] != current_resource_revision ||
+					!batch.has("resource_revision") || (uint64_t)(int64_t)batch["resource_revision"] != p_next_resource_revision,
+			ERR_INVALID_PARAMETER);
+	batch["project_revision"] = (int64_t)p_project_revision;
+
+	const uint64_t encoded_bytes = p_prepared.encoded_bytes;
 	current_resource_revision = p_next_resource_revision;
 	r_batch = batch;
 	if (encoded_bytes > MAX_BATCH_BYTES) {
-		batches.clear();
-		total_bytes = 0;
+		invalidate_to(p_next_resource_revision);
 		r_invalidated = true;
 		return OK;
 	}
@@ -173,11 +326,15 @@ Error ResourceDeltaJournal::commit(uint64_t p_next_resource_revision, uint64_t p
 	batches.push_back(stored);
 	total_bytes += encoded_bytes;
 
-	while ((uint32_t)batches.size() > MAX_ENTRIES || total_bytes > MAX_BYTES) {
+	if ((uint32_t)batches.size() > MAX_ENTRIES) {
 		const List<StoredBatch>::Element *front = batches.front();
 		ERR_FAIL_NULL_V(front, ERR_BUG);
 		total_bytes -= front->get().encoded_bytes;
-		batches.pop_front();
+		_retire_front_batch();
+		r_invalidated = true;
+	}
+	if (total_bytes > MAX_BYTES) {
+		invalidate_to(p_next_resource_revision);
 		r_invalidated = true;
 	}
 	return OK;
@@ -193,6 +350,10 @@ ResourceDeltaJournal::QueryResult ResourceDeltaJournal::query_after(uint64_t p_a
 	}
 	if (p_after_resource_revision > current_resource_revision) {
 		result.status = QUERY_FUTURE;
+		return result;
+	}
+	if (invalidating) {
+		result.status = QUERY_GAP;
 		return result;
 	}
 	if (batches.is_empty() || p_after_resource_revision < result.oldest_available_resource_revision) {
@@ -211,9 +372,26 @@ ResourceDeltaJournal::QueryResult ResourceDeltaJournal::query_after(uint64_t p_a
 }
 
 void ResourceDeltaJournal::invalidate_to(uint64_t p_resource_revision) {
-	batches.clear();
 	total_bytes = 0;
 	current_resource_revision = p_resource_revision;
+	invalidating = !batches.is_empty();
+}
+
+bool ResourceDeltaJournal::drain_invalidation_step() {
+	_reap_cleanup_step();
+	if (batches.is_empty()) {
+		invalidating = false;
+		return false;
+	}
+	_retire_front_batch();
+	if (batches.is_empty()) {
+		invalidating = false;
+	}
+	return true;
+}
+
+bool ResourceDeltaJournal::is_invalidating() const {
+	return invalidating;
 }
 
 uint64_t ResourceDeltaJournal::get_current_resource_revision() const {
@@ -221,12 +399,15 @@ uint64_t ResourceDeltaJournal::get_current_resource_revision() const {
 }
 
 uint64_t ResourceDeltaJournal::get_oldest_available_resource_revision() const {
+	if (invalidating) {
+		return current_resource_revision;
+	}
 	const List<StoredBatch>::Element *front = batches.front();
 	return front ? front->get().previous_resource_revision : current_resource_revision;
 }
 
 uint32_t ResourceDeltaJournal::get_entry_count() const {
-	return batches.size();
+	return invalidating ? 0 : batches.size();
 }
 
 uint64_t ResourceDeltaJournal::get_total_bytes() const {

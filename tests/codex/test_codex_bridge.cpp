@@ -36,22 +36,83 @@ TEST_FORCE_LINK(test_codex_bridge)
 
 #ifdef MODULE_CODEX_BRIDGE_ENABLED
 
+#include "core/crypto/crypto_core.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
+#include "core/io/resource_uid.h"
+#include "core/object/ref_counted.h"
 #include "core/os/os.h"
+#include "core/os/thread.h"
 #include "core/templates/local_vector.h"
+#include "core/templates/safe_refcount.h"
+#include "editor/file_system/editor_file_system.h"
 
-#include "modules/codex_bridge/editor/bridge_revision_clock.h"
 #include "modules/codex_bridge/editor/bridge_frame_telemetry.h"
+#include "modules/codex_bridge/editor/bridge_revision_clock.h"
 #include "modules/codex_bridge/editor/main_thread_dispatcher.h"
 #include "modules/codex_bridge/editor/resource_delta_journal.h"
+#include "modules/codex_bridge/editor/resource_graph_adapter.h"
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
 #include "modules/codex_bridge/protocol/bridge_frame_codec.h"
 #include "modules/codex_bridge/protocol/bridge_handshake.h"
 #include "modules/codex_bridge/protocol/bridge_rpc_session.h"
 #include "modules/codex_bridge/transport/bridge_runtime.h"
 #include "modules/codex_bridge/transport/bridge_transport_worker.h"
+
+struct ResourceGraphAdapterTestAccess {
+	static bool can_append_diagnostics(uint64_t p_current_count, uint64_t p_additional_count) {
+		return ResourceGraphAdapter::_can_append_diagnostics(p_current_count, p_additional_count);
+	}
+
+	static bool valid_resource_path(const String &p_value) {
+		return ResourceGraphAdapter::_is_valid_resource_path(p_value);
+	}
+
+	static bool valid_resource_uid(const String &p_value) {
+		return ResourceGraphAdapter::_is_valid_resource_uid(p_value);
+	}
+
+	static bool valid_raw_dependency_spec(const String &p_value) {
+		return ResourceGraphAdapter::_is_valid_raw_dependency_spec(p_value);
+	}
+
+	static bool paths_match_lexically(const String &p_left, const String &p_right, bool p_case_sensitive) {
+		return ResourceGraphAdapter::_paths_match_lexically(p_left, p_right, p_case_sensitive);
+	}
+
+	static bool validate_resource(const Dictionary &p_value) {
+		return ResourceGraphAdapter::_validate_resource_observation(p_value);
+	}
+
+	static bool validate_dependency(const Dictionary &p_value) {
+		return ResourceGraphAdapter::_validate_dependency_observation(p_value);
+	}
+
+	static bool validate_diagnostic(const Dictionary &p_value) {
+		return ResourceGraphAdapter::_validate_diagnostic(p_value);
+	}
+};
+
+struct ResourceDeltaJournalTestAccess {
+	static void append_retained_batch(ResourceDeltaJournal &r_journal, const Dictionary &p_value, uint64_t p_revision) {
+		ResourceDeltaJournal::StoredBatch stored;
+		stored.value = p_value;
+		stored.previous_resource_revision = p_revision - 1;
+		stored.resource_revision = p_revision;
+		stored.encoded_bytes = 1;
+		r_journal.batches.push_back(stored);
+		r_journal.total_bytes++;
+	}
+
+	static void retire_prepared(ResourceDeltaJournal &r_journal, ResourceDeltaJournal::PreparedBatch &r_prepared) {
+		r_journal._retire_prepared_batch(r_prepared);
+	}
+
+	static void wait_for_cleanup(ResourceDeltaJournal &r_journal) {
+		r_journal._wait_for_cleanup();
+	}
+};
 
 namespace TestCodexBridge {
 
@@ -76,6 +137,61 @@ static MainThreadDispatcher::Command make_command(uint64_t p_request_id, uint64_
 	command.request_id = p_request_id;
 	command.deadline_usec = p_deadline_usec;
 	return command;
+}
+
+TEST_CASE("[CodexBridge] Editor dependency cache parses every documented typed form") {
+	EditorFileSystemDependency dependency = EditorFileSystemDependency::from_cache("res://script.gd::Script");
+	CHECK(dependency.uid.is_empty());
+	CHECK(dependency.declared_type == "Script");
+	CHECK(dependency.fallback_path == "res://script.gd");
+
+	dependency = EditorFileSystemDependency::from_cache("res://script.gd");
+	CHECK(dependency.uid.is_empty());
+	CHECK(dependency.declared_type.is_empty());
+	CHECK(dependency.fallback_path == "res://script.gd");
+
+	ResourceUID *resource_uid = ResourceUID::get_singleton();
+	REQUIRE(resource_uid != nullptr);
+	const ResourceUID::ID id = resource_uid->create_id();
+	const String uid = resource_uid->id_to_text(id);
+	resource_uid->add_id(id, "res://current/script.gd");
+
+	dependency = EditorFileSystemDependency::from_cache(uid + "::Script::res://old/script.gd");
+	CHECK(dependency.uid == uid);
+	CHECK(dependency.declared_type == "Script");
+	CHECK(dependency.fallback_path == "res://old/script.gd");
+	CHECK(dependency.get_current_path() == "res://current/script.gd");
+	CHECK(dependency.get_uid_path() == "res://current/script.gd");
+
+	dependency = EditorFileSystemDependency::from_cache(uid + "::::res://script.gd");
+	CHECK(dependency.declared_type.is_empty());
+	CHECK(dependency.fallback_path == "res://script.gd");
+
+	dependency = EditorFileSystemDependency::from_cache(uid + "::res://script.gd");
+	CHECK(dependency.declared_type.is_empty());
+	CHECK(dependency.fallback_path == "res://script.gd");
+
+	dependency = EditorFileSystemDependency::from_cache(uid + "::Script");
+	CHECK(dependency.declared_type == "Script");
+	CHECK(dependency.fallback_path.is_empty());
+	CHECK(dependency.get_current_path() == "res://current/script.gd");
+
+	Error current_error = OK;
+	Ref<FileAccess> current_file = FileAccess::create_temp(FileAccess::WRITE_READ, "codex-current-dependency", "tres", false, &current_error);
+	Error fallback_error = OK;
+	Ref<FileAccess> fallback_file = FileAccess::create_temp(FileAccess::WRITE_READ, "codex-fallback-dependency", "tres", false, &fallback_error);
+	REQUIRE(current_error == OK);
+	REQUIRE(fallback_error == OK);
+	REQUIRE(current_file.is_valid());
+	REQUIRE(fallback_file.is_valid());
+	resource_uid->remove_id(id);
+	resource_uid->add_id(id, current_file->get_path_absolute());
+	dependency = EditorFileSystemDependency::from_cache(uid + "::Resource::" + fallback_file->get_path_absolute());
+	CHECK(dependency.has_existing_path_mismatch());
+	dependency.fallback_path = current_file->get_path_absolute();
+	CHECK_FALSE(dependency.has_existing_path_mismatch());
+
+	resource_uid->remove_id(id);
 }
 
 TEST_CASE("[CodexBridge] Evidence telemetry is opt-in, bounded, and records budget overruns") {
@@ -818,6 +934,118 @@ static Dictionary make_upsert(const Dictionary &p_resource_ref, const String &p_
 	return operation;
 }
 
+class ResourceDtoCleanupProbe : public RefCounted {
+	SafeNumeric<uint32_t> *destroyed = nullptr;
+	SafeFlag *destroyed_off_main = nullptr;
+
+public:
+	ResourceDtoCleanupProbe(SafeNumeric<uint32_t> *p_destroyed, SafeFlag *p_destroyed_off_main) :
+			destroyed(p_destroyed),
+			destroyed_off_main(p_destroyed_off_main) {
+	}
+
+	~ResourceDtoCleanupProbe() {
+		if (!Thread::is_main_thread()) {
+			destroyed_off_main->set();
+		}
+		destroyed->increment();
+	}
+};
+
+TEST_CASE("[CodexBridge] Resource graph diagnostic limit rejects overflow before allocation") {
+	CHECK(ResourceGraphAdapterTestAccess::can_append_diagnostics(0, ResourceGraphAdapter::MAX_DIAGNOSTICS));
+	CHECK(ResourceGraphAdapterTestAccess::can_append_diagnostics(ResourceGraphAdapter::MAX_DIAGNOSTICS - 1, 1));
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::can_append_diagnostics(ResourceGraphAdapter::MAX_DIAGNOSTICS, 1));
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::can_append_diagnostics(ResourceGraphAdapter::MAX_DIAGNOSTICS - 1, 2));
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::can_append_diagnostics(UINT64_MAX, 1));
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::can_append_diagnostics(0, UINT64_MAX));
+}
+
+TEST_CASE("[CodexBridge] Resource graph DTO validation matches the Rust path and identity contract") {
+	CHECK(ResourceGraphAdapterTestAccess::valid_resource_path("res://folder/item.tres"));
+	CHECK(ResourceGraphAdapterTestAccess::valid_resource_path("res://" + String("a").repeat(ResourceGraphAdapter::MAX_PATH_BYTES - 6)));
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::valid_resource_path("res://" + String("a").repeat(ResourceGraphAdapter::MAX_PATH_BYTES - 5)));
+	CHECK(ResourceGraphAdapterTestAccess::valid_resource_path("res://" + String::chr(0x00e9).repeat((ResourceGraphAdapter::MAX_PATH_BYTES - 6) / 2)));
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::valid_resource_path("res://" + String::chr(0x00e9).repeat((ResourceGraphAdapter::MAX_PATH_BYTES - 6) / 2 + 1)));
+	for (const char *invalid : { "res://", "res:///item.tres", "res://folder//item.tres", "res://folder/./item.tres", "res://folder/../item.tres", "res://folder\\item.tres", "res://item.tres?query", "res://item.tres#fragment", "user://item.tres" }) {
+		CHECK_FALSE(ResourceGraphAdapterTestAccess::valid_resource_path(invalid));
+	}
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::valid_resource_path("res://item" + String::chr(0x1f) + ".tres"));
+
+	CHECK(ResourceGraphAdapterTestAccess::valid_resource_uid("uid://abc_DEF-123"));
+	CHECK(ResourceGraphAdapterTestAccess::valid_resource_uid("uid://" + String("a").repeat(ResourceGraphAdapter::MAX_UID_BYTES - 6)));
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::valid_resource_uid("uid://" + String("a").repeat(ResourceGraphAdapter::MAX_UID_BYTES - 5)));
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::valid_resource_uid("uid://"));
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::valid_resource_uid("uid://bad/value"));
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::valid_resource_uid("uid://caf" + String::chr(0x00e9)));
+
+	CHECK(ResourceGraphAdapterTestAccess::valid_raw_dependency_spec(String("x").repeat(ResourceGraphAdapter::MAX_RAW_DEPENDENCY_BYTES)));
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::valid_raw_dependency_spec(String("x").repeat(ResourceGraphAdapter::MAX_RAW_DEPENDENCY_BYTES + 1)));
+	CHECK(ResourceGraphAdapterTestAccess::paths_match_lexically("res://Folder/Item.tres", "res://folder/item.tres", false));
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::paths_match_lexically("res://Folder/Item.tres", "res://folder/item.tres", true));
+}
+
+TEST_CASE("[CodexBridge] Resource graph observations reject unsafe fields before publication") {
+	const Dictionary resource_ref = make_resource_ref(String(), "res://folder/item.tres");
+	Dictionary resource;
+	resource["resource_ref"] = resource_ref;
+	resource["path"] = "res://folder/item.tres";
+	resource["godot_type"] = "Resource";
+	resource["source_kind"] = "source";
+	resource["import_state"] = "not_imported";
+	resource["modified_time_unix_seconds"] = (int64_t)ResourceGraphAdapter::MAX_SAFE_INTEGER;
+	resource["byte_size"] = (int64_t)ResourceGraphAdapter::MAX_SAFE_INTEGER;
+	resource["validity"] = "valid";
+	resource["authority"] = "editor_file_system";
+	resource["resource_revision"] = 1;
+	CHECK(ResourceGraphAdapterTestAccess::validate_resource(resource));
+
+	Dictionary invalid_resource = resource.duplicate(true);
+	invalid_resource["unknown"] = true;
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::validate_resource(invalid_resource));
+	invalid_resource = resource.duplicate(true);
+	invalid_resource["godot_type"] = "";
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::validate_resource(invalid_resource));
+	invalid_resource = resource.duplicate(true);
+	invalid_resource["godot_type"] = String("T").repeat(ResourceGraphAdapter::MAX_TYPE_BYTES + 1);
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::validate_resource(invalid_resource));
+	invalid_resource = resource.duplicate(true);
+	invalid_resource["modified_time_unix_seconds"] = -1;
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::validate_resource(invalid_resource));
+	invalid_resource = resource.duplicate(true);
+	invalid_resource["byte_size"] = (int64_t)ResourceGraphAdapter::MAX_SAFE_INTEGER + 1;
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::validate_resource(invalid_resource));
+
+	Dictionary dependency;
+	dependency["source_ref"] = resource_ref;
+	dependency["target_uid"] = "uid://target-1";
+	dependency["fallback_path"] = "res://folder/target.tres";
+	dependency["resolved_path"] = Variant();
+	dependency["declared_type"] = String("T").repeat(ResourceGraphAdapter::MAX_TYPE_BYTES);
+	dependency["resolution"] = "stale_uid";
+	dependency["authority"] = "resource_loader_dependencies";
+	dependency["resource_revision"] = 1;
+	CHECK(ResourceGraphAdapterTestAccess::validate_dependency(dependency));
+	Dictionary invalid_dependency = dependency.duplicate(true);
+	invalid_dependency["target_uid"] = "uid://bad/value";
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::validate_dependency(invalid_dependency));
+	invalid_dependency = dependency.duplicate(true);
+	invalid_dependency["fallback_path"] = "res://folder/../target.tres";
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::validate_dependency(invalid_dependency));
+	invalid_dependency = dependency.duplicate(true);
+	invalid_dependency["declared_type"] = String("T").repeat(ResourceGraphAdapter::MAX_TYPE_BYTES + 1);
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::validate_dependency(invalid_dependency));
+
+	Dictionary diagnostic;
+	diagnostic["code"] = "stale_resource_uid";
+	diagnostic["subject"] = resource_ref;
+	diagnostic["target_reference"] = String::chr(0x00e9).repeat(ResourceGraphAdapter::MAX_PATH_BYTES / 2);
+	diagnostic["resource_revision"] = 1;
+	CHECK(ResourceGraphAdapterTestAccess::validate_diagnostic(diagnostic));
+	diagnostic["target_reference"] = String::chr(0x00e9).repeat(ResourceGraphAdapter::MAX_PATH_BYTES / 2 + 1);
+	CHECK_FALSE(ResourceGraphAdapterTestAccess::validate_diagnostic(diagnostic));
+}
+
 TEST_CASE("[CodexBridge] Resource delta journal coalesces and distinguishes current gap and future") {
 	ResourceDeltaJournal journal;
 	journal.initialize(1);
@@ -835,8 +1063,12 @@ TEST_CASE("[CodexBridge] Resource delta journal coalesces and distinguishes curr
 
 	Dictionary batch;
 	bool invalidated = false;
-	REQUIRE(journal.commit(2, 2, operations, HashSet<String>(), batch, invalidated) == OK);
+	ResourceDeltaJournal::PreparedBatch prepared;
+	REQUIRE(ResourceDeltaJournal::prepare_batch(2, operations, HashSet<String>(), prepared) == OK);
+	CHECK(prepared.encoded_bytes > 0);
+	REQUIRE(journal.commit_prepared(2, 2, prepared, batch, invalidated) == OK);
 	CHECK_FALSE(invalidated);
+	CHECK((int64_t)batch["project_revision"] == 2);
 	const Array coalesced = batch["operations"];
 	REQUIRE(coalesced.size() == 1);
 	const Dictionary latest_resource = Dictionary(Dictionary(coalesced[0])["value"])["resource"];
@@ -915,6 +1147,71 @@ TEST_CASE("[CodexBridge] Resource delta journal keeps one slot across add remove
 	CHECK(invalidated);
 	CHECK(journal.get_entry_count() == 0);
 	CHECK(journal.query_after(2).status == ResourceDeltaJournal::QUERY_GAP);
+	CHECK(journal.is_invalidating());
+	int drained = 0;
+	while (journal.drain_invalidation_step()) {
+		drained++;
+	}
+	// The oversized candidate is rejected before insertion, so only the prior
+	// retained batch needs incremental destruction.
+	CHECK(drained == 1);
+	CHECK_FALSE(journal.is_invalidating());
+}
+
+TEST_CASE("[CodexBridge] Resource journal releases worst-case retained and prepared DTOs off the main thread") {
+	ResourceDeltaJournal journal;
+	journal.initialize(1);
+
+	SafeNumeric<uint32_t> retained_destroyed;
+	SafeFlag retained_off_main;
+	Ref<ResourceDtoCleanupProbe> retained_probe;
+	retained_probe.instantiate(&retained_destroyed, &retained_off_main);
+	Dictionary retained_leaf;
+	retained_leaf["probe"] = retained_probe;
+	Array retained_operations;
+	retained_operations.resize(ResourceGraphAdapter::MAX_INCREMENTAL_DEPENDENCIES);
+	for (int index = 0; index < retained_operations.size(); index++) {
+		retained_operations[index] = retained_leaf;
+	}
+	Dictionary retained_batch;
+	retained_batch["operations"] = retained_operations;
+	ResourceDeltaJournalTestAccess::append_retained_batch(journal, retained_batch, 2);
+	retained_batch = Dictionary();
+	retained_operations = Array();
+	retained_leaf = Dictionary();
+	retained_probe.unref();
+
+	journal.invalidate_to(2);
+	CHECK(journal.drain_invalidation_step());
+	CHECK_FALSE(journal.drain_invalidation_step());
+	ResourceDeltaJournalTestAccess::wait_for_cleanup(journal);
+	CHECK(retained_destroyed.get() == 1);
+	CHECK(retained_off_main.is_set());
+
+	SafeNumeric<uint32_t> prepared_destroyed;
+	SafeFlag prepared_off_main;
+	Ref<ResourceDtoCleanupProbe> prepared_probe;
+	prepared_probe.instantiate(&prepared_destroyed, &prepared_off_main);
+	Dictionary prepared_leaf;
+	prepared_leaf["probe"] = prepared_probe;
+	Array prepared_operations;
+	prepared_operations.resize(ResourceGraphAdapter::MAX_INCREMENTAL_DEPENDENCIES);
+	for (int index = 0; index < prepared_operations.size(); index++) {
+		prepared_operations[index] = prepared_leaf;
+	}
+	ResourceDeltaJournal::PreparedBatch prepared;
+	prepared.value["operations"] = prepared_operations;
+	prepared.encoded_bytes = ResourceDeltaJournal::MAX_BATCH_BYTES + 1;
+	prepared_operations = Array();
+	prepared_leaf = Dictionary();
+	prepared_probe.unref();
+
+	ResourceDeltaJournalTestAccess::retire_prepared(journal, prepared);
+	CHECK(prepared.value.is_empty());
+	CHECK(prepared.encoded_bytes == 0);
+	ResourceDeltaJournalTestAccess::wait_for_cleanup(journal);
+	CHECK(prepared_destroyed.get() == 1);
+	CHECK(prepared_off_main.is_set());
 }
 
 TEST_CASE("[CodexBridge] RPC deadlines, cancellation, rejection, and in-flight limits are terminal once") {
@@ -954,6 +1251,17 @@ TEST_CASE("[CodexBridge] RPC deadlines, cancellation, rejection, and in-flight l
 	CHECK(rpc.complete(4, 2200, outcome) == ERR_DOES_NOT_EXIST);
 	REQUIRE(rpc.handle_message(cancel, 2300, 6, outcome) == OK);
 	CHECK_FALSE(outcome.has_response);
+
+	BridgeRpcSession late_snapshot(project_id, editor_session_id);
+	late_snapshot.set_protocol_version("1.2");
+	REQUIRE(late_snapshot.handle_message(make_rpc_request("req:late-init", "bridge.initialize", make_initialize_params(), project_id, editor_session_id, 5000, "1.2"), 0, 1, outcome) == OK);
+	REQUIRE(late_snapshot.complete(1, 1, outcome) == OK);
+	REQUIRE(late_snapshot.handle_message(make_rpc_request("req:late-snapshot", "resource.snapshot.get", Dictionary(), project_id, editor_session_id, 30000, "1.2"), 1000, 2, outcome) == OK);
+	Dictionary snapshot_result;
+	snapshot_result["snapshot_id"] = "snapshot:0123456789abcdef0123456789abcdef";
+	REQUIRE(late_snapshot.complete(2, 120001000, snapshot_result, outcome) == OK);
+	CHECK(rpc_error_code(outcome) == "deadline_exceeded");
+	CHECK_FALSE(outcome.response.has("result"));
 
 	for (uint64_t index = 0; index < BridgeRpcSession::MAX_IN_FLIGHT_REQUESTS; index++) {
 		ping_params["echo"] = itos(index);
@@ -1003,6 +1311,42 @@ TEST_CASE("[CodexBridge] Dispatcher preserves FIFO order and supports cancellati
 	REQUIRE(context.handled_ids.size() == 2);
 	CHECK(context.handled_ids[0] == 1);
 	CHECK(context.handled_ids[1] == 3);
+}
+
+TEST_CASE("[CodexBridge] Dispatcher preserves an already queued terminal cancellation") {
+	MainThreadDispatcher dispatcher;
+	dispatcher.start_accepting();
+	MainThreadDispatcher::Command cancellation = make_command(42);
+	cancellation.type = MainThreadDispatcher::COMMAND_CANCEL;
+	REQUIRE(dispatcher.enqueue(cancellation) == MainThreadDispatcher::ENQUEUE_OK);
+
+	CHECK(dispatcher.cancel(42));
+	CHECK(dispatcher.get_queue_size() == 1);
+
+	HandlerContext context;
+	const MainThreadDispatcher::ProcessStats stats = dispatcher.process(record_command, &context, 8, 2000, test_clock, &context);
+	CHECK(stats.processed == 1);
+	CHECK(stats.remaining == 0);
+	REQUIRE(context.handled_ids.size() == 1);
+	CHECK(context.handled_ids[0] == 42);
+}
+
+TEST_CASE("[CodexBridge] Dispatcher reserves priority capacity for terminal cancellation") {
+	MainThreadDispatcher dispatcher;
+	dispatcher.start_accepting();
+	for (uint64_t index = 0; index < MainThreadDispatcher::MAX_QUEUE_SIZE; index++) {
+		REQUIRE(dispatcher.enqueue(make_command(index)) == MainThreadDispatcher::ENQUEUE_OK);
+	}
+	MainThreadDispatcher::Command cancellation = make_command(999);
+	cancellation.type = MainThreadDispatcher::COMMAND_CANCEL;
+	REQUIRE(dispatcher.enqueue(cancellation) == MainThreadDispatcher::ENQUEUE_OK);
+
+	HandlerContext context;
+	const MainThreadDispatcher::ProcessStats stats = dispatcher.process(record_command, &context, 1, 2000, test_clock, &context);
+	CHECK(stats.processed == 1);
+	CHECK(stats.remaining == MainThreadDispatcher::MAX_QUEUE_SIZE);
+	REQUIRE(context.handled_ids.size() == 1);
+	CHECK(context.handled_ids[0] == 999);
 }
 
 TEST_CASE("[CodexBridge] Dispatcher enforces command and time budgets") {
@@ -1087,7 +1431,7 @@ static String runtime_endpoint(const String &p_project_root, const Dictionary &p
 #endif
 }
 
-static Ref<BridgeStreamPeer> connect_authenticated_test_client(const String &p_project_root, const Dictionary &p_discovery) {
+static Ref<BridgeStreamPeer> connect_authenticated_test_client(const String &p_project_root, const Dictionary &p_discovery, const String &p_protocol_version = "1.0") {
 	Ref<BridgeStreamPeer> peer = connect_test_client(runtime_endpoint(p_project_root, p_discovery));
 	if (peer.is_null()) {
 		return peer;
@@ -1108,7 +1452,7 @@ static Ref<BridgeStreamPeer> connect_authenticated_test_client(const String &p_p
 	hello["handshake_version"] = "1.0";
 	hello["kind"] = "handshake.client_hello";
 	Array versions;
-	versions.push_back("1.0");
+	versions.push_back(p_protocol_version);
 	hello["supported_protocol_versions"] = versions;
 	hello["project_id"] = p_discovery["project_id"];
 	hello["editor_session_id"] = p_discovery["editor_session_id"];
@@ -1122,12 +1466,12 @@ static Ref<BridgeStreamPeer> connect_authenticated_test_client(const String &p_p
 	PackedByteArray server_nonce;
 	PackedByteArray received_server_proof;
 	PackedStringArray offered;
-	offered.push_back("1.0");
+	offered.push_back(p_protocol_version);
 	PackedByteArray transcript;
 	PackedByteArray expected_server_proof;
 	if (BridgeCrypto::base64url_decode_32(challenge["server_nonce"], server_nonce) != OK ||
 			BridgeCrypto::base64url_decode_32(challenge["server_proof"], received_server_proof) != OK ||
-			BridgeCrypto::build_handshake_transcript("1.0", offered, "1.0", p_discovery["project_id"], p_discovery["editor_session_id"], client_nonce, server_nonce, transcript) != OK ||
+			BridgeCrypto::build_handshake_transcript("1.0", offered, p_protocol_version, p_discovery["project_id"], p_discovery["editor_session_id"], client_nonce, server_nonce, transcript) != OK ||
 			BridgeCrypto::handshake_proof(true, token, transcript, expected_server_proof) != OK ||
 			!BridgeCrypto::constant_time_equal(expected_server_proof, received_server_proof)) {
 		peer.unref();
@@ -1143,7 +1487,7 @@ static Ref<BridgeStreamPeer> connect_authenticated_test_client(const String &p_p
 	Dictionary authenticate;
 	authenticate["handshake_version"] = "1.0";
 	authenticate["kind"] = "handshake.client_authenticate";
-	authenticate["selected_protocol_version"] = "1.0";
+	authenticate["selected_protocol_version"] = p_protocol_version;
 	authenticate["project_id"] = p_discovery["project_id"];
 	authenticate["editor_session_id"] = p_discovery["editor_session_id"];
 	authenticate["client_proof"] = client_proof_encoded;
@@ -1177,14 +1521,91 @@ static bool dispatch_worker_request(MainThreadDispatcher &p_dispatcher, BridgeTr
 	return stats.processed == 1;
 }
 
-static Dictionary make_rpc_cancel(const String &p_request_id, const Dictionary &p_discovery) {
+static Dictionary make_rpc_cancel(const String &p_request_id, const Dictionary &p_discovery, const String &p_protocol_version = "1.0") {
 	Dictionary cancel;
-	cancel["protocol_version"] = "1.0";
+	cancel["protocol_version"] = p_protocol_version;
 	cancel["kind"] = "cancel";
 	cancel["request_id"] = p_request_id;
 	cancel["context"] = make_rpc_context(p_discovery["project_id"], p_discovery["editor_session_id"]);
 	cancel["reason"] = "client_cancelled";
 	return cancel;
+}
+
+struct ResourceSnapshotDraftContext {
+	BridgeTransportWorker *worker = nullptr;
+	Dictionary result;
+	Array messages;
+	uint64_t request_id = 0;
+};
+
+static void stage_resource_snapshot_draft(const MainThreadDispatcher::Command &p_command, void *p_userdata) {
+	ResourceSnapshotDraftContext *context = static_cast<ResourceSnapshotDraftContext *>(p_userdata);
+	context->request_id = p_command.request_id;
+	for (int index = 0; index < context->messages.size() - 1; index++) {
+		context->worker->stage_resource_snapshot_message(p_command.request_id, context->messages[index]);
+	}
+	context->worker->complete_resource_snapshot(p_command.request_id, context->result, context->messages[context->messages.size() - 1]);
+}
+
+struct CapturedCommands {
+	LocalVector<uint64_t> request_ids;
+	LocalVector<MainThreadDispatcher::CommandType> types;
+};
+
+static void capture_command(const MainThreadDispatcher::Command &p_command, void *p_userdata) {
+	CapturedCommands *captured = static_cast<CapturedCommands *>(p_userdata);
+	captured->request_ids.push_back(p_command.request_id);
+	captured->types.push_back(p_command.type);
+}
+
+static ResourceSnapshotDraftContext make_resource_snapshot_draft(BridgeTransportWorker &p_worker, const Dictionary &p_discovery, int p_chunk_count) {
+	ResourceSnapshotDraftContext context;
+	context.worker = &p_worker;
+	const String snapshot_id = "snapshot:0123456789abcdef0123456789abcdef";
+	const Dictionary rpc_context = make_rpc_context(p_discovery["project_id"], p_discovery["editor_session_id"]);
+	context.result["snapshot_id"] = snapshot_id;
+	context.result["domain"] = "resource_graph";
+
+	Dictionary begin_params;
+	begin_params["snapshot_id"] = snapshot_id;
+	begin_params["domain"] = "resource_graph";
+	Dictionary begin;
+	begin["protocol_version"] = "1.2";
+	begin["kind"] = "notification";
+	begin["method"] = "snapshot.begin";
+	begin["params"] = begin_params;
+	begin["context"] = rpc_context;
+	context.messages.push_back(begin);
+
+	for (int chunk_index = 0; chunk_index < p_chunk_count; chunk_index++) {
+		Dictionary payload;
+		payload["resources"] = Array();
+		payload["dependencies"] = Array();
+		payload["diagnostics"] = Array();
+		Dictionary chunk;
+		chunk["protocol_version"] = "1.2";
+		chunk["kind"] = "chunk";
+		chunk["snapshot_id"] = snapshot_id;
+		chunk["domain"] = "resource_graph";
+		chunk["chunk_index"] = chunk_index;
+		chunk["payload"] = payload;
+		chunk["context"] = rpc_context;
+		context.messages.push_back(chunk);
+	}
+
+	Dictionary end_params;
+	end_params["snapshot_id"] = snapshot_id;
+	end_params["domain"] = "resource_graph";
+	end_params["chunk_count"] = p_chunk_count;
+	end_params["checksum"] = "";
+	Dictionary end;
+	end["protocol_version"] = "1.2";
+	end["kind"] = "notification";
+	end["method"] = "snapshot.end";
+	end["params"] = end_params;
+	end["context"] = rpc_context;
+	context.messages.push_back(end);
+	return context;
 }
 
 static bool wait_for_disconnect(const Ref<BridgeStreamPeer> &p_peer) {
@@ -1547,6 +1968,129 @@ TEST_CASE("[CodexBridge] Local RPC removes expired, cancelled, saturated, and di
 	client->disconnect_from_host();
 	CHECK(wait_for_dispatcher_size(dispatcher, 0));
 
+	CHECK(worker.stop() == BridgeTransportWorker::STOPPED);
+	dispatcher.begin_shutdown();
+}
+
+TEST_CASE("[CodexBridge] Incremental resource snapshot preparation delivers one terminal cancellation") {
+	TemporaryBridgeProject project;
+	REQUIRE(project.error == OK);
+	MainThreadDispatcher dispatcher;
+	dispatcher.start_accepting();
+	BridgeTransportWorker worker;
+	REQUIRE(worker.start(project.root, &dispatcher) == OK);
+	Dictionary discovery;
+	REQUIRE(BridgeJson::parse_strict_object(read_file_bytes(project.root.path_join(".godot/codex/bridge.json")), discovery) == OK);
+	Ref<BridgeStreamPeer> client = connect_authenticated_test_client(project.root, discovery, "1.2");
+	REQUIRE(client.is_valid());
+
+	Dictionary response;
+	REQUIRE(send_test_object(client, make_rpc_request("req:prepared-init", "bridge.initialize", make_initialize_params(), discovery["project_id"], discovery["editor_session_id"], 5000, "1.2")));
+	REQUIRE(dispatch_worker_request(dispatcher, worker));
+	REQUIRE(receive_test_object(client, response));
+	REQUIRE(response.has("result"));
+	CHECK(Dictionary(response["result"])["protocol_version"] == "1.2");
+
+	REQUIRE(send_test_object(client, make_rpc_request("req:prepared-cancel", "resource.snapshot.get", Dictionary(), discovery["project_id"], discovery["editor_session_id"], 30000, "1.2")));
+	REQUIRE(wait_for_dispatcher_size(dispatcher, 1));
+	ResourceSnapshotDraftContext draft = make_resource_snapshot_draft(worker, discovery, 512);
+	const MainThreadDispatcher::ProcessStats completion_stats = dispatcher.process(stage_resource_snapshot_draft, &draft, 1);
+	REQUIRE(completion_stats.processed == 1);
+	REQUIRE(draft.request_id != 0);
+
+	REQUIRE(send_test_object(client, make_rpc_cancel("req:prepared-cancel", discovery, "1.2")));
+	REQUIRE(receive_test_object(client, response));
+	REQUIRE(response.has("error"));
+	CHECK(Dictionary(response["error"])["code"] == "cancelled");
+	REQUIRE(wait_for_dispatcher_size(dispatcher, 1));
+	// Allow the preparation-pruning pass to observe the same cancelled request.
+	// It must preserve, rather than remove or duplicate, the terminal command.
+	OS::get_singleton()->delay_usec(20000);
+	CHECK(dispatcher.get_queue_size() == 1);
+
+	CapturedCommands captured;
+	const MainThreadDispatcher::ProcessStats cancellation_stats = dispatcher.process(capture_command, &captured, 8);
+	CHECK(cancellation_stats.processed == 1);
+	CHECK(cancellation_stats.remaining == 0);
+	REQUIRE(captured.request_ids.size() == 1);
+	REQUIRE(captured.types.size() == 1);
+	CHECK(captured.request_ids[0] == draft.request_id);
+	CHECK(captured.types[0] == MainThreadDispatcher::COMMAND_CANCEL);
+	OS::get_singleton()->delay_usec(10000);
+	CHECK(dispatcher.get_queue_size() == 0);
+
+	client->disconnect_from_host();
+	CHECK(worker.stop() == BridgeTransportWorker::STOPPED);
+	dispatcher.begin_shutdown();
+}
+
+TEST_CASE("[CodexBridge] Resource snapshot spool preserves response order and releases on ACK") {
+	TemporaryBridgeProject project;
+	REQUIRE(project.error == OK);
+	MainThreadDispatcher dispatcher;
+	dispatcher.start_accepting();
+	BridgeTransportWorker worker;
+	REQUIRE(worker.start(project.root, &dispatcher) == OK);
+	Dictionary discovery;
+	REQUIRE(BridgeJson::parse_strict_object(read_file_bytes(project.root.path_join(".godot/codex/bridge.json")), discovery) == OK);
+	Ref<BridgeStreamPeer> client = connect_authenticated_test_client(project.root, discovery, "1.2");
+	REQUIRE(client.is_valid());
+
+	Dictionary message;
+	REQUIRE(send_test_object(client, make_rpc_request("req:spool-init", "bridge.initialize", make_initialize_params(), discovery["project_id"], discovery["editor_session_id"], 5000, "1.2")));
+	REQUIRE(dispatch_worker_request(dispatcher, worker));
+	REQUIRE(receive_test_object(client, message));
+	REQUIRE(message.has("result"));
+
+	REQUIRE(send_test_object(client, make_rpc_request("req:spooled", "resource.snapshot.get", Dictionary(), discovery["project_id"], discovery["editor_session_id"], 30000, "1.2")));
+	REQUIRE(wait_for_dispatcher_size(dispatcher, 1));
+	ResourceSnapshotDraftContext draft = make_resource_snapshot_draft(worker, discovery, 2);
+	const MainThreadDispatcher::ProcessStats completion_stats = dispatcher.process(stage_resource_snapshot_draft, &draft, 1);
+	REQUIRE(completion_stats.processed == 1);
+
+	REQUIRE(receive_test_object(client, message));
+	REQUIRE(message.has("result"));
+	const String snapshot_id = Dictionary(message["result"])["snapshot_id"];
+	REQUIRE(receive_test_object(client, message));
+	CHECK(message["method"] == "snapshot.begin");
+	String chunk_checksums;
+	for (int chunk_index = 0; chunk_index < 2; chunk_index++) {
+		REQUIRE(receive_test_object(client, message));
+		CHECK(message["kind"] == "chunk");
+		CHECK(message["snapshot_id"] == snapshot_id);
+		CHECK((int64_t)message["chunk_index"] == chunk_index);
+		CHECK_FALSE(String(message["payload_json"]).is_empty());
+		const String chunk_checksum = message["checksum"];
+		CHECK(chunk_checksum.length() == 64);
+		chunk_checksums += chunk_checksum;
+	}
+	REQUIRE(receive_test_object(client, message));
+	CHECK(message["method"] == "snapshot.end");
+	const CharString checksum_bytes = chunk_checksums.utf8();
+	PackedByteArray checksum_digest;
+	checksum_digest.resize(32);
+	REQUIRE(CryptoCore::sha256(reinterpret_cast<const uint8_t *>(checksum_bytes.get_data()), checksum_bytes.length(), checksum_digest.ptrw()) == OK);
+	CHECK(Dictionary(message["params"])["checksum"] == BridgeCrypto::bytes_to_lower_hex(checksum_digest));
+
+	Dictionary ack_params;
+	ack_params["snapshot_id"] = snapshot_id;
+	ack_params["domain"] = "resource_graph";
+	ack_params["through_chunk"] = 1;
+	Dictionary ack;
+	ack["protocol_version"] = "1.2";
+	ack["kind"] = "ack";
+	ack["ack_id"] = "ack:spooled";
+	ack["params"] = ack_params;
+	ack["context"] = make_rpc_context(discovery["project_id"], discovery["editor_session_id"]);
+	REQUIRE(send_test_object(client, ack));
+	REQUIRE(wait_for_dispatcher_size(dispatcher, 1));
+	CapturedCommands captured;
+	const MainThreadDispatcher::ProcessStats release_stats = dispatcher.process(capture_command, &captured, 1);
+	CHECK(release_stats.processed == 1);
+	REQUIRE(captured.types.size() == 1);
+	CHECK(captured.types[0] == MainThreadDispatcher::COMMAND_CANCEL);
+
+	client->disconnect_from_host();
 	CHECK(worker.stop() == BridgeTransportWorker::STOPPED);
 	dispatcher.begin_shutdown();
 }

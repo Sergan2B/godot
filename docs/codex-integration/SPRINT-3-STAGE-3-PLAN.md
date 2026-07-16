@@ -80,9 +80,10 @@ at a time.
 
 The shared main-thread ceiling remains 2 ms/frame:
 
-- when resource work is pending, dispatcher work receives up to 1.5 ms and resource
-  work receives 0.5 ms;
-- otherwise the dispatcher may use the full 2 ms.
+- when resource work is pending, dispatcher work receives up to 1.6 ms and resource
+  work receives 0.2 ms; short control requests do not suppress the resource slice;
+- 0.2 ms remains reserved for dispatch/telemetry overhead; without resource work the
+  dispatcher may use up to 1.8 ms.
 
 The hard limits are:
 
@@ -90,6 +91,7 @@ The hard limits are:
 |---|---:|
 | Resources | 250,000 |
 | Dependencies | 2,000,000 |
+| Diagnostics | 2,000,000 |
 | Dependencies per resource | 4,096 |
 | UTF-8 resource path | 1,024 bytes |
 | Produced snapshot payload | 256 KiB |
@@ -98,6 +100,13 @@ The hard limits are:
 | Delta batch | 512 KiB |
 | Journal retention | 4,096 batches / 16 MiB |
 | Snapshot timeout | 120 seconds |
+
+Every resource path, UID, Godot type, raw dependency entry, integer, and emitted DTO is
+validated against the exact Bridge RPC schema limits before publication. Raw dependency
+entries are byte-bounded before parsing or any filesystem/ResourceLoader lookup, and
+snapshot staging revalidates one DTO at a time. Retired journal batches, prepared
+batches, and reconciliation arrays transfer their reference-counted handles to worker
+cleanup so a main-thread slice never performs an unbounded deep DTO destruction.
 
 The journal coalesces repeated upserts, UID move chains, add/remove pairs, and
 add/remove/add sequences before committing a revision. UID-less rename remains

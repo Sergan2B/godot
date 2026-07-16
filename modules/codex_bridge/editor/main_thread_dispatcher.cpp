@@ -55,7 +55,20 @@ MainThreadDispatcher::EnqueueResult MainThreadDispatcher::enqueue(const Command 
 	if (!accepting) {
 		return ENQUEUE_STOPPING;
 	}
-	if (uint32_t(queue.size()) >= MAX_QUEUE_SIZE) {
+	if (p_command.type == COMMAND_CANCEL) {
+		for (const Command &queued : queue) {
+			if (queued.type == COMMAND_CANCEL && queued.request_id == p_command.request_id) {
+				return ENQUEUE_OK;
+			}
+		}
+		// Terminal adapter cleanup has a small reserved lane so a saturated
+		// request queue cannot strand a frozen resource snapshot.
+		if (uint32_t(queue.size()) >= MAX_QUEUE_SIZE + MAX_TERMINAL_COMMANDS) {
+			return ENQUEUE_FULL;
+		}
+		queue.push_front(p_command);
+		return ENQUEUE_OK;
+	} else if (uint32_t(queue.size()) >= MAX_QUEUE_SIZE) {
 		return ENQUEUE_FULL;
 	}
 	queue.push_back(p_command);
@@ -66,6 +79,12 @@ bool MainThreadDispatcher::cancel(uint64_t p_request_id) {
 	MutexLock lock(queue_mutex);
 	for (List<Command>::Element *element = queue.front(); element; element = element->next()) {
 		if (element->get().request_id == p_request_id) {
+			// A terminal cancellation is itself the work item that releases an
+			// adapter-owned snapshot. Repeated transport cancellation must not
+			// remove that command before the main thread can observe it.
+			if (element->get().type == COMMAND_CANCEL) {
+				return true;
+			}
 			queue.erase(element);
 			return true;
 		}

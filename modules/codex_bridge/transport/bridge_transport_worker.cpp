@@ -32,11 +32,15 @@
 
 #include "bridge_runtime.h"
 
+#include "core/crypto/crypto_core.h"
+#include "core/crypto/hashing_context.h"
+#include "core/io/json.h"
 #include "core/os/os.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
 
 #include "modules/codex_bridge/editor/main_thread_dispatcher.h"
+#include "modules/codex_bridge/protocol/bridge_crypto.h"
 #include "modules/codex_bridge/protocol/bridge_frame_codec.h"
 #include "modules/codex_bridge/protocol/bridge_handshake.h"
 #include "modules/codex_bridge/protocol/bridge_rpc_session.h"
@@ -48,6 +52,10 @@ static constexpr int MAX_OUTBOUND_BYTES = 33554432;
 static constexpr uint64_t SNAPSHOT_TIMEOUT_USEC = 120000000;
 static constexpr int MAX_NOTIFICATION_ENTRIES = 4096;
 static constexpr int MAX_NOTIFICATION_BYTES = 16777216;
+static constexpr int MAX_RESOURCE_SNAPSHOT_CHUNKS = 65536;
+static constexpr uint64_t MAX_RESOURCE_SNAPSHOT_MESSAGES = MAX_RESOURCE_SNAPSHOT_CHUNKS + 2;
+static constexpr uint64_t MAX_RESOURCE_SNAPSHOT_SPOOL_BYTES =
+		MAX_RESOURCE_SNAPSHOT_MESSAGES * (BridgeFrameCodec::MAX_PAYLOAD_BYTES + 8ULL);
 
 struct SnapshotStreamState {
 	bool active = false;
@@ -55,11 +63,30 @@ struct SnapshotStreamState {
 	String request_id;
 	String snapshot_id;
 	Array messages;
+	Ref<FileAccess> spool;
+	int spool_chunk_count = 0;
+	uint32_t spool_next_frame_bytes = 0;
 	int next_message = 0;
 	int last_acked_chunk = -1;
 	Vector<uint64_t> sent_chunk_bytes;
 	uint64_t unacked_bytes = 0;
 	uint64_t deadline_usec = 0;
+};
+
+struct SnapshotPreparation {
+	BridgeTransportWorker::Completion completion;
+	int next_message = 0;
+	int next_chunk = 0;
+	String snapshot_id;
+	Ref<FileAccess> spool;
+	Ref<HashingContext> checksum_context;
+	uint64_t spool_bytes = 0;
+};
+
+enum SnapshotPreparationResult {
+	SNAPSHOT_PREPARATION_PENDING,
+	SNAPSHOT_PREPARATION_READY,
+	SNAPSHOT_PREPARATION_FAILED,
 };
 
 struct TransportClient {
@@ -101,6 +128,128 @@ static bool queue_response(TransportClient &r_client, const Dictionary &p_respon
 	return queue_encoded_response(r_client, response);
 }
 
+static String sha256_hex_utf8(const String &p_value) {
+	const CharString bytes = p_value.utf8();
+	PackedByteArray digest;
+	digest.resize(32);
+	if (CryptoCore::sha256(reinterpret_cast<const uint8_t *>(bytes.get_data()), bytes.length(), digest.ptrw()) != OK) {
+		return String();
+	}
+	return BridgeCrypto::bytes_to_lower_hex(digest);
+}
+
+static bool open_resource_snapshot_spool(SnapshotPreparation &r_preparation) {
+	Error error = OK;
+	r_preparation.spool = FileAccess::create_temp(
+			FileAccess::WRITE_READ,
+			"codex-resource-snapshot",
+			"spool",
+			false,
+			&error);
+	if (error != OK || r_preparation.spool.is_null()) {
+		return false;
+	}
+#ifdef UNIX_ENABLED
+	const BitField<FileAccess::UnixPermissionFlags> owner_only =
+			FileAccess::UNIX_READ_OWNER | FileAccess::UNIX_WRITE_OWNER;
+	if (FileAccess::set_unix_permissions(r_preparation.spool->get_path_absolute(), owner_only) != OK) {
+		r_preparation.spool.unref();
+		return false;
+	}
+#endif
+	r_preparation.checksum_context.instantiate();
+	return r_preparation.checksum_context->start(HashingContext::HASH_SHA256) == OK;
+}
+
+static bool append_resource_snapshot_frame(SnapshotPreparation &r_preparation, const PackedByteArray &p_encoded) {
+	if (r_preparation.spool.is_null() || p_encoded.is_empty() || p_encoded.size() > (int64_t)BridgeFrameCodec::MAX_PAYLOAD_BYTES + 4 ||
+			r_preparation.next_message >= (int)MAX_RESOURCE_SNAPSHOT_MESSAGES) {
+		return false;
+	}
+	const uint64_t record_bytes = sizeof(uint32_t) + (uint64_t)p_encoded.size();
+	if (record_bytes > MAX_RESOURCE_SNAPSHOT_SPOOL_BYTES - r_preparation.spool_bytes ||
+			!r_preparation.spool->store_32((uint32_t)p_encoded.size()) ||
+			!r_preparation.spool->store_buffer(p_encoded)) {
+		return false;
+	}
+	r_preparation.spool_bytes += record_bytes;
+	return true;
+}
+
+static SnapshotPreparationResult prepare_resource_snapshot_dictionary(SnapshotPreparation &r_preparation, Dictionary &r_message, bool p_final_message) {
+	Dictionary &message = r_message;
+	const String kind = message.get("kind", String());
+	if (kind == "chunk") {
+		if (p_final_message || r_preparation.next_message == 0 || r_preparation.spool.is_null() || r_preparation.checksum_context.is_null() ||
+				String(message.get("protocol_version", String())) != "1.2" || String(message.get("domain", String())) != "resource_graph" ||
+				String(message.get("snapshot_id", String())) != r_preparation.snapshot_id ||
+				!message.has("chunk_index") || message["chunk_index"].get_type() != Variant::INT ||
+				(int64_t)message["chunk_index"] != r_preparation.next_chunk ||
+				!message.has("payload") || message["payload"].get_type() != Variant::DICTIONARY ||
+				r_preparation.next_chunk >= MAX_RESOURCE_SNAPSHOT_CHUNKS) {
+			return SNAPSHOT_PREPARATION_FAILED;
+		}
+		const String payload_json = JSON::stringify(message["payload"], "", true, true);
+		if (payload_json.utf8().length() > 256 * 1024) {
+			return SNAPSHOT_PREPARATION_FAILED;
+		}
+		const String checksum = sha256_hex_utf8(payload_json);
+		if (checksum.is_empty()) {
+			return SNAPSHOT_PREPARATION_FAILED;
+		}
+		message["payload_json"] = payload_json;
+		message["checksum"] = checksum;
+		const PackedByteArray checksum_bytes = checksum.to_utf8_buffer();
+		if (r_preparation.checksum_context->update(checksum_bytes) != OK) {
+			return SNAPSHOT_PREPARATION_FAILED;
+		}
+		r_preparation.next_chunk++;
+	} else if (String(message.get("method", String())) == "snapshot.end") {
+		if (!p_final_message || r_preparation.next_message < 2 || r_preparation.checksum_context.is_null() ||
+				String(message.get("protocol_version", String())) != "1.2" || !message.has("params") || message["params"].get_type() != Variant::DICTIONARY) {
+			return SNAPSHOT_PREPARATION_FAILED;
+		}
+		Dictionary params = message["params"];
+		if (String(params.get("domain", String())) != "resource_graph" || String(params.get("snapshot_id", String())) != r_preparation.snapshot_id ||
+				!params.has("chunk_count") || params["chunk_count"].get_type() != Variant::INT || (int64_t)params["chunk_count"] != r_preparation.next_chunk) {
+			return SNAPSHOT_PREPARATION_FAILED;
+		}
+		const PackedByteArray checksum_digest = r_preparation.checksum_context->finish();
+		r_preparation.checksum_context.unref();
+		if (checksum_digest.size() != 32) {
+			return SNAPSHOT_PREPARATION_FAILED;
+		}
+		params["checksum"] = BridgeCrypto::bytes_to_lower_hex(checksum_digest);
+		message["params"] = params;
+	} else {
+		if (p_final_message || r_preparation.next_message != 0 || String(message.get("protocol_version", String())) != "1.2" ||
+				String(message.get("method", String())) != "snapshot.begin" || !message.has("params") || message["params"].get_type() != Variant::DICTIONARY) {
+			return SNAPSHOT_PREPARATION_FAILED;
+		}
+		const Dictionary params = message["params"];
+		r_preparation.snapshot_id = params.get("snapshot_id", String());
+		if (r_preparation.snapshot_id.is_empty() || String(params.get("domain", String())) != "resource_graph" || !open_resource_snapshot_spool(r_preparation)) {
+			return SNAPSHOT_PREPARATION_FAILED;
+		}
+	}
+	PackedByteArray encoded;
+	if (!encode_response(message, encoded) || !append_resource_snapshot_frame(r_preparation, encoded)) {
+		return SNAPSHOT_PREPARATION_FAILED;
+	}
+	r_preparation.next_message++;
+	if (p_final_message) {
+		r_preparation.spool->flush();
+		if (r_preparation.spool->get_error() != OK) {
+			return SNAPSHOT_PREPARATION_FAILED;
+		}
+		r_preparation.spool->seek(0);
+		if (r_preparation.spool->get_position() != 0) {
+			return SNAPSHOT_PREPARATION_FAILED;
+		}
+	}
+	return p_final_message ? SNAPSHOT_PREPARATION_READY : SNAPSHOT_PREPARATION_PENDING;
+}
+
 static void sanitize_revision_vector_for_protocol(Dictionary &r_message, const String &p_protocol_version) {
 	if (p_protocol_version == "1.2") {
 		return;
@@ -123,6 +272,46 @@ static void sanitize_revision_vector_for_protocol(Dictionary &r_message, const S
 
 static bool pump_snapshot_stream(TransportClient &r_client) {
 	SnapshotStreamState &stream = r_client.snapshot_stream;
+	if (stream.spool.is_valid()) {
+		const int total_messages = stream.spool_chunk_count + 2;
+		if (!stream.active || stream.next_message >= total_messages) {
+			return true;
+		}
+		if (stream.spool_next_frame_bytes == 0) {
+			if (stream.spool->get_position() + sizeof(uint32_t) > stream.spool->get_length()) {
+				return false;
+			}
+			stream.spool_next_frame_bytes = stream.spool->get_32();
+			if (stream.spool_next_frame_bytes < 4 || stream.spool_next_frame_bytes > BridgeFrameCodec::MAX_PAYLOAD_BYTES + 4) {
+				return false;
+			}
+		}
+		const bool is_chunk = stream.next_message > 0 && stream.next_message <= stream.spool_chunk_count;
+		const uint64_t frame_bytes = stream.spool_next_frame_bytes;
+		if ((uint64_t)r_client.pending_write.size() + frame_bytes > (uint64_t)MAX_OUTBOUND_BYTES ||
+				(is_chunk && stream.unacked_bytes + frame_bytes > (uint64_t)MAX_OUTBOUND_BYTES)) {
+			return true;
+		}
+		if (stream.spool->get_position() + frame_bytes > stream.spool->get_length()) {
+			return false;
+		}
+		PackedByteArray encoded;
+		encoded.resize(frame_bytes);
+		if (stream.spool->get_buffer(encoded.ptrw(), frame_bytes) != frame_bytes || !queue_encoded_response(r_client, encoded)) {
+			return false;
+		}
+		if (is_chunk) {
+			stream.sent_chunk_bytes.push_back(frame_bytes);
+			stream.unacked_bytes += frame_bytes;
+		}
+		stream.spool_next_frame_bytes = 0;
+		stream.next_message++;
+		if (stream.next_message == total_messages && stream.spool->get_position() != stream.spool->get_length()) {
+			return false;
+		}
+		return true;
+	}
+
 	while (stream.active && stream.next_message < stream.messages.size()) {
 		if (stream.messages[stream.next_message].get_type() != Variant::DICTIONARY) {
 			return false;
@@ -130,11 +319,11 @@ static bool pump_snapshot_stream(TransportClient &r_client) {
 		Dictionary message = stream.messages[stream.next_message];
 		message["protocol_version"] = r_client.rpc.get_protocol_version();
 		sanitize_revision_vector_for_protocol(message, r_client.rpc.get_protocol_version());
+		const bool is_chunk = String(message.get("kind", String())) == "chunk";
 		PackedByteArray encoded;
 		if (!encode_response(message, encoded)) {
 			return false;
 		}
-		const bool is_chunk = String(message.get("kind", String())) == "chunk";
 		int64_t chunk_index = -1;
 		if (is_chunk) {
 			if (!message.has("chunk_index") || message["chunk_index"].get_type() != Variant::INT) {
@@ -153,8 +342,18 @@ static bool pump_snapshot_stream(TransportClient &r_client) {
 			stream.unacked_bytes += encoded.size();
 		}
 		stream.next_message++;
+		// Preparing and framing one message per worker iteration keeps control
+		// traffic responsive while a large snapshot is in flight.
+		break;
 	}
 	return true;
+}
+
+static bool snapshot_stream_is_fully_queued(const SnapshotStreamState &p_stream) {
+	if (p_stream.spool.is_valid()) {
+		return p_stream.next_message == p_stream.spool_chunk_count + 2;
+	}
+	return p_stream.next_message == p_stream.messages.size();
 }
 
 static bool start_snapshot_stream(TransportClient &r_client, uint64_t p_internal_request_id, const String &p_request_id, const Array &p_messages, uint64_t p_now_usec) {
@@ -178,7 +377,22 @@ static bool start_snapshot_stream(TransportClient &r_client, uint64_t p_internal
 	r_client.snapshot_stream.snapshot_id = params["snapshot_id"];
 	r_client.snapshot_stream.messages = p_messages;
 	r_client.snapshot_stream.deadline_usec = p_now_usec + SNAPSHOT_TIMEOUT_USEC;
-	return pump_snapshot_stream(r_client);
+	return true;
+}
+
+static bool start_spooled_snapshot_stream(TransportClient &r_client, uint64_t p_internal_request_id, const String &p_request_id, const String &p_snapshot_id, const Ref<FileAccess> &p_spool, int p_chunk_count, uint64_t p_now_usec) {
+	if (r_client.snapshot_stream.active || r_client.rpc.get_protocol_version() != "1.2" || p_request_id.is_empty() || p_snapshot_id.is_empty() ||
+			p_spool.is_null() || p_chunk_count <= 0 || p_chunk_count > MAX_RESOURCE_SNAPSHOT_CHUNKS || p_spool->get_position() != 0 || p_spool->get_length() == 0) {
+		return false;
+	}
+	r_client.snapshot_stream.active = true;
+	r_client.snapshot_stream.internal_request_id = p_internal_request_id;
+	r_client.snapshot_stream.request_id = p_request_id;
+	r_client.snapshot_stream.snapshot_id = p_snapshot_id;
+	r_client.snapshot_stream.spool = p_spool;
+	r_client.snapshot_stream.spool_chunk_count = p_chunk_count;
+	r_client.snapshot_stream.deadline_usec = p_now_usec + SNAPSHOT_TIMEOUT_USEC;
+	return true;
 }
 
 static bool acknowledge_snapshot_stream(TransportClient &r_client, const String &p_snapshot_id, int64_t p_through_chunk, uint64_t &r_terminal_request_id) {
@@ -194,10 +408,7 @@ static bool acknowledge_snapshot_stream(TransportClient &r_client, const String 
 		stream.unacked_bytes -= stream.sent_chunk_bytes[index];
 	}
 	stream.last_acked_chunk = p_through_chunk;
-	if (!pump_snapshot_stream(r_client)) {
-		return false;
-	}
-	if (stream.next_message == stream.messages.size() && stream.last_acked_chunk + 1 == (int)stream.sent_chunk_bytes.size()) {
+	if (snapshot_stream_is_fully_queued(stream) && stream.last_acked_chunk + 1 == (int)stream.sent_chunk_bytes.size()) {
 		r_terminal_request_id = stream.internal_request_id;
 		stream = SnapshotStreamState();
 	}
@@ -394,6 +605,12 @@ static bool process_client(TransportClient &r_client, uint64_t p_now_usec, uint6
 	if (!pump_snapshot_stream(r_client)) {
 		return false;
 	}
+	SnapshotStreamState &stream = r_client.snapshot_stream;
+	if (stream.active && snapshot_stream_is_fully_queued(stream) && stream.last_acked_chunk + 1 == (int)stream.sent_chunk_bytes.size()) {
+		const uint64_t terminal_request_id = stream.internal_request_id;
+		stream = SnapshotStreamState();
+		cancel_dispatched_request(p_context, terminal_request_id);
+	}
 	return true;
 }
 
@@ -428,6 +645,8 @@ static void drain_notifications(BridgeTransportWorker::Context *p_context, Vecto
 
 static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRuntime &r_runtime) {
 	Vector<TransportClient> clients;
+	Vector<SnapshotPreparation> snapshot_preparations;
+	List<BridgeTransportWorker::Completion> snapshot_events;
 	HashSet<String> seen_client_nonces;
 	Vector<uint64_t> authentication_failures;
 	uint64_t accept_blocked_until = 0;
@@ -435,27 +654,124 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 
 	while (!p_context->stop_requested.is_set()) {
 		const uint64_t now_usec = OS::get_singleton()->get_ticks_usec();
+		Vector<BridgeTransportWorker::Completion> drained_completions;
+		drain_completions(p_context, drained_completions);
 		Vector<BridgeTransportWorker::Completion> completions;
-		drain_completions(p_context, completions);
+		for (const BridgeTransportWorker::Completion &completion : drained_completions) {
+			if (completion.kind != BridgeTransportWorker::Completion::KIND_REQUEST) {
+				snapshot_events.push_back(completion);
+			} else {
+				completions.push_back(completion);
+			}
+		}
+		if (!snapshot_events.is_empty()) {
+			const BridgeTransportWorker::Completion event = snapshot_events.front()->get();
+			snapshot_events.pop_front();
+			bool pending_client = false;
+			for (const TransportClient &client : clients) {
+				if (client.rpc.has_pending_request(event.request_id)) {
+					pending_client = true;
+					break;
+				}
+			}
+			int preparation_index = -1;
+			for (int index = 0; index < snapshot_preparations.size(); index++) {
+				if (snapshot_preparations[index].completion.request_id == event.request_id) {
+					preparation_index = index;
+					break;
+				}
+			}
+			if (event.kind == BridgeTransportWorker::Completion::KIND_RESOURCE_SNAPSHOT_ABORT) {
+				if (preparation_index >= 0) {
+					snapshot_preparations.remove_at(preparation_index);
+				}
+			} else if (pending_client) {
+				if (preparation_index < 0 && event.kind == BridgeTransportWorker::Completion::KIND_RESOURCE_SNAPSHOT_MESSAGE) {
+					SnapshotPreparation preparation;
+					preparation.completion.request_id = event.request_id;
+					snapshot_preparations.push_back(preparation);
+					preparation_index = snapshot_preparations.size() - 1;
+				}
+				SnapshotPreparationResult preparation_result = SNAPSHOT_PREPARATION_FAILED;
+				Dictionary message = event.snapshot_message;
+				if (preparation_index >= 0) {
+					SnapshotPreparation &preparation = snapshot_preparations.write[preparation_index];
+					preparation_result = prepare_resource_snapshot_dictionary(
+							preparation, message, event.kind == BridgeTransportWorker::Completion::KIND_RESOURCE_SNAPSHOT_END);
+				}
+				if (preparation_result == SNAPSHOT_PREPARATION_READY && preparation_index >= 0) {
+					SnapshotPreparation &preparation = snapshot_preparations.write[preparation_index];
+					preparation.completion.result = event.result;
+					preparation.completion.snapshot_spool = preparation.spool;
+					preparation.completion.snapshot_chunk_count = preparation.next_chunk;
+					completions.push_back(preparation.completion);
+					snapshot_preparations.remove_at(preparation_index);
+				} else if (preparation_result == SNAPSHOT_PREPARATION_FAILED) {
+					BridgeTransportWorker::Completion failure;
+					failure.request_id = event.request_id;
+					failure.is_error = true;
+					failure.error_code = "resource_limit_exceeded";
+					failure.error_message = "The resource graph snapshot could not be framed within the negotiated limits.";
+					failure.error_retryable = false;
+					failure.cancel_dispatch = true;
+					completions.push_back(failure);
+					if (preparation_index >= 0) {
+						snapshot_preparations.remove_at(preparation_index);
+					}
+				}
+			}
+		}
+		for (int index = snapshot_preparations.size() - 1; index >= 0; index--) {
+			bool pending_client = false;
+			for (const TransportClient &client : clients) {
+				if (client.rpc.has_pending_request(snapshot_preparations[index].completion.request_id)) {
+					pending_client = true;
+					break;
+				}
+			}
+			if (!pending_client) {
+				// The RPC path that removed the pending request already queued the
+				// terminal cancellation. Pruning only releases detached worker data;
+				// cancelling again could otherwise race that queued command.
+				snapshot_preparations.remove_at(index);
+			}
+		}
 		for (const BridgeTransportWorker::Completion &completion : completions) {
+			const uint64_t completion_now_usec = OS::get_singleton()->get_ticks_usec();
+			bool handled = false;
 			for (TransportClient &client : clients) {
 				BridgeRpcSession::Outcome outcome;
-				const Error completion_error = completion.is_error ?
-						client.rpc.complete_error(completion.request_id, completion.error_code, completion.error_message, completion.error_retryable, completion.error_data, outcome) :
-						client.rpc.complete(completion.request_id, now_usec, completion.result, outcome);
+				const Error completion_error = completion.is_error ? client.rpc.complete_error(completion.request_id, completion.error_code, completion.error_message, completion.error_retryable, completion.error_data, outcome) : client.rpc.complete(completion.request_id, completion_now_usec, completion.result, outcome);
 				if (completion_error == OK) {
+					handled = true;
+					const bool stream_completion = completion.snapshot_spool.is_valid() || !completion.server_messages.is_empty();
 					if (!apply_rpc_outcome(client, outcome, p_context)) {
 						cancel_dispatched_request(p_context, completion.request_id);
 						client.force_close = true;
+					} else if (stream_completion && !outcome.response.has("result")) {
+						// complete() also returns OK when it converts a late completion
+						// into deadline_exceeded. Never append a stream after that
+						// terminal error; release the frozen adapter generation instead.
+						cancel_dispatched_request(p_context, completion.request_id);
+					} else if (completion.snapshot_spool.is_valid()) {
+						const String request_id = outcome.response.get("request_id", String());
+						const String snapshot_id = completion.result.get("snapshot_id", String());
+						if (!start_spooled_snapshot_stream(client, completion.request_id, request_id, snapshot_id, completion.snapshot_spool, completion.snapshot_chunk_count, completion_now_usec)) {
+							cancel_dispatched_request(p_context, completion.request_id);
+							client.force_close = true;
+						}
 					} else if (!completion.server_messages.is_empty() && (client.rpc.get_protocol_version() == "1.1" || client.rpc.get_protocol_version() == "1.2")) {
 						const String request_id = outcome.response.get("request_id", String());
-						if (request_id.is_empty() || !start_snapshot_stream(client, completion.request_id, request_id, completion.server_messages, now_usec)) {
+						if (request_id.is_empty() || !start_snapshot_stream(client, completion.request_id, request_id, completion.server_messages, completion_now_usec)) {
 							cancel_dispatched_request(p_context, completion.request_id);
 							client.force_close = true;
 						}
 					}
 					break;
 				}
+			}
+			if (completion.cancel_dispatch || (!handled && (!completion.server_messages.is_empty() || completion.snapshot_spool.is_valid()))) {
+				cancel_dispatched_request(p_context, completion.request_id);
 			}
 		}
 		Vector<Dictionary> notifications;
@@ -663,6 +979,43 @@ void BridgeTransportWorker::complete_request_error(uint64_t p_request_id, const 
 	completion.error_message = p_message;
 	completion.error_retryable = p_retryable;
 	completion.error_data = p_data;
+	context->completed_requests.push_back(completion);
+}
+
+void BridgeTransportWorker::stage_resource_snapshot_message(uint64_t p_request_id, const Dictionary &p_message) {
+	if (!context) {
+		return;
+	}
+	MutexLock lock(context->completion_mutex);
+	Completion completion;
+	completion.kind = Completion::KIND_RESOURCE_SNAPSHOT_MESSAGE;
+	completion.request_id = p_request_id;
+	completion.snapshot_message = p_message;
+	context->completed_requests.push_back(completion);
+}
+
+void BridgeTransportWorker::complete_resource_snapshot(uint64_t p_request_id, const Dictionary &p_result, const Dictionary &p_end_message) {
+	if (!context) {
+		return;
+	}
+	MutexLock lock(context->completion_mutex);
+	Completion completion;
+	completion.kind = Completion::KIND_RESOURCE_SNAPSHOT_END;
+	completion.request_id = p_request_id;
+	completion.result = p_result;
+	completion.snapshot_message = p_end_message;
+	context->completed_requests.push_back(completion);
+}
+
+void BridgeTransportWorker::abort_resource_snapshot(uint64_t p_request_id, const Array &p_abandoned_messages) {
+	if (!context) {
+		return;
+	}
+	MutexLock lock(context->completion_mutex);
+	Completion completion;
+	completion.kind = Completion::KIND_RESOURCE_SNAPSHOT_ABORT;
+	completion.request_id = p_request_id;
+	completion.abandoned_messages = p_abandoned_messages;
 	context->completed_requests.push_back(completion);
 }
 

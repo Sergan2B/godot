@@ -73,6 +73,10 @@ public:
 	typedef uint64_t (*Clock)(void *p_userdata);
 
 	static constexpr uint32_t MAX_QUEUE_SIZE = 64;
+	// 16 transport clients x 64 in-flight RPC requests is the protocol-wide
+	// upper bound for distinct terminal cancellations awaiting main-thread
+	// observation.
+	static constexpr uint32_t MAX_TERMINAL_COMMANDS = 1024;
 	static constexpr uint32_t MAX_COMMANDS_PER_FRAME = 8;
 	static constexpr uint64_t MAX_PROCESS_USEC_PER_FRAME = 2000;
 

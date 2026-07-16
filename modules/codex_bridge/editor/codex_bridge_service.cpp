@@ -41,6 +41,7 @@
 #include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/file_system/editor_file_system.h"
+
 #include "modules/codex_bridge/editor/editor_context_adapter.h"
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
 
@@ -104,9 +105,12 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 		case MainThreadDispatcher::COMMAND_RESOURCE_DELTA:
 			service->_complete_resource_delta(p_command.request_id, (uint64_t)(int64_t)p_command.params["after_resource_revision"]);
 			break;
-		case MainThreadDispatcher::COMMAND_CANCEL:
-			service->resource_graph_adapter.cancel_snapshot(p_command.request_id);
-			break;
+		case MainThreadDispatcher::COMMAND_CANCEL: {
+			const Array abandoned = service->resource_graph_adapter.cancel_snapshot(p_command.request_id);
+			if (!abandoned.is_empty()) {
+				service->transport_worker.abort_resource_snapshot(p_command.request_id, abandoned);
+			}
+		} break;
 		case MainThreadDispatcher::COMMAND_PING:
 		case MainThreadDispatcher::COMMAND_SHUTDOWN:
 			service->transport_worker.complete_request(p_command.request_id);
@@ -403,10 +407,17 @@ void CodexBridgeService::_process_resource_graph(uint64_t p_budget_usec) {
 		ResourceGraphAdapter::SnapshotCompletion snapshot;
 		if (resource_graph_adapter.process_snapshot(OS::get_singleton()->get_ticks_usec(), p_budget_usec, snapshot) && snapshot.ready) {
 			if (snapshot.is_error) {
+				if (!snapshot.abandoned_messages.is_empty()) {
+					transport_worker.abort_resource_snapshot(snapshot.request_id, snapshot.abandoned_messages);
+				}
 				transport_worker.complete_request_error(snapshot.request_id, snapshot.error_code, snapshot.error_message, snapshot.error_retryable, snapshot.error_data);
 				return;
 			}
-			transport_worker.complete_request(snapshot.request_id, snapshot.result, snapshot.server_messages);
+			if (snapshot.terminal) {
+				transport_worker.complete_resource_snapshot(snapshot.request_id, snapshot.result, snapshot.server_message);
+			} else {
+				transport_worker.stage_resource_snapshot_message(snapshot.request_id, snapshot.server_message);
+			}
 		}
 		return;
 	}
@@ -452,11 +463,15 @@ void CodexBridgeService::_notification(int p_what) {
 			if (state == STATE_RUNNING) {
 				const uint64_t frame_started_usec = OS::get_singleton()->get_ticks_usec();
 				const bool resource_work = resource_graph_adapter.has_pending_work();
-				const uint64_t dispatcher_budget = resource_work ?
-						MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME - ResourceGraphAdapter::RESOURCE_BUDGET_USEC :
-						MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME;
+				const uint64_t dispatcher_budget = MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME -
+						ResourceGraphAdapter::FRAME_SAFETY_MARGIN_USEC -
+						(resource_work ? ResourceGraphAdapter::RESOURCE_BUDGET_USEC : 0);
 				const MainThreadDispatcher::ProcessStats dispatcher_stats = dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
-				if (resource_work && dispatcher_stats.consumed == 0) {
+				// Control traffic retains the higher-priority lane, but a stream of
+				// short status requests must not starve an active resource refresh.
+				// Skip the bulk slice only when dispatcher work already consumed its
+				// complete reserved share of the common 2 ms ceiling.
+				if (resource_work && dispatcher_stats.elapsed_usec < dispatcher_budget) {
 					_process_resource_graph(ResourceGraphAdapter::RESOURCE_BUDGET_USEC);
 				}
 				frame_telemetry.record(OS::get_singleton()->get_ticks_usec() - frame_started_usec, resource_work || dispatcher_stats.consumed > 0);

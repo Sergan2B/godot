@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/io/file_access.h"
 #include "core/os/mutex.h"
 #include "core/os/semaphore.h"
 #include "core/os/thread.h"
@@ -53,14 +54,27 @@ public:
 
 public:
 	struct Completion {
+		enum Kind {
+			KIND_REQUEST,
+			KIND_RESOURCE_SNAPSHOT_MESSAGE,
+			KIND_RESOURCE_SNAPSHOT_END,
+			KIND_RESOURCE_SNAPSHOT_ABORT,
+		};
+
+		Kind kind = KIND_REQUEST;
 		uint64_t request_id = 0;
 		Dictionary result;
 		Array server_messages;
+		Ref<FileAccess> snapshot_spool;
+		int snapshot_chunk_count = 0;
+		Dictionary snapshot_message;
+		Array abandoned_messages;
 		bool is_error = false;
 		String error_code;
 		String error_message;
 		bool error_retryable = false;
 		Dictionary error_data;
+		bool cancel_dispatch = false;
 	};
 
 	struct Context {
@@ -103,6 +117,9 @@ public:
 	void complete_request(uint64_t p_request_id);
 	void complete_request(uint64_t p_request_id, const Dictionary &p_result, const Array &p_server_messages = Array());
 	void complete_request_error(uint64_t p_request_id, const String &p_code, const String &p_message, bool p_retryable, const Dictionary &p_data = Dictionary());
+	void stage_resource_snapshot_message(uint64_t p_request_id, const Dictionary &p_message);
+	void complete_resource_snapshot(uint64_t p_request_id, const Dictionary &p_result, const Dictionary &p_end_message);
+	void abort_resource_snapshot(uint64_t p_request_id, const Array &p_abandoned_messages = Array());
 	bool publish_notification(const Dictionary &p_notification);
 	String get_project_id() const;
 	String get_editor_session_id() const;
