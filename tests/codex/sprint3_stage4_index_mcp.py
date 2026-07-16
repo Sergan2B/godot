@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import os
 import platform
 import shutil
@@ -35,8 +37,21 @@ from sprint3_stage3_live import (
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPOSITORY_ROOT = SCRIPT_DIR.parent.parent
-DEFAULT_SIDECAR = REPOSITORY_ROOT / "godot-codex-mcp" / "target" / "release" / "godot-codex-mcp"
-DEFAULT_EVIDENCE = SCRIPT_DIR / "evidence" / "sprint-3-stage-4-index-mcp-macos.json"
+SOURCE_SCOPES = (
+    "modules/codex_bridge",
+    "schemas/codex_bridge/v1",
+    "godot-codex-mcp/Cargo.toml",
+    "godot-codex-mcp/Cargo.lock",
+    "godot-codex-mcp/crates",
+    "tests/codex/sprint2_live_smoke.py",
+    "tests/codex/sprint3_stage3_live.py",
+    "tests/codex/sprint3_stage4_index_mcp.py",
+    "tests/codex/resource_graph_fixture.py",
+    "tests/codex/resource_graph_live_driver.gd",
+    "tests/codex/fixtures/resource_graph_project",
+    "tests/codex/fixtures/resource_graph_oracle",
+)
+TELEMETRY_PREFIX = "[codex_bridge_evidence] "
 TOOL_NAMES = {
     "godot_get_current_scene",
     "godot_get_editor_state",
@@ -54,12 +69,103 @@ def canonical_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
-def percentile(samples: list[float], percentile_value: float) -> float:
+def percentile(samples: list[float] | list[int], percentile_value: int) -> float:
     if not samples:
         raise IndexMcpGateError("cannot calculate a percentile without samples")
     ordered = sorted(samples)
-    index = max(0, min(len(ordered) - 1, int((len(ordered) - 1) * percentile_value + 0.5)))
+    index = max(0, min(len(ordered) - 1, math.ceil(percentile_value * len(ordered) / 100) - 1))
     return round(ordered[index], 3)
+
+
+def target_platform() -> str:
+    machine = platform.machine().lower()
+    if sys.platform == "darwin" and machine in {"arm64", "aarch64"}:
+        return "macos-arm64"
+    if sys.platform == "win32" and machine in {"amd64", "x86_64"}:
+        return "windows-x86_64"
+    raise IndexMcpGateError("the Sprint 3 live gate requires macOS arm64 or Windows x86_64")
+
+
+def default_sidecar() -> Path:
+    name = "godot-codex-mcp.exe" if sys.platform == "win32" else "godot-codex-mcp"
+    return REPOSITORY_ROOT / "godot-codex-mcp" / "target" / "release" / name
+
+
+def default_evidence(platform_tag: str) -> Path:
+    suffix = "macos" if platform_tag == "macos-arm64" else "windows"
+    return SCRIPT_DIR / "evidence" / f"sprint-3-resource-graph-{suffix}.json"
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return f"sha256:{digest.hexdigest()}"
+
+
+def command_output(command: list[str]) -> str:
+    result = subprocess.run(
+        command,
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise IndexMcpGateError(f"command failed while binding evidence: {command[0]}")
+    return result.stdout.strip()
+
+
+def source_coordinates() -> dict[str, Any]:
+    status = command_output(["git", "status", "--porcelain", "--", *SOURCE_SCOPES])
+    listed = subprocess.run(
+        [
+            "git",
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            *SOURCE_SCOPES,
+        ],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        timeout=30,
+    )
+    if listed.returncode != 0:
+        raise IndexMcpGateError("git ls-files failed while binding live evidence")
+    paths = sorted(path for path in listed.stdout.split(b"\0") if path)
+    digest = hashlib.sha256()
+    for encoded_path in paths:
+        relative = encoded_path.decode("utf-8")
+        content = (REPOSITORY_ROOT / relative).read_bytes()
+        digest.update(len(encoded_path).to_bytes(8, "big"))
+        digest.update(encoded_path)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return {
+        "git_commit": command_output(["git", "rev-parse", "HEAD"]),
+        "git_dirty": bool(status),
+        "source_tree_sha256": f"sha256:{digest.hexdigest()}",
+    }
+
+
+def version_output(executable: Path) -> str:
+    result = subprocess.run(
+        [str(executable), "--version"],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        raise IndexMcpGateError(f"cannot read version from {executable.name}")
+    return result.stdout.strip().splitlines()[0]
 
 
 def build_sidecar(sidecar: Path) -> None:
@@ -158,6 +264,7 @@ def wait_for_current(
     resource: str,
     timeout: float,
     previous_generation: str | None = None,
+    bulk_status_samples: list[float] | None = None,
 ) -> tuple[dict[str, Any], float]:
     started = time.monotonic()
     deadline = started + timeout
@@ -169,6 +276,11 @@ def wait_for_current(
             "godot_get_resource_dependencies",
             {"resource": resource, "limit": 50},
         )
+        if bulk_status_samples is not None:
+            status, status_error, status_ms = tool_call(client, "godot_get_editor_state", {})
+            bulk_status_samples.append(round(status_ms, 3))
+            if status_error or status.get("freshness") != "current":
+                raise IndexMcpGateError("editor status was unavailable during bulk rebuild")
         if not is_error and content.get("freshness") == "current":
             if previous_generation is None or content.get("generation_id") != previous_generation:
                 return content, round((time.monotonic() - started) * 1000, 3)
@@ -305,12 +417,32 @@ def verify_oracle(
     serialized = json.dumps(all_dependencies, sort_keys=True)
     if str(PROJECT_SOURCE.resolve()) in serialized or "/tmp/" in serialized:
         raise IndexMcpGateError("MCP resource output exposed an absolute project path")
+    normalized_graph = [
+        {
+            "edge_id": edge_id,
+            "source_entity_id": expected_by_id[edge_id]["source_entity_id"],
+            "target_uid": dependency.get("target_uid"),
+            "target_path": dependency.get("target_path"),
+            "target_entity_id": (
+                dependency.get("target", {}).get("entity_id")
+                if isinstance(dependency.get("target"), dict)
+                else None
+            ),
+            "resolution": dependency.get("resolution"),
+            "authority": dependency.get("authority"),
+        }
+        for edge_id, dependency in sorted(all_dependencies.items())
+    ]
+    graph_digest = hashlib.sha256(
+        json.dumps(normalized_graph, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    ).hexdigest()
     return {
         "generation_id": generation_id,
         "index_revision": index_revision,
         "resource_count": len(resources),
         "dependency_count": len(all_dependencies),
         "diagnostic_count": len(oracle["diagnostics"]),
+        "normalized_graph_sha256": f"sha256:{graph_digest}",
         "direct_reverse_oracle_match": True,
     }
 
@@ -342,6 +474,45 @@ def mutate_phase(
     marker.touch()
 
 
+def parse_bridge_telemetry(log_text: str) -> dict[str, Any]:
+    try:
+        records = [
+            json.loads(line.removeprefix(TELEMETRY_PREFIX))
+            for line in log_text.splitlines()
+            if line.startswith(TELEMETRY_PREFIX)
+        ]
+    except json.JSONDecodeError as error:
+        raise IndexMcpGateError("editor emitted malformed Bridge telemetry") from error
+    if len(records) != 1 or not isinstance(records[0], dict):
+        raise IndexMcpGateError("editor did not emit exactly one Bridge telemetry record")
+    record = records[0]
+    required = {
+        "schema_version",
+        "budget_usec",
+        "sample_capacity",
+        "busy_frame_count",
+        "samples_usec",
+        "max_elapsed_usec",
+        "over_budget_count",
+        "overflow",
+    }
+    if set(record) != required or record.get("schema_version") != 1 or record.get("budget_usec") != 2000:
+        raise IndexMcpGateError("Bridge telemetry contract differs")
+    samples = record.get("samples_usec")
+    if not isinstance(samples, list) or not samples or not all(isinstance(value, int) and value >= 0 for value in samples):
+        raise IndexMcpGateError("Bridge telemetry samples are empty or invalid")
+    busy_count = record.get("busy_frame_count")
+    over_budget = record.get("over_budget_count")
+    maximum = record.get("max_elapsed_usec")
+    if not all(isinstance(value, int) and value >= 0 for value in (busy_count, over_budget, maximum)):
+        raise IndexMcpGateError("Bridge telemetry counters are invalid")
+    if record.get("overflow") is False and busy_count != len(samples):
+        raise IndexMcpGateError("Bridge telemetry omitted a busy frame without overflow")
+    if over_budget < sum(value > 2000 for value in samples) or maximum < max(samples):
+        raise IndexMcpGateError("Bridge telemetry summary contradicts raw samples")
+    return record
+
+
 def run_phase(
     phase: str,
     godot: Path,
@@ -350,8 +521,11 @@ def run_phase(
     oracles: dict[str, dict[str, Any]],
     timeout: float,
     query_samples: list[float],
-    status_samples: list[float],
-    visibility_samples: list[float],
+    bulk_status_samples: list[float],
+    incremental_visibility_samples: list[float],
+    startup_samples: list[float],
+    reopen_samples: list[float],
+    rebuild_samples: list[float],
 ) -> dict[str, Any]:
     phase_root = run_root / f"p{PHASES.index(phase)}"
     project = phase_root / "p"
@@ -359,14 +533,21 @@ def run_phase(
     phase_root.mkdir(parents=True)
     shutil.copytree(PROJECT_SOURCE, project, ignore=shutil.ignore_patterns(".godot"))
     mutation_count = 2 if phase == "re_add" else 1
-    editor, editor_log = start_editor(godot, project, phase_root / "godot.log", mutation_count)
+    editor, editor_log = start_editor(
+        godot,
+        project,
+        phase_root / "godot.log",
+        mutation_count,
+        evidence_telemetry=True,
+    )
     mcp: LineProcess | None = None
+    phase_result: dict[str, Any] = {}
     try:
         wait_for(project / ".godot" / "codex" / "bridge.json", timeout, f"{phase} discovery")
         mcp, client = initialize_sidecar(sidecar, project, timeout)
         base_resource = selector(next(resource for resource in oracles["base"]["resources"] if resource["oracle_id"] == "fan_out"))
         current, startup_ms = wait_for_current(client, base_resource, timeout)
-        visibility_samples.append(startup_ms)
+        startup_samples.append(startup_ms)
         base_generation = str(current["generation_id"])
         base_revision = int(current["index_revision"])
 
@@ -379,7 +560,7 @@ def run_phase(
             close_sidecar(mcp)
             mcp, client = initialize_sidecar(sidecar, project, timeout)
             reopened, reopen_ms = wait_for_current(client, base_resource, timeout)
-            visibility_samples.append(reopen_ms)
+            reopen_samples.append(reopen_ms)
             segments_after = sorted(
                 path.name
                 for path in (project / ".godot" / "codex" / "index" / "segments").glob("*.json")
@@ -390,12 +571,11 @@ def run_phase(
                 or segments_after != segments_before
             ):
                 raise IndexMcpGateError("same-session reopen rebuilt or changed the committed index")
-            status_content, status_error, status_ms = tool_call(client, "godot_get_editor_state", {})
-            status_samples.append(round(status_ms, 3))
+            status_content, status_error, _ = tool_call(client, "godot_get_editor_state", {})
             if status_error or status_content.get("freshness") != "current":
                 raise IndexMcpGateError("status/ping did not remain current after sidecar reopen")
             (project / ".godot" / "codex-resource-live-mutate").touch()
-            return {
+            phase_result.update({
                 "phase": phase,
                 **base_result,
                 "startup_visibility_ms": startup_ms,
@@ -403,12 +583,13 @@ def run_phase(
                 "same_generation_after_reopen": True,
                 "immutable_segment_set_reused": True,
                 "passed": True,
-            }
+            })
+            return phase_result
 
         if phase == "re_add":
             mutate_phase(phase, godot, project, prepared, 1)
             removed, removal_ms = wait_for_current(client, base_resource, timeout, base_generation)
-            visibility_samples.append(removal_ms)
+            incremental_visibility_samples.append(removal_ms)
             mutate_phase(phase, godot, project, prepared, 2)
             final, visibility_ms = wait_for_current(
                 client,
@@ -416,21 +597,29 @@ def run_phase(
                 timeout,
                 str(removed["generation_id"]),
             )
-            visibility_samples.append(visibility_ms)
+            incremental_visibility_samples.append(visibility_ms)
         else:
             mutate_phase(phase, godot, project, prepared)
-            final, visibility_ms = wait_for_current(client, base_resource, timeout, base_generation)
-            visibility_samples.append(visibility_ms)
+            final, visibility_ms = wait_for_current(
+                client,
+                base_resource,
+                timeout,
+                base_generation,
+                bulk_status_samples if phase == "journal_gap" else None,
+            )
+            if phase == "journal_gap":
+                rebuild_samples.append(visibility_ms)
+            else:
+                incremental_visibility_samples.append(visibility_ms)
         if phase == "journal_gap" and final.get("validated_checkpoint", {}).get("last_batch_id") is not None:
             raise IndexMcpGateError("journal gap did not activate a full-snapshot checkpoint")
         if int(final["index_revision"]) <= base_revision:
             raise IndexMcpGateError(f"{phase} did not advance the durable index revision")
         result = verify_oracle(client, oracles[phase], query_samples)
-        status_content, status_error, status_ms = tool_call(client, "godot_get_editor_state", {})
-        status_samples.append(round(status_ms, 3))
+        status_content, status_error, _ = tool_call(client, "godot_get_editor_state", {})
         if status_error or status_content.get("freshness") != "current":
             raise IndexMcpGateError(f"{phase} editor status was not current")
-        phase_result = {
+        phase_result.update({
             "phase": phase,
             **result,
             "startup_generation": base_generation,
@@ -438,7 +627,9 @@ def run_phase(
             "change_visibility_ms": visibility_ms,
             "generation_advanced": result["generation_id"] != base_generation,
             "passed": True,
-        }
+        })
+        if phase == "re_add":
+            phase_result["removal_visibility_ms"] = removal_ms
         if phase == "journal_gap":
             phase_result["full_rebuild_after_gap"] = True
         return phase_result
@@ -450,13 +641,22 @@ def run_phase(
         log_text = (phase_root / "godot.log").read_text(encoding="utf-8", errors="replace")
         if "SCRIPT ERROR" in log_text:
             raise IndexMcpGateError(f"{phase} editor reported a script error")
+        phase_result["bridge_main_thread"] = parse_bridge_telemetry(log_text)
+
+
+def metric_summary(samples: list[float] | list[int]) -> dict[str, Any]:
+    return {
+        "samples": samples,
+        "p50": percentile(samples, 50) if samples else None,
+        "p95": percentile(samples, 95) if samples else None,
+    }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--godot", required=True, type=Path)
-    parser.add_argument("--sidecar", default=DEFAULT_SIDECAR, type=Path)
-    parser.add_argument("--evidence", default=DEFAULT_EVIDENCE, type=Path)
+    parser.add_argument("--sidecar", type=Path)
+    parser.add_argument("--evidence", type=Path)
     parser.add_argument("--timeout", default=120.0, type=float)
     parser.add_argument(
         "--phases",
@@ -464,21 +664,32 @@ def main() -> int:
         help="comma-separated local phase subset; canonical evidence uses all phases",
     )
     arguments = parser.parse_args()
-    if sys.platform != "darwin" or platform.machine().lower() not in {"arm64", "aarch64"}:
-        raise IndexMcpGateError("this local evidence profile requires macOS arm64")
+    platform_tag = target_platform()
     godot = arguments.godot.resolve(strict=True)
-    sidecar = arguments.sidecar.resolve()
+    sidecar = (arguments.sidecar or default_sidecar()).resolve()
+    evidence_path = arguments.evidence or default_evidence(platform_tag)
     build_sidecar(sidecar)
+    sidecar = sidecar.resolve(strict=True)
+    source = source_coordinates()
     golden = strict_json_load(GOLDEN_PATH)
     oracles = {phase["name"]: phase for phase in golden["phases"]}
     selected_phases = tuple(phase for phase in arguments.phases.split(",") if phase)
-    if not selected_phases or any(phase not in PHASES for phase in selected_phases):
+    if (
+        not selected_phases
+        or any(phase not in PHASES for phase in selected_phases)
+        or len(set(selected_phases)) != len(selected_phases)
+    ):
         raise IndexMcpGateError("--phases contains an unknown oracle phase")
+    complete_profile = selected_phases == PHASES
     before = fixture_digest()
     query_samples: list[float] = []
-    status_samples: list[float] = []
-    visibility_samples: list[float] = []
-    with tempfile.TemporaryDirectory(prefix="cs4-", dir="/tmp") as temporary:
+    bulk_status_samples: list[float] = []
+    incremental_visibility_samples: list[float] = []
+    startup_samples: list[float] = []
+    reopen_samples: list[float] = []
+    rebuild_samples: list[float] = []
+    temporary_parent = "/tmp" if platform_tag == "macos-arm64" else None
+    with tempfile.TemporaryDirectory(prefix="cs5-", dir=temporary_parent) as temporary:
         phase_results = [
             run_phase(
                 phase,
@@ -488,56 +699,97 @@ def main() -> int:
                 oracles,
                 arguments.timeout,
                 query_samples,
-                status_samples,
-                visibility_samples,
+                bulk_status_samples,
+                incremental_visibility_samples,
+                startup_samples,
+                reopen_samples,
+                rebuild_samples,
             )
             for phase in selected_phases
         ]
     after = fixture_digest()
     if before != after:
         raise IndexMcpGateError("canonical resource fixture changed during the live gate")
+    telemetry_records = [phase["bridge_main_thread"] for phase in phase_results]
+    bridge_samples = [
+        sample
+        for record in telemetry_records
+        for sample in record["samples_usec"]
+    ]
+    bridge_over_budget = sum(int(record["over_budget_count"]) for record in telemetry_records)
+    bridge_overflow = any(bool(record["overflow"]) for record in telemetry_records)
+    metrics_ms = {
+        "cached_resource_query": metric_summary(query_samples),
+        "ordinary_incremental_visibility": metric_summary(incremental_visibility_samples),
+        "bulk_status_ping": metric_summary(bulk_status_samples),
+        "startup_visibility": metric_summary(startup_samples),
+        "compatible_reopen": metric_summary(reopen_samples),
+        "journal_gap_full_rebuild": metric_summary(rebuild_samples),
+    }
+    main_thread_metric = {
+        **metric_summary(bridge_samples),
+        "unit": "microseconds",
+        "budget_usec": 2000,
+        "busy_frame_count": sum(int(record["busy_frame_count"]) for record in telemetry_records),
+        "max_elapsed_usec": max((int(record["max_elapsed_usec"]) for record in telemetry_records), default=0),
+        "over_budget_count": bridge_over_budget,
+        "overflow": bridge_overflow,
+    }
+    slo = {
+        "cached_resource_query_p95_lte_300ms": bool(query_samples)
+        and metrics_ms["cached_resource_query"]["p95"] <= 300,
+        "ordinary_incremental_visibility_p95_lte_2000ms": bool(incremental_visibility_samples)
+        and metrics_ms["ordinary_incremental_visibility"]["p95"] <= 2000,
+        "bulk_status_ping_p95_lte_200ms": bool(bulk_status_samples)
+        and metrics_ms["bulk_status_ping"]["p95"] <= 200,
+        "bridge_main_thread_over_2000us_zero": bool(bridge_samples)
+        and bridge_over_budget == 0
+        and not bridge_overflow,
+    }
+    slo["all_passed"] = all(slo.values())
+    qualifying_source = complete_profile and not source["git_dirty"]
+    status = "passed" if qualifying_source and slo["all_passed"] else "failed" if complete_profile else "development"
     evidence = {
-        "schema_version": 1,
-        "stage": "Sprint 3 Stage 4 / S3-06-S3-08",
-        "status": "passed",
+        "schema_version": 2,
+        "stage": "Sprint 3 Stage 5 / S3-09-S3-10",
+        "status": status,
         "execution": "local_model_free",
-        "platform": "macos-arm64",
+        "profile": "acceptance" if complete_profile else "development",
+        "platform": platform_tag,
         "host": platform.platform(),
+        **source,
+        "artifacts": {
+            "godot_version": version_output(godot),
+            "godot_sha256": sha256_file(godot),
+            "sidecar_version": version_output(sidecar),
+            "sidecar_sha256": sha256_file(sidecar),
+        },
         "mcp_protocol": MCP_PROTOCOL,
         "tools": sorted(TOOL_NAMES),
+        "oracle_sha256": sha256_file(GOLDEN_PATH),
         "fixture_digest_before": before,
         "fixture_digest_after": after,
         "canonical_fixture_unchanged": True,
         "phases": phase_results,
-        "metrics_ms": {
-            "query": {
-                "samples": query_samples,
-                "p50": percentile(query_samples, 0.50),
-                "p95": percentile(query_samples, 0.95),
-            },
-            "change_visibility": {
-                "samples": visibility_samples,
-                "p50": percentile(visibility_samples, 0.50),
-                "p95": percentile(visibility_samples, 0.95),
-            },
-            "status_ping": {
-                "samples": status_samples,
-                "p50": percentile(status_samples, 0.50),
-                "p95": percentile(status_samples, 0.95),
-            },
-        },
+        "metrics_ms": metrics_ms,
+        "bridge_main_thread": main_thread_metric,
+        "slo": slo,
         "platform_evidence": {
-            "macos_arm64": "passed",
-            "windows_x86_64": "not_run",
-            "linux_x86_64": "not_run",
             "remote_ci": "not_run",
         },
     }
-    arguments.evidence.parent.mkdir(parents=True, exist_ok=True)
-    temporary = arguments.evidence.with_suffix(arguments.evidence.suffix + ".tmp")
-    temporary.write_text(canonical_json(evidence), encoding="utf-8")
-    os.replace(temporary, arguments.evidence)
-    print(canonical_json(evidence), end="")
+    serialized = canonical_json(evidence)
+    forbidden = (str(REPOSITORY_ROOT), str(PROJECT_SOURCE.resolve()))
+    if any(value in serialized for value in forbidden):
+        raise IndexMcpGateError("live evidence contains an absolute repository or fixture path")
+    evidence_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = evidence_path.with_suffix(evidence_path.suffix + ".tmp")
+    temporary.write_text(serialized, encoding="utf-8")
+    os.replace(temporary, evidence_path)
+    print(serialized, end="")
+    if complete_profile and status != "passed":
+        reason = "source tree is dirty" if source["git_dirty"] else "one or more live SLOs failed"
+        raise IndexMcpGateError(f"Sprint 3 live acceptance failed ({reason}); evidence={evidence_path}")
     return 0
 
 

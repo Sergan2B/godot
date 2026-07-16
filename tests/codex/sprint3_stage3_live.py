@@ -136,6 +136,7 @@ def start_editor(
     project: Path,
     log_path: Path,
     mutation_count: int,
+    evidence_telemetry: bool = False,
 ) -> tuple[subprocess.Popen[str], Any]:
     log = log_path.open("w", encoding="utf-8")
     command = [
@@ -151,9 +152,13 @@ def start_editor(
         "--external-mutation",
         f"--mutation-count={mutation_count}",
     ]
+    environment = os.environ.copy()
+    if evidence_telemetry:
+        environment["GODOT_CODEX_EVIDENCE_TELEMETRY"] = "1"
     process = subprocess.Popen(
         command,
         cwd=REPOSITORY_ROOT,
+        env=environment,
         stdout=log,
         stderr=subprocess.STDOUT,
         text=True,
