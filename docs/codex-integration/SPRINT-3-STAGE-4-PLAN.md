@@ -1,12 +1,15 @@
 # Sprint 3 Stage 4 — persistent resource index and MCP
 
-**Status:** In progress
+**Status:** Complete and locally verified on macOS arm64
 
 **Scope:** `S3-06`–`S3-08`
 
 **Baseline:** `ee96aa2c51` on `codex/integration`
 
 **Parent:** [SPRINT-3-PLAN.md](SPRINT-3-PLAN.md)
+
+**Evidence:**
+[`tests/codex/evidence/sprint-3-stage-4-index-mcp-macos.json`](../../tests/codex/evidence/sprint-3-stage-4-index-mcp-macos.json)
 
 ## 1. Outcome
 
@@ -62,3 +65,60 @@ cross-platform gate produces evidence.
 5. MCP tools and cursors.
 6. Local live gate and evidence.
 7. Completion documentation.
+
+## 5. Implemented result
+
+| Layer | Completed behavior |
+|---|---|
+| Store | Production `segment-v1`, 256 content-addressed shards, separate direct/reverse/lookup shards, writer lease, immutable reader snapshots, atomic commit marker, retention/GC, migration, corruption detection |
+| Normalizer | NFC/path security, frozen UID/path-content/edge identities, bounded four-worker streaming SHA-256, authority normalization, deterministic diagnostics/digest, exact incremental diff |
+| Ingestion | Disk-backed bounded snapshot spool, separate Bridge session, durable batch ID/checksum checkpoint, same-session catch-up, new-session rebuild, gap invalidation/full rebuild, quarantine, cancellation |
+| MCP | Exactly five read-only tools; two resource tools with default 50 / maximum 200, one-generation pagination, five-minute HMAC cursor, exact/partial results, safe structured errors |
+
+The full-snapshot validator deliberately accepts each unchanged record's last observed
+resource revision in `1..=snapshot_revision`; incremental upserts remain bound exactly
+to their batch revision. Resource snapshot requests use the schema-valid 30-second RPC
+deadline while the negotiated bulk transfer is allowed its full 120-second timeout.
+Both rules were found and verified by the large journal-gap live phase.
+
+## 6. Local model-free evidence
+
+The macOS arm64 gate launched the real editor and release sidecar against fresh
+short-path fixture copies. All eight phases passed: base, UID rename, UID-less rename,
+delete, re-add, reimport, content edit, and journal gap. Every phase matched the frozen
+18-resource/12-edge oracle (17 resources and three diagnostics after delete), including
+direct/reverse parity and partial missing/stale results.
+
+| Measurement | Local result |
+|---|---:|
+| Resource query | p50 `0.186 ms`; p95 `0.351 ms` |
+| Status/ping | p50 `0.188 ms`; p95 `0.244 ms` |
+| Combined startup/change visibility samples | p50 `2140.192 ms`; p95 `2508.333 ms` |
+| Ordinary incremental visibility | `158.291–428.113 ms` in the final run |
+| Same-session sidecar reopen | `54.673 ms`; identical generation, revision, and immutable segment set |
+| Forced 1818-resource gap rebuild | `39988.478 ms`; full-snapshot checkpoint activated at index revision 2 |
+
+The evidence preserves every raw timing sample. It contains no canonical project path,
+tokens, source bytes, or transport endpoint.
+
+## 7. Final local regression
+
+| Gate | Result |
+|---|---|
+| Production Rust workspace format/test/Clippy/release | Passed; 31 unit tests plus doc tests |
+| Bridge conformance format/test/Clippy/release | Passed; 11 Rust tests |
+| Storage spike production adapter | Passed; 9 tests |
+| Resource oracle contracts and all live phases | Passed; 11 Python tests and all 8 fixture phases |
+| Full local Godot suite | Passed; 1437 cases, 425938 assertions, 3 skipped |
+| Sprint 2 live editor → Bridge → sidecar → MCP regression | Passed on a fresh temporary project copy |
+| Stage 4 editor → persistent index → both MCP tools | Passed on all 8 phases |
+
+Warnings deliberately emitted by unrelated negative/full-suite tests did not produce a
+test failure. The final Godot status was `SUCCESS` with zero failed cases or assertions.
+
+## 8. Remaining Sprint 3 work
+
+`S3-06`, `S3-07`, and `S3-08` are complete for the local implementation stream.
+`S3-09` remains the separate Windows/macOS cross-platform live resource-index smoke,
+and `S3-10` remains the final Sprint-wide audit. Windows x86_64, Linux x86_64, and
+remote CI are explicitly `not_run` by this Stage 4 evidence.

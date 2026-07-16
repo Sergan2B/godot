@@ -1,6 +1,6 @@
 # Sprint 3 plan — ResourceUID and resource dependency graph
 
-**Status:** In progress — `S3-01`–`S3-05` complete locally; `S3-06` next
+**Status:** In progress — `S3-01`–`S3-08` complete locally; `S3-09` next
 
 **Planned duration:** 10 working days
 
@@ -17,6 +17,9 @@ contracts, identity rules, and golden resource graph
 
 **Stage 3 completion:** [SPRINT-3-STAGE-3-PLAN.md](SPRINT-3-STAGE-3-PLAN.md) —
 `S3-04`/`S3-05` Bridge RPC 1.2, ResourceGraphAdapter, journal, and Rust wire-client
+
+**Stage 4 completion:** [SPRINT-3-STAGE-4-PLAN.md](SPRINT-3-STAGE-4-PLAN.md) —
+`S3-06`–`S3-08` production segment index, ingestion/recovery, and two resource MCP tools
 
 ## 1. Outcome
 
@@ -312,8 +315,11 @@ schema-v2 benchmark/fault harness are implemented, and the full macOS `10k/50k` 
 Windows/Linux portability verification is `not_run` and remains separate from remote
 CI. `S3-04` and `S3-05` are also complete locally: Bridge RPC 1.2,
 `ResourceGraphAdapter`, the bounded incremental journal, and the production Rust
-wire-client pass the eight-phase live gate plus Sprint 1/2 regressions. `S3-06`–`S3-10`
-remain open.
+wire-client pass the eight-phase live gate plus Sprint 1/2 regressions. `S3-06`–`S3-08`
+are complete locally as recorded in the Stage 4 evidence: the production segment store,
+normalizer, coordinator/recovery, signed pagination, and both resource MCP tools pass
+the eight-phase editor → persistent index → MCP gate. `S3-09` and `S3-10` remain open;
+Windows/Linux and remote CI remain `not_run`.
 
 ### 8.1 Parent-roadmap traceability
 
