@@ -1,0 +1,23 @@
+[package]
+name = "godot-codex-resource-indexer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64.workspace = true
+godot-codex-bridge-client = { path = "../bridge-client" }
+godot-codex-index-store = { path = "../index-store" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+unicode-normalization.workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[lints]
+workspace = true

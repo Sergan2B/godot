@@ -38,7 +38,7 @@ pub fn synthetic_generation(
             size_after: resource.byte_size,
             mtime_before_ns: resource.mtime_ns,
             mtime_after_ns: resource.mtime_ns,
-            content_generation: Some(resource.content_generation.clone()),
+            content_generation: resource.content_generation.clone(),
             ingest_state: "ready".to_owned(),
         })
         .collect();
@@ -65,6 +65,10 @@ pub fn synthetic_generation(
             index_revision,
             source_complete: true,
             snapshot_checksum: format!("sha256:synthetic-{index_revision}"),
+            last_batch_id: (index_revision > 1)
+                .then(|| format!("resource-batch:synthetic-{index_revision}")),
+            last_batch_checksum: (index_revision > 1)
+                .then(|| format!("sha256:synthetic-batch-{index_revision}")),
         },
         resources,
         source_documents,
@@ -230,16 +234,10 @@ fn oracle_phase(phase: &Value, revision: u64) -> Result<IndexGeneration, StoreEr
                     _ => IdentityStrength::PathContentGeneration,
                 },
                 resource_type: string(resource, "type")?,
+                source_kind: "source".to_owned(),
                 import_state: string(resource, "import_state")?,
-                content_generation: optional_string(resource, "content_generation").unwrap_or_else(
-                    || {
-                        format!(
-                            "unavailable:{}",
-                            optional_string(resource, "oracle_id")
-                                .unwrap_or_else(|| "resource".to_owned())
-                        )
-                    },
-                ),
+                authority: "editor_file_system".to_owned(),
+                content_generation: optional_string(resource, "content_generation"),
                 mtime_ns: revision,
                 byte_size: 1,
                 validity: RecordValidity::Valid,
@@ -256,7 +254,7 @@ fn oracle_phase(phase: &Value, revision: u64) -> Result<IndexGeneration, StoreEr
             size_after: resource.byte_size,
             mtime_before_ns: revision,
             mtime_after_ns: revision,
-            content_generation: Some(resource.content_generation.clone()),
+            content_generation: resource.content_generation.clone(),
             ingest_state: "ready".to_owned(),
         })
         .collect();
@@ -278,7 +276,12 @@ fn oracle_phase(phase: &Value, revision: u64) -> Result<IndexGeneration, StoreEr
                 source_entity_id: string(edge, "source_entity_id")?,
                 target_uid: optional_string(edge, "target_uid"),
                 target_comparison_path: optional_string(edge, "fallback_path"),
+                target_display_path: optional_string(edge, "fallback_path"),
                 target_entity_id: optional_string(edge, "resolved_target_entity_id"),
+                resolved_target_path: optional_string(edge, "resolved_target_path"),
+                relation: "references".to_owned(),
+                declared_type: optional_string(edge, "declared_type"),
+                authority: "godot_resource_loader".to_owned(),
                 resolution,
                 resource_revision: revision,
             })
@@ -293,6 +296,7 @@ fn oracle_phase(phase: &Value, revision: u64) -> Result<IndexGeneration, StoreEr
             subject: optional_string(diagnostic, "source")
                 .or_else(|| optional_string(diagnostic, "target_reference"))
                 .unwrap_or_else(|| "oracle".to_owned()),
+            detail: optional_string(diagnostic, "target_reference"),
             first_index_revision: revision,
             last_index_revision: revision,
             active: true,
@@ -322,6 +326,8 @@ fn oracle_phase(phase: &Value, revision: u64) -> Result<IndexGeneration, StoreEr
             // result after invalidation, never the incomplete gap observation itself.
             source_complete: true,
             snapshot_checksum: format!("sha256:oracle-{name}"),
+            last_batch_id: (revision > 1).then(|| format!("resource-batch:oracle-{name}")),
+            last_batch_checksum: (revision > 1).then(|| format!("sha256:oracle-{name}")),
         },
         resources,
         source_documents,
@@ -347,8 +353,13 @@ fn synthetic_resource(index: usize, revision: u64) -> ResourceEntity {
         comparison_path: path,
         identity_strength: IdentityStrength::ResourceUid,
         resource_type: "Resource".to_owned(),
+        source_kind: "source".to_owned(),
         import_state: "ready".to_owned(),
-        content_generation: format!("sha256:{:064x}", deterministic_u64(index as u64)),
+        authority: "editor_file_system".to_owned(),
+        content_generation: Some(format!(
+            "sha256:{:064x}",
+            deterministic_u64(index as u64)
+        )),
         mtime_ns: revision,
         byte_size: 256 + (index % 4096) as u64,
         validity: RecordValidity::Valid,
@@ -412,7 +423,12 @@ fn synthetic_edges(
             source_entity_id: source_resource.entity_id.clone(),
             target_uid: target_resource.uid.clone(),
             target_comparison_path: Some(target_resource.comparison_path.clone()),
+            target_display_path: Some(target_resource.display_path.clone()),
             target_entity_id: Some(target_resource.entity_id.clone()),
+            resolved_target_path: Some(target_resource.display_path.clone()),
+            relation: "references".to_owned(),
+            declared_type: None,
+            authority: "godot_resource_loader".to_owned(),
             resolution: DependencyResolution::Resolved,
             resource_revision: revision,
         });

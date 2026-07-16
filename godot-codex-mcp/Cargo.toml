@@ -3,6 +3,7 @@ resolver = "3"
 members = [
   "crates/bridge-client",
   "crates/index-store",
+  "crates/resource-indexer",
   "crates/semantic-model",
   "crates/mcp-server",
   "crates/godot-codex-mcp",
@@ -26,6 +27,7 @@ serde_json = "1.0.149"
 sha2 = "0.10.9"
 thiserror = "2.0.17"
 tokio = { version = "1.49.0", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+unicode-normalization = "0.1.25"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

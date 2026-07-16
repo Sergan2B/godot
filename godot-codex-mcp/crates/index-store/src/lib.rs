@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 /// Current logical resource-index schema.
-pub const LOGICAL_SCHEMA_V1: SchemaVersion = SchemaVersion { major: 1, minor: 0 };
+pub const LOGICAL_SCHEMA_V1: SchemaVersion = SchemaVersion { major: 1, minor: 1 };
 
 /// Version of the storage-neutral logical schema.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -110,6 +110,12 @@ pub struct IngestionCheckpoint {
     pub source_complete: bool,
     /// SHA-256 of the normalized input snapshot.
     pub snapshot_checksum: String,
+    /// Last applied Bridge batch identity, absent for full snapshots.
+    #[serde(default)]
+    pub last_batch_id: Option<String>,
+    /// Last applied Bridge batch checksum used for idempotence defense.
+    #[serde(default)]
+    pub last_batch_checksum: Option<String>,
 }
 
 /// Persistent identity strength of a resource.
@@ -154,10 +160,16 @@ pub struct ResourceEntity {
     pub identity_strength: IdentityStrength,
     /// Godot resource type.
     pub resource_type: String,
+    /// `source` or `imported_source` as reported by Godot.
+    #[serde(default)]
+    pub source_kind: String,
     /// Import state reported by Godot.
     pub import_state: String,
-    /// SHA-256 content generation.
-    pub content_generation: String,
+    /// Authoritative producer of the resource observation.
+    #[serde(default)]
+    pub authority: String,
+    /// SHA-256 content generation when hashing succeeded.
+    pub content_generation: Option<String>,
     /// Observed source modification time in nanoseconds.
     pub mtime_ns: u64,
     /// Observed source byte size.
@@ -214,8 +226,23 @@ pub struct DependencyEdge {
     pub target_uid: Option<String>,
     /// Canonical fallback comparison path, when present.
     pub target_comparison_path: Option<String>,
+    /// Normalized user-facing fallback path.
+    #[serde(default)]
+    pub target_display_path: Option<String>,
     /// Resolved target entity in this generation.
     pub target_entity_id: Option<String>,
+    /// Current resolved target path, when available.
+    #[serde(default)]
+    pub resolved_target_path: Option<String>,
+    /// Frozen relationship kind (`references`).
+    #[serde(default)]
+    pub relation: String,
+    /// Optional Godot-declared target type.
+    #[serde(default)]
+    pub declared_type: Option<String>,
+    /// Authority that produced this declaration.
+    #[serde(default)]
+    pub authority: String,
     /// Resolution status retained even for unresolved edges.
     pub resolution: DependencyResolution,
     /// Source resource revision.
@@ -232,6 +259,9 @@ pub struct Diagnostic {
     pub code: String,
     /// Safe bounded subject identifier.
     pub subject: String,
+    /// Optional safe project-relative detail such as a target reference.
+    #[serde(default)]
+    pub detail: Option<String>,
     /// First observed durable revision.
     pub first_index_revision: u64,
     /// Most recent durable revision.
@@ -568,11 +598,26 @@ impl IndexGeneration {
                 "checkpoint/index revision mismatch".to_owned(),
             ));
         }
+        if self.checkpoint.last_batch_id.is_some() != self.checkpoint.last_batch_checksum.is_some()
+        {
+            return Err(StoreError::ValidationFailed(
+                "partial batch checkpoint identity".to_owned(),
+            ));
+        }
 
         let mut entity_inputs = BTreeMap::new();
         let mut paths = BTreeSet::new();
         let mut uids = BTreeSet::new();
         for resource in &self.resources {
+            if resource.source_kind.is_empty()
+                || resource.authority.is_empty()
+                || (resource.identity_strength == IdentityStrength::PathContentGeneration
+                    && resource.content_generation.is_none())
+            {
+                return Err(StoreError::ValidationFailed(
+                    "resource authority or content identity missing".to_owned(),
+                ));
+            }
             if let Some(previous) = entity_inputs.insert(
                 resource.entity_id.as_str(),
                 resource.identity_input.as_str(),
@@ -620,6 +665,11 @@ impl IndexGeneration {
         }
         let mut edge_ids = BTreeSet::new();
         for edge in &self.dependencies {
+            if edge.relation != "references" || edge.authority.is_empty() {
+                return Err(StoreError::ValidationFailed(
+                    "dependency authority or relation missing".to_owned(),
+                ));
+            }
             if !known_entities.contains(edge.source_entity_id.as_str()) {
                 return Err(StoreError::ValidationFailed(
                     "dependency source missing".to_owned(),
@@ -637,6 +687,17 @@ impl IndexGeneration {
                     "resolved dependency target missing".to_owned(),
                 ));
             }
+        }
+        if self.diagnostics.iter().any(|diagnostic| {
+            diagnostic.subject.len() > 1_024
+                || diagnostic
+                    .detail
+                    .as_ref()
+                    .is_some_and(|detail| detail.len() > 1_024)
+        }) {
+            return Err(StoreError::ValidationFailed(
+                "diagnostic detail exceeds limit".to_owned(),
+            ));
         }
 
         let expected = self.compute_validation_digest();
@@ -674,6 +735,17 @@ impl IndexGeneration {
         hasher.update(self.checkpoint.index_revision.to_be_bytes());
         hasher.update([u8::from(self.checkpoint.source_complete)]);
         update_field(&mut hasher, &self.checkpoint.snapshot_checksum);
+        update_field(
+            &mut hasher,
+            self.checkpoint.last_batch_id.as_deref().unwrap_or_default(),
+        );
+        update_field(
+            &mut hasher,
+            self.checkpoint
+                .last_batch_checksum
+                .as_deref()
+                .unwrap_or_default(),
+        );
         for resource in resources {
             update_field(&mut hasher, &resource.entity_id);
             update_field(&mut hasher, &resource.identity_input);
@@ -685,8 +757,13 @@ impl IndexGeneration {
                 IdentityStrength::PathContentGeneration => 2,
             }]);
             update_field(&mut hasher, &resource.resource_type);
+            update_field(&mut hasher, &resource.source_kind);
             update_field(&mut hasher, &resource.import_state);
-            update_field(&mut hasher, &resource.content_generation);
+            update_field(&mut hasher, &resource.authority);
+            update_field(
+                &mut hasher,
+                resource.content_generation.as_deref().unwrap_or_default(),
+            );
             hasher.update(resource.mtime_ns.to_be_bytes());
             hasher.update(resource.byte_size.to_be_bytes());
             hasher.update([match resource.validity {
@@ -722,8 +799,22 @@ impl IndexGeneration {
             );
             update_field(
                 &mut hasher,
+                edge.target_display_path.as_deref().unwrap_or_default(),
+            );
+            update_field(
+                &mut hasher,
                 edge.target_entity_id.as_deref().unwrap_or_default(),
             );
+            update_field(
+                &mut hasher,
+                edge.resolved_target_path.as_deref().unwrap_or_default(),
+            );
+            update_field(&mut hasher, &edge.relation);
+            update_field(
+                &mut hasher,
+                edge.declared_type.as_deref().unwrap_or_default(),
+            );
+            update_field(&mut hasher, &edge.authority);
             hasher.update([match edge.resolution {
                 DependencyResolution::Resolved => 1,
                 DependencyResolution::Missing => 2,
@@ -737,6 +828,10 @@ impl IndexGeneration {
             update_field(&mut hasher, &diagnostic.diagnostic_id);
             update_field(&mut hasher, &diagnostic.code);
             update_field(&mut hasher, &diagnostic.subject);
+            update_field(
+                &mut hasher,
+                diagnostic.detail.as_deref().unwrap_or_default(),
+            );
             hasher.update(diagnostic.first_index_revision.to_be_bytes());
             hasher.update(diagnostic.last_index_revision.to_be_bytes());
             hasher.update([u8::from(diagnostic.active)]);
@@ -818,22 +913,7 @@ pub fn query_generation(
         })
         .cloned()
         .collect();
-    edges.sort_by(|left, right| {
-        let left_entity = if reverse {
-            &left.source_entity_id
-        } else {
-            left.target_entity_id.as_deref().unwrap_or_default()
-        };
-        let right_entity = if reverse {
-            &right.source_entity_id
-        } else {
-            right.target_entity_id.as_deref().unwrap_or_default()
-        };
-        left_entity
-            .cmp(right_entity)
-            .then_with(|| dependency_target_key(left).cmp(dependency_target_key(right)))
-            .then_with(|| left.edge_id.cmp(&right.edge_id))
-    });
+    edges.sort_by(|left, right| compare_dependency_edges(generation, left, right, reverse));
     edges.truncate(query.limit);
     let exact = edges.iter().all(|edge| {
         edge.resolution == DependencyResolution::Resolved && edge.target_entity_id.is_some()
@@ -845,6 +925,57 @@ pub fn query_generation(
         edges,
         exact,
     })
+}
+
+pub(crate) fn compare_dependency_edges(
+    generation: &IndexGeneration,
+    left: &DependencyEdge,
+    right: &DependencyEdge,
+    reverse: bool,
+) -> std::cmp::Ordering {
+    let related = |edge: &DependencyEdge| {
+        let entity_id = if reverse {
+            Some(edge.source_entity_id.as_str())
+        } else {
+            edge.target_entity_id.as_deref()
+        };
+        entity_id.and_then(|entity_id| {
+            generation
+                .resources
+                .iter()
+                .find(|resource| resource.entity_id == entity_id)
+        })
+    };
+    let left_resource = related(left);
+    let right_resource = related(right);
+    let left_path = left_resource.map_or_else(
+        || left.target_comparison_path.as_deref().unwrap_or_default(),
+        |resource| resource.comparison_path.as_str(),
+    );
+    let right_path = right_resource.map_or_else(
+        || right.target_comparison_path.as_deref().unwrap_or_default(),
+        |resource| resource.comparison_path.as_str(),
+    );
+    let left_uid = left_resource.and_then(|resource| resource.uid.as_deref());
+    let right_uid = right_resource.and_then(|resource| resource.uid.as_deref());
+    let left_entity = left_resource.map_or_else(
+        || left.target_entity_id.as_deref().unwrap_or_default(),
+        |resource| resource.entity_id.as_str(),
+    );
+    let right_entity = right_resource.map_or_else(
+        || right.target_entity_id.as_deref().unwrap_or_default(),
+        |resource| resource.entity_id.as_str(),
+    );
+    left_path
+        .cmp(right_path)
+        .then_with(|| left_uid.is_none().cmp(&right_uid.is_none()))
+        .then_with(|| {
+            left_uid
+                .unwrap_or_default()
+                .cmp(right_uid.unwrap_or_default())
+        })
+        .then_with(|| left_entity.cmp(right_entity))
+        .then_with(|| left.edge_id.cmp(&right.edge_id))
 }
 
 fn dependency_target_key(edge: &DependencyEdge) -> &str {
@@ -875,8 +1006,10 @@ mod tests {
             comparison_path: path.to_owned(),
             identity_strength: IdentityStrength::ResourceUid,
             resource_type: "Resource".to_owned(),
+            source_kind: "source".to_owned(),
             import_state: "ready".to_owned(),
-            content_generation: format!("sha256:{id}"),
+            authority: "editor_file_system".to_owned(),
+            content_generation: Some(format!("sha256:{id}")),
             mtime_ns: 1,
             byte_size: 1,
             validity: RecordValidity::Valid,
@@ -897,6 +1030,8 @@ mod tests {
                 index_revision: 1,
                 source_complete: true,
                 snapshot_checksum: "sha256:snapshot".to_owned(),
+                last_batch_id: None,
+                last_batch_checksum: None,
             },
             resources: vec![
                 resource("entity-a", "uid://a", "res://a.tres"),
@@ -917,7 +1052,12 @@ mod tests {
                 source_entity_id: "entity-a".to_owned(),
                 target_uid: Some("uid://b".to_owned()),
                 target_comparison_path: Some("res://b.tres".to_owned()),
+                target_display_path: Some("res://b.tres".to_owned()),
                 target_entity_id: Some("entity-b".to_owned()),
+                resolved_target_path: Some("res://b.tres".to_owned()),
+                relation: "references".to_owned(),
+                declared_type: None,
+                authority: "godot_resource_loader".to_owned(),
                 resolution: DependencyResolution::Resolved,
                 resource_revision: 1,
             }],
@@ -949,6 +1089,8 @@ mod tests {
                 index_revision: 2,
                 source_complete: true,
                 snapshot_checksum: "sha256:snapshot-2".to_owned(),
+                last_batch_id: Some("resource-batch:2".to_owned()),
+                last_batch_checksum: Some("sha256:batch-2".to_owned()),
             },
             upsert_resources: vec![resource],
             remove_resource_entity_ids: Vec::new(),
@@ -1002,7 +1144,7 @@ mod tests {
         ));
 
         let mut tampered = generation();
-        tampered.resources[0].content_generation = "sha256:tampered".to_owned();
+        tampered.resources[0].content_generation = Some("sha256:tampered".to_owned());
         assert!(matches!(
             tampered.validate(),
             Err(StoreError::ValidationFailed(reason)) if reason.contains("digest")

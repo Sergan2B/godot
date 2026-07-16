@@ -193,8 +193,15 @@ impl SegmentCache {
                     .push(edge.clone());
             }
         }
-        for edges in direct.values_mut().chain(reverse.values_mut()) {
-            edges.sort_by(|left, right| left.edge_id.cmp(&right.edge_id));
+        for edges in direct.values_mut() {
+            edges.sort_by(|left, right| {
+                compare_cached_edges(&generation, &entity_lookup, left, right, false)
+            });
+        }
+        for edges in reverse.values_mut() {
+            edges.sort_by(|left, right| {
+                compare_cached_edges(&generation, &entity_lookup, left, right, true)
+            });
         }
         Self {
             generation,
@@ -246,6 +253,55 @@ impl SegmentCache {
             exact,
         })
     }
+}
+
+fn compare_cached_edges(
+    generation: &IndexGeneration,
+    entity_lookup: &BTreeMap<String, usize>,
+    left: &DependencyEdge,
+    right: &DependencyEdge,
+    reverse: bool,
+) -> std::cmp::Ordering {
+    let related = |edge: &DependencyEdge| {
+        let entity_id = if reverse {
+            Some(edge.source_entity_id.as_str())
+        } else {
+            edge.target_entity_id.as_deref()
+        };
+        entity_id
+            .and_then(|entity_id| entity_lookup.get(entity_id))
+            .map(|index| &generation.resources[*index])
+    };
+    let left_resource = related(left);
+    let right_resource = related(right);
+    let left_path = left_resource.map_or_else(
+        || left.target_comparison_path.as_deref().unwrap_or_default(),
+        |resource| resource.comparison_path.as_str(),
+    );
+    let right_path = right_resource.map_or_else(
+        || right.target_comparison_path.as_deref().unwrap_or_default(),
+        |resource| resource.comparison_path.as_str(),
+    );
+    let left_uid = left_resource.and_then(|resource| resource.uid.as_deref());
+    let right_uid = right_resource.and_then(|resource| resource.uid.as_deref());
+    let left_entity = left_resource.map_or_else(
+        || left.target_entity_id.as_deref().unwrap_or_default(),
+        |resource| resource.entity_id.as_str(),
+    );
+    let right_entity = right_resource.map_or_else(
+        || right.target_entity_id.as_deref().unwrap_or_default(),
+        |resource| resource.entity_id.as_str(),
+    );
+    left_path
+        .cmp(right_path)
+        .then_with(|| left_uid.is_none().cmp(&right_uid.is_none()))
+        .then_with(|| {
+            left_uid
+                .unwrap_or_default()
+                .cmp(right_uid.unwrap_or_default())
+        })
+        .then_with(|| left_entity.cmp(right_entity))
+        .then_with(|| left.edge_id.cmp(&right.edge_id))
 }
 
 impl SegmentStore {
@@ -821,6 +877,7 @@ fn load_generation(root: &Path, manifest: &SegmentManifest) -> Result<IndexGener
     if manifest.metadata.project_id != manifest.project_id
         || manifest.metadata.schema_version.major != crate::LOGICAL_SCHEMA_V1.major
         || crate::LOGICAL_SCHEMA_V1.minor < manifest.metadata.reader_min_minor
+        || crate::LOGICAL_SCHEMA_V1.minor > manifest.metadata.reader_max_minor
         || manifest.metadata.reader_min_minor > manifest.metadata.reader_max_minor
     {
         return Err(StoreError::IncompatibleSchema);
