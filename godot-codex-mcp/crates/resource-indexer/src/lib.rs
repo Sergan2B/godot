@@ -10,14 +10,16 @@ use std::time::UNIX_EPOCH;
 
 use base64::Engine as _;
 use godot_codex_bridge_client::{
-    DependencyResolution as BridgeDependencyResolution, ResourceDiagnostic as BridgeDiagnostic,
-    ResourceDiagnosticCode, ResourceImportState, ResourceRef, ResourceSnapshot, ResourceSourceKind,
-    ResourceValidity,
+    DependencyObservation, DependencyResolution as BridgeDependencyResolution,
+    ResourceDeltaBatch as BridgeDeltaBatch, ResourceDeltaOperation,
+    ResourceDiagnostic as BridgeDiagnostic, ResourceDiagnosticCode, ResourceImportState,
+    ResourceObservation, ResourceRef, ResourceSnapshot, ResourceSourceKind, ResourceValidity,
+    ResourceWithDependencies,
 };
 use godot_codex_index_store::{
-    DependencyEdge, DependencyResolution, Diagnostic, IdentityStrength, IndexGeneration,
-    IngestionCheckpoint, LOGICAL_SCHEMA_V1, RecordValidity, ResourceEntity, SourceDocument,
-    StoreError,
+    DependencyEdge, DependencyResolution, Diagnostic, IdentityStrength, IncrementalBatch,
+    IndexGeneration, IngestionCheckpoint, LOGICAL_SCHEMA_V1, RecordValidity, ResourceEntity,
+    SourceDocument, StoreError, Tombstone,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -31,6 +33,8 @@ const DIAGNOSTIC_DOMAIN: &[u8] = b"godot-codex/resource-diagnostic/v1\0";
 const GENERATION_DOMAIN: &[u8] = b"godot-codex/index-generation-id/v1\0";
 const MAX_RESOURCE_PATH_BYTES: usize = 1_024;
 const HASH_BUFFER_BYTES: usize = 64 * 1_024;
+
+type ResourceLookups = (BTreeMap<String, String>, BTreeMap<String, String>);
 
 /// Stable normalizer failure that never includes an absolute project path.
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -378,6 +382,434 @@ impl ResourceNormalizer {
         Ok(generation)
     }
 
+    /// Normalizes one exact Bridge delta against the active committed generation.
+    ///
+    /// `Ok(None)` is the idempotent acknowledgement for the already committed last batch.
+    pub fn normalize_incremental_batch(
+        &self,
+        base: &IndexGeneration,
+        batch: &BridgeDeltaBatch,
+        project_revision: u64,
+    ) -> Result<Option<IncrementalBatch>, IndexerError> {
+        if base.checkpoint.last_batch_id.as_deref() == Some(batch.batch_id.as_str()) {
+            if base.checkpoint.last_batch_checksum.as_deref() == Some(batch.checksum.as_str())
+                && base.checkpoint.resource_revision == batch.resource_revision
+            {
+                return Ok(None);
+            }
+            return Err(IndexerError::ObservationConflict("batch_identity_reused"));
+        }
+        if !batch.source_complete
+            || batch.previous_resource_revision != base.checkpoint.resource_revision
+            || batch.resource_revision <= batch.previous_resource_revision
+        {
+            return Err(IndexerError::ObservationConflict("resource_journal_gap"));
+        }
+        let index_revision = base
+            .index_revision
+            .checked_add(1)
+            .ok_or(IndexerError::ObservationConflict("index_revision_overflow"))?;
+        let mut resources: BTreeMap<_, _> = base
+            .resources
+            .iter()
+            .cloned()
+            .map(|resource| (resource.entity_id.clone(), resource))
+            .collect();
+        let mut source_documents: BTreeMap<_, _> = base
+            .source_documents
+            .iter()
+            .cloned()
+            .map(|document| (document.entity_id.clone(), document))
+            .collect();
+        let mut dependencies: BTreeMap<_, _> = base
+            .dependencies
+            .iter()
+            .cloned()
+            .map(|edge| (edge.edge_id.clone(), edge))
+            .collect();
+        let mut diagnostics: BTreeMap<_, _> = base
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| {
+                !matches!(
+                    diagnostic.code.as_str(),
+                    "missing_dependency" | "stale_resource_uid" | "hash_unavailable"
+                )
+            })
+            .cloned()
+            .map(|diagnostic| (diagnostic.diagnostic_id.clone(), diagnostic))
+            .collect();
+        let mut tombstones: BTreeMap<_, _> = base
+            .tombstones
+            .iter()
+            .filter(|tombstone| tombstone.retain_through_index_revision >= index_revision)
+            .cloned()
+            .map(|tombstone| (tombstone.entity_id.clone(), tombstone))
+            .collect();
+        let mut changed_dependencies = Vec::new();
+
+        for operation in &batch.operations {
+            match operation {
+                ResourceDeltaOperation::Upsert { value }
+                | ResourceDeltaOperation::Reimport { value } => self.apply_changed_value(
+                    value,
+                    index_revision,
+                    &mut resources,
+                    &mut source_documents,
+                    &mut dependencies,
+                    &mut diagnostics,
+                    &mut tombstones,
+                    &mut changed_dependencies,
+                )?,
+                ResourceDeltaOperation::Move {
+                    uid,
+                    from_path,
+                    to_path,
+                    value,
+                } => {
+                    validate_uid(uid)?;
+                    normalize_resource_path(from_path)?;
+                    let to = normalize_resource_path(to_path)?;
+                    let value_path = normalize_resource_path(&value.resource.path)?;
+                    if to.comparison != value_path.comparison
+                        || !matches!(&value.resource.resource_ref, ResourceRef::Uid(reference) if reference.uid == *uid)
+                    {
+                        return Err(IndexerError::ObservationConflict("invalid_uid_move"));
+                    }
+                    self.apply_changed_value(
+                        value,
+                        index_revision,
+                        &mut resources,
+                        &mut source_documents,
+                        &mut dependencies,
+                        &mut diagnostics,
+                        &mut tombstones,
+                        &mut changed_dependencies,
+                    )?;
+                }
+                ResourceDeltaOperation::Remove { resource_ref, path } => {
+                    let path = normalize_resource_path(path)?;
+                    let old = find_resource_id(resource_ref, &path, &resources)?;
+                    if let Some(entity_id) = old {
+                        resources.remove(&entity_id);
+                        source_documents.remove(&entity_id);
+                        dependencies.retain(|_, edge| edge.source_entity_id != entity_id);
+                        tombstones.insert(
+                            entity_id.clone(),
+                            Tombstone {
+                                entity_id,
+                                deleted_index_revision: index_revision,
+                                retain_through_index_revision: index_revision.saturating_add(1),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+
+        let (uid_lookup, path_lookup) = resource_lookups(resources.values())?;
+        for (source_entity_id, observations) in changed_dependencies {
+            for observation in observations {
+                let observed_source =
+                    resolve_ref(&observation.source_ref, &uid_lookup, &path_lookup)?;
+                if observed_source != source_entity_id {
+                    return Err(IndexerError::ObservationConflict(
+                        "dependency_source_changed",
+                    ));
+                }
+                let edge = normalize_dependency_observation(
+                    &source_entity_id,
+                    &observation,
+                    &resources,
+                    &uid_lookup,
+                    &path_lookup,
+                )?;
+                dependencies.insert(edge.edge_id.clone(), edge);
+            }
+        }
+        for edge in dependencies.values_mut() {
+            reconcile_dependency(edge, &resources, &uid_lookup, &path_lookup)?;
+            match edge.resolution {
+                DependencyResolution::Resolved => {}
+                DependencyResolution::Missing => insert_diagnostic(
+                    &mut diagnostics,
+                    "missing_dependency",
+                    &edge.source_entity_id,
+                    edge.target_display_path.as_deref(),
+                    index_revision,
+                ),
+                DependencyResolution::StaleUid => insert_diagnostic(
+                    &mut diagnostics,
+                    "stale_resource_uid",
+                    &edge.source_entity_id,
+                    edge.target_uid
+                        .as_deref()
+                        .or(edge.target_display_path.as_deref()),
+                    index_revision,
+                ),
+            }
+        }
+
+        let resources: Vec<_> = resources.into_values().collect();
+        let source_documents: Vec<_> = source_documents.into_values().collect();
+        let dependencies: Vec<_> = dependencies.into_values().collect();
+        let diagnostics: Vec<_> = diagnostics.into_values().collect();
+        let tombstones: Vec<_> = tombstones.into_values().collect();
+        let snapshot_checksum = logical_snapshot_checksum(
+            &resources,
+            &source_documents,
+            &dependencies,
+            &diagnostics,
+            &tombstones,
+        )?;
+        let generation_id = generation_id(
+            &base.project_id,
+            &base.checkpoint.editor_session_id,
+            batch.resource_revision,
+            index_revision,
+            &snapshot_checksum,
+        );
+        let checkpoint = IngestionCheckpoint {
+            editor_session_id: base.checkpoint.editor_session_id.clone(),
+            resource_revision: batch.resource_revision,
+            project_revision,
+            index_revision,
+            source_complete: true,
+            snapshot_checksum,
+            last_batch_id: Some(batch.batch_id.clone()),
+            last_batch_checksum: Some(batch.checksum.clone()),
+        };
+        let mut next = IndexGeneration {
+            generation_id: generation_id.clone(),
+            parent_generation_id: Some(base.generation_id.clone()),
+            schema_version: base.schema_version,
+            project_id: base.project_id.clone(),
+            index_revision,
+            state: godot_codex_index_store::GenerationState::Active,
+            creation_reason: "incremental_resource_batch".to_owned(),
+            checkpoint: checkpoint.clone(),
+            resources,
+            source_documents,
+            dependencies,
+            diagnostics,
+            tombstones,
+            validation_digest: String::new(),
+        };
+        next.canonicalize();
+        next.validation_digest = next.compute_validation_digest();
+        next.validate()?;
+
+        let (upsert_resources, remove_resource_entity_ids) =
+            diff_records(&base.resources, &next.resources, |resource| {
+                resource.entity_id.clone()
+            });
+        let (upsert_source_documents, remove_source_document_entity_ids) =
+            diff_records(&base.source_documents, &next.source_documents, |document| {
+                document.entity_id.clone()
+            });
+        let (upsert_dependencies, remove_dependency_edge_ids) =
+            diff_records(&base.dependencies, &next.dependencies, |edge| {
+                edge.edge_id.clone()
+            });
+        let (upsert_diagnostics, remove_diagnostic_ids) =
+            diff_records(&base.diagnostics, &next.diagnostics, |diagnostic| {
+                diagnostic.diagnostic_id.clone()
+            });
+        let (upsert_tombstones, remove_tombstone_entity_ids) =
+            diff_records(&base.tombstones, &next.tombstones, |tombstone| {
+                tombstone.entity_id.clone()
+            });
+        let normalized = IncrementalBatch {
+            project_id: base.project_id.clone(),
+            base_generation_id: base.generation_id.clone(),
+            generation_id,
+            index_revision,
+            creation_reason: "incremental_resource_batch".to_owned(),
+            checkpoint,
+            upsert_resources,
+            remove_resource_entity_ids,
+            upsert_source_documents,
+            remove_source_document_entity_ids,
+            upsert_dependencies,
+            remove_dependency_edge_ids,
+            upsert_diagnostics,
+            remove_diagnostic_ids,
+            upsert_tombstones,
+            remove_tombstone_entity_ids,
+        };
+        let applied = base.apply_incremental_batch(&normalized)?;
+        if applied != next {
+            return Err(IndexerError::ObservationConflict(
+                "incremental_diff_mismatch",
+            ));
+        }
+        Ok(Some(normalized))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn apply_changed_value(
+        &self,
+        value: &ResourceWithDependencies,
+        index_revision: u64,
+        resources: &mut BTreeMap<String, ResourceEntity>,
+        source_documents: &mut BTreeMap<String, SourceDocument>,
+        dependencies: &mut BTreeMap<String, DependencyEdge>,
+        diagnostics: &mut BTreeMap<String, Diagnostic>,
+        tombstones: &mut BTreeMap<String, Tombstone>,
+        changed_dependencies: &mut Vec<(String, Vec<DependencyObservation>)>,
+    ) -> Result<(), IndexerError> {
+        let path = normalize_resource_path(&value.resource.path)?;
+        validate_resource_ref(&value.resource.resource_ref, &path)?;
+        let old = find_resource_id(&value.resource.resource_ref, &path, resources)?;
+        let normalized =
+            self.normalize_changed_resource(&value.resource, &path, index_revision, diagnostics)?;
+        if let Some(old_entity_id) = old.as_deref() {
+            resources.remove(old_entity_id);
+            source_documents.remove(old_entity_id);
+            dependencies.retain(|_, edge| edge.source_entity_id != old_entity_id);
+        }
+        let Some((resource, document)) = normalized else {
+            if let Some(entity_id) = old {
+                tombstones.insert(
+                    entity_id.clone(),
+                    Tombstone {
+                        entity_id,
+                        deleted_index_revision: index_revision,
+                        retain_through_index_revision: index_revision.saturating_add(1),
+                    },
+                );
+            }
+            return Ok(());
+        };
+        if let Some(old_entity_id) = old
+            && old_entity_id != resource.entity_id
+        {
+            tombstones.insert(
+                old_entity_id.clone(),
+                Tombstone {
+                    entity_id: old_entity_id,
+                    deleted_index_revision: index_revision,
+                    retain_through_index_revision: index_revision.saturating_add(1),
+                },
+            );
+        }
+        tombstones.remove(&resource.entity_id);
+        let entity_id = resource.entity_id.clone();
+        resources.insert(entity_id.clone(), resource);
+        source_documents.insert(entity_id.clone(), document);
+        changed_dependencies.push((entity_id, value.dependencies.clone()));
+        Ok(())
+    }
+
+    fn normalize_changed_resource(
+        &self,
+        observation: &ResourceObservation,
+        path: &NormalizedResourcePath,
+        index_revision: u64,
+        diagnostics: &mut BTreeMap<String, Diagnostic>,
+    ) -> Result<Option<(ResourceEntity, SourceDocument)>, IndexerError> {
+        let hash = self.hash_resource(path);
+        let (content_generation, size_before, size_after, mtime_before, mtime_after, hash_state) =
+            match hash {
+                Ok(hash) if hash.size_before == observation.byte_size => (
+                    Some(hash.content_generation),
+                    hash.size_before,
+                    hash.size_after,
+                    hash.mtime_before_ns,
+                    hash.mtime_after_ns,
+                    "ready".to_owned(),
+                ),
+                Ok(hash) => (
+                    None,
+                    hash.size_before,
+                    hash.size_after,
+                    hash.mtime_before_ns,
+                    hash.mtime_after_ns,
+                    "source_metadata_changed".to_owned(),
+                ),
+                Err(_) => (
+                    None,
+                    observation.byte_size,
+                    observation.byte_size,
+                    observation
+                        .modified_time_unix_seconds
+                        .saturating_mul(1_000_000_000),
+                    observation
+                        .modified_time_unix_seconds
+                        .saturating_mul(1_000_000_000),
+                    "hash_unavailable".to_owned(),
+                ),
+            };
+        let (uid, identity_strength, identity_input, entity_id) = match &observation.resource_ref {
+            ResourceRef::Uid(reference) => (
+                Some(reference.uid.clone()),
+                IdentityStrength::ResourceUid,
+                reference.uid.clone(),
+                uid_entity_id(&reference.uid)?,
+            ),
+            ResourceRef::Path(_) => {
+                let Some(content_generation) = content_generation.as_deref() else {
+                    insert_diagnostic(
+                        diagnostics,
+                        "hash_unavailable",
+                        &path.display,
+                        Some(&path.display),
+                        index_revision,
+                    );
+                    return Ok(None);
+                };
+                (
+                    None,
+                    IdentityStrength::PathContentGeneration,
+                    format!("{}\0{content_generation}", path.comparison),
+                    fallback_entity_id(&path.display, content_generation)?,
+                )
+            }
+        };
+        let validity = match observation.validity {
+            ResourceValidity::Valid if content_generation.is_some() => RecordValidity::Valid,
+            ResourceValidity::Valid | ResourceValidity::Partial => RecordValidity::Partial,
+            ResourceValidity::Invalid => RecordValidity::Invalid,
+        };
+        if content_generation.is_none() {
+            insert_diagnostic(
+                diagnostics,
+                "hash_unavailable",
+                &entity_id,
+                Some(&path.display),
+                index_revision,
+            );
+        }
+        let resource = ResourceEntity {
+            entity_id: entity_id.clone(),
+            identity_input,
+            uid,
+            display_path: path.display.clone(),
+            comparison_path: path.comparison.clone(),
+            identity_strength,
+            resource_type: observation.godot_type.clone(),
+            source_kind: source_kind_name(&observation.source_kind).to_owned(),
+            import_state: import_state_name(&observation.import_state).to_owned(),
+            authority: observation.authority.clone(),
+            content_generation: content_generation.clone(),
+            mtime_ns: mtime_after,
+            byte_size: size_after,
+            validity,
+            resource_revision: observation.resource_revision,
+        };
+        let document = SourceDocument {
+            entity_id,
+            comparison_path: path.comparison.clone(),
+            size_before,
+            size_after,
+            mtime_before_ns: mtime_before,
+            mtime_after_ns: mtime_after,
+            content_generation,
+            ingest_state: hash_state,
+        };
+        Ok(Some((resource, document)))
+    }
+
     fn hash_resource(
         &self,
         path: &NormalizedResourcePath,
@@ -468,6 +900,176 @@ impl ResourceNormalizer {
             .map(|result| result.expect("hash worker filled every slot"))
             .collect()
     }
+}
+
+fn find_resource_id(
+    reference: &ResourceRef,
+    path: &NormalizedResourcePath,
+    resources: &BTreeMap<String, ResourceEntity>,
+) -> Result<Option<String>, IndexerError> {
+    match reference {
+        ResourceRef::Uid(reference) => {
+            validate_uid(&reference.uid)?;
+            Ok(resources
+                .values()
+                .find(|resource| resource.uid.as_ref() == Some(&reference.uid))
+                .map(|resource| resource.entity_id.clone()))
+        }
+        ResourceRef::Path(reference) => {
+            let reference_path = normalize_resource_path(&reference.path)?;
+            if !reference.uid_missing || reference_path.comparison != path.comparison {
+                return Err(IndexerError::ObservationConflict("resource_ref_path"));
+            }
+            Ok(resources
+                .values()
+                .find(|resource| resource.comparison_path == path.comparison)
+                .map(|resource| resource.entity_id.clone()))
+        }
+    }
+}
+
+fn resource_lookups<'a>(
+    resources: impl Iterator<Item = &'a ResourceEntity>,
+) -> Result<ResourceLookups, IndexerError> {
+    let mut uid_lookup = BTreeMap::new();
+    let mut path_lookup = BTreeMap::new();
+    for resource in resources {
+        if path_lookup
+            .insert(resource.comparison_path.clone(), resource.entity_id.clone())
+            .is_some()
+        {
+            return Err(IndexerError::ObservationConflict(
+                "path_normalization_collision",
+            ));
+        }
+        if let Some(uid) = &resource.uid
+            && uid_lookup
+                .insert(uid.clone(), resource.entity_id.clone())
+                .is_some()
+        {
+            return Err(IndexerError::ObservationConflict("duplicate_resource_uid"));
+        }
+    }
+    Ok((uid_lookup, path_lookup))
+}
+
+fn normalize_dependency_observation(
+    source_entity_id: &str,
+    observation: &DependencyObservation,
+    resources: &BTreeMap<String, ResourceEntity>,
+    uid_lookup: &BTreeMap<String, String>,
+    path_lookup: &BTreeMap<String, String>,
+) -> Result<DependencyEdge, IndexerError> {
+    let fallback = normalize_resource_path(&observation.fallback_path)?;
+    if let Some(uid) = observation.target_uid.as_deref() {
+        validate_uid(uid)?;
+    }
+    let mut edge = DependencyEdge {
+        edge_id: dependency_edge_id(
+            source_entity_id,
+            observation.target_uid.as_deref(),
+            &fallback.display,
+        )?,
+        source_entity_id: source_entity_id.to_owned(),
+        target_uid: observation.target_uid.clone(),
+        target_comparison_path: Some(fallback.comparison),
+        target_display_path: Some(fallback.display),
+        target_entity_id: None,
+        resolved_target_path: None,
+        relation: "references".to_owned(),
+        declared_type: observation.declared_type.clone(),
+        authority: observation.authority.clone(),
+        resolution: match observation.resolution {
+            BridgeDependencyResolution::Resolved => DependencyResolution::Resolved,
+            BridgeDependencyResolution::Missing => DependencyResolution::Missing,
+            BridgeDependencyResolution::StaleUid => DependencyResolution::StaleUid,
+        },
+        resource_revision: observation.resource_revision,
+    };
+    reconcile_dependency(&mut edge, resources, uid_lookup, path_lookup)?;
+    Ok(edge)
+}
+
+fn reconcile_dependency(
+    edge: &mut DependencyEdge,
+    resources: &BTreeMap<String, ResourceEntity>,
+    uid_lookup: &BTreeMap<String, String>,
+    path_lookup: &BTreeMap<String, String>,
+) -> Result<(), IndexerError> {
+    let uid_target = edge.target_uid.as_ref().and_then(|uid| uid_lookup.get(uid));
+    let path_target = edge
+        .target_comparison_path
+        .as_ref()
+        .and_then(|path| path_lookup.get(path));
+    let target = if edge.target_uid.is_some() {
+        if uid_target.is_some() && path_target.is_some() && uid_target != path_target {
+            edge.resolution = DependencyResolution::StaleUid;
+            None
+        } else if let Some(target) = uid_target {
+            edge.resolution = DependencyResolution::Resolved;
+            Some(target)
+        } else {
+            edge.resolution = DependencyResolution::StaleUid;
+            None
+        }
+    } else if let Some(target) = path_target {
+        edge.resolution = DependencyResolution::Resolved;
+        Some(target)
+    } else {
+        edge.resolution = DependencyResolution::Missing;
+        None
+    };
+    edge.target_entity_id = target.cloned();
+    edge.resolved_target_path = target
+        .and_then(|entity_id| resources.get(entity_id))
+        .map(|resource| resource.display_path.clone());
+    if edge.relation != "references" || edge.authority.is_empty() {
+        return Err(IndexerError::ObservationConflict("dependency_authority"));
+    }
+    Ok(())
+}
+
+fn logical_snapshot_checksum(
+    resources: &[ResourceEntity],
+    source_documents: &[SourceDocument],
+    dependencies: &[DependencyEdge],
+    diagnostics: &[Diagnostic],
+    tombstones: &[Tombstone],
+) -> Result<String, IndexerError> {
+    let mut records = Vec::new();
+    append_serialized(&mut records, resources)?;
+    append_serialized(&mut records, source_documents)?;
+    append_serialized(&mut records, dependencies)?;
+    append_serialized(&mut records, diagnostics)?;
+    append_serialized(&mut records, tombstones)?;
+    records.sort();
+    let mut hasher = Sha256::new();
+    hasher.update(b"godot-codex/logical-resource-snapshot/v1\0");
+    for record in records {
+        hasher.update((record.len() as u64).to_be_bytes());
+        hasher.update(record);
+    }
+    Ok(format!("sha256:{:x}", hasher.finalize()))
+}
+
+fn diff_records<T, F>(base: &[T], next: &[T], key: F) -> (Vec<T>, Vec<String>)
+where
+    T: Clone + Eq,
+    F: Fn(&T) -> String,
+{
+    let base: BTreeMap<_, _> = base.iter().map(|record| (key(record), record)).collect();
+    let next: BTreeMap<_, _> = next.iter().map(|record| (key(record), record)).collect();
+    let upserts = next
+        .iter()
+        .filter(|(record_key, record)| base.get(*record_key) != Some(record))
+        .map(|(_, record)| (*record).clone())
+        .collect();
+    let removals = base
+        .keys()
+        .filter(|record_key| !next.contains_key(*record_key))
+        .cloned()
+        .collect();
+    (upserts, removals)
 }
 
 struct HashObservation {
@@ -786,9 +1388,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     use godot_codex_bridge_client::{
-        DependencyObservation, DependencyResolution as BridgeResolution, ResourceObservation,
-        ResourceRevisionVector, ResourceSnapshotAccepted, ResourceSnapshotBeginParams,
-        ResourceSnapshotEndParams, ResourceSnapshotLimits, ResourceSnapshotPayload, UidResourceRef,
+        DependencyObservation, DependencyResolution as BridgeResolution, ResourceDeltaBatch,
+        ResourceDeltaOperation, ResourceObservation, ResourceRevisionVector,
+        ResourceSnapshotAccepted, ResourceSnapshotBeginParams, ResourceSnapshotEndParams,
+        ResourceSnapshotLimits, ResourceSnapshotPayload, UidResourceRef,
     };
     use serde_json::Value;
     use tempfile::TempDir;
@@ -916,8 +1519,8 @@ mod tests {
                 revisions: revision,
             },
         };
-        let generation = ResourceNormalizer::new(temp.path())
-            .unwrap()
+        let normalizer = ResourceNormalizer::new(temp.path()).unwrap();
+        let generation = normalizer
             .normalize_full_snapshot("project:test", 1, &snapshot)
             .unwrap();
         assert_eq!(generation.resources.len(), 2);
@@ -933,6 +1536,44 @@ mod tests {
                 .is_some_and(|hash| hash.starts_with("sha256:"))
         }));
         generation.validate().unwrap();
+
+        let delta = ResourceDeltaBatch {
+            batch_id: "resource-batch:0123456789abcdef0123456789abcdef".to_owned(),
+            previous_resource_revision: 1,
+            resource_revision: 2,
+            operations: vec![ResourceDeltaOperation::Remove {
+                resource_ref: ResourceRef::Uid(UidResourceRef {
+                    uid: "uid://b".to_owned(),
+                }),
+                path: "res://b.tres".to_owned(),
+            }],
+            source_complete: true,
+            checksum: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+        };
+        let normalized_delta = normalizer
+            .normalize_incremental_batch(&generation, &delta, 2)
+            .unwrap()
+            .expect("new batch");
+        let next = generation
+            .apply_incremental_batch(&normalized_delta)
+            .unwrap();
+        assert_eq!(next.resources.len(), 1);
+        assert_eq!(next.tombstones.len(), 1);
+        assert_eq!(
+            next.dependencies[0].resolution,
+            DependencyResolution::StaleUid
+        );
+        assert!(
+            next.diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "stale_resource_uid")
+        );
+        assert!(
+            normalizer
+                .normalize_incremental_batch(&next, &delta, 2)
+                .unwrap()
+                .is_none()
+        );
 
         let mut reordered = snapshot;
         reordered.payload.resources.reverse();
