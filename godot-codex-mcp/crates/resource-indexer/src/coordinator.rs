@@ -201,6 +201,29 @@ pub enum CoordinatorError {
     Quarantine,
 }
 
+impl CoordinatorError {
+    fn safe_code(&self) -> &str {
+        match self {
+            Self::Bridge(BridgeError::Rpc { code, .. }) => code,
+            Self::Bridge(BridgeError::Invalid(message))
+                if !message.contains(['/', '\\']) && message.len() <= 128 =>
+            {
+                message
+            }
+            Self::Bridge(error) => error.safe_summary(),
+            Self::Indexer(IndexerError::InvalidPath(code))
+            | Self::Indexer(IndexerError::ObservationConflict(code))
+            | Self::Indexer(IndexerError::HashUnavailable(code))
+            | Self::Indexer(IndexerError::Spool(code)) => code,
+            Self::Indexer(IndexerError::InvalidUid) => "invalid_resource_uid",
+            Self::Indexer(IndexerError::UnsafeResourcePath) => "unsafe_resource_path",
+            Self::Indexer(IndexerError::Serialization) => "serialization_failed",
+            Self::Indexer(IndexerError::Store(_)) | Self::Store(_) => "index_store_failed",
+            Self::Quarantine => "index_quarantine_failed",
+        }
+    }
+}
+
 /// Owns the single writer lease and reconciles Bridge state into generations.
 pub struct ResourceIndexCoordinator {
     project_root: PathBuf,
@@ -237,7 +260,8 @@ impl ResourceIndexCoordinator {
             let client = tokio::select! {
                 result = connect => match result {
                     Ok(client) => client,
-                    Err(_) => {
+                    Err(error) => {
+                        eprintln!("[godot-codex-index] connect failed: {}", error.safe_summary());
                         self.mark_disconnected(&store);
                         if wait_or_shutdown(retry, &mut shutdown).await { break; }
                         retry = (retry * 2).min(RETRY_MAX);
@@ -266,7 +290,8 @@ impl ResourceIndexCoordinator {
             if store.is_none() {
                 match self.open_store(client.project_id()) {
                     Ok(opened) => store = Some(opened),
-                    Err(_) => {
+                    Err(error) => {
+                        eprintln!("[godot-codex-index] open failed: {}", error.safe_code());
                         self.reader.set_status(ResourceIndexStatus::NotReady);
                         if wait_or_shutdown(retry, &mut shutdown).await {
                             break;
@@ -281,7 +306,8 @@ impl ResourceIndexCoordinator {
                 result = self.sync_connected(&mut client, store.as_mut().expect("store opened")) => result,
                 _ = shutdown.changed() => break,
             };
-            if result.is_err() {
+            if let Err(error) = result {
+                eprintln!("[godot-codex-index] sync failed: {}", error.safe_code());
                 self.mark_disconnected(&store);
                 if wait_or_shutdown(retry, &mut shutdown).await {
                     break;

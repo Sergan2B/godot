@@ -13,6 +13,8 @@ const MAX_RESOURCE_PATH_BYTES: usize = 1_024;
 const MAX_SNAPSHOT_CHUNK_BYTES: usize = 256 * 1_024;
 const MAX_DELTA_BATCH_BYTES: usize = 512 * 1_024;
 const MAX_SAFE_REVISION: u64 = 9_007_199_254_740_991;
+const RESOURCE_SNAPSHOT_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const RESOURCE_SNAPSHOT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -443,13 +445,19 @@ fn validate_resource_ref(value: &ResourceRef) -> Result<(), BridgeError> {
 fn validate_resource_value(
     value: &ResourceWithDependencies,
     expected_revision: u64,
+    exact_revision: bool,
 ) -> Result<(), BridgeError> {
     validate_resource_ref(&value.resource.resource_ref)?;
     validate_resource_path(&value.resource.path)?;
     if value.resource.authority != "editor_file_system"
         || value.resource.godot_type.is_empty()
         || value.resource.godot_type.len() > 256
-        || value.resource.resource_revision != expected_revision
+        || value.resource.resource_revision == 0
+        || if exact_revision {
+            value.resource.resource_revision != expected_revision
+        } else {
+            value.resource.resource_revision > expected_revision
+        }
         || value.resource.resource_revision > MAX_SAFE_REVISION
         || value.dependencies.len() > MAX_DEPENDENCIES_PER_RESOURCE
     {
@@ -468,7 +476,12 @@ fn validate_resource_value(
             .as_deref()
             .is_some_and(|uid| !valid_uid(uid))
             || dependency.authority != "resource_loader_dependencies"
-            || dependency.resource_revision != expected_revision
+            || dependency.resource_revision == 0
+            || if exact_revision {
+                dependency.resource_revision != expected_revision
+            } else {
+                dependency.resource_revision > expected_revision
+            }
             || dependency.resource_revision > MAX_SAFE_REVISION
             || dependency
                 .declared_type
@@ -541,13 +554,15 @@ fn validate_snapshot_chunk(
                 dependencies: Vec::new(),
             },
             accepted.resource_revision,
+            false,
         )?;
     }
     for dependency in &chunk.payload.dependencies {
         validate_resource_ref(&dependency.source_ref)?;
         validate_resource_path(&dependency.fallback_path)?;
         if dependency.authority != "resource_loader_dependencies"
-            || dependency.resource_revision != accepted.resource_revision
+            || dependency.resource_revision == 0
+            || dependency.resource_revision > accepted.resource_revision
         {
             return Err(BridgeError::Invalid(
                 "resource snapshot dependency is invalid".to_owned(),
@@ -556,7 +571,8 @@ fn validate_snapshot_chunk(
     }
     for diagnostic in &chunk.payload.diagnostics {
         validate_resource_ref(&diagnostic.subject)?;
-        if diagnostic.resource_revision != accepted.resource_revision
+        if diagnostic.resource_revision == 0
+            || diagnostic.resource_revision > accepted.resource_revision
             || diagnostic
                 .target_reference
                 .as_ref()
@@ -575,7 +591,14 @@ pub(crate) async fn stream_resource_snapshot<S: ResourceSnapshotSink>(
     sink: &mut S,
 ) -> Result<ResourceSnapshotTransfer, BridgeError> {
     require_resource_graph(session)?;
-    let response = session.request("resource.snapshot.get", json!({})).await?;
+    let response = session
+        .request_with_deadline_and_timeout(
+            "resource.snapshot.get",
+            json!({}),
+            RESOURCE_SNAPSHOT_REQUEST_TIMEOUT,
+            RESOURCE_SNAPSHOT_TIMEOUT,
+        )
+        .await?;
     let request_id = response
         .get("request_id")
         .and_then(Value::as_str)
@@ -610,8 +633,11 @@ async fn receive_resource_snapshot<S: ResourceSnapshotSink>(
     }
     validate_snapshot_limits(&accepted.limits_applied)?;
 
-    let begin_message: ResourceSnapshotBeginMessage =
-        serde_json::from_value(session.receive_non_sync_timed().await?)?;
+    let begin_message: ResourceSnapshotBeginMessage = serde_json::from_value(
+        session
+            .receive_non_sync_with_timeout(RESOURCE_SNAPSHOT_TIMEOUT)
+            .await?,
+    )?;
     if begin_message.protocol_version != "1.2"
         || begin_message.kind != "notification"
         || begin_message.method != "snapshot.begin"
@@ -632,7 +658,9 @@ async fn receive_resource_snapshot<S: ResourceSnapshotSink>(
     let mut dependency_count = 0_usize;
     let mut diagnostic_count = 0_usize;
     let end = loop {
-        let message = session.receive_non_sync_timed().await?;
+        let message = session
+            .receive_non_sync_with_timeout(RESOURCE_SNAPSHOT_TIMEOUT)
+            .await?;
         if message.get("kind").and_then(Value::as_str) == Some("chunk") {
             let chunk: ResourceSnapshotChunk = serde_json::from_value(message)?;
             validate_snapshot_chunk(&chunk, &accepted, expected_index)?;
@@ -737,7 +765,7 @@ fn validate_delta_batch(
         match operation {
             ResourceDeltaOperation::Upsert { value }
             | ResourceDeltaOperation::Reimport { value } => {
-                validate_resource_value(value, batch.resource_revision)?;
+                validate_resource_value(value, batch.resource_revision, true)?;
             }
             ResourceDeltaOperation::Move {
                 uid,
@@ -750,7 +778,7 @@ fn validate_delta_batch(
                 }
                 validate_resource_path(from_path)?;
                 validate_resource_path(to_path)?;
-                validate_resource_value(value, batch.resource_revision)?;
+                validate_resource_value(value, batch.resource_revision, true)?;
                 if !matches!(&value.resource.resource_ref, ResourceRef::Uid(reference) if reference.uid == *uid)
                     || value.resource.path != *to_path
                 {
@@ -861,6 +889,10 @@ mod tests {
 
     #[test]
     fn resource_snapshot_fixtures_are_strict_and_checksum_valid() {
+        let response: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/codex_bridge/v1/fixtures/valid/resource-snapshot-response.json"
+        ))
+        .unwrap();
         let begin: ResourceSnapshotBeginMessage = serde_json::from_str(include_str!(
             "../../../../schemas/codex_bridge/v1/fixtures/valid/resource-snapshot-begin.json"
         ))
@@ -876,6 +908,15 @@ mod tests {
         assert_eq!(begin.params.resource_revision, 1);
         assert_eq!(sha256_hex(chunk.payload_json.as_bytes()), chunk.checksum);
         assert_eq!(end.params.chunk_count, 1);
+
+        let mut accepted: ResourceSnapshotAccepted =
+            serde_json::from_value(response["result"].clone()).unwrap();
+        accepted.resource_revision = 2;
+        accepted.revisions.resource_revision = 2;
+        assert!(
+            validate_snapshot_chunk(&chunk, &accepted, 0).is_ok(),
+            "a full snapshot may retain the last-observed revision of unchanged records"
+        );
 
         let unknown: Value = serde_json::from_str(include_str!(
             "../../../../schemas/codex_bridge/v1/fixtures/invalid/resource-delta-unknown-field.json"

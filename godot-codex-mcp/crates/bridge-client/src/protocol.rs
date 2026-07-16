@@ -296,7 +296,14 @@ impl FrameStream {
     }
 
     async fn receive_timed(&mut self) -> Result<Value, BridgeError> {
-        tokio::time::timeout(IO_TIMEOUT, self.receive())
+        self.receive_with_timeout(IO_TIMEOUT).await
+    }
+
+    async fn receive_with_timeout(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> Result<Value, BridgeError> {
+        tokio::time::timeout(timeout, self.receive())
             .await
             .map_err(|_| BridgeError::Timeout)?
     }
@@ -436,8 +443,15 @@ impl Session {
     }
 
     pub(crate) async fn receive_non_sync_timed(&mut self) -> Result<Value, BridgeError> {
+        self.receive_non_sync_with_timeout(IO_TIMEOUT).await
+    }
+
+    pub(crate) async fn receive_non_sync_with_timeout(
+        &mut self,
+        timeout: std::time::Duration,
+    ) -> Result<Value, BridgeError> {
         loop {
-            let message = self.stream.receive_timed().await?;
+            let message = self.stream.receive_with_timeout(timeout).await?;
             validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
             if is_sync_invalidation(&message)? {
                 self.resync_requested = true;
@@ -452,6 +466,26 @@ impl Session {
         method: &str,
         params: Value,
     ) -> Result<Value, BridgeError> {
+        self.request_with_timeout(method, params, IO_TIMEOUT).await
+    }
+
+    pub(crate) async fn request_with_timeout(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout: std::time::Duration,
+    ) -> Result<Value, BridgeError> {
+        self.request_with_deadline_and_timeout(method, params, timeout, timeout)
+            .await
+    }
+
+    pub(crate) async fn request_with_deadline_and_timeout(
+        &mut self,
+        method: &str,
+        params: Value,
+        deadline: std::time::Duration,
+        receive_timeout: std::time::Duration,
+    ) -> Result<Value, BridgeError> {
         let request_id = format!("req:mcp-{:016x}", self.next_request);
         self.next_request += 1;
         let request = json!({
@@ -459,12 +493,12 @@ impl Session {
             "kind": "request",
             "request_id": request_id,
             "method": method,
-            "deadline_ms": 5000,
+            "deadline_ms": u64::try_from(deadline.as_millis()).unwrap_or(u64::MAX),
             "params": params,
             "context": self.context(),
         });
         self.stream.send(&request).await?;
-        let response = self.receive_non_sync_timed().await?;
+        let response = self.receive_non_sync_with_timeout(receive_timeout).await?;
         if response.get("kind").and_then(Value::as_str) != Some("response")
             || response.get("request_id").and_then(Value::as_str) != Some(request_id.as_str())
         {
