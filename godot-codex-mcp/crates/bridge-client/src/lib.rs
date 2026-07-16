@@ -52,6 +52,18 @@ impl BridgeClient {
         }
     }
 
+    /// Returns the authenticated project binding for this Bridge session.
+    #[must_use]
+    pub fn project_id(&self) -> &str {
+        self.session.project_id()
+    }
+
+    /// Returns the authenticated editor lifetime for this Bridge session.
+    #[must_use]
+    pub fn editor_session_id(&self) -> &str {
+        self.session.editor_session_id()
+    }
+
     pub async fn stream_resource_snapshot<S: ResourceSnapshotSink>(
         &mut self,
         sink: &mut S,

@@ -1,5 +1,8 @@
 //! Normalization boundary between Bridge RPC resource facts and the persistent index.
 
+mod coordinator;
+mod spool;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::Read;
@@ -26,6 +29,12 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use unicode_normalization::UnicodeNormalization;
 
+pub use coordinator::{
+    CoordinatorError, ResourceIndexCoordinator, ResourceIndexReadError, ResourceIndexReader,
+    ResourceIndexStaleReason, ResourceIndexStatus,
+};
+pub use spool::ResourceSnapshotSpool;
+
 const UID_DOMAIN: &[u8] = b"godot-codex/resource-entity/uid/v1\0";
 const PATH_CONTENT_DOMAIN: &[u8] = b"godot-codex/resource-entity/path-content/v1\0";
 const EDGE_DOMAIN: &[u8] = b"godot-codex/resource-edge/references/v1\0";
@@ -51,6 +60,8 @@ pub enum IndexerError {
     HashUnavailable(&'static str),
     #[error("serialization_failed")]
     Serialization,
+    #[error("snapshot_spool_failed: {0}")]
+    Spool(&'static str),
     #[error(transparent)]
     Store(#[from] StoreError),
 }

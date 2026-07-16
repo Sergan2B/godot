@@ -329,6 +329,7 @@ version = "0.1.0"
 dependencies = [
  "godot-codex-bridge-client",
  "godot-codex-mcp-server",
+ "godot-codex-resource-indexer",
  "godot-codex-semantic-model",
  "rmcp",
  "tokio",

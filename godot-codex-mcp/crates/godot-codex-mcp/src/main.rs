@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use godot_codex_bridge_client::run_bridge_sync;
 use godot_codex_mcp_server::GodotMcpServer;
+use godot_codex_resource_indexer::ResourceIndexCoordinator;
 use godot_codex_semantic_model::SnapshotReplicator;
 use rmcp::ServiceExt;
 
@@ -46,11 +47,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     };
     let replicator = SnapshotReplicator::new();
-    let bridge_task = tokio::spawn(run_bridge_sync(project_root, replicator.clone()));
+    let bridge_task = tokio::spawn(run_bridge_sync(project_root.clone(), replicator.clone()));
+    let (resource_coordinator, _resource_index_reader) =
+        ResourceIndexCoordinator::new(&project_root)?;
+    let (shutdown_sender, shutdown_receiver) = tokio::sync::watch::channel(false);
+    let resource_task = tokio::spawn(resource_coordinator.run(shutdown_receiver));
     let server = GodotMcpServer::new(replicator)
         .serve(rmcp::transport::stdio())
         .await?;
     server.waiting().await?;
+    let _ = shutdown_sender.send(true);
+    let _ = resource_task.await;
     bridge_task.abort();
     Ok(())
 }

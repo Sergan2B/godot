@@ -500,6 +500,14 @@ impl Session {
         &self.capabilities
     }
 
+    pub(crate) fn project_id(&self) -> &str {
+        &self.discovery.project_id
+    }
+
+    pub(crate) fn editor_session_id(&self) -> &str {
+        &self.discovery.editor_session_id
+    }
+
     pub(crate) async fn send_ack(
         &mut self,
         snapshot_id: &str,
