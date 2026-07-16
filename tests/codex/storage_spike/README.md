@@ -6,7 +6,7 @@ without adding either physical backend to the production sidecar dependency grap
 From the repository root, run the full decision profile:
 
 ```bash
-cargo run --locked --release \
+cargo +1.94.1 run --locked --release \
   --manifest-path tests/codex/storage_spike/Cargo.toml -- \
   run --backend all --dataset all --repo-root "$PWD" \
   --output tests/codex/evidence/sprint-3-storage-spike.json
@@ -30,13 +30,26 @@ macOS, and Windows. It accepts only clean source-identical decision profiles and
 not imply that such platform runs have already happened.
 
 ```bash
-cargo run --locked --release \
+cargo +1.94.1 run --locked --release \
   --manifest-path tests/codex/storage_spike/Cargo.toml -- \
   merge tests/codex/evidence/sprint-3-storage-spike.json \
   tests/codex/evidence/platform/sprint-3-storage-spike-linux.json \
   tests/codex/evidence/platform/sprint-3-storage-spike-macos.json \
   tests/codex/evidence/platform/sprint-3-storage-spike-windows.json
 ```
+
+Before the final acceptance merge, validate the aggregate with the same pinned Rust
+implementation that produced its scores and confidence intervals:
+
+```bash
+cargo +1.94.1 run --quiet --locked --release \
+  --manifest-path tests/codex/storage_spike/Cargo.toml -- \
+  validate tests/codex/evidence/sprint-3-storage-spike.json
+```
+
+The validator emits a closed schema-v2 JSON receipt. Its `evidence_sha256` is calculated
+from the exact byte snapshot parsed and validated by Rust; consumers must compare it with
+the digest of their own immutable input snapshot before trusting the receipt.
 
 `worker-fault` and `worker-open` are internal subprocess entry points for hard-kill and
 process-lock tests. They are not production commands.

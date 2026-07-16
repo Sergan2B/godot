@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use codex_storage_spike::runner::{
-    RunConfig, merge_platform_evidence, run, worker_fault, worker_open,
+    RunConfig, merge_platform_evidence, run, validate_combined_evidence, worker_fault, worker_open,
 };
 use codex_storage_spike::{BackendKind, FaultPoint};
 
@@ -74,10 +74,38 @@ fn execute() -> Result<(), Box<dyn std::error::Error>> {
             );
             Ok(())
         }
+        Some("validate") if arguments.len() == 2 => {
+            let (evidence, evidence_sha256) =
+                validate_combined_evidence(Path::new(&arguments[1]))?;
+            println!(
+                "{}",
+                serde_json::to_string(&canonical_validation_receipt(
+                    &evidence.chosen_backend,
+                    evidence.platform_runs.len(),
+                    &evidence_sha256,
+                ))?
+            );
+            Ok(())
+        }
         _ => Err(
-            "usage: codex-storage-spike run --backend all --dataset all --repo-root <path> --output <json> [--quick]".into(),
+            "usage: codex-storage-spike <run --backend all --dataset all --repo-root <path> --output <json> [--quick] | merge <output> <inputs...> | validate <combined.json>>".into(),
         ),
     }
+}
+
+fn canonical_validation_receipt(
+    chosen_backend: &str,
+    platform_runs: usize,
+    evidence_sha256: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "canonical": true,
+        "chosen_backend": chosen_backend,
+        "decision": "D-05",
+        "evidence_sha256": evidence_sha256,
+        "platform_runs": platform_runs,
+        "schema_version": 2,
+    })
 }
 
 fn validate_run_arguments(arguments: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -119,5 +147,25 @@ fn fault(value: &str) -> Result<FaultPoint, Box<dyn std::error::Error>> {
         "pre_commit" => Ok(FaultPoint::PreCommit),
         "post_commit" => Ok(FaultPoint::PostCommit),
         _ => Err(format!("unknown fault point {value}").into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validation_receipt_is_bound_to_the_validated_byte_snapshot() {
+        assert_eq!(
+            canonical_validation_receipt("segment", 3, "sha256:fixture"),
+            serde_json::json!({
+                "canonical": true,
+                "chosen_backend": "segment",
+                "decision": "D-05",
+                "evidence_sha256": "sha256:fixture",
+                "platform_runs": 3,
+                "schema_version": 2,
+            })
+        );
     }
 }

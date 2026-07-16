@@ -24,14 +24,14 @@ pub struct DependencyEvidence {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostEvidence {
-    /// GitHub runner label/name, or `local` outside CI.
+    /// Frozen `local` marker; hosted or remote runners cannot qualify this evidence.
     pub runner: String,
     /// Logical parallelism visible to the process.
     pub logical_cpus: usize,
 }
 
 /// One backend's raw and summarized result.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BackendEvidence {
     /// Candidate name.
@@ -79,7 +79,7 @@ pub struct BackendEvidence {
 }
 
 /// Canonical D-05 evidence document.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StorageSpikeEvidence {
     /// Evidence schema.
@@ -117,7 +117,7 @@ pub struct StorageSpikeEvidence {
 }
 
 /// Cross-platform D-05 aggregate produced only after all required OS runs.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombinedStorageSpikeEvidence {
     /// Aggregate schema.
@@ -137,7 +137,7 @@ pub struct CombinedStorageSpikeEvidence {
 }
 
 /// One backend's three-OS decision summary.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombinedBackendEvidence {
     /// Candidate name.
@@ -153,7 +153,7 @@ pub struct CombinedBackendEvidence {
 }
 
 /// Dataset coordinates bound into evidence.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DatasetEvidence {
     /// Resource records.

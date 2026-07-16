@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,9 +10,12 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use godot_codex_index_store::{IndexGeneration, ResourceQuery, ResourceSelector, StoreError};
+use godot_codex_index_store::{
+    IndexGeneration, ResourceQuery, ResourceQueryResult, ResourceSelector, StoreError,
+    query_generation,
+};
 use sha2::{Digest, Sha256};
-use tempfile::TempDir;
+use tempfile::{NamedTempFile, TempDir};
 
 use crate::dataset::{
     SYNTHETIC_SEED, file_sha256, oracle_generations, renamed_batch, renamed_generation,
@@ -22,6 +26,25 @@ use crate::evidence::{
     DependencyEvidence, HostEvidence, StorageSpikeEvidence, percentile,
 };
 use crate::{BackendKind, FaultInjection, FaultMode, FaultPoint, SpikeStore, open_store};
+
+const CI_ENVIRONMENT_MARKERS: [&str; 16] = [
+    "APPVEYOR",
+    "BITBUCKET_BUILD_NUMBER",
+    "BUILDKITE",
+    "CI",
+    "CIRCLECI",
+    "CODEBUILD_BUILD_ID",
+    "CONTINUOUS_INTEGRATION",
+    "DRONE",
+    "GITEA_ACTIONS",
+    "GITHUB_ACTIONS",
+    "GITLAB_CI",
+    "JENKINS_URL",
+    "TEAMCITY_VERSION",
+    "TF_BUILD",
+    "TRAVIS",
+    "WOODPECKER",
+];
 
 /// Full decision-run configuration.
 #[derive(Clone, Debug)]
@@ -86,6 +109,8 @@ impl RunConfig {
 
 /// Runs all available candidate backends and writes canonical evidence.
 pub fn run(config: &RunConfig) -> Result<StorageSpikeEvidence, StoreError> {
+    let decision_profile = config.include_stress && config.measure_packaging;
+    require_local_host_for_qualifying_profile(decision_profile)?;
     let oracle_path = config
         .repo_root
         .join("tests/codex/fixtures/resource_graph_oracle/golden-resource-graph.json");
@@ -107,10 +132,11 @@ pub fn run(config: &RunConfig) -> Result<StorageSpikeEvidence, StoreError> {
     }
     assign_scores(&mut backends);
     let (chosen_backend, decision_reason) = choose_backend(&backends);
+    let rust_workspace = config.repo_root.join("tests/codex/storage_spike");
     let evidence = StorageSpikeEvidence {
         schema_version: 2,
         decision: "D-05".to_owned(),
-        profile: if config.include_stress && config.measure_packaging {
+        profile: if decision_profile {
             "decision"
         } else {
             "quick"
@@ -121,12 +147,12 @@ pub fn run(config: &RunConfig) -> Result<StorageSpikeEvidence, StoreError> {
             .unwrap_or_else(|| "unknown".to_owned()),
         git_dirty: relevant_git_dirty(&config.repo_root)?,
         source_tree_sha256: source_tree_sha256(&config.repo_root)?,
-        rustc: command_output(&config.repo_root, "rustc", &["--version", "--verbose"])
+        rustc: command_output(&rust_workspace, "rustc", &["--version", "--verbose"])
             .unwrap_or_else(|| "unknown".to_owned()),
         os: std::env::consts::OS.to_owned(),
         architecture: std::env::consts::ARCH.to_owned(),
         host: HostEvidence {
-            runner: std::env::var("RUNNER_NAME").unwrap_or_else(|_| "local".to_owned()),
+            runner: "local".to_owned(),
             logical_cpus: thread::available_parallelism().map_or(1, usize::from),
         },
         oracle_sha256: file_sha256(&oracle_path)?,
@@ -149,12 +175,40 @@ pub fn run(config: &RunConfig) -> Result<StorageSpikeEvidence, StoreError> {
     Ok(evidence)
 }
 
+fn require_local_host_for_qualifying_profile(qualifying: bool) -> Result<(), StoreError> {
+    require_local_host_for_qualifying_profile_with(qualifying, |name| {
+        std::env::var_os(name).is_some()
+    })
+}
+
+fn require_local_host_for_qualifying_profile_with(
+    qualifying: bool,
+    mut present: impl FnMut(&str) -> bool,
+) -> Result<(), StoreError> {
+    if !qualifying {
+        return Ok(());
+    }
+    let detected: Vec<_> = CI_ENVIRONMENT_MARKERS
+        .iter()
+        .copied()
+        .filter(|name| present(name))
+        .collect();
+    if detected.is_empty() {
+        Ok(())
+    } else {
+        Err(StoreError::ValidationFailed(format!(
+            "qualifying evidence requires a local host; detected CI environment markers: {}",
+            detected.join(", ")
+        )))
+    }
+}
+
 /// Merges Linux, macOS, and Windows raw runs into the canonical D-05 artifact.
 pub fn merge_platform_evidence(
     output: &Path,
     inputs: &[PathBuf],
 ) -> Result<CombinedStorageSpikeEvidence, StoreError> {
-    let mut platform_runs = inputs
+    let platform_runs = inputs
         .iter()
         .map(|path| {
             let bytes = fs::read(path).map_err(io_error)?;
@@ -162,9 +216,43 @@ pub fn merge_platform_evidence(
                 .map_err(|error| StoreError::CorruptStore(error.to_string()))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let combined = canonical_combined_evidence(platform_runs);
+    write_evidence(output, &combined)?;
+    Ok(combined)
+}
+
+/// Recomputes and validates every derived D-05 score, interval, summary, and decision.
+///
+/// The aggregate is accepted only when it is byte-for-value equivalent to the canonical
+/// aggregate derived from its embedded raw platform runs. This deliberately treats all
+/// recorded score and decision fields as untrusted input. The returned SHA-256 is computed
+/// from the exact byte snapshot parsed by this function so callers can bind validation receipts
+/// to their own immutable input snapshot.
+pub fn validate_combined_evidence(
+    path: &Path,
+) -> Result<(CombinedStorageSpikeEvidence, String), StoreError> {
+    let bytes = fs::read(path).map_err(io_error)?;
+    let evidence_sha256 = format!("sha256:{:x}", Sha256::digest(&bytes));
+    let recorded = serde_json::from_slice::<CombinedStorageSpikeEvidence>(&bytes)
+        .map_err(|error| StoreError::CorruptStore(error.to_string()))?;
+    let canonical = canonical_combined_evidence(recorded.platform_runs.clone());
+    if recorded != canonical {
+        return Err(StoreError::ValidationFailed(
+            "combined D-05 evidence differs from canonical raw-sample scoring".to_owned(),
+        ));
+    }
+    Ok((recorded, evidence_sha256))
+}
+
+fn canonical_combined_evidence(
+    mut platform_runs: Vec<StorageSpikeEvidence>,
+) -> CombinedStorageSpikeEvidence {
     platform_runs.sort_by(|left, right| left.os.cmp(&right.os));
-    let present: BTreeSet<_> = platform_runs.iter().map(|run| run.os.as_str()).collect();
-    let required: BTreeSet<_> = ["linux", "macos", "windows"].into_iter().collect();
+    let present: BTreeSet<_> = platform_runs.iter().map(|run| run.os.clone()).collect();
+    let required: BTreeSet<_> = ["linux", "macos", "windows"]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
     let same_oracle = platform_runs.first().is_some_and(|first| {
         platform_runs
             .iter()
@@ -182,6 +270,14 @@ pub fn merge_platform_evidence(
     });
     let clean_sources = platform_runs.iter().all(|run| !run.git_dirty);
     let valid_profiles = platform_runs.iter().all(decision_profile_valid);
+    if valid_profiles {
+        for run in &mut platform_runs {
+            assign_scores(&mut run.backends);
+            let (chosen_backend, decision_reason) = choose_backend(&run.backends);
+            run.chosen_backend = chosen_backend;
+            run.decision_reason = decision_reason;
+        }
+    }
     let coordinates_complete = platform_runs.len() == 3
         && present == required
         && same_oracle
@@ -253,7 +349,7 @@ pub fn merge_platform_evidence(
             _ => unreachable!("two backend kinds are defined"),
         }
     };
-    let combined = CombinedStorageSpikeEvidence {
+    CombinedStorageSpikeEvidence {
         schema_version: 2,
         decision: "D-05".to_owned(),
         platform_runs,
@@ -261,14 +357,7 @@ pub fn merge_platform_evidence(
         cross_platform_complete,
         chosen_backend,
         decision_reason,
-    };
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent).map_err(io_error)?;
     }
-    let bytes = serde_json::to_vec_pretty(&combined)
-        .map_err(|error| StoreError::StorageIo(error.to_string()))?;
-    fs::write(output, bytes).map_err(io_error)?;
-    Ok(combined)
 }
 
 fn decision_profile_valid(run: &StorageSpikeEvidence) -> bool {
@@ -314,6 +403,7 @@ fn decision_profile_valid(run: &StorageSpikeEvidence) -> bool {
         || !run.source_tree_sha256.starts_with("sha256:")
         || !run.oracle_sha256.starts_with("sha256:")
         || !run.rustc.starts_with("rustc 1.94.1 ")
+        || run.host.runner != "local"
         || run.host.logical_cpus == 0
         || dataset.resources != 10_000
         || dataset.edges != 50_000
@@ -328,12 +418,12 @@ fn decision_profile_valid(run: &StorageSpikeEvidence) -> bool {
     {
         return false;
     }
-    let backend_kinds: BTreeSet<_> = run
+    let backend_kinds: Vec<_> = run
         .backends
         .iter()
         .map(|backend| backend.backend.as_str())
         .collect();
-    if backend_kinds != BTreeSet::from(["sqlite", "segment"]) {
+    if backend_kinds != ["sqlite", "segment"] {
         return false;
     }
     for backend in &run.backends {
@@ -544,11 +634,12 @@ fn run_backend(
         "project_binding",
         "incompatible_schema",
     ] {
+        let canonical = oracle.last().expect("canonical oracle is non-empty");
         gate(
             &mut fault_matrix,
             &mut errors,
             &format!("corruption.{corruption}"),
-            || corruption_case(kind, corruption),
+            || corruption_case(kind, corruption, canonical),
         );
     }
     gates.insert(
@@ -728,39 +819,65 @@ fn parity_gate(kind: BackendKind, generation: &IndexGeneration) -> Result<(), St
     let temp = TempDir::new().map_err(io_error)?;
     let mut store = open_store(kind, temp.path(), &generation.project_id)?;
     store.activate(generation, None)?;
-    for edge in &generation.dependencies {
-        let direct = store.direct(&ResourceQuery {
-            selector: ResourceSelector::EntityId(edge.source_entity_id.clone()),
+    validate_direct_reverse_parity(store.as_ref(), generation)
+}
+
+fn validate_direct_reverse_parity(
+    store: &dyn SpikeStore,
+    generation: &IndexGeneration,
+) -> Result<(), StoreError> {
+    for resource in &generation.resources {
+        let query = ResourceQuery {
+            selector: ResourceSelector::EntityId(resource.entity_id.clone()),
             limit: 200,
             offset: 0,
-        })?;
-        if !direct
-            .edges
-            .iter()
-            .any(|candidate| candidate.edge_id == edge.edge_id)
-        {
+        };
+        let expected_direct = query_generation(generation, &query, false)?;
+        if expected_direct.has_more {
             return Err(StoreError::ValidationFailed(format!(
-                "direct edge {} missing",
-                edge.edge_id
+                "canonical direct parity query for {} exceeds the hard limit",
+                resource.entity_id
             )));
         }
-        if let Some(target) = &edge.target_entity_id {
-            let reverse = store.reverse(&ResourceQuery {
-                selector: ResourceSelector::EntityId(target.clone()),
-                limit: 200,
-                offset: 0,
-            })?;
-            if !reverse
-                .edges
-                .iter()
-                .any(|candidate| candidate.edge_id == edge.edge_id)
-            {
-                return Err(StoreError::ValidationFailed(format!(
-                    "reverse edge {} missing",
-                    edge.edge_id
-                )));
-            }
+        let direct = store.direct(&query)?;
+        validate_query_parity(&direct, &expected_direct, &resource.entity_id, "direct")?;
+
+        let expected_reverse = query_generation(generation, &query, true)?;
+        if expected_reverse.has_more {
+            return Err(StoreError::ValidationFailed(format!(
+                "canonical reverse parity query for {} exceeds the hard limit",
+                resource.entity_id
+            )));
         }
+        let reverse = store.reverse(&query)?;
+        validate_query_parity(&reverse, &expected_reverse, &resource.entity_id, "reverse")?;
+    }
+    Ok(())
+}
+
+fn validate_query_parity(
+    actual: &ResourceQueryResult,
+    expected: &ResourceQueryResult,
+    entity_id: &str,
+    direction: &str,
+) -> Result<(), StoreError> {
+    if actual != expected {
+        let component = if actual.generation_id != expected.generation_id
+            || actual.index_revision != expected.index_revision
+        {
+            "generation"
+        } else if actual.resource != expected.resource {
+            "resource"
+        } else if actual.edges != expected.edges {
+            "edge records or order"
+        } else if actual.exact != expected.exact {
+            "exactness"
+        } else {
+            "pagination"
+        };
+        return Err(StoreError::ValidationFailed(format!(
+            "{direction} graph parity mismatch for {entity_id}: {component}"
+        )));
     }
     Ok(())
 }
@@ -825,7 +942,7 @@ fn crash_case(kind: BackendKind, point: FaultPoint) -> Result<(), StoreError> {
             temp.path().to_string_lossy().as_ref(),
             fault_name(point),
         ])
-        .env("CODEX_STORAGE_SPIKE_FAULT_READY", &ready)
+        .env(fault_ready_environment(kind), &ready)
         .spawn()
         .map_err(io_error)?;
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -1008,7 +1125,11 @@ fn migration_gate(kind: BackendKind) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn corruption_case(kind: BackendKind, corruption: &str) -> Result<(), StoreError> {
+fn corruption_case(
+    kind: BackendKind,
+    corruption: &str,
+    canonical: &IndexGeneration,
+) -> Result<(), StoreError> {
     let temp = TempDir::new().map_err(io_error)?;
     fs::create_dir_all(temp.path().join("resources")).map_err(io_error)?;
     fs::write(
@@ -1022,13 +1143,12 @@ fn corruption_case(kind: BackendKind, corruption: &str) -> Result<(), StoreError
     )
     .map_err(io_error)?;
     let project_before = project_source_digest(temp.path())?;
-    let base = synthetic_generation(64, 192, 1);
     {
-        let mut store = open_store(kind, temp.path(), &base.project_id)?;
-        store.activate(&base, None)?;
+        let mut store = open_store(kind, temp.path(), &canonical.project_id)?;
+        store.activate(canonical, None)?;
     }
     corrupt(kind, temp.path(), corruption)?;
-    let error = read_generation(kind, temp.path(), &base.project_id)
+    let error = read_generation(kind, temp.path(), &canonical.project_id)
         .expect_err("corrupt or incompatible cache must not be current");
     let expected_error = match corruption {
         "project_binding" => error == StoreError::ProjectMismatch,
@@ -1041,12 +1161,27 @@ fn corruption_case(kind: BackendKind, corruption: &str) -> Result<(), StoreError
         )));
     }
     quarantine(kind, temp.path())?;
-    let replacement = open_store(kind, temp.path(), &base.project_id)?;
-    if replacement.active_generation() != Err(StoreError::NotReady) {
+    {
+        let mut replacement = open_store(kind, temp.path(), &canonical.project_id)?;
+        if replacement.active_generation() != Err(StoreError::NotReady) {
+            return Err(StoreError::ValidationFailed(
+                "replacement store was not empty after quarantine".to_owned(),
+            ));
+        }
+        replacement.activate(canonical, None)?;
+        if replacement.active_generation()? != *canonical {
+            return Err(StoreError::ValidationFailed(
+                "replacement store did not activate the canonical generation".to_owned(),
+            ));
+        }
+    }
+    let reopened = open_store(kind, temp.path(), &canonical.project_id)?;
+    if reopened.active_generation()? != *canonical {
         return Err(StoreError::ValidationFailed(
-            "replacement store was not empty after quarantine".to_owned(),
+            "rebuilt canonical generation changed after reopen".to_owned(),
         ));
     }
+    validate_direct_reverse_parity(reopened.as_ref(), canonical)?;
     if project_source_digest(temp.path())? != project_before {
         return Err(StoreError::ValidationFailed(
             "cache quarantine changed project source bytes".to_owned(),
@@ -1278,8 +1413,9 @@ struct PackageMetrics {
 }
 
 fn package_metrics(repo_root: &Path) -> Result<BTreeMap<String, PackageMetrics>, StoreError> {
-    let manifest = repo_root.join("tests/codex/storage_spike/Cargo.toml");
-    let rustc = command_output(repo_root, "rustc", &["--version", "--verbose"])
+    let workspace = repo_root.join("tests/codex/storage_spike");
+    let manifest = workspace.join("Cargo.toml");
+    let rustc = command_output(&workspace, "rustc", &["--version", "--verbose"])
         .ok_or_else(|| StoreError::StorageIo("rustc host details unavailable".to_owned()))?;
     let host = rustc
         .lines()
@@ -1305,6 +1441,7 @@ fn package_metrics(repo_root: &Path) -> Result<BTreeMap<String, PackageMetrics>,
                 "--target-dir",
                 target.to_string_lossy().as_ref(),
             ])
+            .current_dir(&workspace)
             .status()
             .map_err(io_error)?;
         if !status.success() {
@@ -1332,6 +1469,7 @@ fn package_metrics(repo_root: &Path) -> Result<BTreeMap<String, PackageMetrics>,
                 "--manifest-path",
                 manifest.to_string_lossy().as_ref(),
             ])
+            .current_dir(&workspace)
             .output()
             .map_err(io_error)?;
         if !output.status.success() {
@@ -1742,15 +1880,20 @@ fn flip_byte(path: &Path) -> Result<(), StoreError> {
     fs::write(path, bytes).map_err(io_error)
 }
 
-fn write_evidence(path: &Path, evidence: &StorageSpikeEvidence) -> Result<(), StoreError> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(io_error)?;
-    }
+fn write_evidence<T: serde::Serialize>(path: &Path, evidence: &T) -> Result<(), StoreError> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(io_error)?;
     let bytes = serde_json::to_vec_pretty(evidence)
         .map_err(|error| StoreError::StorageIo(error.to_string()))?;
-    let temp = path.with_extension("tmp");
-    fs::write(&temp, bytes).map_err(io_error)?;
-    fs::rename(temp, path).map_err(io_error)
+    let mut temp = NamedTempFile::new_in(parent).map_err(io_error)?;
+    temp.write_all(&bytes).map_err(io_error)?;
+    temp.as_file_mut().sync_all().map_err(io_error)?;
+    temp.persist(path)
+        .map(|_| ())
+        .map_err(|error| io_error(error.error))
 }
 
 fn command_output(root: &Path, command: &str, arguments: &[&str]) -> Option<String> {
@@ -1765,20 +1908,38 @@ fn command_output(root: &Path, command: &str, arguments: &[&str]) -> Option<Stri
         .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
-const SOURCE_SCOPES: [&str; 5] = [
-    "godot-codex-mcp/Cargo.toml",
-    "godot-codex-mcp/Cargo.lock",
-    "godot-codex-mcp/crates/index-store",
-    "tests/codex/storage_spike",
-    "tests/codex/fixtures/resource_graph_oracle/golden-resource-graph.json",
-];
+const SOURCE_SCOPES: &str = include_str!("../../sprint3_source_scopes.txt");
+const SOURCE_SCOPE_MANIFEST: &str = "tests/codex/sprint3_source_scopes.txt";
+
+fn parse_source_scopes(manifest: &str) -> Result<Vec<&str>, StoreError> {
+    let scopes: Vec<_> = manifest
+        .lines()
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect();
+    if scopes.is_empty()
+        || scopes.windows(2).any(|pair| pair[0] >= pair[1])
+        || !scopes.contains(&SOURCE_SCOPE_MANIFEST)
+    {
+        return Err(StoreError::ValidationFailed(
+            "Sprint 3 source scopes must be nonempty, unique, sorted, and self-including"
+                .to_owned(),
+        ));
+    }
+    Ok(scopes)
+}
+
+fn source_scopes() -> Result<Vec<&'static str>, StoreError> {
+    parse_source_scopes(SOURCE_SCOPES)
+}
 
 fn relevant_git_dirty(root: &Path) -> Result<bool, StoreError> {
+    let scopes = source_scopes()?;
     let output = Command::new("git")
+        .arg("--literal-pathspecs")
         .arg("status")
         .arg("--porcelain")
         .arg("--")
-        .args(SOURCE_SCOPES)
+        .args(scopes)
         .current_dir(root)
         .output()
         .map_err(io_error)?;
@@ -1791,8 +1952,10 @@ fn relevant_git_dirty(root: &Path) -> Result<bool, StoreError> {
 }
 
 fn source_tree_sha256(root: &Path) -> Result<String, StoreError> {
+    let scopes = source_scopes()?;
     let output = Command::new("git")
         .args([
+            "--literal-pathspecs",
             "ls-files",
             "-z",
             "--cached",
@@ -1800,7 +1963,7 @@ fn source_tree_sha256(root: &Path) -> Result<String, StoreError> {
             "--exclude-standard",
             "--",
         ])
-        .args(SOURCE_SCOPES)
+        .args(scopes)
         .current_dir(root)
         .output()
         .map_err(io_error)?;
@@ -1839,6 +2002,13 @@ fn fault_name(point: FaultPoint) -> &'static str {
     }
 }
 
+const fn fault_ready_environment(kind: BackendKind) -> &'static str {
+    match kind {
+        BackendKind::Sqlite => "CODEX_STORAGE_SPIKE_FAULT_READY",
+        BackendKind::Segment => "CODEX_SEGMENT_STORE_FAULT_READY",
+    }
+}
+
 fn elapsed_ns(start: Instant) -> u64 {
     u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
@@ -1850,6 +2020,62 @@ fn io_error(error: std::io::Error) -> StoreError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn crash_workers_use_the_backend_fault_ready_contract() {
+        assert_eq!(
+            fault_ready_environment(BackendKind::Sqlite),
+            "CODEX_STORAGE_SPIKE_FAULT_READY"
+        );
+        assert_eq!(
+            fault_ready_environment(BackendKind::Segment),
+            "CODEX_SEGMENT_STORE_FAULT_READY"
+        );
+    }
+
+    #[test]
+    fn source_scope_manifest_is_fail_closed_and_self_including() {
+        assert!(
+            source_scopes().is_ok(),
+            "checked-in source scopes are valid"
+        );
+        assert!(parse_source_scopes("").is_err());
+        assert!(
+            parse_source_scopes("z\ntests/codex/sprint3_source_scopes.txt\na\n").is_err(),
+            "scope entries must be sorted"
+        );
+        assert!(
+            parse_source_scopes(
+                "tests/codex/sprint3_source_scopes.txt\ntests/codex/sprint3_source_scopes.txt\n"
+            )
+            .is_err(),
+            "scope entries must be unique"
+        );
+        assert!(
+            parse_source_scopes("tests/codex/storage_spike\n").is_err(),
+            "the scope manifest must include itself"
+        );
+    }
+
+    #[test]
+    fn qualifying_storage_producer_rejects_ci_environment_markers() {
+        let error = require_local_host_for_qualifying_profile_with(true, |name| {
+            matches!(name, "CI" | "GITHUB_ACTIONS")
+        })
+        .expect_err("qualifying storage evidence must reject CI markers");
+        assert_eq!(
+            error,
+            StoreError::ValidationFailed(
+                "qualifying evidence requires a local host; detected CI environment markers: CI, GITHUB_ACTIONS"
+                    .to_owned()
+            )
+        );
+        assert!(
+            require_local_host_for_qualifying_profile_with(false, |_| true).is_ok(),
+            "quick evidence is non-qualifying"
+        );
+        assert!(require_local_host_for_qualifying_profile_with(true, |_| false).is_ok());
+    }
 
     fn decision_backend(kind: BackendKind) -> BackendEvidence {
         let gates = [
@@ -1936,7 +2162,7 @@ mod tests {
             os: os.to_owned(),
             architecture: "fixture".to_owned(),
             host: HostEvidence {
-                runner: "fixture".to_owned(),
+                runner: "local".to_owned(),
                 logical_cpus: 1,
             },
             oracle_sha256: "sha256:fixture-oracle".to_owned(),
@@ -1966,9 +2192,24 @@ mod tests {
         quick.profile = "quick".to_owned();
         assert!(!decision_profile_valid(&quick));
 
+        let mut remote = valid.clone();
+        remote.host.runner = "hosted-ci".to_owned();
+        assert!(!decision_profile_valid(&remote));
+
         let mut tampered = valid;
         tampered.backends[0].weighted_score = 0.123;
         assert!(!decision_profile_valid(&tampered));
+
+        let mut reordered = decision_run("macos");
+        reordered.backends.reverse();
+        assign_scores(&mut reordered.backends);
+        let (chosen_backend, decision_reason) = choose_backend(&reordered.backends);
+        reordered.chosen_backend = chosen_backend;
+        reordered.decision_reason = decision_reason;
+        assert!(
+            !decision_profile_valid(&reordered),
+            "backend presentation order must not become a hidden bootstrap coordinate"
+        );
     }
 
     #[test]
@@ -1984,11 +2225,31 @@ mod tests {
             .expect("write evidence");
             inputs.push(path);
         }
-        let combined = merge_platform_evidence(&temp.path().join("combined.json"), &inputs)
-            .expect("merge evidence");
+        let combined_path = temp.path().join("combined.json");
+        let combined = merge_platform_evidence(&combined_path, &inputs).expect("merge evidence");
         assert!(combined.cross_platform_complete);
         assert_eq!(combined.chosen_backend, "sqlite");
         assert_eq!(combined.backend_summaries.len(), 2);
+        let combined_bytes = fs::read(&combined_path).expect("read canonical aggregate");
+        let (validated, evidence_sha256) =
+            validate_combined_evidence(&combined_path).expect("validate canonical aggregate");
+        assert_eq!(validated, combined);
+        assert_eq!(
+            evidence_sha256,
+            format!("sha256:{:x}", Sha256::digest(&combined_bytes))
+        );
+
+        let compact_bytes = serde_json::to_vec(&combined).expect("serialize compact aggregate");
+        assert_ne!(compact_bytes, combined_bytes);
+        fs::write(&combined_path, &compact_bytes).expect("rewrite canonical aggregate");
+        let (compact_validated, compact_sha256) =
+            validate_combined_evidence(&combined_path).expect("validate compact aggregate");
+        assert_eq!(compact_validated, combined);
+        assert_eq!(
+            compact_sha256,
+            format!("sha256:{:x}", Sha256::digest(&compact_bytes))
+        );
+        assert_ne!(compact_sha256, evidence_sha256);
 
         let quick_path = &inputs[0];
         let mut quick = decision_run("linux");
@@ -2005,7 +2266,122 @@ mod tests {
     }
 
     #[test]
+    fn combined_validation_rejects_hand_authored_scores_and_intervals() {
+        let temp = TempDir::new().expect("temp");
+        let inputs: Vec<_> = ["linux", "macos", "windows"]
+            .into_iter()
+            .map(|os| {
+                let path = temp.path().join(format!("{os}.json"));
+                fs::write(
+                    &path,
+                    serde_json::to_vec(&decision_run(os)).expect("serialize evidence"),
+                )
+                .expect("write evidence");
+                path
+            })
+            .collect();
+        let canonical_path = temp.path().join("canonical.json");
+        let canonical = merge_platform_evidence(&canonical_path, &inputs).expect("merge evidence");
+
+        let mut forged_score = canonical.clone();
+        forged_score.platform_runs[0].backends[0].weighted_score += 0.25;
+        let forged_score_path = temp.path().join("forged-score.json");
+        fs::write(
+            &forged_score_path,
+            serde_json::to_vec(&forged_score).expect("serialize forged score"),
+        )
+        .expect("write forged score");
+        assert!(matches!(
+            validate_combined_evidence(&forged_score_path),
+            Err(StoreError::ValidationFailed(_))
+        ));
+
+        let mut forged_interval = canonical;
+        forged_interval.backend_summaries[0].weighted_score_ci95_low += 0.25;
+        let forged_interval_path = temp.path().join("forged-interval.json");
+        fs::write(
+            &forged_interval_path,
+            serde_json::to_vec(&forged_interval).expect("serialize forged interval"),
+        )
+        .expect("write forged interval");
+        assert!(matches!(
+            validate_combined_evidence(&forged_interval_path),
+            Err(StoreError::ValidationFailed(_))
+        ));
+    }
+
+    #[test]
+    fn exact_query_parity_rejects_payload_order_and_exactness_tampering() {
+        let oracle_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../fixtures/resource_graph_oracle/golden-resource-graph.json");
+        let oracle = oracle_generations(&oracle_path).expect("load canonical oracle");
+        let canonical = oracle.last().expect("canonical oracle is non-empty");
+
+        let source = &canonical
+            .dependencies
+            .first()
+            .expect("canonical oracle has dependency edges")
+            .source_entity_id;
+        let direct_query = ResourceQuery {
+            selector: ResourceSelector::EntityId(source.clone()),
+            limit: 200,
+            offset: 0,
+        };
+        let expected_direct =
+            query_generation(canonical, &direct_query, false).expect("canonical direct query");
+        let mut altered_payload = expected_direct.clone();
+        altered_payload.edges[0].authority.push_str("-tampered");
+        assert!(
+            validate_query_parity(&altered_payload, &expected_direct, source, "direct").is_err(),
+            "matching edge IDs must not hide a changed edge payload"
+        );
+
+        let (reverse_entity, expected_reverse) = canonical
+            .resources
+            .iter()
+            .find_map(|resource| {
+                let query = ResourceQuery {
+                    selector: ResourceSelector::EntityId(resource.entity_id.clone()),
+                    limit: 200,
+                    offset: 0,
+                };
+                let result = query_generation(canonical, &query, true).ok()?;
+                (result.edges.len() >= 2).then(|| (resource.entity_id.clone(), result))
+            })
+            .expect("canonical oracle has a multi-owner reverse query");
+        let mut reordered_edges = expected_reverse.clone();
+        reordered_edges.edges.swap(0, 1);
+        assert!(
+            validate_query_parity(
+                &reordered_edges,
+                &expected_reverse,
+                &reverse_entity,
+                "reverse"
+            )
+            .is_err(),
+            "matching edge sets must not hide nondeterministic order"
+        );
+
+        let mut altered_exactness = expected_reverse.clone();
+        altered_exactness.exact = !altered_exactness.exact;
+        assert!(
+            validate_query_parity(
+                &altered_exactness,
+                &expected_reverse,
+                &reverse_entity,
+                "reverse"
+            )
+            .is_err(),
+            "query exactness is part of parity"
+        );
+    }
+
+    #[test]
     fn corruption_matrix_distinguishes_binding_and_schema_failures() {
+        let oracle_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../fixtures/resource_graph_oracle/golden-resource-graph.json");
+        let oracle = oracle_generations(&oracle_path).expect("load canonical oracle");
+        let canonical = oracle.last().expect("canonical oracle is non-empty");
         for kind in [BackendKind::Sqlite, BackendKind::Segment] {
             for corruption in [
                 "metadata",
@@ -2014,7 +2390,7 @@ mod tests {
                 "project_binding",
                 "incompatible_schema",
             ] {
-                corruption_case(kind, corruption)
+                corruption_case(kind, corruption, canonical)
                     .unwrap_or_else(|error| panic!("{kind:?} {corruption} matrix failed: {error}"));
             }
         }
