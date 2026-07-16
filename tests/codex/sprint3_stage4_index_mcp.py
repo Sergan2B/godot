@@ -9,11 +9,13 @@ import json
 import math
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +26,12 @@ from resource_graph_fixture import (
     restore_project,
     strict_json_load,
 )
-from sprint2_live_smoke import LineProcess, MCP_PROTOCOL, McpClient
+from sprint2_live_smoke import MCP_PROTOCOL, LineProcess, McpClient
+from sprint3_acceptance import (
+    BRIDGE_TELEMETRY_SAMPLE_CAPACITY,
+    REDACTION_FIELDS,
+    redaction_status,
+)
 from sprint3_stage3_live import (
     PHASES,
     apply_prepared_diff,
@@ -37,20 +44,17 @@ from sprint3_stage3_live import (
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPOSITORY_ROOT = SCRIPT_DIR.parent.parent
-SOURCE_SCOPES = (
-    "modules/codex_bridge",
-    "schemas/codex_bridge/v1",
-    "godot-codex-mcp/Cargo.toml",
-    "godot-codex-mcp/Cargo.lock",
-    "godot-codex-mcp/crates",
-    "tests/codex/sprint2_live_smoke.py",
-    "tests/codex/sprint3_stage3_live.py",
-    "tests/codex/sprint3_stage4_index_mcp.py",
-    "tests/codex/resource_graph_fixture.py",
-    "tests/codex/resource_graph_live_driver.gd",
-    "tests/codex/fixtures/resource_graph_project",
-    "tests/codex/fixtures/resource_graph_oracle",
+SOURCE_SCOPE_PATH = SCRIPT_DIR / "sprint3_source_scopes.txt"
+SOURCE_SCOPE_MANIFEST = SOURCE_SCOPE_PATH.relative_to(REPOSITORY_ROOT).as_posix()
+SOURCE_SCOPES = tuple(
+    line for line in SOURCE_SCOPE_PATH.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#")
 )
+if (
+    not SOURCE_SCOPES
+    or tuple(sorted(set(SOURCE_SCOPES))) != SOURCE_SCOPES
+    or SOURCE_SCOPE_MANIFEST not in SOURCE_SCOPES
+):
+    raise RuntimeError("Sprint 3 source scopes must be nonempty, unique, and sorted")
 TELEMETRY_PREFIX = "[codex_bridge_evidence] "
 TOOL_NAMES = {
     "godot_get_current_scene",
@@ -59,10 +63,59 @@ TOOL_NAMES = {
     "godot_get_resource_dependencies",
     "godot_find_resource_owners",
 }
+RESOURCE_TOOLS = (
+    "godot_get_resource_dependencies",
+    "godot_find_resource_owners",
+)
+MCP_CONTRACT_FIELDS = {
+    "closed_input_schemas",
+    "cross_project_cursor_rejected",
+    "cross_tool_cursor_rejected",
+    "exact_ordering",
+    "exact_tool_registry",
+    "limit_bounds_rejected",
+    "schema_negatives_rejected",
+    "stable_project_scope",
+    "stale_generation_cursor_rejected",
+    "tampered_cursor_rejected",
+    "traversal_rejected",
+}
+CI_ENVIRONMENT_MARKERS = (
+    "APPVEYOR",
+    "BITBUCKET_BUILD_NUMBER",
+    "BUILDKITE",
+    "CI",
+    "CIRCLECI",
+    "CODEBUILD_BUILD_ID",
+    "CONTINUOUS_INTEGRATION",
+    "DRONE",
+    "GITEA_ACTIONS",
+    "GITHUB_ACTIONS",
+    "GITLAB_CI",
+    "JENKINS_URL",
+    "TEAMCITY_VERSION",
+    "TF_BUILD",
+    "TRAVIS",
+    "WOODPECKER",
+)
 
 
 class IndexMcpGateError(RuntimeError):
     """Raised when persistent index or MCP output differs from the oracle."""
+
+
+def require_local_host_for_qualifying_evidence(
+    qualifying: bool,
+    environment: Mapping[str, str] | None = None,
+) -> None:
+    if not qualifying:
+        return
+    variables = os.environ if environment is None else environment
+    detected = [name for name in CI_ENVIRONMENT_MARKERS if name in variables]
+    if detected:
+        raise IndexMcpGateError(
+            "qualifying evidence requires a local host; detected CI environment markers: " + ", ".join(detected)
+        )
 
 
 def canonical_json(value: Any) -> str:
@@ -91,6 +144,15 @@ def default_sidecar() -> Path:
     return REPOSITORY_ROOT / "godot-codex-mcp" / "target" / "release" / name
 
 
+def default_godot(platform_tag: str) -> Path:
+    name = (
+        "godot.macos.editor.dev.arm64"
+        if platform_tag == "macos-arm64"
+        else "godot.windows.editor.dev.x86_64.console.exe"
+    )
+    return REPOSITORY_ROOT / "bin" / name
+
+
 def default_evidence(platform_tag: str) -> Path:
     suffix = "macos" if platform_tag == "macos-arm64" else "windows"
     return SCRIPT_DIR / "evidence" / f"sprint-3-resource-graph-{suffix}.json"
@@ -104,10 +166,23 @@ def sha256_file(path: Path) -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
-def command_output(command: list[str]) -> str:
+def require_redacted(value: Any, context: str, *, allow_session_identity: bool = False) -> dict[str, bool]:
+    status = redaction_status(value)
+    checked = {
+        name: passed
+        for name, passed in status.items()
+        if not allow_session_identity or name != "session_identifiers_absent"
+    }
+    if not all(checked.values()):
+        failed = ", ".join(sorted(name for name, passed in checked.items() if not passed))
+        raise IndexMcpGateError(f"{context} failed redaction checks: {failed}")
+    return status
+
+
+def command_output(command: list[str], *, cwd: Path = REPOSITORY_ROOT) -> str:
     result = subprocess.run(
         command,
-        cwd=REPOSITORY_ROOT,
+        cwd=cwd,
         check=False,
         capture_output=True,
         text=True,
@@ -118,11 +193,56 @@ def command_output(command: list[str]) -> str:
     return result.stdout.strip()
 
 
+def scons_version() -> str:
+    commands = [
+        [str(REPOSITORY_ROOT / ".venv" / "bin" / "scons"), "--version"],
+        [str(REPOSITORY_ROOT / ".venv" / "Scripts" / "scons.exe"), "--version"],
+    ]
+    located = shutil.which("scons")
+    if located:
+        commands.append([located, "--version"])
+    commands.append([sys.executable, "-m", "SCons", "--version"])
+    for command in commands:
+        if command[0] != sys.executable and not Path(command[0]).is_file():
+            continue
+        result = subprocess.run(
+            command,
+            cwd=REPOSITORY_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        match = re.search(r"^\s*SCons:\s+v([^,\s]+)", result.stdout, re.MULTILINE)
+        if result.returncode == 0 and match:
+            return f"SCons {match.group(1)}"
+    raise IndexMcpGateError("cannot determine the SCons version used by the local build")
+
+
+def toolchain_coordinates() -> dict[str, str]:
+    rust_workspace = REPOSITORY_ROOT / "godot-codex-mcp"
+    rust_verbose = command_output(["rustc", "--version", "--verbose"], cwd=rust_workspace)
+    rust_target = next(
+        (line.removeprefix("host: ") for line in rust_verbose.splitlines() if line.startswith("host: ")),
+        "",
+    )
+    if not rust_target:
+        raise IndexMcpGateError("rustc host triple is unavailable")
+    return {
+        "python": f"{platform.python_implementation()} {platform.python_version()}",
+        "scons": scons_version(),
+        "rustc": rust_verbose.splitlines()[0],
+        "cargo": command_output(["cargo", "--version"], cwd=rust_workspace).splitlines()[0],
+        "rust_target": rust_target,
+    }
+
+
 def source_coordinates() -> dict[str, Any]:
-    status = command_output(["git", "status", "--porcelain", "--", *SOURCE_SCOPES])
+    status = command_output(["git", "--literal-pathspecs", "status", "--porcelain", "--", *SOURCE_SCOPES])
     listed = subprocess.run(
         [
             "git",
+            "--literal-pathspecs",
             "ls-files",
             "-z",
             "--cached",
@@ -169,18 +289,17 @@ def version_output(executable: Path) -> str:
 
 
 def build_sidecar(sidecar: Path) -> None:
+    workspace = REPOSITORY_ROOT / "godot-codex-mcp"
     result = subprocess.run(
         [
             "cargo",
             "build",
             "--locked",
             "--release",
-            "--manifest-path",
-            str(REPOSITORY_ROOT / "godot-codex-mcp" / "Cargo.toml"),
             "-p",
             "godot-codex-mcp",
         ],
-        cwd=REPOSITORY_ROOT,
+        cwd=workspace,
         check=False,
         capture_output=True,
         text=True,
@@ -188,6 +307,25 @@ def build_sidecar(sidecar: Path) -> None:
     )
     if result.returncode != 0 or not sidecar.is_file():
         raise IndexMcpGateError("could not build the release sidecar")
+
+
+def validate_tool_registry(tools: Any) -> list[dict[str, Any]]:
+    if (
+        not isinstance(tools, list)
+        or len(tools) != len(TOOL_NAMES)
+        or not all(isinstance(tool, dict) for tool in tools)
+        or {tool.get("name") for tool in tools} != TOOL_NAMES
+    ):
+        raise IndexMcpGateError("MCP tool set differs from the frozen five-tool contract")
+    for tool in tools:
+        schema = tool.get("inputSchema")
+        if (
+            not isinstance(schema, dict)
+            or schema.get("type") != "object"
+            or schema.get("additionalProperties") is not False
+        ):
+            raise IndexMcpGateError(f"{tool.get('name')} input schema is not a closed object")
+    return tools
 
 
 def initialize_sidecar(sidecar: Path, project: Path, timeout: float) -> tuple[LineProcess, McpClient]:
@@ -205,15 +343,27 @@ def initialize_sidecar(sidecar: Path, project: Path, timeout: float) -> tuple[Li
             "clientInfo": {"name": "sprint3-index-mcp-gate", "version": "1"},
         },
     )
+    try:
+        require_redacted(response, "MCP initialize output", allow_session_identity=True)
+    except IndexMcpGateError:
+        process.stop()
+        raise
     if response.get("result", {}).get("protocolVersion") != MCP_PROTOCOL:
         process.stop()
         raise IndexMcpGateError("MCP protocol version differs")
     client.notify("notifications/initialized", {})
     listed = client.request("tools/list", {})
     tools = listed.get("result", {}).get("tools", [])
-    if {tool.get("name") for tool in tools} != TOOL_NAMES:
+    try:
+        require_redacted(listed, "MCP tool registry", allow_session_identity=True)
+    except IndexMcpGateError:
         process.stop()
-        raise IndexMcpGateError("MCP tool set differs from the frozen five-tool contract")
+        raise
+    try:
+        tools = validate_tool_registry(tools)
+    except IndexMcpGateError:
+        process.stop()
+        raise
     if not all(
         tool.get("annotations", {}).get("readOnlyHint") is True
         and tool.get("annotations", {}).get("destructiveHint") is False
@@ -245,6 +395,7 @@ def tool_call(
     started = time.perf_counter_ns()
     response = client.request("tools/call", {"name": name, "arguments": arguments})
     elapsed_ms = (time.perf_counter_ns() - started) / 1_000_000
+    require_redacted(response, f"{name} MCP output", allow_session_identity=True)
     if "error" in response:
         raise IndexMcpGateError(f"MCP protocol error from {name}")
     result = response.get("result", {})
@@ -252,6 +403,109 @@ def tool_call(
     if not isinstance(content, dict):
         raise IndexMcpGateError(f"{name} omitted structuredContent")
     return content, result.get("isError") is True, elapsed_ms
+
+
+def require_tool_error(
+    client: McpClient,
+    name: str,
+    arguments: dict[str, Any],
+    expected_code: str | None = None,
+    *,
+    allow_protocol_rejection: bool = False,
+) -> None:
+    response = client.request("tools/call", {"name": name, "arguments": arguments})
+    require_redacted(response, f"{name} negative MCP output", allow_session_identity=True)
+    if "error" in response:
+        error = response.get("error")
+        error_code = error.get("code") if isinstance(error, dict) else None
+        if (
+            allow_protocol_rejection
+            and isinstance(error_code, int)
+            and not isinstance(error_code, bool)
+            and error_code == -32602
+        ):
+            return
+        if allow_protocol_rejection:
+            raise IndexMcpGateError(f"{name} did not reject the negative query as JSON-RPC InvalidParams")
+        raise IndexMcpGateError(f"{name} returned a protocol error instead of {expected_code}")
+    if allow_protocol_rejection:
+        raise IndexMcpGateError(f"{name} did not reject the negative query as JSON-RPC InvalidParams")
+    result = response.get("result")
+    content = result.get("structuredContent") if isinstance(result, dict) else None
+    code = content.get("error", {}).get("code") if isinstance(content, dict) else None
+    if not isinstance(result, dict) or result.get("isError") is not True or code != expected_code:
+        raise IndexMcpGateError(f"{name} did not reject the negative query as {expected_code}")
+
+
+def issue_probe_cursor(
+    client: McpClient,
+    tool: str,
+    resource: str,
+) -> tuple[str, str]:
+    content, is_error, _ = tool_call(client, tool, {"resource": resource, "limit": 1})
+    cursor = content.get("next_cursor")
+    project_id = content.get("project_id")
+    if (
+        is_error
+        or not isinstance(cursor, str)
+        or content.get("truncated") is not True
+        or not isinstance(project_id, str)
+        or not project_id.startswith("project:sha256:")
+    ):
+        raise IndexMcpGateError(f"{tool} did not produce a project-scoped probe cursor")
+    return cursor, project_id
+
+
+def probe_base_mcp_contract(
+    client: McpClient,
+    resource: str,
+) -> tuple[dict[str, bool], str, str]:
+    for tool in RESOURCE_TOOLS:
+        require_tool_error(client, tool, {"resource": resource, "limit": 0}, "invalid_limit")
+        require_tool_error(client, tool, {"resource": resource, "limit": 201}, "invalid_limit")
+        require_tool_error(client, tool, {"resource": "res://../project.godot", "limit": 50}, "invalid_path")
+        require_tool_error(
+            client,
+            tool,
+            {"resource": resource, "limit": 1, "unknown_member": True},
+            allow_protocol_rejection=True,
+        )
+
+    cursor, project_id = issue_probe_cursor(
+        client,
+        "godot_get_resource_dependencies",
+        resource,
+    )
+    replacement = "A" if cursor[-1] != "A" else "B"
+    require_tool_error(
+        client,
+        "godot_get_resource_dependencies",
+        {"resource": resource, "limit": 1, "cursor": cursor[:-1] + replacement},
+        "stale_cursor",
+    )
+    require_tool_error(
+        client,
+        "godot_find_resource_owners",
+        {"resource": resource, "limit": 1, "cursor": cursor},
+        "stale_cursor",
+    )
+    return (
+        {
+            "closed_input_schemas": True,
+            "cross_project_cursor_rejected": False,
+            "cross_tool_cursor_rejected": True,
+            "exact_ordering": False,
+            "exact_tool_registry": True,
+            "limit_bounds_rejected": True,
+            "schema_negatives_rejected": True,
+            "stable_project_scope": False,
+            "stale_generation_cursor_rejected": False,
+            "tampered_cursor_rejected": True,
+            "traversal_rejected": True,
+        },
+        cursor,
+        project_id,
+    )
 
 
 def selector(resource: dict[str, Any]) -> str:
@@ -276,11 +530,6 @@ def wait_for_current(
             "godot_get_resource_dependencies",
             {"resource": resource, "limit": 50},
         )
-        if bulk_status_samples is not None:
-            status, status_error, status_ms = tool_call(client, "godot_get_editor_state", {})
-            bulk_status_samples.append(round(status_ms, 3))
-            if status_error or status.get("freshness") != "current":
-                raise IndexMcpGateError("editor status was unavailable during bulk rebuild")
         if not is_error and content.get("freshness") == "current":
             if previous_generation is None or content.get("generation_id") != previous_generation:
                 return content, round((time.monotonic() - started) * 1000, 3)
@@ -293,6 +542,11 @@ def wait_for_current(
                 "resource_not_found",
             }:
                 raise IndexMcpGateError(f"unexpected resource tool error while polling: {last_code}")
+        if bulk_status_samples is not None:
+            status, status_error, status_ms = tool_call(client, "godot_get_editor_state", {})
+            bulk_status_samples.append(round(status_ms, 3))
+            if status_error or status.get("freshness") != "current":
+                raise IndexMcpGateError("editor status was unavailable during bulk rebuild")
         if client.process.tail and client.process.tail[-1] != last_tail_line:
             last_tail_line = client.process.tail[-1]
             if last_tail_line.startswith("[godot-codex-index]"):
@@ -310,10 +564,11 @@ def paged_query(
     result_key: str,
     resource: str,
     query_samples: list[float],
-) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     cursor: str | None = None
     metadata: dict[str, Any] | None = None
     records: list[dict[str, Any]] = []
+    diagnostics: dict[tuple[str, str, str | None], dict[str, Any]] = {}
     while True:
         arguments: dict[str, Any] = {"resource": resource, "limit": 1}
         if cursor is not None:
@@ -327,6 +582,7 @@ def paged_query(
             "generation_id": content.get("generation_id"),
             "index_revision": content.get("index_revision"),
             "checkpoint": content.get("validated_checkpoint"),
+            "resource": content.get("resource"),
         }
         if metadata is None:
             metadata = page_metadata
@@ -336,6 +592,34 @@ def paged_query(
         if not isinstance(page, list):
             raise IndexMcpGateError(f"{tool} omitted {result_key}")
         records.extend(page)
+        page_diagnostics = content.get("diagnostics")
+        if not isinstance(page_diagnostics, list):
+            raise IndexMcpGateError(f"{tool} omitted diagnostics")
+        for diagnostic in page_diagnostics:
+            if not isinstance(diagnostic, dict):
+                raise IndexMcpGateError(f"{tool} returned a malformed diagnostic")
+            code = diagnostic.get("code")
+            subject = diagnostic.get("subject")
+            detail = diagnostic.get("detail")
+            first_revision = diagnostic.get("first_index_revision")
+            last_revision = diagnostic.get("last_index_revision")
+            if (
+                not isinstance(code, str)
+                or not isinstance(subject, str)
+                or (detail is not None and not isinstance(detail, str))
+                or not isinstance(first_revision, int)
+                or isinstance(first_revision, bool)
+                or not isinstance(last_revision, int)
+                or isinstance(last_revision, bool)
+                or first_revision <= 0
+                or last_revision < first_revision
+                or last_revision > int(page_metadata["index_revision"])
+            ):
+                raise IndexMcpGateError(f"{tool} returned an invalid diagnostic")
+            key = (code, subject, detail)
+            previous = diagnostics.setdefault(key, diagnostic)
+            if previous != diagnostic:
+                raise IndexMcpGateError(f"{tool} changed a diagnostic across pages")
         cursor = content.get("next_cursor")
         if cursor is None:
             if content.get("truncated") is not False:
@@ -344,7 +628,7 @@ def paged_query(
         if not isinstance(cursor, str) or content.get("truncated") is not True:
             raise IndexMcpGateError(f"{tool} pagination cursor is inconsistent")
     assert metadata is not None
-    return metadata, records
+    return metadata, records, [diagnostics[key] for key in sorted(diagnostics)]
 
 
 def verify_oracle(
@@ -355,10 +639,12 @@ def verify_oracle(
     resources = {resource["oracle_id"]: resource for resource in oracle["resources"]}
     direct_expected = oracle["expected_direct_queries"]
     all_dependencies: dict[str, dict[str, Any]] = {}
+    all_diagnostics: dict[tuple[str, str, str | None], dict[str, Any]] = {}
     generation_id: str | None = None
     index_revision: int | None = None
+    project_id: str | None = None
     for oracle_id, resource in sorted(resources.items()):
-        metadata, dependencies = paged_query(
+        metadata, dependencies, diagnostics = paged_query(
             client,
             "godot_get_resource_dependencies",
             "dependencies",
@@ -368,8 +654,21 @@ def verify_oracle(
         if generation_id is None:
             generation_id = str(metadata["generation_id"])
             index_revision = int(metadata["index_revision"])
+            project_id = str(metadata["project_id"])
         elif generation_id != metadata["generation_id"] or index_revision != metadata["index_revision"]:
             raise IndexMcpGateError("oracle verification mixed active index generations")
+        elif project_id != metadata["project_id"]:
+            raise IndexMcpGateError("oracle verification mixed project bindings")
+        observed_resource = metadata["resource"]
+        if (
+            not isinstance(observed_resource, dict)
+            or observed_resource.get("entity_id") != resource["entity_id"]
+            or observed_resource.get("uid") != resource.get("uid")
+            or observed_resource.get("path") != resource["path"]
+            or observed_resource.get("type") != resource["type"]
+            or observed_resource.get("import_state") != resource["import_state"]
+        ):
+            raise IndexMcpGateError(f"resource identity or metadata differs for {oracle_id}")
         observed_ids = [dependency.get("edge_id") for dependency in dependencies]
         if observed_ids != direct_expected[oracle_id]:
             raise IndexMcpGateError(f"direct dependencies differ for {oracle_id}")
@@ -378,6 +677,15 @@ def verify_oracle(
             if edge_id in all_dependencies:
                 raise IndexMcpGateError("dependency appeared in more than one direct query")
             all_dependencies[str(edge_id)] = dependency
+        for diagnostic in diagnostics:
+            key = (
+                str(diagnostic["code"]),
+                str(diagnostic["subject"]),
+                diagnostic.get("detail"),
+            )
+            previous = all_diagnostics.setdefault(key, diagnostic)
+            if previous != diagnostic:
+                raise IndexMcpGateError("diagnostic changed across resource queries")
 
     expected_by_id = {dependency["edge_id"]: dependency for dependency in oracle["dependencies"]}
     if set(all_dependencies) != set(expected_by_id):
@@ -385,7 +693,8 @@ def verify_oracle(
     for edge_id, expected in expected_by_id.items():
         observed = all_dependencies[edge_id]
         if (
-            observed.get("target_uid") != expected.get("target_uid")
+            observed.get("declared_type") != expected.get("declared_type")
+            or observed.get("target_uid") != expected.get("target_uid")
             or observed.get("target_path") != expected["fallback_path"]
             or observed.get("resolution") != expected["resolution"]
             or observed.get("authority") != "godot_resource_loader"
@@ -393,26 +702,58 @@ def verify_oracle(
             raise IndexMcpGateError(f"dependency fact differs for {edge_id}")
 
     expected_reverse: dict[str, list[str]] = {resource["entity_id"]: [] for resource in resources.values()}
+    resources_by_entity = {resource["entity_id"]: resource for resource in resources.values()}
     for dependency in oracle["dependencies"]:
         target = dependency.get("resolved_target_entity_id")
         if target is not None:
             expected_reverse[target].append(dependency["edge_id"])
     for resource in resources.values():
-        _, owners = paged_query(
+        metadata, owners, diagnostics = paged_query(
             client,
             "godot_find_resource_owners",
             "owners",
             selector(resource),
             query_samples,
         )
+        if (
+            metadata["project_id"] != project_id
+            or metadata["generation_id"] != generation_id
+            or metadata["index_revision"] != index_revision
+        ):
+            raise IndexMcpGateError("reverse query escaped the pinned project generation")
         observed = [owner.get("edge_id") for owner in owners]
-        expected = sorted(expected_reverse[resource["entity_id"]], key=lambda edge_id: next(
-            dependency["source_entity_id"]
-            for dependency in oracle["dependencies"]
-            if dependency["edge_id"] == edge_id
-        ))
-        if set(observed) != set(expected) or len(observed) != len(expected):
+        expected = sorted(
+            expected_reverse[resource["entity_id"]],
+            key=lambda edge_id: (
+                resources_by_entity[expected_by_id[edge_id]["source_entity_id"]]["path"],
+                resources_by_entity[expected_by_id[edge_id]["source_entity_id"]].get("uid") is None,
+                resources_by_entity[expected_by_id[edge_id]["source_entity_id"]].get("uid") or "",
+                expected_by_id[edge_id]["source_entity_id"],
+                edge_id,
+            ),
+        )
+        if observed != expected:
             raise IndexMcpGateError(f"reverse owners differ for {resource['oracle_id']}")
+        for diagnostic in diagnostics:
+            key = (
+                str(diagnostic["code"]),
+                str(diagnostic["subject"]),
+                diagnostic.get("detail"),
+            )
+            previous = all_diagnostics.setdefault(key, diagnostic)
+            if previous != diagnostic:
+                raise IndexMcpGateError("diagnostic changed across direct/reverse queries")
+
+    expected_diagnostics = {
+        (
+            diagnostic["code"],
+            resources[diagnostic["source"]]["entity_id"],
+            diagnostic["target_reference"],
+        )
+        for diagnostic in oracle["diagnostics"]
+    }
+    if set(all_diagnostics) != expected_diagnostics:
+        raise IndexMcpGateError("stored diagnostics differ from the oracle")
 
     serialized = json.dumps(all_dependencies, sort_keys=True)
     if str(PROJECT_SOURCE.resolve()) in serialized or "/tmp/" in serialized:
@@ -421,12 +762,11 @@ def verify_oracle(
         {
             "edge_id": edge_id,
             "source_entity_id": expected_by_id[edge_id]["source_entity_id"],
+            "declared_type": dependency.get("declared_type"),
             "target_uid": dependency.get("target_uid"),
             "target_path": dependency.get("target_path"),
             "target_entity_id": (
-                dependency.get("target", {}).get("entity_id")
-                if isinstance(dependency.get("target"), dict)
-                else None
+                dependency.get("target", {}).get("entity_id") if isinstance(dependency.get("target"), dict) else None
             ),
             "resolution": dependency.get("resolution"),
             "authority": dependency.get("authority"),
@@ -441,10 +781,29 @@ def verify_oracle(
         "index_revision": index_revision,
         "resource_count": len(resources),
         "dependency_count": len(all_dependencies),
-        "diagnostic_count": len(oracle["diagnostics"]),
+        "diagnostic_count": len(all_diagnostics),
+        "diagnostic_codes": sorted({key[0] for key in all_diagnostics}),
+        "diagnostics_oracle_match": True,
         "normalized_graph_sha256": f"sha256:{graph_digest}",
         "direct_reverse_oracle_match": True,
+        "stable_project_scope": isinstance(project_id, str) and project_id.startswith("project:sha256:"),
     }
+
+
+def verify_current_oracle(
+    client: McpClient,
+    current: dict[str, Any],
+    oracle: dict[str, Any],
+    query_samples: list[float],
+    context: str,
+) -> dict[str, Any]:
+    """Verify and bind an oracle result to the exact generation that ended a wait."""
+    result = verify_oracle(client, oracle, query_samples)
+    if result["generation_id"] != current.get("generation_id") or result["index_revision"] != current.get(
+        "index_revision"
+    ):
+        raise IndexMcpGateError(f"{context} oracle verification crossed index generations")
+    return result
 
 
 def mutate_phase(
@@ -496,19 +855,36 @@ def parse_bridge_telemetry(log_text: str) -> dict[str, Any]:
         "over_budget_count",
         "overflow",
     }
-    if set(record) != required or record.get("schema_version") != 1 or record.get("budget_usec") != 2000:
+    if (
+        set(record) != required
+        or record.get("schema_version") != 1
+        or record.get("budget_usec") != 2000
+        or not isinstance(record.get("sample_capacity"), int)
+        or isinstance(record.get("sample_capacity"), bool)
+        or record.get("sample_capacity") != BRIDGE_TELEMETRY_SAMPLE_CAPACITY
+    ):
         raise IndexMcpGateError("Bridge telemetry contract differs")
     samples = record.get("samples_usec")
-    if not isinstance(samples, list) or not samples or not all(isinstance(value, int) and value >= 0 for value in samples):
+    if (
+        not isinstance(samples, list)
+        or not samples
+        or len(samples) > BRIDGE_TELEMETRY_SAMPLE_CAPACITY
+        or not all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in samples)
+    ):
         raise IndexMcpGateError("Bridge telemetry samples are empty or invalid")
     busy_count = record.get("busy_frame_count")
     over_budget = record.get("over_budget_count")
     maximum = record.get("max_elapsed_usec")
-    if not all(isinstance(value, int) and value >= 0 for value in (busy_count, over_budget, maximum)):
+    if not all(
+        isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        for value in (busy_count, over_budget, maximum)
+    ) or not isinstance(record.get("overflow"), bool):
         raise IndexMcpGateError("Bridge telemetry counters are invalid")
-    if record.get("overflow") is False and busy_count != len(samples):
-        raise IndexMcpGateError("Bridge telemetry omitted a busy frame without overflow")
-    if over_budget < sum(value > 2000 for value in samples) or maximum < max(samples):
+    if record.get("overflow") is not False:
+        raise IndexMcpGateError("Bridge telemetry overflowed")
+    if busy_count != len(samples):
+        raise IndexMcpGateError("Bridge telemetry omitted a busy frame")
+    if over_budget != sum(value > 2000 for value in samples) or maximum != max(samples):
         raise IndexMcpGateError("Bridge telemetry summary contradicts raw samples")
     return record
 
@@ -520,12 +896,7 @@ def run_phase(
     run_root: Path,
     oracles: dict[str, dict[str, Any]],
     timeout: float,
-    query_samples: list[float],
-    bulk_status_samples: list[float],
-    incremental_visibility_samples: list[float],
-    startup_samples: list[float],
-    reopen_samples: list[float],
-    rebuild_samples: list[float],
+    mcp_contract_state: dict[str, Any],
 ) -> dict[str, Any]:
     phase_root = run_root / f"p{PHASES.index(phase)}"
     project = phase_root / "p"
@@ -533,53 +904,145 @@ def run_phase(
     phase_root.mkdir(parents=True)
     shutil.copytree(PROJECT_SOURCE, project, ignore=shutil.ignore_patterns(".godot"))
     mutation_count = 2 if phase == "re_add" else 1
+    telemetry_log_path = phase_root / "godot.log"
+    log_paths = [telemetry_log_path]
     editor, editor_log = start_editor(
         godot,
         project,
-        phase_root / "godot.log",
+        telemetry_log_path,
         mutation_count,
         evidence_telemetry=True,
     )
     mcp: LineProcess | None = None
     phase_result: dict[str, Any] = {}
+    runtime_paths: list[Path] = []
+    query_samples: list[float] = []
+    bulk_status_samples: list[float] = []
     try:
-        wait_for(project / ".godot" / "codex" / "bridge.json", timeout, f"{phase} discovery")
+        discovery = project / ".godot" / "codex" / "bridge.json"
+        wait_for(discovery, timeout, f"{phase} discovery")
+        discovery_record = strict_json_load(discovery)
+        runtime_paths = [
+            discovery,
+            project / ".godot" / "codex" / "session.token",
+            project / ".godot" / "codex" / "bridge.lock",
+        ]
+        if discovery_record.get("transport") == "uds":
+            endpoint = Path(str(discovery_record.get("endpoint", "")))
+            if endpoint.is_absolute() or ".." in endpoint.parts:
+                raise IndexMcpGateError("bridge discovery exposed an unsafe UDS endpoint")
+            runtime_paths.append(project / endpoint)
         mcp, client = initialize_sidecar(sidecar, project, timeout)
-        base_resource = selector(next(resource for resource in oracles["base"]["resources"] if resource["oracle_id"] == "fan_out"))
+        base_resource = selector(
+            next(resource for resource in oracles["base"]["resources"] if resource["oracle_id"] == "fan_out")
+        )
         current, startup_ms = wait_for_current(client, base_resource, timeout)
-        startup_samples.append(startup_ms)
         base_generation = str(current["generation_id"])
         base_revision = int(current["index_revision"])
+        generation_probe_cursor: str | None = None
+
+        previous_cursor = mcp_contract_state.get("_cross_project_cursor")
+        if phase != "base" and isinstance(previous_cursor, str):
+            previous_project = mcp_contract_state.get("_cross_project_id")
+            if current.get("project_id") == previous_project:
+                raise IndexMcpGateError("phase isolation reused the previous project binding")
+            require_tool_error(
+                client,
+                "godot_get_resource_dependencies",
+                {"resource": base_resource, "limit": 1, "cursor": previous_cursor},
+                "stale_cursor",
+            )
+            mcp_contract_state["cross_project_cursor_rejected"] = True
+            mcp_contract_state.pop("_cross_project_cursor", None)
+            mcp_contract_state.pop("_cross_project_id", None)
+
+        if phase == "rename_uid":
+            generation_probe_cursor, cursor_project = issue_probe_cursor(
+                client,
+                "godot_get_resource_dependencies",
+                base_resource,
+            )
+            if cursor_project != current.get("project_id"):
+                raise IndexMcpGateError("generation probe cursor escaped the current project")
 
         if phase == "base":
+            contract, cross_project_cursor, cross_project_id = probe_base_mcp_contract(client, base_resource)
+            mcp_contract_state.update(contract)
+            mcp_contract_state["_cross_project_cursor"] = cross_project_cursor
+            mcp_contract_state["_cross_project_id"] = cross_project_id
             base_result = verify_oracle(client, oracles["base"], query_samples)
+            mcp_contract_state["exact_ordering"] = base_result["direct_reverse_oracle_match"] is True
+            mcp_contract_state["stable_project_scope"] = base_result["stable_project_scope"] is True
+            segment_root = project / ".godot" / "codex" / "index" / "segments"
             segments_before = sorted(
-                path.name
-                for path in (project / ".godot" / "codex" / "index" / "segments").glob("*.json")
+                (path.relative_to(segment_root).as_posix(), sha256_file(path))
+                for path in segment_root.rglob("*")
+                if path.is_file()
             )
+            if not segments_before:
+                raise IndexMcpGateError("compatible reopen had no committed segment artifacts")
+            initial_editor_session = discovery_record.get("editor_session_id")
             close_sidecar(mcp)
+            mcp = None
+            stop_editor(editor, project)
+            editor_log.close()
+            if editor.poll() is None:
+                raise IndexMcpGateError("base editor did not stop before reopen")
+            remaining_before_reopen = [path.name for path in runtime_paths if path.exists()]
+            if remaining_before_reopen:
+                raise IndexMcpGateError(
+                    "base editor left runtime artifacts before reopen: " + ", ".join(remaining_before_reopen)
+                )
+            (project / ".godot" / "codex-resource-live-done").unlink(missing_ok=True)
+
+            reopen_started = time.monotonic()
+            telemetry_log_path = phase_root / "godot-reopen.log"
+            log_paths.append(telemetry_log_path)
+            editor, editor_log = start_editor(
+                godot,
+                project,
+                telemetry_log_path,
+                mutation_count,
+                evidence_telemetry=True,
+            )
+            wait_for(discovery, timeout, "base reopened discovery")
+            reopened_discovery = strict_json_load(discovery)
+            if reopened_discovery.get("editor_session_id") == initial_editor_session:
+                raise IndexMcpGateError("editor reopen did not create a new session")
+            if reopened_discovery.get("transport") == "uds":
+                endpoint = Path(str(reopened_discovery.get("endpoint", "")))
+                if endpoint.is_absolute() or ".." in endpoint.parts:
+                    raise IndexMcpGateError("reopened bridge exposed an unsafe UDS endpoint")
+                reopened_endpoint = project / endpoint
+                if reopened_endpoint not in runtime_paths:
+                    runtime_paths.append(reopened_endpoint)
             mcp, client = initialize_sidecar(sidecar, project, timeout)
-            reopened, reopen_ms = wait_for_current(client, base_resource, timeout)
-            reopen_samples.append(reopen_ms)
+            reopened, _ = wait_for_current(client, base_resource, timeout)
+            reopen_ms = round((time.monotonic() - reopen_started) * 1000, 3)
+            reopened_result = verify_oracle(client, oracles["base"], query_samples)
             segments_after = sorted(
-                path.name
-                for path in (project / ".godot" / "codex" / "index" / "segments").glob("*.json")
+                (path.relative_to(segment_root).as_posix(), sha256_file(path))
+                for path in segment_root.rglob("*")
+                if path.is_file()
             )
             if (
                 reopened.get("generation_id") != base_generation
                 or reopened.get("index_revision") != base_revision
                 or segments_after != segments_before
+                or reopened_result["normalized_graph_sha256"] != base_result["normalized_graph_sha256"]
             ):
-                raise IndexMcpGateError("same-session reopen rebuilt or changed the committed index")
+                raise IndexMcpGateError("editor/sidecar reopen rebuilt or changed the committed index")
             status_content, status_error, _ = tool_call(client, "godot_get_editor_state", {})
             if status_error or status_content.get("freshness") != "current":
-                raise IndexMcpGateError("status/ping did not remain current after sidecar reopen")
+                raise IndexMcpGateError("status/ping did not remain current after editor/sidecar reopen")
             (project / ".godot" / "codex-resource-live-mutate").touch()
             phase_result.update({
                 "phase": phase,
                 **base_result,
                 "startup_visibility_ms": startup_ms,
                 "reopen_visibility_ms": reopen_ms,
+                "editor_reopened": True,
+                "sidecar_reopened": True,
                 "same_generation_after_reopen": True,
                 "immutable_segment_set_reused": True,
                 "passed": True,
@@ -588,34 +1051,48 @@ def run_phase(
 
         if phase == "re_add":
             mutate_phase(phase, godot, project, prepared, 1)
-            removed, removal_ms = wait_for_current(client, base_resource, timeout, base_generation)
-            incremental_visibility_samples.append(removal_ms)
+            removal_started = time.monotonic()
+            removed, _ = wait_for_current(client, base_resource, timeout, base_generation)
+            verify_current_oracle(
+                client,
+                removed,
+                oracles["delete"],
+                query_samples,
+                "re_add removal",
+            )
+            removal_ms = round((time.monotonic() - removal_started) * 1000, 3)
             mutate_phase(phase, godot, project, prepared, 2)
-            final, visibility_ms = wait_for_current(
+            visibility_started = time.monotonic()
+            final, _ = wait_for_current(
                 client,
                 base_resource,
                 timeout,
                 str(removed["generation_id"]),
             )
-            incremental_visibility_samples.append(visibility_ms)
         else:
             mutate_phase(phase, godot, project, prepared)
-            final, visibility_ms = wait_for_current(
+            visibility_started = time.monotonic()
+            final, _ = wait_for_current(
                 client,
                 base_resource,
                 timeout,
                 base_generation,
                 bulk_status_samples if phase == "journal_gap" else None,
             )
-            if phase == "journal_gap":
-                rebuild_samples.append(visibility_ms)
-            else:
-                incremental_visibility_samples.append(visibility_ms)
         if phase == "journal_gap" and final.get("validated_checkpoint", {}).get("last_batch_id") is not None:
             raise IndexMcpGateError("journal gap did not activate a full-snapshot checkpoint")
         if int(final["index_revision"]) <= base_revision:
             raise IndexMcpGateError(f"{phase} did not advance the durable index revision")
-        result = verify_oracle(client, oracles[phase], query_samples)
+        result = verify_current_oracle(client, final, oracles[phase], query_samples, phase)
+        visibility_ms = round((time.monotonic() - visibility_started) * 1000, 3)
+        if generation_probe_cursor is not None:
+            require_tool_error(
+                client,
+                "godot_get_resource_dependencies",
+                {"resource": base_resource, "limit": 1, "cursor": generation_probe_cursor},
+                "stale_cursor",
+            )
+            mcp_contract_state["stale_generation_cursor_rejected"] = True
         status_content, status_error, _ = tool_call(client, "godot_get_editor_state", {})
         if status_error or status_content.get("freshness") != "current":
             raise IndexMcpGateError(f"{phase} editor status was not current")
@@ -624,12 +1101,34 @@ def run_phase(
             **result,
             "startup_generation": base_generation,
             "startup_index_revision": base_revision,
+            "startup_visibility_ms": startup_ms,
             "change_visibility_ms": visibility_ms,
             "generation_advanced": result["generation_id"] != base_generation,
             "passed": True,
         })
         if phase == "re_add":
             phase_result["removal_visibility_ms"] = removal_ms
+        if phase == "rename_uid":
+            base_by_uid = {
+                resource["uid"]: resource
+                for resource in oracles["base"]["resources"]
+                if resource.get("uid") is not None
+            }
+            renamed = [
+                resource
+                for resource in oracles[phase]["resources"]
+                if resource.get("uid") in base_by_uid and resource["path"] != base_by_uid[resource["uid"]]["path"]
+            ]
+            incremental_commit_count = int(final["index_revision"]) - base_revision
+            identity_preserved = (
+                len(renamed) == 1 and renamed[0]["entity_id"] == base_by_uid[renamed[0]["uid"]]["entity_id"]
+            )
+            incremental_checkpoint = final.get("validated_checkpoint", {}).get("last_batch_id") is not None
+            if not identity_preserved or not incremental_checkpoint or incremental_commit_count != 1:
+                raise IndexMcpGateError("UID rename did not preserve identity in one incremental commit")
+            phase_result["entity_identity_preserved"] = True
+            phase_result["full_rebuild_count_delta"] = 0
+            phase_result["incremental_commit_count"] = incremental_commit_count
         if phase == "journal_gap":
             phase_result["full_rebuild_after_gap"] = True
         return phase_result
@@ -638,10 +1137,18 @@ def run_phase(
             mcp.stop()
         stop_editor(editor, project)
         editor_log.close()
-        log_text = (phase_root / "godot.log").read_text(encoding="utf-8", errors="replace")
-        if "SCRIPT ERROR" in log_text:
+        if editor.poll() is None or (mcp is not None and mcp.process.poll() is None):
+            raise IndexMcpGateError(f"{phase} left a live editor or sidecar process")
+        remaining_runtime_paths = [path.name for path in runtime_paths if path.exists()]
+        if remaining_runtime_paths:
+            raise IndexMcpGateError(f"{phase} editor left runtime artifacts: {', '.join(remaining_runtime_paths)}")
+        log_texts = [path.read_text(encoding="utf-8", errors="replace") for path in log_paths]
+        if any("SCRIPT ERROR" in log_text for log_text in log_texts):
             raise IndexMcpGateError(f"{phase} editor reported a script error")
-        phase_result["bridge_main_thread"] = parse_bridge_telemetry(log_text)
+        phase_result["bridge_main_thread_sessions"] = [parse_bridge_telemetry(log_text) for log_text in log_texts]
+        phase_result["cached_resource_query_samples_ms"] = query_samples
+        phase_result["bulk_status_ping_samples_ms"] = bulk_status_samples
+        phase_result["cleanup_verified"] = True
 
 
 def metric_summary(samples: list[float] | list[int]) -> dict[str, Any]:
@@ -664,15 +1171,6 @@ def main() -> int:
         help="comma-separated local phase subset; canonical evidence uses all phases",
     )
     arguments = parser.parse_args()
-    platform_tag = target_platform()
-    godot = arguments.godot.resolve(strict=True)
-    sidecar = (arguments.sidecar or default_sidecar()).resolve()
-    evidence_path = arguments.evidence or default_evidence(platform_tag)
-    build_sidecar(sidecar)
-    sidecar = sidecar.resolve(strict=True)
-    source = source_coordinates()
-    golden = strict_json_load(GOLDEN_PATH)
-    oracles = {phase["name"]: phase for phase in golden["phases"]}
     selected_phases = tuple(phase for phase in arguments.phases.split(",") if phase)
     if (
         not selected_phases
@@ -681,15 +1179,38 @@ def main() -> int:
     ):
         raise IndexMcpGateError("--phases contains an unknown oracle phase")
     complete_profile = selected_phases == PHASES
+    require_local_host_for_qualifying_evidence(complete_profile)
+    platform_tag = target_platform()
+    godot = arguments.godot.resolve(strict=True)
+    sidecar = (arguments.sidecar or default_sidecar()).resolve()
+    if godot != default_godot(platform_tag).resolve():
+        raise IndexMcpGateError("qualifying evidence requires the canonical local Godot build target")
+    if sidecar != default_sidecar().resolve():
+        raise IndexMcpGateError("qualifying evidence requires the canonical release sidecar target")
+    evidence_path = arguments.evidence or default_evidence(platform_tag)
+    build_sidecar(sidecar)
+    sidecar = sidecar.resolve(strict=True)
+    source = source_coordinates()
+    toolchain = toolchain_coordinates()
+    godot_version = version_output(godot)
+    if source["git_commit"][:9] not in godot_version:
+        raise IndexMcpGateError("the Godot artifact was not built from the evidence commit")
+    sidecar_version = version_output(sidecar)
+    golden = strict_json_load(GOLDEN_PATH)
+    oracles = {phase["name"]: phase for phase in golden["phases"]}
+    base_resources = oracles["base"]["resources"]
+    observed_formats = {Path(resource["path"]).suffix for resource in base_resources}
+    format_import_matrix_verified = {".tres", ".res", ".tscn", ".scn", ".svg"}.issubset(observed_formats) and any(
+        resource.get("imported") is True for resource in base_resources
+    )
+    if not format_import_matrix_verified:
+        raise IndexMcpGateError("the canonical format/import matrix is incomplete")
     before = fixture_digest()
-    query_samples: list[float] = []
-    bulk_status_samples: list[float] = []
-    incremental_visibility_samples: list[float] = []
-    startup_samples: list[float] = []
-    reopen_samples: list[float] = []
-    rebuild_samples: list[float] = []
+    mcp_contract_state: dict[str, Any] = {}
     temporary_parent = "/tmp" if platform_tag == "macos-arm64" else None
+    temporary_path: Path | None = None
     with tempfile.TemporaryDirectory(prefix="cs5-", dir=temporary_parent) as temporary:
+        temporary_path = Path(temporary)
         phase_results = [
             run_phase(
                 phase,
@@ -698,26 +1219,35 @@ def main() -> int:
                 Path(temporary),
                 oracles,
                 arguments.timeout,
-                query_samples,
-                bulk_status_samples,
-                incremental_visibility_samples,
-                startup_samples,
-                reopen_samples,
-                rebuild_samples,
+                mcp_contract_state,
             )
             for phase in selected_phases
         ]
+    temporary_workspace_removed = temporary_path is not None and not temporary_path.exists()
+    if not temporary_workspace_removed:
+        raise IndexMcpGateError("the temporary live-gate workspace was not removed")
     after = fixture_digest()
     if before != after:
         raise IndexMcpGateError("canonical resource fixture changed during the live gate")
-    telemetry_records = [phase["bridge_main_thread"] for phase in phase_results]
-    bridge_samples = [
-        sample
-        for record in telemetry_records
-        for sample in record["samples_usec"]
-    ]
+    telemetry_records = [record for phase in phase_results for record in phase["bridge_main_thread_sessions"]]
+    bridge_samples = [sample for record in telemetry_records for sample in record["samples_usec"]]
     bridge_over_budget = sum(int(record["over_budget_count"]) for record in telemetry_records)
     bridge_overflow = any(bool(record["overflow"]) for record in telemetry_records)
+    query_samples = [sample for phase in phase_results for sample in phase["cached_resource_query_samples_ms"]]
+    bulk_status_samples = [sample for phase in phase_results for sample in phase["bulk_status_ping_samples_ms"]]
+    incremental_visibility_samples = [
+        sample
+        for phase in phase_results
+        if phase["phase"] not in {"base", "journal_gap"}
+        for sample in (
+            [phase["removal_visibility_ms"], phase["change_visibility_ms"]]
+            if phase["phase"] == "re_add"
+            else [phase["change_visibility_ms"]]
+        )
+    ]
+    startup_samples = [phase["startup_visibility_ms"] for phase in phase_results]
+    reopen_samples = [phase["reopen_visibility_ms"] for phase in phase_results if phase["phase"] == "base"]
+    rebuild_samples = [phase["change_visibility_ms"] for phase in phase_results if phase["phase"] == "journal_gap"]
     metrics_ms = {
         "cached_resource_query": metric_summary(query_samples),
         "ordinary_incremental_visibility": metric_summary(incremental_visibility_samples),
@@ -740,17 +1270,29 @@ def main() -> int:
         and metrics_ms["cached_resource_query"]["p95"] <= 300,
         "ordinary_incremental_visibility_p95_lte_2000ms": bool(incremental_visibility_samples)
         and metrics_ms["ordinary_incremental_visibility"]["p95"] <= 2000,
-        "bulk_status_ping_p95_lte_200ms": bool(bulk_status_samples)
-        and metrics_ms["bulk_status_ping"]["p95"] <= 200,
-        "bridge_main_thread_over_2000us_zero": bool(bridge_samples)
-        and bridge_over_budget == 0
-        and not bridge_overflow,
+        "bulk_status_ping_p95_lte_200ms": bool(bulk_status_samples) and metrics_ms["bulk_status_ping"]["p95"] <= 200,
+        "bridge_main_thread_over_2000us_zero": bool(bridge_samples) and bridge_over_budget == 0 and not bridge_overflow,
     }
     slo["all_passed"] = all(slo.values())
+    completed_phases = [phase["phase"] for phase in phase_results]
+    mcp_contract = {field: mcp_contract_state.get(field) is True for field in sorted(MCP_CONTRACT_FIELDS)}
+    resource_mcp_contract_verified = all(mcp_contract.values()) and all(
+        phase.get("passed") is True
+        and phase.get("direct_reverse_oracle_match") is True
+        and phase.get("diagnostics_oracle_match") is True
+        for phase in phase_results
+    )
     qualifying_source = complete_profile and not source["git_dirty"]
-    status = "passed" if qualifying_source and slo["all_passed"] else "failed" if complete_profile else "development"
+    status = (
+        "passed"
+        if qualifying_source and slo["all_passed"] and resource_mcp_contract_verified
+        else "failed"
+        if complete_profile
+        else "development"
+    )
+    cleanup_verified = all(phase.get("cleanup_verified") is True for phase in phase_results)
     evidence = {
-        "schema_version": 2,
+        "schema_version": 3,
         "stage": "Sprint 3 Stage 5 / S3-09-S3-10",
         "status": status,
         "execution": "local_model_free",
@@ -758,10 +1300,11 @@ def main() -> int:
         "platform": platform_tag,
         "host": platform.platform(),
         **source,
+        "toolchain": toolchain,
         "artifacts": {
-            "godot_version": version_output(godot),
+            "godot_version": godot_version,
             "godot_sha256": sha256_file(godot),
-            "sidecar_version": version_output(sidecar),
+            "sidecar_version": sidecar_version,
             "sidecar_sha256": sha256_file(sidecar),
         },
         "mcp_protocol": MCP_PROTOCOL,
@@ -771,24 +1314,44 @@ def main() -> int:
         "fixture_digest_after": after,
         "canonical_fixture_unchanged": True,
         "phases": phase_results,
+        "mcp_contract": mcp_contract,
         "metrics_ms": metrics_ms,
         "bridge_main_thread": main_thread_metric,
         "slo": slo,
+        "completion": {
+            "requested_phases": list(selected_phases),
+            "completed_phases": completed_phases,
+            "all_phases_completed": complete_profile and completed_phases == list(PHASES),
+            "format_import_matrix_verified": format_import_matrix_verified,
+            "resource_mcp_contract_verified": resource_mcp_contract_verified,
+        },
+        "cleanup": {
+            "editor_processes_stopped": cleanup_verified,
+            "sidecar_processes_stopped": cleanup_verified,
+            "bridge_runtime_files_absent": cleanup_verified,
+            "temporary_workspace_removed": temporary_workspace_removed,
+        },
+        "redaction": {field: False for field in REDACTION_FIELDS},
         "platform_evidence": {
             "remote_ci": "not_run",
         },
     }
+    evidence["redaction"] = redaction_status(evidence)
+    require_redacted(evidence, "live evidence")
     serialized = canonical_json(evidence)
-    forbidden = (str(REPOSITORY_ROOT), str(PROJECT_SOURCE.resolve()))
-    if any(value in serialized for value in forbidden):
-        raise IndexMcpGateError("live evidence contains an absolute repository or fixture path")
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = evidence_path.with_suffix(evidence_path.suffix + ".tmp")
     temporary.write_text(serialized, encoding="utf-8")
     os.replace(temporary, evidence_path)
     print(serialized, end="")
     if complete_profile and status != "passed":
-        reason = "source tree is dirty" if source["git_dirty"] else "one or more live SLOs failed"
+        reason = (
+            "source tree is dirty"
+            if source["git_dirty"]
+            else "the live MCP contract failed"
+            if not resource_mcp_contract_verified
+            else "one or more live SLOs failed"
+        )
         raise IndexMcpGateError(f"Sprint 3 live acceptance failed ({reason}); evidence={evidence_path}")
     return 0
 

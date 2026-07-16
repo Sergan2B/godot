@@ -171,6 +171,9 @@ mod tests {
                 .validate(&cursor, &binding(ResourceTool::Owners), 1_001)
                 .is_err()
         );
+        let mut other_project = binding(ResourceTool::Dependencies);
+        other_project.project_id = "project:other";
+        assert!(codec.validate(&cursor, &other_project, 1_001).is_err());
         assert!(
             codec
                 .validate(&cursor, &binding(ResourceTool::Dependencies), 1_301)

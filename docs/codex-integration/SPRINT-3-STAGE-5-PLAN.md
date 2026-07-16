@@ -4,7 +4,9 @@
 
 **Scope:** `S3-09` and `S3-10`
 
-**Source baseline:** `55a6e8a74a` on `codex/integration`
+**Source baseline:** the identical `git_commit`, scoped source digest, and oracle digest
+recorded by every qualifying platform report. The commit is frozen before host execution;
+later evidence-only commits may descend from it without changing the scoped source tree.
 
 **Parent:** [SPRINT-3-PLAN.md](SPRINT-3-PLAN.md)
 
@@ -27,16 +29,17 @@ uses fresh macOS and Windows live runs produced after the Stage 5 harness is fro
 The portable gate runs all eight canonical resource phases: base, UID rename, UID-less
 rename, delete, re-add, reimport, content edit, and journal gap. Each phase compares
 Godot observations, the committed direct/reverse index, and both resource MCP tools
-with the independent oracle. The base phase also proves same-session sidecar reopen
-without rebuilding or changing the immutable segment set.
+with the independent oracle. The base phase performs a full editor-and-sidecar reopen,
+requires a new editor session, and proves that the compatible persistent generation
+and immutable segment set are reused without rebuilding.
 
 Each platform result records:
 
 - platform, host, toolchain and artifact versions plus Godot/sidecar SHA-256;
 - source commit, relevant-source digest, clean state, fixture/oracle digests;
 - a platform-neutral graph digest for every phase;
-- raw query, ordinary incremental visibility, bulk status/ping, startup, reopen, full
-  rebuild, and Bridge main-thread samples;
+- raw per-phase query and active-rebuild status traces, ordinary incremental visibility,
+  startup, reopen, full rebuild, and per-editor-session Bridge main-thread samples;
 - recomputed p50/p95 values and explicit SLO pass/fail fields;
 - cleanup, fixture-integrity, redaction, and all-phase completion state.
 
@@ -50,24 +53,29 @@ The acceptance SLOs and sample populations are fixed as follows:
 
 | SLO | Qualifying samples | Limit |
 |---|---|---:|
-| Cached resource query | Calls to the two resource MCP tools after current generation activation | p95 <= 300 ms |
-| Changed-file visibility | UID rename, UID-less rename, delete, re-add steps, reimport, and content edit | p95 <= 2,000 ms |
+| Cached resource query | Every paged direct/reverse oracle-verification call after current generation activation; contract probes are excluded | p95 <= 300 ms |
+| Changed-file visibility | UID rename, UID-less rename, delete, re-add steps, reimport, and content edit, ending only after the exact activated generation passes its phase oracle | p95 <= 2,000 ms |
 | Control responsiveness | Repeated editor-state/status calls while the forced journal-gap rebuild is active | p95 <= 200 ms |
 | Bridge main-thread budget | Every busy Bridge frame captured in evidence mode | zero samples > 2,000 us |
 
 Startup, compatible reopen, and journal-gap full rebuild durations are reported
 separately and never mixed into ordinary changed-file visibility. The evidence merger
 recomputes nearest-rank percentiles from raw samples and rejects inconsistent summaries,
-empty required populations, telemetry overflow, or selective samples.
+empty required populations, telemetry overflow, a missing editor session, or any
+aggregate population that differs from its exact phase timings and traces.
+The re-add removal step is independently bound to the canonical delete oracle before
+the resource is restored; its final step is bound to the canonical re-add oracle.
 
 ## 4. Evidence-only telemetry
 
 Bridge RPC remains version 1.2 and the MCP registry remains exactly five read-only
-tools. When `GODOT_CODEX_EVIDENCE_TELEMETRY=1`, the editor records the elapsed Bridge
-main-thread work for busy frames in a bounded in-memory buffer and emits one normalized,
-non-sensitive JSON record at shutdown. The record contains the 2 ms budget, raw
-microsecond samples, total busy-frame count, over-budget count, maximum, and buffer
-overflow state. A telemetry overflow fails the gate.
+tools. When `GODOT_CODEX_EVIDENCE_TELEMETRY=1`, each editor process records the elapsed
+Bridge main-thread work for busy frames in a 16,384-sample bounded in-memory buffer and
+emits one normalized, non-sensitive JSON record at shutdown. The base phase therefore
+requires two records, one from each side of the editor-and-sidecar reopen; every other
+phase requires one. The records contain the 2 ms budget, raw microsecond samples, total
+busy-frame count, over-budget count, maximum, and buffer overflow state. Any omitted
+session or telemetry overflow fails the gate.
 
 No telemetry is collected or emitted by default. The evidence record contains no
 project/session data and is not a Bridge RPC or MCP compatibility surface.
@@ -78,7 +86,12 @@ The final validator accepts exactly one qualifying `macos-arm64` and one qualify
 `windows-x86_64` live report plus full storage reports for `macos`, `windows`, and
 `linux`. It rejects quick profiles, dirty relevant source, source/fixture/oracle
 mismatch, missing phases, graph-digest mismatch, failed storage gates, SLO failure,
-redaction failure, and unsupported platform coordinates.
+redaction failure, and unsupported platform coordinates. Qualifying producers reject
+common hosted-CI environment markers. The merger recomputes D-05 scores and confidence
+intervals from raw samples through the pinned Rust validator, binds its receipt to the
+exact evidence-byte SHA-256, and requires exact closed phase schemas. The source-freeze
+commit must exist and be an ancestor of the aggregation checkout; every scoped byte and
+the oracle must still match it, while later evidence-only commits are allowed.
 
 Final artifacts are:
 
@@ -103,13 +116,13 @@ macOS arm64:
 ```sh
 python -m SCons platform=macos arch=arm64 target=editor dev_build=yes tests=yes \
   module_codex_bridge_enabled=yes accesskit=no angle=no metal=yes vulkan=no -j8
-cargo build --locked --release --manifest-path godot-codex-mcp/Cargo.toml \
+cargo +1.94.1 build --locked --release --manifest-path godot-codex-mcp/Cargo.toml \
   -p godot-codex-mcp
 python3 tests/codex/sprint3_stage4_index_mcp.py \
   --godot bin/godot.macos.editor.dev.arm64 \
   --sidecar godot-codex-mcp/target/release/godot-codex-mcp \
   --evidence tests/codex/evidence/sprint-3-resource-graph-macos.json
-cargo run --locked --release --manifest-path tests/codex/storage_spike/Cargo.toml -- \
+cargo +1.94.1 run --locked --release --manifest-path tests/codex/storage_spike/Cargo.toml -- \
   run --backend all --dataset all --repo-root "$PWD" \
   --output tests/codex/evidence/platform/sprint-3-storage-spike-macos.json
 ```
@@ -119,13 +132,13 @@ Windows x86_64 PowerShell:
 ```powershell
 python -m SCons platform=windows target=editor dev_build=yes tests=yes `
   module_codex_bridge_enabled=yes accesskit=no d3d12=no angle=no -j8
-cargo build --locked --release --manifest-path godot-codex-mcp\Cargo.toml `
+cargo +1.94.1 build --locked --release --manifest-path godot-codex-mcp\Cargo.toml `
   -p godot-codex-mcp
 python tests\codex\sprint3_stage4_index_mcp.py `
   --godot bin\godot.windows.editor.dev.x86_64.console.exe `
   --sidecar godot-codex-mcp\target\release\godot-codex-mcp.exe `
   --evidence tests\codex\evidence\sprint-3-resource-graph-windows.json
-cargo run --locked --release --manifest-path tests\codex\storage_spike\Cargo.toml -- `
+cargo +1.94.1 run --locked --release --manifest-path tests\codex\storage_spike\Cargo.toml -- `
   run --backend all --dataset all --repo-root (Get-Location).Path `
   --output tests\codex\evidence\platform\sprint-3-storage-spike-windows.json
 ```
@@ -134,8 +147,8 @@ Linux x86_64 runs the Rust workspace and full storage profile; no editor live cl
 made:
 
 ```sh
-cargo test --locked --workspace --all-targets --manifest-path godot-codex-mcp/Cargo.toml
-cargo run --locked --release --manifest-path tests/codex/storage_spike/Cargo.toml -- \
+cargo +1.94.1 test --locked --workspace --all-targets --manifest-path godot-codex-mcp/Cargo.toml
+cargo +1.94.1 run --locked --release --manifest-path tests/codex/storage_spike/Cargo.toml -- \
   run --backend all --dataset all --repo-root "$PWD" \
   --output tests/codex/evidence/platform/sprint-3-storage-spike-linux.json
 ```
@@ -144,7 +157,7 @@ After copying the five raw reports into one clean checkout, produce and validate
 two aggregates:
 
 ```sh
-cargo run --locked --release --manifest-path tests/codex/storage_spike/Cargo.toml -- \
+cargo +1.94.1 run --locked --release --manifest-path tests/codex/storage_spike/Cargo.toml -- \
   merge tests/codex/evidence/sprint-3-storage-spike-cross-platform.json \
   tests/codex/evidence/platform/sprint-3-storage-spike-linux.json \
   tests/codex/evidence/platform/sprint-3-storage-spike-macos.json \
