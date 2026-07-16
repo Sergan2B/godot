@@ -20,6 +20,8 @@
 #include "editor/file_system/editor_file_system.h"
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
 
+#include <utility>
+
 String ResourceGraphAdapter::_sha256_hex_utf8(const String &p_value) {
 	const CharString bytes = p_value.utf8();
 	PackedByteArray digest;
@@ -47,30 +49,6 @@ Dictionary ResourceGraphAdapter::_make_resource_ref(const String &p_path, int64_
 		resource_ref["path"] = p_path;
 	}
 	return resource_ref;
-}
-
-String ResourceGraphAdapter::_facts_json(const CatalogRecord &p_record) {
-	Dictionary value = p_record.value.duplicate(true);
-	Dictionary resource = value["resource"];
-	resource["resource_revision"] = (int64_t)0;
-	value["resource"] = resource;
-	Array dependencies = value["dependencies"];
-	for (int index = 0; index < dependencies.size(); index++) {
-		Dictionary dependency = dependencies[index];
-		dependency["resource_revision"] = (int64_t)0;
-		dependencies[index] = dependency;
-	}
-	value["dependencies"] = dependencies;
-	Array diagnostics = p_record.diagnostics.duplicate(true);
-	for (int index = 0; index < diagnostics.size(); index++) {
-		Dictionary diagnostic = diagnostics[index];
-		diagnostic["resource_revision"] = (int64_t)0;
-		diagnostics[index] = diagnostic;
-	}
-	Dictionary facts;
-	facts["value"] = value;
-	facts["diagnostics"] = diagnostics;
-	return JSON::stringify(facts, "", true, true);
 }
 
 void ResourceGraphAdapter::_stamp_record(CatalogRecord &r_record, uint64_t p_resource_revision) {
@@ -124,14 +102,14 @@ void ResourceGraphAdapter::shutdown() {
 	refresh_requested = false;
 	refresh_phase = REFRESH_IDLE;
 	directory_stack.clear();
-	refresh_paths.clear();
+	refresh_files.clear();
 	observed_catalog.clear();
 	pending_reimport_paths.clear();
 	active_reimport_paths.clear();
 	snapshot_active = false;
 	snapshot_waiting_for_terminal = false;
-	snapshot_records.clear();
-	snapshot_payloads.clear();
+	snapshot_keys.clear();
+	snapshot_chunks.clear();
 }
 
 void ResourceGraphAdapter::request_refresh() {
@@ -158,7 +136,7 @@ bool ResourceGraphAdapter::_begin_refresh() {
 	DirectoryCursor root;
 	root.directory = filesystem->get_filesystem();
 	directory_stack.push_back(root);
-	refresh_paths.clear();
+	refresh_files.clear();
 	refresh_path_index = 0;
 	observed_catalog.clear();
 	active_reimport_paths = pending_reimport_paths;
@@ -181,11 +159,15 @@ bool ResourceGraphAdapter::_collect_one_path() {
 			if (path == "res://project.godot" || (cached_type.is_empty() && ResourceLoader::get_resource_type(path).is_empty())) {
 				return true;
 			}
-			if (path.utf8().length() > (int)MAX_PATH_BYTES || refresh_paths.size() >= (int)MAX_RESOURCES) {
+			if (path.utf8().length() > (int)MAX_PATH_BYTES || refresh_files.size() >= (int)MAX_RESOURCES) {
 				refresh_limit_exceeded = true;
 				return false;
 			}
-			refresh_paths.push_back(path);
+			RefreshFile file;
+			file.path = path;
+			file.directory = cursor.directory;
+			file.file_index = file_index;
+			refresh_files.push_back(file);
 			return true;
 		}
 		if (cursor.subdirectory_index < cursor.directory->get_subdir_count()) {
@@ -196,20 +178,20 @@ bool ResourceGraphAdapter::_collect_one_path() {
 		}
 		directory_stack.resize(directory_stack.size() - 1);
 	}
-	refresh_paths.sort();
+	refresh_files.sort();
+	observed_catalog.reserve(refresh_files.size());
 	refresh_phase = REFRESH_OBSERVE;
 	return false;
 }
 
-bool ResourceGraphAdapter::_observe_resource(const String &p_path, CatalogRecord &r_record) {
+bool ResourceGraphAdapter::_observe_resource(const RefreshFile &p_file, CatalogRecord &r_record) {
+	const String &p_path = p_file.path;
 	if (!p_path.begins_with("res://") || p_path.contains("/../") || p_path.utf8().length() > (int)MAX_PATH_BYTES) {
 		return false;
 	}
-	EditorFileSystem *filesystem = EditorFileSystem::get_singleton();
-	ERR_FAIL_NULL_V(filesystem, false);
-	int file_index = -1;
-	EditorFileSystemDirectory *directory = filesystem->find_file(p_path, &file_index);
-	if (!directory || file_index < 0) {
+	EditorFileSystemDirectory *directory = p_file.directory;
+	const int file_index = p_file.file_index;
+	if (!directory || file_index < 0 || file_index >= directory->get_file_count() || directory->get_file_path(file_index) != p_path) {
 		return false;
 	}
 
@@ -239,8 +221,7 @@ bool ResourceGraphAdapter::_observe_resource(const String &p_path, CatalogRecord
 
 	Array dependencies;
 	Array diagnostics;
-	List<String> raw_dependencies;
-	ResourceLoader::get_dependencies(p_path, &raw_dependencies, true);
+	const Vector<String> raw_dependencies = directory->get_file_deps_raw(file_index);
 	if ((uint32_t)raw_dependencies.size() > MAX_DEPENDENCIES_PER_RESOURCE || observed_dependency_count + (uint64_t)raw_dependencies.size() > MAX_DEPENDENCIES) {
 		return false;
 	}
@@ -326,13 +307,19 @@ bool ResourceGraphAdapter::_observe_resource(const String &p_path, CatalogRecord
 	r_record.value["resource"] = resource;
 	r_record.value["dependencies"] = dependencies;
 	r_record.diagnostics = diagnostics;
+	Dictionary facts;
+	facts["value"] = r_record.value;
+	facts["diagnostics"] = r_record.diagnostics;
+	r_record.facts_checksum = _sha256_hex_utf8(JSON::stringify(facts, "", true, true));
+	const uint64_t current_revision = revision_clock ? revision_clock->get_resource_revision() : journal.get_current_resource_revision();
+	_stamp_record(r_record, catalog_ready ? current_revision + 1 : current_revision);
 	return true;
 }
 
 void ResourceGraphAdapter::_finish_refresh(RefreshOutcome &r_outcome) {
 	refresh_phase = REFRESH_IDLE;
 	directory_stack.clear();
-	refresh_paths.clear();
+	refresh_files.clear();
 	refresh_path_index = 0;
 
 	if (refresh_limit_exceeded) {
@@ -352,11 +339,7 @@ void ResourceGraphAdapter::_finish_refresh(RefreshOutcome &r_outcome) {
 
 	if (!catalog_ready) {
 		const uint64_t initial_revision = revision_clock ? revision_clock->get_resource_revision() : 1;
-		for (KeyValue<String, CatalogRecord> &entry : observed_catalog) {
-			_stamp_record(entry.value, initial_revision);
-		}
-		catalog = observed_catalog;
-		observed_catalog.clear();
+		catalog = std::move(observed_catalog);
 		catalog_ready = true;
 		catalog_limit_exceeded = false;
 		journal.initialize(initial_revision);
@@ -364,11 +347,27 @@ void ResourceGraphAdapter::_finish_refresh(RefreshOutcome &r_outcome) {
 		return;
 	}
 
+	const uint64_t next_revision = revision_clock ? revision_clock->get_resource_revision() + 1 : journal.get_current_resource_revision() + 1;
+	const int64_t record_delta = (int64_t)observed_catalog.size() - (int64_t)catalog.size();
+	if (record_delta >= (int64_t)BULK_INVALIDATION_RECORD_DELTA || record_delta <= -(int64_t)BULK_INVALIDATION_RECORD_DELTA) {
+		const uint64_t previous_revision = revision_clock ? revision_clock->get_resource_revision() : journal.get_current_resource_revision();
+		const uint64_t committed_revision = revision_clock ? revision_clock->record_resource_change() : next_revision;
+		journal.invalidate_to(committed_revision);
+		catalog = std::move(observed_catalog);
+		active_reimport_paths.clear();
+		catalog_limit_exceeded = false;
+		r_outcome.changed = true;
+		r_outcome.invalidated = true;
+		r_outcome.last_contiguous_resource_revision = previous_revision;
+		r_outcome.current_resource_revision = committed_revision;
+		r_outcome.revisions = revision_clock ? revision_clock->get_revision_vector() : Dictionary();
+		return;
+	}
+
 	Vector<String> observed_keys;
 	Vector<String> existing_keys;
 	_collect_sorted_keys(observed_catalog, observed_keys);
 	_collect_sorted_keys(catalog, existing_keys);
-	const uint64_t next_revision = revision_clock ? revision_clock->get_resource_revision() + 1 : journal.get_current_resource_revision() + 1;
 	HashMap<String, CatalogRecord> next_catalog;
 	HashSet<String> preexisting_keys;
 	Array operations;
@@ -382,7 +381,7 @@ void ResourceGraphAdapter::_finish_refresh(RefreshOutcome &r_outcome) {
 		const Dictionary resource = record.value["resource"];
 		const String path = resource["path"];
 		const bool reimported = active_reimport_paths.has(path);
-		if (previous && !reimported && _facts_json(*previous) == _facts_json(record)) {
+		if (previous && !reimported && previous->facts_checksum == record.facts_checksum) {
 			next_catalog.insert(key, *previous);
 			continue;
 		}
@@ -425,7 +424,7 @@ void ResourceGraphAdapter::_finish_refresh(RefreshOutcome &r_outcome) {
 	observed_catalog.clear();
 	active_reimport_paths.clear();
 	if (operations.is_empty()) {
-		catalog = next_catalog;
+		catalog = std::move(next_catalog);
 		catalog_limit_exceeded = false;
 		return;
 	}
@@ -440,7 +439,7 @@ void ResourceGraphAdapter::_finish_refresh(RefreshOutcome &r_outcome) {
 		journal.invalidate_to(committed_revision);
 		journal_invalidated = true;
 	}
-	catalog = next_catalog;
+	catalog = std::move(next_catalog);
 	catalog_limit_exceeded = false;
 	r_outcome.changed = true;
 	r_outcome.invalidated = journal_invalidated;
@@ -470,13 +469,13 @@ bool ResourceGraphAdapter::process_refresh(uint64_t p_budget_usec, RefreshOutcom
 				return true;
 			}
 		} else if (refresh_phase == REFRESH_OBSERVE) {
-			if (refresh_path_index >= refresh_paths.size()) {
+			if (refresh_path_index >= refresh_files.size()) {
 				_finish_refresh(r_outcome);
 				return true;
 			}
 			CatalogRecord record;
-			const String path = refresh_paths[refresh_path_index++];
-			if (!_observe_resource(path, record)) {
+			const RefreshFile file = refresh_files[refresh_path_index++];
+			if (!_observe_resource(file, record)) {
 				refresh_limit_exceeded = true;
 				_finish_refresh(r_outcome);
 				return true;
@@ -494,7 +493,7 @@ bool ResourceGraphAdapter::process_refresh(uint64_t p_budget_usec, RefreshOutcom
 	return did_work;
 }
 
-Error ResourceGraphAdapter::begin_snapshot(uint64_t p_request_id, uint64_t p_now_usec, Dictionary &r_error_data) {
+Error ResourceGraphAdapter::begin_snapshot(uint64_t p_request_id, uint64_t p_now_usec, const Dictionary &p_context, Dictionary &r_error_data) {
 	r_error_data.clear();
 	if (snapshot_active) {
 		r_error_data["active_snapshot_id"] = snapshot_id;
@@ -513,36 +512,81 @@ Error ResourceGraphAdapter::begin_snapshot(uint64_t p_request_id, uint64_t p_now
 	snapshot_id = _make_snapshot_id();
 	snapshot_resource_revision = revision_clock ? revision_clock->get_resource_revision() : journal.get_current_resource_revision();
 	snapshot_revisions = revision_clock ? revision_clock->get_revision_vector() : Dictionary();
-	snapshot_records.clear();
-	Vector<String> keys;
-	_collect_sorted_keys(catalog, keys);
-	for (const String &key : keys) {
-		snapshot_records.push_back(catalog[key]);
+	snapshot_context = p_context;
+	snapshot_keys.clear();
+	snapshot_keys.reserve(catalog.size());
+	for (const KeyValue<String, CatalogRecord> &entry : catalog) {
+		snapshot_keys.push_back(entry.key);
 	}
-	print_verbose(vformat("[codex_bridge] Resource snapshot %s froze %d records at revision %d.", snapshot_id, snapshot_records.size(), snapshot_resource_revision));
+	print_verbose(vformat("[codex_bridge] Resource snapshot %s froze %d records at revision %d.", snapshot_id, snapshot_keys.size(), snapshot_resource_revision));
 	snapshot_record_index = 0;
-	snapshot_payloads.clear();
-	snapshot_resources.clear();
-	snapshot_dependencies.clear();
-	snapshot_diagnostics.clear();
+	snapshot_resource_added = false;
+	snapshot_dependency_index = 0;
+	snapshot_diagnostic_index = 0;
+	snapshot_chunks.clear();
+	snapshot_checksum_input.clear();
+	snapshot_resource_count = 0;
+	snapshot_dependency_count = 0;
+	snapshot_diagnostic_count = 0;
+	_reset_snapshot_payload();
 	return OK;
+}
+
+void ResourceGraphAdapter::_reset_snapshot_payload() {
+	snapshot_resources = Array();
+	snapshot_dependencies = Array();
+	snapshot_diagnostics = Array();
+	Dictionary payload;
+	payload["resources"] = snapshot_resources;
+	payload["dependencies"] = snapshot_dependencies;
+	payload["diagnostics"] = snapshot_diagnostics;
+	snapshot_payload_bytes = JSON::stringify(payload, "", true, true).utf8().length();
+}
+
+bool ResourceGraphAdapter::_append_snapshot_value(Array &r_values, const Variant &p_value) {
+	const uint64_t encoded_bytes = JSON::stringify(p_value, "", true, true).utf8().length();
+	uint64_t additional_bytes = encoded_bytes + (r_values.is_empty() ? 0 : 1);
+	if (snapshot_payload_bytes + additional_bytes > SNAPSHOT_BUILD_CHUNK_BYTES &&
+			(!snapshot_resources.is_empty() || !snapshot_dependencies.is_empty() || !snapshot_diagnostics.is_empty())) {
+		if (!_flush_snapshot_payload()) {
+			return false;
+		}
+		additional_bytes = encoded_bytes;
+	}
+	if (snapshot_payload_bytes + additional_bytes > SNAPSHOT_CHUNK_BYTES) {
+		return false;
+	}
+	r_values.push_back(p_value);
+	snapshot_payload_bytes += additional_bytes;
+	return true;
 }
 
 bool ResourceGraphAdapter::_flush_snapshot_payload() {
 	Dictionary payload;
-	// Arrays are reference-counted Variants. Store independent copies so clearing
-	// the in-progress chunk below cannot also clear the queued payload.
-	payload["resources"] = snapshot_resources.duplicate(true);
-	payload["dependencies"] = snapshot_dependencies.duplicate(true);
-	payload["diagnostics"] = snapshot_diagnostics.duplicate(true);
+	payload["resources"] = snapshot_resources;
+	payload["dependencies"] = snapshot_dependencies;
+	payload["diagnostics"] = snapshot_diagnostics;
 	const String payload_json = JSON::stringify(payload, "", true, true);
 	if (payload_json.utf8().length() > (int)SNAPSHOT_CHUNK_BYTES) {
 		return false;
 	}
-	snapshot_payloads.push_back(payload);
-	snapshot_resources.clear();
-	snapshot_dependencies.clear();
-	snapshot_diagnostics.clear();
+	const String checksum = _sha256_hex_utf8(payload_json);
+	Dictionary chunk;
+	chunk["protocol_version"] = "1.2";
+	chunk["kind"] = "chunk";
+	chunk["snapshot_id"] = snapshot_id;
+	chunk["domain"] = "resource_graph";
+	chunk["chunk_index"] = snapshot_chunks.size();
+	chunk["payload"] = payload;
+	chunk["payload_json"] = payload_json;
+	chunk["checksum"] = checksum;
+	chunk["context"] = snapshot_context;
+	snapshot_chunks.push_back(chunk);
+	snapshot_checksum_input += checksum;
+	snapshot_resource_count += snapshot_resources.size();
+	snapshot_dependency_count += snapshot_dependencies.size();
+	snapshot_diagnostic_count += snapshot_diagnostics.size();
+	_reset_snapshot_payload();
 	return true;
 }
 
@@ -555,12 +599,12 @@ void ResourceGraphAdapter::_fail_snapshot(const String &p_code, const String &p_
 	r_completion.error_retryable = p_retryable;
 	snapshot_active = false;
 	snapshot_waiting_for_terminal = false;
-	snapshot_records.clear();
-	snapshot_payloads.clear();
+	snapshot_keys.clear();
+	snapshot_chunks.clear();
 }
 
 void ResourceGraphAdapter::_finish_snapshot(SnapshotCompletion &r_completion) {
-	if ((!snapshot_resources.is_empty() || !snapshot_dependencies.is_empty() || !snapshot_diagnostics.is_empty() || snapshot_payloads.is_empty()) && !_flush_snapshot_payload()) {
+	if ((!snapshot_resources.is_empty() || !snapshot_dependencies.is_empty() || !snapshot_diagnostics.is_empty() || snapshot_chunks.is_empty()) && !_flush_snapshot_payload()) {
 		_fail_snapshot("resource_limit_exceeded", "A resource graph record exceeds the snapshot chunk limit.", false, r_completion);
 		return;
 	}
@@ -576,47 +620,29 @@ void ResourceGraphAdapter::_finish_snapshot(SnapshotCompletion &r_completion) {
 	begin["kind"] = "notification";
 	begin["method"] = "snapshot.begin";
 	begin["params"] = begin_params;
+	begin["context"] = snapshot_context;
 	messages.push_back(begin);
 
-	String checksum_input;
-	int resource_count = 0;
-	int dependency_count = 0;
-	int diagnostic_count = 0;
-	for (int index = 0; index < snapshot_payloads.size(); index++) {
-		const Dictionary payload = snapshot_payloads[index];
-		const String payload_json = JSON::stringify(payload, "", true, true);
-		const String checksum = _sha256_hex_utf8(payload_json);
-		checksum_input += checksum;
-		resource_count += Array(payload["resources"]).size();
-		dependency_count += Array(payload["dependencies"]).size();
-		diagnostic_count += Array(payload["diagnostics"]).size();
-		Dictionary chunk;
-		chunk["protocol_version"] = "1.2";
-		chunk["kind"] = "chunk";
-		chunk["snapshot_id"] = snapshot_id;
-		chunk["domain"] = "resource_graph";
-		chunk["chunk_index"] = index;
-		chunk["payload"] = payload;
-		chunk["payload_json"] = payload_json;
-		chunk["checksum"] = checksum;
-		messages.push_back(chunk);
+	for (int index = 0; index < snapshot_chunks.size(); index++) {
+		messages.push_back(snapshot_chunks[index]);
 	}
 
 	Dictionary end_params;
 	end_params["snapshot_id"] = snapshot_id;
 	end_params["domain"] = "resource_graph";
 	end_params["resource_revision"] = (int64_t)snapshot_resource_revision;
-	end_params["chunk_count"] = snapshot_payloads.size();
-	end_params["resource_count"] = resource_count;
-	end_params["dependency_count"] = dependency_count;
-	end_params["diagnostic_count"] = diagnostic_count;
-	end_params["checksum"] = _sha256_hex_utf8(checksum_input);
+	end_params["chunk_count"] = snapshot_chunks.size();
+	end_params["resource_count"] = (int64_t)snapshot_resource_count;
+	end_params["dependency_count"] = (int64_t)snapshot_dependency_count;
+	end_params["diagnostic_count"] = (int64_t)snapshot_diagnostic_count;
+	end_params["checksum"] = _sha256_hex_utf8(snapshot_checksum_input);
 	end_params["revisions"] = snapshot_revisions;
 	Dictionary end;
 	end["protocol_version"] = "1.2";
 	end["kind"] = "notification";
 	end["method"] = "snapshot.end";
 	end["params"] = end_params;
+	end["context"] = snapshot_context;
 	messages.push_back(end);
 
 	Dictionary limits;
@@ -641,8 +667,8 @@ void ResourceGraphAdapter::_finish_snapshot(SnapshotCompletion &r_completion) {
 	// The frozen generation remains active while the transport applies ACK
 	// backpressure. COMMAND_CANCEL releases it on every terminal path.
 	snapshot_waiting_for_terminal = true;
-	snapshot_records.clear();
-	snapshot_payloads.clear();
+	snapshot_keys.clear();
+	snapshot_chunks.clear();
 }
 
 bool ResourceGraphAdapter::process_snapshot(uint64_t p_now_usec, uint64_t p_budget_usec, SnapshotCompletion &r_completion) {
@@ -659,38 +685,38 @@ bool ResourceGraphAdapter::process_snapshot(uint64_t p_now_usec, uint64_t p_budg
 	}
 	const uint64_t started = OS::get_singleton()->get_ticks_usec();
 	do {
-		if (snapshot_record_index >= snapshot_records.size()) {
+		if (snapshot_record_index >= snapshot_keys.size()) {
 			_finish_snapshot(r_completion);
 			return true;
 		}
-		const CatalogRecord &record = snapshot_records[snapshot_record_index];
-		const Dictionary resource = record.value["resource"];
-		const Array dependencies = record.value["dependencies"];
-		const int old_resource_count = snapshot_resources.size();
-		const int old_dependency_count = snapshot_dependencies.size();
-		const int old_diagnostic_count = snapshot_diagnostics.size();
-		snapshot_resources.push_back(resource);
-		snapshot_dependencies.append_array(dependencies);
-		snapshot_diagnostics.append_array(record.diagnostics);
-		Dictionary candidate;
-		candidate["resources"] = snapshot_resources;
-		candidate["dependencies"] = snapshot_dependencies;
-		candidate["diagnostics"] = snapshot_diagnostics;
-		if (JSON::stringify(candidate, "", true, true).utf8().length() > (int)SNAPSHOT_CHUNK_BYTES) {
-			snapshot_resources.resize(old_resource_count);
-			snapshot_dependencies.resize(old_dependency_count);
-			snapshot_diagnostics.resize(old_diagnostic_count);
-			if (old_resource_count == 0 && old_dependency_count == 0 && old_diagnostic_count == 0) {
-				_fail_snapshot("resource_limit_exceeded", "A resource graph record exceeds the snapshot chunk limit.", false, r_completion);
-				return true;
-			}
-			if (!_flush_snapshot_payload()) {
-				_fail_snapshot("resource_limit_exceeded", "A resource graph snapshot chunk exceeds its hard limit.", false, r_completion);
-				return true;
-			}
-			continue;
+		const CatalogRecord *record = catalog.getptr(snapshot_keys[snapshot_record_index]);
+		if (!record) {
+			_fail_snapshot("snapshot_generation_changed", "The frozen resource graph generation is no longer available.", true, r_completion);
+			return true;
 		}
-		snapshot_record_index++;
+		const Array dependencies = record->value["dependencies"];
+		if (!snapshot_resource_added) {
+			if (!_append_snapshot_value(snapshot_resources, record->value["resource"])) {
+				_fail_snapshot("resource_limit_exceeded", "A resource graph snapshot value exceeds the chunk limit.", false, r_completion);
+				return true;
+			}
+			snapshot_resource_added = true;
+		} else if (snapshot_dependency_index < dependencies.size()) {
+			if (!_append_snapshot_value(snapshot_dependencies, dependencies[snapshot_dependency_index++])) {
+				_fail_snapshot("resource_limit_exceeded", "A resource graph snapshot value exceeds the chunk limit.", false, r_completion);
+				return true;
+			}
+		} else if (snapshot_diagnostic_index < record->diagnostics.size()) {
+			if (!_append_snapshot_value(snapshot_diagnostics, record->diagnostics[snapshot_diagnostic_index++])) {
+				_fail_snapshot("resource_limit_exceeded", "A resource graph snapshot value exceeds the chunk limit.", false, r_completion);
+				return true;
+			}
+		} else {
+			snapshot_record_index++;
+			snapshot_resource_added = false;
+			snapshot_dependency_index = 0;
+			snapshot_diagnostic_index = 0;
+		}
 	} while (OS::get_singleton()->get_ticks_usec() - started < p_budget_usec);
 	return true;
 }
@@ -701,8 +727,8 @@ void ResourceGraphAdapter::cancel_snapshot(uint64_t p_request_id) {
 	}
 	snapshot_active = false;
 	snapshot_waiting_for_terminal = false;
-	snapshot_records.clear();
-	snapshot_payloads.clear();
+	snapshot_keys.clear();
+	snapshot_chunks.clear();
 	snapshot_resources.clear();
 	snapshot_dependencies.clear();
 	snapshot_diagnostics.clear();

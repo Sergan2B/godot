@@ -92,7 +92,7 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 			break;
 		case MainThreadDispatcher::COMMAND_RESOURCE_SNAPSHOT: {
 			Dictionary error_data;
-			const Error error = service->resource_graph_adapter.begin_snapshot(p_command.request_id, OS::get_singleton()->get_ticks_usec(), error_data);
+			const Error error = service->resource_graph_adapter.begin_snapshot(p_command.request_id, OS::get_singleton()->get_ticks_usec(), service->_make_context(), error_data);
 			if (error == ERR_BUSY) {
 				service->transport_worker.complete_request_error(p_command.request_id, "resource_snapshot_in_progress", "A resource graph snapshot is already in progress.", true, error_data);
 			} else if (error == ERR_OUT_OF_MEMORY) {
@@ -406,11 +406,6 @@ void CodexBridgeService::_process_resource_graph(uint64_t p_budget_usec) {
 				transport_worker.complete_request_error(snapshot.request_id, snapshot.error_code, snapshot.error_message, snapshot.error_retryable, snapshot.error_data);
 				return;
 			}
-			for (int index = 0; index < snapshot.server_messages.size(); index++) {
-				Dictionary message = snapshot.server_messages[index];
-				message["context"] = _make_context();
-				snapshot.server_messages[index] = message;
-			}
 			transport_worker.complete_request(snapshot.request_id, snapshot.result, snapshot.server_messages);
 		}
 		return;
@@ -461,7 +456,7 @@ void CodexBridgeService::_notification(int p_what) {
 						MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME - ResourceGraphAdapter::RESOURCE_BUDGET_USEC :
 						MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME;
 				const MainThreadDispatcher::ProcessStats dispatcher_stats = dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
-				if (resource_work) {
+				if (resource_work && dispatcher_stats.consumed == 0) {
 					_process_resource_graph(ResourceGraphAdapter::RESOURCE_BUDGET_USEC);
 				}
 				frame_telemetry.record(OS::get_singleton()->get_ticks_usec() - frame_started_usec, resource_work || dispatcher_stats.consumed > 0);

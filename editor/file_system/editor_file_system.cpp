@@ -164,6 +164,11 @@ Vector<String> EditorFileSystemDirectory::get_file_deps(int p_idx) const {
 	return deps;
 }
 
+Vector<String> EditorFileSystemDirectory::get_file_deps_raw(int p_idx) const {
+	ERR_FAIL_INDEX_V(p_idx, files.size(), Vector<String>());
+	return files[p_idx]->deps;
+}
+
 bool EditorFileSystemDirectory::get_file_import_is_valid(int p_idx) const {
 	ERR_FAIL_INDEX_V(p_idx, files.size(), false);
 	return files[p_idx]->import_valid;
