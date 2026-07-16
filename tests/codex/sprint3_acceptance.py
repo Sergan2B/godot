@@ -12,7 +12,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 STORAGE_SPIKE_MANIFEST = REPOSITORY_ROOT / "tests" / "codex" / "storage_spike" / "Cargo.toml"
@@ -484,7 +484,7 @@ def finite_number(value: Any, name: str, *, positive: bool = False) -> float:
 
 def positive_integer(value: Any, name: str) -> int:
     require(isinstance(value, int) and not isinstance(value, bool) and value > 0, f"{name} is invalid")
-    return value
+    return cast(int, value)
 
 
 def strict_json_snapshot(path: Path) -> tuple[dict[str, Any], bytes, str]:
@@ -587,7 +587,7 @@ def expected_query_sample_counts() -> dict[str, int]:
     phases = oracle.get("phases")
     require(isinstance(phases, list), "canonical oracle phases are missing")
     counts: dict[str, int] = {}
-    for phase in phases:
+    for phase in cast(list[Any], phases):
         require(isinstance(phase, dict), "canonical oracle phase is invalid")
         name = phase.get("name")
         resources = phase.get("resources")
@@ -732,7 +732,7 @@ def validate_metric(metric: Any, name: str, required: bool = True) -> list[int |
         require(metric["p95"] == percentile(samples, 95), f"{name} p95 does not match raw samples")
     else:
         require(metric["p50"] is None and metric["p95"] is None, f"{name} empty summary differs")
-    return samples
+    return cast("list[int | float]", samples)
 
 
 def validate_trace_samples(
@@ -754,7 +754,7 @@ def validate_trace_samples(
         require(bool(samples), f"{name} trace samples are empty")
     if expected_count is not None:
         require(len(samples) == expected_count, f"{name} trace sample population differs")
-    return samples
+    return cast("list[int | float]", samples)
 
 
 def validate_phase_telemetry(record: Any, phase: str) -> list[int]:
@@ -799,7 +799,7 @@ def validate_phase_telemetry(record: Any, phase: str) -> list[int]:
         record["over_budget_count"] == sum(sample > 2000 for sample in samples),
         f"{phase} telemetry over-budget count differs",
     )
-    return samples
+    return cast(list[int], samples)
 
 
 def validate_live(path: Path, expected_platform: str | None = None) -> dict[str, Any]:
@@ -1105,7 +1105,7 @@ def choose_backend(records: list[dict[str, Any]]) -> str:
     )
     if abs(sqlite["weighted_score"] - segment["weighted_score"]) < 0.05 or intervals_overlap:
         return "sqlite"
-    return max(qualified, key=lambda record: record["weighted_score"])["backend"]
+    return cast(str, max(qualified, key=lambda record: record["weighted_score"])["backend"])
 
 
 def validate_storage_backend(backend: Any, os_name: str, dataset: dict[str, Any]) -> None:

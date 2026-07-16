@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Unit tests for the Sprint 3 evidence validator."""
 
 from __future__ import annotations
@@ -9,6 +8,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import sprint3_acceptance as acceptance
@@ -58,10 +58,10 @@ def replace_metric_samples(record: dict[str, object], samples: list[int | float]
         record.update({"samples": [], "p50": None, "p95": None})
 
 
-def live_evidence(platform: str, graph_suffix: str = "") -> dict[str, object]:
-    phases: list[dict[str, object]] = []
+def live_evidence(platform: str, graph_suffix: str = "") -> dict[str, Any]:
+    phases: list[dict[str, Any]] = []
     for index, name in enumerate(PHASES, start=1):
-        phase: dict[str, object] = {
+        phase: dict[str, Any] = {
             "phase": name,
             "generation_id": "generation:sha256:" + f"{index:064x}",
             "index_revision": index,
@@ -201,7 +201,7 @@ def live_evidence(platform: str, graph_suffix: str = "") -> dict[str, object]:
     }
 
 
-def backend_evidence(name: str) -> dict[str, object]:
+def backend_evidence(name: str) -> dict[str, Any]:
     sample = 2 if name == "sqlite" else 1
     score = 0.5 if name == "sqlite" else 1.0
     return {
@@ -229,7 +229,7 @@ def backend_evidence(name: str) -> dict[str, object]:
     }
 
 
-def storage_evidence() -> dict[str, object]:
+def storage_evidence() -> dict[str, Any]:
     runs = []
     for os_name, architecture in (("linux", "x86_64"), ("macos", "aarch64"), ("windows", "x86_64")):
         runs.append({
@@ -442,7 +442,7 @@ class Sprint3AcceptanceTests(unittest.TestCase):
         oracle = json.loads(acceptance.GOLDEN_ORACLE_PATH.read_text(encoding="utf-8"))
         phases = {phase["name"]: phase for phase in oracle["phases"]}
 
-        def single_verification_calls(phase: dict[str, object]) -> int:
+        def single_verification_calls(phase: dict[str, Any]) -> int:
             resources = phase["resources"]
             dependencies = phase["dependencies"]
             direct = phase["expected_direct_queries"]
@@ -958,7 +958,7 @@ class Sprint3AcceptanceTests(unittest.TestCase):
                 parse_bridge_telemetry(TELEMETRY_PREFIX + json.dumps(oversized))
 
     def test_requires_every_editor_telemetry_session_and_flattens_base_reopen(self) -> None:
-        def refresh_aggregate(evidence: dict[str, object]) -> None:
+        def refresh_aggregate(evidence: dict[str, Any]) -> None:
             records = [
                 record
                 for phase in evidence["phases"]  # type: ignore[union-attr]

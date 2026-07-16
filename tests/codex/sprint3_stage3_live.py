@@ -26,14 +26,7 @@ from resource_graph_fixture import (
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPOSITORY_ROOT = SCRIPT_DIR.parent.parent
 DRIVER = SCRIPT_DIR / "resource_graph_live_driver.gd"
-DEFAULT_CLIENT = (
-    REPOSITORY_ROOT
-    / "godot-codex-mcp"
-    / "target"
-    / "debug"
-    / "examples"
-    / "resource_graph_live"
-)
+DEFAULT_CLIENT = REPOSITORY_ROOT / "godot-codex-mcp" / "target" / "debug" / "examples" / "resource_graph_live"
 EVIDENCE_PATH = SCRIPT_DIR / "evidence" / "sprint-3-stage-3-bridge.json"
 PHASES = (
     "base",
@@ -261,7 +254,8 @@ def operation_matches(operation: dict[str, Any], kind: str, path: str) -> bool:
         return operation.get("path") == path
     if kind == "move":
         return operation.get("to_path") == path
-    return operation.get("value", {}).get("resource", {}).get("path") == path
+    operation_path: object = operation.get("value", {}).get("resource", {}).get("path")
+    return operation_path == path
 
 
 def verify_phase_delta(phase: str, output: dict[str, Any]) -> list[dict[str, Any]]:
@@ -288,15 +282,16 @@ def verify_phase_delta(phase: str, output: dict[str, Any]) -> list[dict[str, Any
             ("remove", "res://resources/unique_leaf.res"),
             ("upsert", "res://resources/unique_leaf.res"),
         )
-        if not all(any(operation_matches(operation, kind, path) for operation in operations) for kind, path in required):
+        if not all(
+            any(operation_matches(operation, kind, path) for operation in operations) for kind, path in required
+        ):
             raise LiveGateError("re_add did not produce remove followed by upsert")
     elif phase in expected:
         kind, path = expected[phase]
         if not any(operation_matches(operation, kind, path) for operation in operations):
             raise LiveGateError(f"{phase} did not produce its required {kind} operation")
         if phase == "rename_uidless" and not any(
-            operation_matches(operation, "remove", "res://resources/twin_a.tres")
-            for operation in operations
+            operation_matches(operation, "remove", "res://resources/twin_a.tres") for operation in operations
         ):
             raise LiveGateError("UID-less rename did not remove the previous path identity")
     return deltas
@@ -308,9 +303,7 @@ def create_gap_resources(project: Path, count: int = 1800) -> None:
     for index in range(count):
         path = root / f"item_{index:04d}.tres"
         path.write_text(
-            "[gd_resource type=\"Resource\" format=3]\n\n"
-            "[resource]\n"
-            f"resource_name = \"journal_gap_{index:04d}\"\n",
+            f'[gd_resource type="Resource" format=3]\n\n[resource]\nresource_name = "journal_gap_{index:04d}"\n',
             encoding="utf-8",
         )
 

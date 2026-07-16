@@ -170,7 +170,7 @@ def sha256_file(path: Path) -> str:
 
 
 def require_redacted(value: Any, context: str, *, allow_session_identity: bool = False) -> dict[str, bool]:
-    status = redaction_status(value)
+    status: dict[str, bool] = redaction_status(value)
     checked = {
         name: passed
         for name, passed in status.items()
@@ -584,7 +584,7 @@ def paged_query(
         query_samples.append(round(elapsed_ms, 3))
         if is_error:
             raise IndexMcpGateError(f"{tool} returned {content.get('error', {}).get('code')}")
-        page_metadata = {
+        page_metadata: dict[str, Any] = {
             "project_id": content.get("project_id"),
             "generation_id": content.get("generation_id"),
             "index_revision": content.get("index_revision"),
@@ -728,7 +728,7 @@ def verify_oracle(
             or metadata["index_revision"] != index_revision
         ):
             raise IndexMcpGateError("reverse query escaped the pinned project generation")
-        observed = [owner.get("edge_id") for owner in owners]
+        observed_owner_ids = [owner.get("edge_id") for owner in owners]
         expected = sorted(
             expected_reverse[resource["entity_id"]],
             key=lambda edge_id: (
@@ -739,7 +739,7 @@ def verify_oracle(
                 edge_id,
             ),
         )
-        if observed != expected:
+        if observed_owner_ids != expected:
             raise IndexMcpGateError(f"reverse owners differ for {resource['oracle_id']}")
         for diagnostic in diagnostics:
             key = (
@@ -1347,9 +1347,9 @@ def main() -> int:
     require_redacted(evidence, "live evidence")
     serialized = canonical_json(evidence)
     evidence_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = evidence_path.with_suffix(evidence_path.suffix + ".tmp")
-    temporary.write_text(serialized, encoding="utf-8")
-    os.replace(temporary, evidence_path)
+    temporary_evidence_path = evidence_path.with_suffix(evidence_path.suffix + ".tmp")
+    temporary_evidence_path.write_text(serialized, encoding="utf-8")
+    os.replace(temporary_evidence_path, evidence_path)
     print(serialized, end="")
     if complete_profile and status != "passed":
         reason = (
