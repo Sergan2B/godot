@@ -1,6 +1,6 @@
 # Sprint 3 plan — ResourceUID and resource dependency graph
 
-**Status:** Implementation-ready
+**Status:** In progress — `S3-01`–`S3-05` complete locally; `S3-06` next
 
 **Planned duration:** 10 working days
 
@@ -14,6 +14,9 @@
 
 **Stage 1 plan:** [SPRINT-3-STAGE-1-PLAN.md](SPRINT-3-STAGE-1-PLAN.md) — `S3-01`/`S3-02`
 contracts, identity rules, and golden resource graph
+
+**Stage 3 completion:** [SPRINT-3-STAGE-3-PLAN.md](SPRINT-3-STAGE-3-PLAN.md) —
+`S3-04`/`S3-05` Bridge RPC 1.2, ResourceGraphAdapter, journal, and Rust wire-client
 
 ## 1. Outcome
 
@@ -181,25 +184,12 @@ upsert and must not claim persistent identity.
 
 ### 5.3 DTO minimum
 
-Resource DTO:
-
-- opaque resource entity ID;
-- UID or explicit `uid_missing`;
-- normalized project-relative path;
-- Godot type;
-- import state and imported/source marker;
-- modification time, byte size, and optional SHA-256 content hash;
-- content generation and validity;
-- source authority and resource revision.
-
-Dependency DTO:
-
-- source entity ID;
-- target UID/path reference;
-- resolved target entity ID when available;
-- declared type when Godot supplies it;
-- resolution status: `resolved`, `missing`, or `stale_uid`;
-- source authority and resource revision.
+The Bridge DTO contains editor facts only: UID or explicit `uid_missing`, normalized
+project-relative path, Godot type, import/source state, modification time, byte size,
+validity, declared dependency references, resolution status, diagnostics, authority,
+and resource revision. Opaque entity/edge IDs, content hashes, content generations,
+and UID-less identity are calculated by the sidecar during `S3-06`/`S3-07`; the bridge
+does not preempt that ownership boundary.
 
 The schema fixtures include valid full snapshot, valid delta, rename, deletion,
 reimport, stale UID, invalid revision, oversized batch, corrupt checksum, and journal
@@ -313,10 +303,17 @@ as current.
 before `D-05`, but only the chosen backend remains production code. `S3-08` does not
 merge before generation/freshness semantics and contract tests are fixed.
 
-Local progress on 2026-07-15: `S3-01` and `S3-02` are implemented and verified against
+Local progress through 2026-07-16: `S3-01` and `S3-02` are implemented and verified against
 11 Python contract tests, 2 focused Draft 2020-12 Rust tests, the full 10-test Rust
-conformance suite, and all 8 live Godot fixture phases. The Stage 1 artifact set is
-packaged together; `S3-03`–`S3-10` have not been relabeled complete.
+conformance suite, and all 8 live Godot fixture phases. `S3-03` is complete for the
+local implementation stream: the storage-neutral API, both spike backends, and strict
+schema-v2 benchmark/fault harness are implemented, and the full macOS `10k/50k` plus
+`100k/500k` run passes every candidate gate and selects the segment store for `D-05`.
+Windows/Linux portability verification is `not_run` and remains separate from remote
+CI. `S3-04` and `S3-05` are also complete locally: Bridge RPC 1.2,
+`ResourceGraphAdapter`, the bounded incremental journal, and the production Rust
+wire-client pass the eight-phase live gate plus Sprint 1/2 regressions. `S3-06`–`S3-10`
+remain open.
 
 ### 8.1 Parent-roadmap traceability
 

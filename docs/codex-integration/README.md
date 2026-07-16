@@ -22,7 +22,9 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 16. [SPRINT-2-EVIDENCE.md](SPRINT-2-EVIDENCE.md) — implemented scope and reproducible Windows/macOS live verification.
 17. [SPRINT-3-PLAN.md](SPRINT-3-PLAN.md) — implementation-ready ResourceUID, dependency graph, persistent index, and evidence plan.
 18. [SPRINT-3-STAGE-1-PLAN.md](SPRINT-3-STAGE-1-PLAN.md) — executable `INDEX-001`, identity-rule, fixture, and golden-graph plan for `S3-01`/`S3-02`.
-19. [INDEX-001-semantic-index-storage-and-migrations.md](INDEX-001-semantic-index-storage-and-migrations.md) — frozen resource identity/logical-index contract; measured physical storage decision remains `D-05`.
+19. [SPRINT-3-STAGE-2-PLAN.md](SPRINT-3-STAGE-2-PLAN.md) — completed local SQLite-versus-segment spike, fault matrix, metrics, and `D-05` decision.
+20. [SPRINT-3-STAGE-3-PLAN.md](SPRINT-3-STAGE-3-PLAN.md) — completed Bridge RPC 1.2, ResourceGraphAdapter, bounded journal, Rust wire-client, and local eight-phase evidence.
+21. [INDEX-001-semantic-index-storage-and-migrations.md](INDEX-001-semantic-index-storage-and-migrations.md) — frozen resource identity/logical-index contract and local segment-store decision.
 
 ## Document status
 
@@ -41,9 +43,11 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | Sprint 1 Stage 4 local evidence | Passed | Superseded by Stage 5 evidence |
 | Sprint 1 Stage 5 local evidence | Passed and committed locally | Separately authorized publication and remote CI |
 | Sprint 2 implementation | Windows x86_64 and macOS arm64 live editor→bridge→sidecar→MCP evidence complete | Optional external Codex UX capture; Sprint 3 implementation |
-| Sprint 3 plan | Implementation-ready | Execute `S3-01`–`S3-10`; freeze storage decision `D-05` by day 5 |
+| Sprint 3 plan | In progress; `S3-01`–`S3-05` complete locally | Execute `S3-06`–`S3-10`; preserve frozen `D-05` and Bridge 1.2 contracts |
 | Sprint 3 Stage 1 | Complete and locally verified | Execute `S3-03` storage spike; freeze `D-05` by Sprint day 5 |
-| `INDEX-001` resource contract | Frozen; `D-05` pending | Run SQLite vs segment-store spike without changing frozen identity/graph semantics |
+| Sprint 3 Stage 2 | Complete locally; full macOS matrix selected segment store | Begin `S3-04`; keep Windows/Linux portability verification separate and explicit |
+| Sprint 3 Stage 3 | Complete and locally verified on macOS arm64 | Begin `S3-06` segment-store ingestion; Windows/Linux remain `not_run` |
+| `INDEX-001` resource contract | Frozen; local `D-05` selects segment store | Implement the chosen backend in `S3-06`; do not claim unrun platform gates |
 
 ## Interim ownership
 
