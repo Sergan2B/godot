@@ -356,10 +356,7 @@ fn synthetic_resource(index: usize, revision: u64) -> ResourceEntity {
         source_kind: "source".to_owned(),
         import_state: "ready".to_owned(),
         authority: "editor_file_system".to_owned(),
-        content_generation: Some(format!(
-            "sha256:{:064x}",
-            deterministic_u64(index as u64)
-        )),
+        content_generation: Some(format!("sha256:{:064x}", deterministic_u64(index as u64))),
         mtime_ns: revision,
         byte_size: 256 + (index % 4096) as u64,
         validity: RecordValidity::Valid,
