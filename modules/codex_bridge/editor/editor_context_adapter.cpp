@@ -39,8 +39,9 @@
 #include "editor/editor_data.h"
 #include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
-#include "modules/codex_bridge/protocol/bridge_crypto.h"
 #include "scene/main/node.h"
+
+#include "modules/codex_bridge/protocol/bridge_crypto.h"
 
 String EditorContextAdapter::_make_opaque_id(const String &p_prefix, const String &p_domain, const String &p_value) {
 	const CharString bytes = (p_domain + "\n" + p_value).utf8();

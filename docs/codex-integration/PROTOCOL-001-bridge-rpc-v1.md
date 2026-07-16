@@ -30,7 +30,7 @@ This specification defines:
 - canonical JSON Schemas and conformance fixtures.
 
 Bridge RPC 1.1 adds capability-gated editor snapshots, event notifications,
-chunks, and acknowledgements on the same authenticated session. MCP, indexing,
+chunks, and acknowledgments on the same authenticated session. MCP, indexing,
 runtime observation, and transactions remain outside the bridge wire surface.
 
 ## 2. Normative conventions

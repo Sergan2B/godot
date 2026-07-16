@@ -395,7 +395,7 @@ impl ResourceNormalizer {
 
     /// Normalizes one exact Bridge delta against the active committed generation.
     ///
-    /// `Ok(None)` is the idempotent acknowledgement for the already committed last batch.
+    /// `Ok(None)` is the idempotent acknowledgment for the already committed last batch.
     pub fn normalize_incremental_batch(
         &self,
         base: &IndexGeneration,

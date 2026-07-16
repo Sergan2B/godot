@@ -79,6 +79,7 @@ skip = [
 ignore-words-list = [
 	"breaked",
 	"cancelled",
+	"caf",
 	"checkin",
 	"colour",
 	"curvelinear",
@@ -104,4 +105,5 @@ ignore-words-list = [
 	"textin",
 	"thirdparty",
 	"vai",
+	"writeable",
 ]

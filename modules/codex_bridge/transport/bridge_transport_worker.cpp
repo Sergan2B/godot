@@ -732,7 +732,7 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 			if (!pending_client) {
 				// The RPC path that removed the pending request already queued the
 				// terminal cancellation. Pruning only releases detached worker data;
-				// cancelling again could otherwise race that queued command.
+				// canceling again could otherwise race that queued command.
 				snapshot_preparations.remove_at(index);
 			}
 		}

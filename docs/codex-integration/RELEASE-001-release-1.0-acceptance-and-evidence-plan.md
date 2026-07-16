@@ -1,9 +1,9 @@
 # RELEASE-001 — Приёмка, доказательства и план выпуска Godot × Codex 1.0
 
-**Статус:** Draft for review 0.1  
-**Дата:** 2026-07-14  
-**Целевой релиз:** 1.0  
-**Родительские документы:** [MASTER_SPRINT_ROADMAP.md](MASTER_SPRINT_ROADMAP.md), разделы 3, 8, 11 и 13; [PRODUCT-001-semantic-bridge-vision-and-plan.md](PRODUCT-001-semantic-bridge-vision-and-plan.md)  
+**Статус:** Draft for review 0.1
+**Дата:** 2026-07-14
+**Целевой релиз:** 1.0
+**Родительские документы:** [MASTER_SPRINT_ROADMAP.md](MASTER_SPRINT_ROADMAP.md), разделы 3, 8, 11 и 13; [PRODUCT-001-semantic-bridge-vision-and-plan.md](PRODUCT-001-semantic-bridge-vision-and-plan.md)
 **Владельцы решения:** Release, Product, Engine/Editor, Sidecar/Protocol, Codex Client, QA, Security и Platform — назначаются до завершения Sprint 1
 
 ---

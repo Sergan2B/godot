@@ -52,8 +52,9 @@
 #endif
 
 #ifdef WINDOWS_ENABLED
-#include <aclapi.h>
 #include <windows.h>
+
+#include <aclapi.h>
 
 #include <climits>
 #endif
@@ -1400,9 +1401,9 @@ void BridgeRuntime::cleanup() {
 	}
 	if (token_published && (lock_fd >= 0
 #ifdef WINDOWS_ENABLED
-				|| lock_handle
+								   || lock_handle
 #endif
-				)) {
+								   )) {
 		remove_path_no_follow(token_path);
 	}
 	discovery_published = false;
@@ -1411,7 +1412,7 @@ void BridgeRuntime::cleanup() {
 #ifdef WINDOWS_ENABLED
 			|| lock_handle
 #endif
-			) {
+	) {
 		remove_path_no_follow(lock_path);
 #ifdef UNIX_ENABLED
 		sync_directory(codex_directory);

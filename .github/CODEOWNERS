@@ -280,6 +280,10 @@
 /servers/text/                                @godotengine/gui-nodes
 /servers/xr/                                  @godotengine/xr
 
+# Codex sidecar
+
+/godot-codex-mcp/                            @Sergan2B @godotengine/tests
+
 # Tests
 
 /tests/                                       @godotengine/tests

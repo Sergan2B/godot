@@ -45,7 +45,7 @@ pub enum FaultPoint {
     Staging,
     /// After validation/flush and before activation.
     PreCommit,
-    /// After durable activation but before acknowledgement/cleanup.
+    /// After durable activation but before acknowledgment/cleanup.
     PostCommit,
 }
 
