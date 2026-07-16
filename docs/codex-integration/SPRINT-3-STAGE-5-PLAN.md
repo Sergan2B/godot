@@ -92,3 +92,66 @@ Final artifacts are:
 Any source or harness fix after platform execution invalidates all Stage 5 platform
 evidence. A failed required platform or SLO remains open; it is not relabeled optional.
 `remote_ci` is recorded as `not_run` and is not a Sprint 3 completion requirement.
+
+## 6. Local execution runbook
+
+Every host checks out the same source-freeze commit and starts with a clean relevant
+source tree. The evidence destinations below are intentional and platform-specific.
+
+macOS arm64:
+
+```sh
+python -m SCons platform=macos arch=arm64 target=editor dev_build=yes tests=yes \
+  module_codex_bridge_enabled=yes accesskit=no angle=no metal=yes vulkan=no -j8
+cargo build --locked --release --manifest-path godot-codex-mcp/Cargo.toml \
+  -p godot-codex-mcp
+python3 tests/codex/sprint3_stage4_index_mcp.py \
+  --godot bin/godot.macos.editor.dev.arm64 \
+  --sidecar godot-codex-mcp/target/release/godot-codex-mcp \
+  --evidence tests/codex/evidence/sprint-3-resource-graph-macos.json
+cargo run --locked --release --manifest-path tests/codex/storage_spike/Cargo.toml -- \
+  run --backend all --dataset all --repo-root "$PWD" \
+  --output tests/codex/evidence/platform/sprint-3-storage-spike-macos.json
+```
+
+Windows x86_64 PowerShell:
+
+```powershell
+python -m SCons platform=windows target=editor dev_build=yes tests=yes `
+  module_codex_bridge_enabled=yes accesskit=no d3d12=no angle=no -j8
+cargo build --locked --release --manifest-path godot-codex-mcp\Cargo.toml `
+  -p godot-codex-mcp
+python tests\codex\sprint3_stage4_index_mcp.py `
+  --godot bin\godot.windows.editor.dev.x86_64.console.exe `
+  --sidecar godot-codex-mcp\target\release\godot-codex-mcp.exe `
+  --evidence tests\codex\evidence\sprint-3-resource-graph-windows.json
+cargo run --locked --release --manifest-path tests\codex\storage_spike\Cargo.toml -- `
+  run --backend all --dataset all --repo-root (Get-Location).Path `
+  --output tests\codex\evidence\platform\sprint-3-storage-spike-windows.json
+```
+
+Linux x86_64 runs the Rust workspace and full storage profile; no editor live claim is
+made:
+
+```sh
+cargo test --locked --workspace --all-targets --manifest-path godot-codex-mcp/Cargo.toml
+cargo run --locked --release --manifest-path tests/codex/storage_spike/Cargo.toml -- \
+  run --backend all --dataset all --repo-root "$PWD" \
+  --output tests/codex/evidence/platform/sprint-3-storage-spike-linux.json
+```
+
+After copying the five raw reports into one clean checkout, produce and validate the
+two aggregates:
+
+```sh
+cargo run --locked --release --manifest-path tests/codex/storage_spike/Cargo.toml -- \
+  merge tests/codex/evidence/sprint-3-storage-spike-cross-platform.json \
+  tests/codex/evidence/platform/sprint-3-storage-spike-linux.json \
+  tests/codex/evidence/platform/sprint-3-storage-spike-macos.json \
+  tests/codex/evidence/platform/sprint-3-storage-spike-windows.json
+python3 tests/codex/sprint3_acceptance.py merge \
+  --macos-live tests/codex/evidence/sprint-3-resource-graph-macos.json \
+  --windows-live tests/codex/evidence/sprint-3-resource-graph-windows.json \
+  --storage tests/codex/evidence/sprint-3-storage-spike-cross-platform.json \
+  --output tests/codex/evidence/sprint-3-acceptance.json
+```
