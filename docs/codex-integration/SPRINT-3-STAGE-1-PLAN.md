@@ -333,6 +333,10 @@ diagnostics. The delete phase contains 17 resources, the same 12 observable edge
 third `stale_resource_uid` diagnostic. All other phases retain 18 resources and prove
 their expected identity/content relationship.
 
+The Stage 5 hardening pass advances the manifest and golden fixture to schema/fixture
+version 2. Every dependency now carries the Godot-declared type, and the regenerated
+Stage 1 evidence binds the updated golden digest explicitly.
+
 ### 9.2 Verification results
 
 | Check | Result |

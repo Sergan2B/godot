@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "fixture_version": 1,
+  "schema_version": 2,
+  "fixture_version": 2,
   "required_godot": "4.8",
   "resources": [
     {
@@ -26,6 +26,7 @@
       "dependencies": [
         {
           "uid": "uid://b",
+          "declared_type": "Resource",
           "fallback_path": "res://resources/shared_leaf.tres",
           "target": "shared_leaf",
           "resolution": "resolved"
@@ -44,6 +45,7 @@
       "dependencies": [
         {
           "uid": "uid://c",
+          "declared_type": "Resource",
           "fallback_path": "res://resources/chain_mid.tres",
           "target": "chain_mid",
           "resolution": "resolved"
@@ -62,6 +64,7 @@
       "dependencies": [
         {
           "uid": "uid://j",
+          "declared_type": "Resource",
           "fallback_path": "res://resources/cycle_b.tres",
           "target": "cycle_b",
           "resolution": "resolved"
@@ -80,6 +83,7 @@
       "dependencies": [
         {
           "uid": "uid://i",
+          "declared_type": "Resource",
           "fallback_path": "res://resources/cycle_a.tres",
           "target": "cycle_a",
           "resolution": "resolved"
@@ -98,6 +102,7 @@
       "dependencies": [
         {
           "uid": "uid://b",
+          "declared_type": "Resource",
           "fallback_path": "res://resources/shared_leaf.tres",
           "target": "shared_leaf",
           "resolution": "resolved"
@@ -116,6 +121,7 @@
       "dependencies": [
         {
           "uid": "uid://b",
+          "declared_type": "Resource",
           "fallback_path": "res://resources/shared_leaf.tres",
           "target": "shared_leaf",
           "resolution": "resolved"
@@ -134,12 +140,14 @@
       "dependencies": [
         {
           "uid": "uid://b",
+          "declared_type": "Resource",
           "fallback_path": "res://resources/shared_leaf.tres",
           "target": "shared_leaf",
           "resolution": "resolved"
         },
         {
           "uid": "uid://e",
+          "declared_type": "Resource",
           "fallback_path": "res://resources/unique_leaf.res",
           "target": "unique_leaf",
           "resolution": "resolved"
@@ -158,6 +166,7 @@
       "dependencies": [
         {
           "uid": null,
+          "declared_type": "Resource",
           "fallback_path": "res://missing/not_created.tres",
           "target": null,
           "resolution": "missing"
@@ -209,6 +218,7 @@
       "dependencies": [
         {
           "uid": "uid://0",
+          "declared_type": "Resource",
           "fallback_path": "res://missing/stale_target.tres",
           "target": null,
           "resolution": "stale_uid"
@@ -260,6 +270,7 @@
       "dependencies": [
         {
           "uid": "uid://b",
+          "declared_type": "Resource",
           "fallback_path": "res://resources/shared_leaf.tres",
           "target": "shared_leaf",
           "resolution": "resolved"
@@ -278,6 +289,7 @@
       "dependencies": [
         {
           "uid": "uid://b",
+          "declared_type": "Resource",
           "fallback_path": "res://resources/shared_leaf.tres",
           "target": "shared_leaf",
           "resolution": "resolved"

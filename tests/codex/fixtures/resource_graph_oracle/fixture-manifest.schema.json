@@ -11,8 +11,8 @@
     "exclusions"
   ],
   "properties": {
-    "schema_version": {"const": 1},
-    "fixture_version": {"type": "integer", "minimum": 1},
+    "schema_version": {"const": 2},
+    "fixture_version": {"const": 2},
     "required_godot": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+"},
     "resources": {
       "type": "array",
@@ -34,9 +34,10 @@
   "$defs": {
     "dependency": {
       "type": "object",
-      "required": ["fallback_path", "resolution"],
+      "required": ["declared_type", "fallback_path", "resolution"],
       "properties": {
         "uid": {"type": ["string", "null"], "pattern": "^uid://"},
+        "declared_type": {"type": ["string", "null"], "minLength": 1},
         "fallback_path": {"type": "string", "pattern": "^res://"},
         "target": {"type": ["string", "null"]},
         "resolution": {"enum": ["resolved", "missing", "stale_uid"]}

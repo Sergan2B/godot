@@ -81,6 +81,7 @@ class ResourceGraphContractTests(unittest.TestCase):
             ("stale_uid_owner", None, "stale_uid"),
         }
         self.assertTrue(required.issubset(edges))
+        self.assertTrue(all(edge["declared_type"] == "Resource" for edge in base["dependencies"]))
         direct_sources = {edge["source"] for edge in base["dependencies"]}
         self.assertNotIn("orphan", direct_sources)
         reverse_targets = {

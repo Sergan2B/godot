@@ -4,8 +4,8 @@
   "type": "object",
   "required": ["schema_version", "fixture_version", "required_godot", "phases"],
   "properties": {
-    "schema_version": {"const": 1},
-    "fixture_version": {"type": "integer", "minimum": 1},
+    "schema_version": {"const": 2},
+    "fixture_version": {"const": 2},
     "required_godot": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+"},
     "phases": {
       "type": "array",
@@ -66,6 +66,7 @@
         "edge_id",
         "source",
         "source_entity_id",
+        "declared_type",
         "target_uid",
         "fallback_path",
         "resolved_target",
@@ -77,6 +78,7 @@
         "edge_id": {"type": "string", "pattern": "^godot:edge:references:"},
         "source": {"type": "string", "minLength": 1},
         "source_entity_id": {"type": "string", "pattern": "^godot:resource:"},
+        "declared_type": {"type": ["string", "null"], "minLength": 1},
         "target_uid": {"type": ["string", "null"], "pattern": "^uid://"},
         "fallback_path": {"type": "string", "pattern": "^res://"},
         "resolved_target": {"type": ["string", "null"]},

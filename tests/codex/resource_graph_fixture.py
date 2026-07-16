@@ -204,6 +204,9 @@ def validate_manifest_semantics(manifest: Mapping[str, Any]) -> None:
             target = dependency.get("target")
             resolution = dependency.get("resolution")
             uid = dependency.get("uid")
+            declared_type = dependency.get("declared_type")
+            if declared_type is not None and (not isinstance(declared_type, str) or not declared_type):
+                raise FixtureError("invalid_dependency_declared_type")
             if target is not None and target not in oracle_ids:
                 raise FixtureError("dependency target does not exist")
             if resolution == "resolved" and target is None:
@@ -421,6 +424,7 @@ def build_expected_phase(manifest: Mapping[str, Any], phase: str, work_root: Pat
             edge_id = dependency_edge_id(source_entity_id, target_uid, fallback_path)
             dependencies.append({
                 "authority": "godot_resource_loader",
+                "declared_type": dependency["declared_type"],
                 "edge_id": edge_id,
                 "fallback_path": fallback_path,
                 "resolution": resolution,
@@ -487,7 +491,7 @@ def update_golden(manifest: Mapping[str, Any], work_root: Path, godot_bin: Path)
         "fixture_version": manifest["fixture_version"],
         "phases": phases,
         "required_godot": manifest["required_godot"],
-        "schema_version": 1,
+        "schema_version": 2,
     }
     GOLDEN_PATH.write_text(canonical_json(golden), encoding="utf-8")
     _safe_remove_work_root(work_root)

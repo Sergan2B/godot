@@ -1,10 +1,11 @@
 {
-  "fixture_version": 1,
+  "fixture_version": 2,
   "phases": [
     {
       "dependencies": [
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -16,6 +17,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
           "fallback_path": "res://resources/chain_mid.tres",
           "resolution": "resolved",
@@ -27,6 +29,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
           "fallback_path": "res://resources/cycle_b.tres",
           "resolution": "resolved",
@@ -38,6 +41,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
           "fallback_path": "res://resources/cycle_a.tres",
           "resolution": "resolved",
@@ -49,6 +53,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -60,6 +65,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -71,6 +77,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -82,6 +89,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
           "fallback_path": "res://resources/unique_leaf.res",
           "resolution": "resolved",
@@ -93,6 +101,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
           "fallback_path": "res://missing/not_created.tres",
           "resolution": "missing",
@@ -104,6 +113,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
           "fallback_path": "res://missing/stale_target.tres",
           "resolution": "stale_uid",
@@ -115,6 +125,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -126,6 +137,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -514,6 +526,7 @@
       "dependencies": [
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
           "fallback_path": "res://resources/renamed/shared_leaf_renamed.tres",
           "resolution": "resolved",
@@ -525,6 +538,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
           "fallback_path": "res://resources/chain_mid.tres",
           "resolution": "resolved",
@@ -536,6 +550,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
           "fallback_path": "res://resources/cycle_b.tres",
           "resolution": "resolved",
@@ -547,6 +562,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
           "fallback_path": "res://resources/cycle_a.tres",
           "resolution": "resolved",
@@ -558,6 +574,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
           "fallback_path": "res://resources/renamed/shared_leaf_renamed.tres",
           "resolution": "resolved",
@@ -569,6 +586,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
           "fallback_path": "res://resources/renamed/shared_leaf_renamed.tres",
           "resolution": "resolved",
@@ -580,6 +598,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
           "fallback_path": "res://resources/renamed/shared_leaf_renamed.tres",
           "resolution": "resolved",
@@ -591,6 +610,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
           "fallback_path": "res://resources/unique_leaf.res",
           "resolution": "resolved",
@@ -602,6 +622,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
           "fallback_path": "res://missing/not_created.tres",
           "resolution": "missing",
@@ -613,6 +634,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
           "fallback_path": "res://missing/stale_target.tres",
           "resolution": "stale_uid",
@@ -624,6 +646,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
           "fallback_path": "res://resources/renamed/shared_leaf_renamed.tres",
           "resolution": "resolved",
@@ -635,6 +658,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
           "fallback_path": "res://resources/renamed/shared_leaf_renamed.tres",
           "resolution": "resolved",
@@ -1025,6 +1049,7 @@
       "dependencies": [
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -1036,6 +1061,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
           "fallback_path": "res://resources/chain_mid.tres",
           "resolution": "resolved",
@@ -1047,6 +1073,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
           "fallback_path": "res://resources/cycle_b.tres",
           "resolution": "resolved",
@@ -1058,6 +1085,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
           "fallback_path": "res://resources/cycle_a.tres",
           "resolution": "resolved",
@@ -1069,6 +1097,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -1080,6 +1109,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -1091,6 +1121,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -1102,6 +1133,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
           "fallback_path": "res://resources/unique_leaf.res",
           "resolution": "resolved",
@@ -1113,6 +1145,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
           "fallback_path": "res://missing/not_created.tres",
           "resolution": "missing",
@@ -1124,6 +1157,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
           "fallback_path": "res://missing/stale_target.tres",
           "resolution": "stale_uid",
@@ -1135,6 +1169,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -1146,6 +1181,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -1535,6 +1571,7 @@
       "dependencies": [
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -1546,6 +1583,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
           "fallback_path": "res://resources/chain_mid.tres",
           "resolution": "resolved",
@@ -1557,6 +1595,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
           "fallback_path": "res://resources/cycle_b.tres",
           "resolution": "resolved",
@@ -1568,6 +1607,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
           "fallback_path": "res://resources/cycle_a.tres",
           "resolution": "resolved",
@@ -1579,6 +1619,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -1590,6 +1631,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -1601,6 +1643,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -1612,6 +1655,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
           "fallback_path": "res://resources/unique_leaf.res",
           "resolution": "stale_uid",
@@ -1623,6 +1667,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
           "fallback_path": "res://missing/not_created.tres",
           "resolution": "missing",
@@ -1634,6 +1679,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
           "fallback_path": "res://missing/stale_target.tres",
           "resolution": "stale_uid",
@@ -1645,6 +1691,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -1656,6 +1703,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -2035,6 +2083,7 @@
       "dependencies": [
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -2046,6 +2095,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
           "fallback_path": "res://resources/chain_mid.tres",
           "resolution": "resolved",
@@ -2057,6 +2107,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
           "fallback_path": "res://resources/cycle_b.tres",
           "resolution": "resolved",
@@ -2068,6 +2119,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
           "fallback_path": "res://resources/cycle_a.tres",
           "resolution": "resolved",
@@ -2079,6 +2131,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -2090,6 +2143,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -2101,6 +2155,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -2112,6 +2167,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
           "fallback_path": "res://resources/unique_leaf.res",
           "resolution": "resolved",
@@ -2123,6 +2179,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
           "fallback_path": "res://missing/not_created.tres",
           "resolution": "missing",
@@ -2134,6 +2191,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
           "fallback_path": "res://missing/stale_target.tres",
           "resolution": "stale_uid",
@@ -2145,6 +2203,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -2156,6 +2215,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -2546,6 +2606,7 @@
       "dependencies": [
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -2557,6 +2618,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
           "fallback_path": "res://resources/chain_mid.tres",
           "resolution": "resolved",
@@ -2568,6 +2630,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
           "fallback_path": "res://resources/cycle_b.tres",
           "resolution": "resolved",
@@ -2579,6 +2642,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
           "fallback_path": "res://resources/cycle_a.tres",
           "resolution": "resolved",
@@ -2590,6 +2654,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -2601,6 +2666,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -2612,6 +2678,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -2623,6 +2690,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
           "fallback_path": "res://resources/unique_leaf.res",
           "resolution": "resolved",
@@ -2634,6 +2702,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
           "fallback_path": "res://missing/not_created.tres",
           "resolution": "missing",
@@ -2645,6 +2714,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
           "fallback_path": "res://missing/stale_target.tres",
           "resolution": "stale_uid",
@@ -2656,6 +2726,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -2667,6 +2738,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -3057,6 +3129,7 @@
       "dependencies": [
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -3068,6 +3141,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
           "fallback_path": "res://resources/chain_mid.tres",
           "resolution": "resolved",
@@ -3079,6 +3153,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
           "fallback_path": "res://resources/cycle_b.tres",
           "resolution": "resolved",
@@ -3090,6 +3165,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
           "fallback_path": "res://resources/cycle_a.tres",
           "resolution": "resolved",
@@ -3101,6 +3177,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -3112,6 +3189,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -3123,6 +3201,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -3134,6 +3213,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
           "fallback_path": "res://resources/unique_leaf.res",
           "resolution": "resolved",
@@ -3145,6 +3225,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
           "fallback_path": "res://missing/not_created.tres",
           "resolution": "missing",
@@ -3156,6 +3237,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
           "fallback_path": "res://missing/stale_target.tres",
           "resolution": "stale_uid",
@@ -3167,6 +3249,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -3178,6 +3261,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -3567,6 +3651,7 @@
       "dependencies": [
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:njL828OaCH6Dw0ZiBNk9QC-o4iVSKiM_WzTQf-FsDGs",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -3578,6 +3663,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xvjaPL0o_jxMI07NXOZsposTwFU23jCHLqyp-xAGn80",
           "fallback_path": "res://resources/chain_mid.tres",
           "resolution": "resolved",
@@ -3589,6 +3675,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:9Sziklnh3UY_iq7Xxc9iF4ojJ2q-nC8IKVE6F4057AA",
           "fallback_path": "res://resources/cycle_b.tres",
           "resolution": "resolved",
@@ -3600,6 +3687,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:2mB-QKcdgmRIOMeH4717N1nuA9O1qJYAWfdx1HqlGWo",
           "fallback_path": "res://resources/cycle_a.tres",
           "resolution": "resolved",
@@ -3611,6 +3699,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:vhM1ZjsgS61XZjeMQxtJmyUKlaHBsMKFMgE8-QLn5gE",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -3622,6 +3711,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Yv9Efa9KQEHdhcoi9WQC6OutFhJK1DGeTtrcsYv523s",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -3633,6 +3723,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:Nf9hshizP3DzHKxK1C4GGX28n2g9k6FJrD1qWgMZC4U",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -3644,6 +3735,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:iaCmk8A5-8YND68nXNhaN2Jk8Q_FEY0Dz3lZW7RzIZk",
           "fallback_path": "res://resources/unique_leaf.res",
           "resolution": "resolved",
@@ -3655,6 +3747,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:xgsF6L7RhXGLVhQMYNybdqV61-zYWHkYay_w4Baq0Ks",
           "fallback_path": "res://missing/not_created.tres",
           "resolution": "missing",
@@ -3666,6 +3759,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:JuUxUdAnSNEYTILMklowvGraFIlmiVTiac9Wapx8JsY",
           "fallback_path": "res://missing/stale_target.tres",
           "resolution": "stale_uid",
@@ -3677,6 +3771,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:zaKkLMtA5S9Vn8fiyuXZnrzg2daNtgJ2j_0_TLSmMkY",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -3688,6 +3783,7 @@
         },
         {
           "authority": "godot_resource_loader",
+          "declared_type": "Resource",
           "edge_id": "godot:edge:references:v1:jK3Mc1kI7x8VF1RbzJXWTJGBixl9ujPyHbrK3eeBGy0",
           "fallback_path": "res://resources/shared_leaf.tres",
           "resolution": "resolved",
@@ -4076,5 +4172,5 @@
     }
   ],
   "required_godot": "4.8",
-  "schema_version": 1
+  "schema_version": 2
 }
