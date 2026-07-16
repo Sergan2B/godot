@@ -11,9 +11,9 @@
     "restore_idempotence",
     "path_redaction"
   ],
-  "fixture_version": 1,
-  "godot_version": "4.8.dev.codex.cae21453b",
-  "golden_sha256": "2fca88e7e1bdd283a8543fa665d9875384fb741a47bc46451cc45b4e39cb7987",
+  "fixture_version": 2,
+  "godot_version": "4.8.dev.custom_build.86c4c47f3",
+  "golden_sha256": "a41ddfc642f653ad88866aeeefe7852d7742b8701e469aec821aef5b9c046f3b",
   "identity_vectors_sha256": "e2facc5cc1d8d056f022c1509dbc70d2c033808916f1ba091bc105d556ee1879",
   "phases": [
     {
