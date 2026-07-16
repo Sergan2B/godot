@@ -1,9 +1,8 @@
 /**************************************************************************/
-/*  codex_bridge_service.h                                                */
+/*  bridge_frame_telemetry.cpp                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
-/*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
 /* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
@@ -28,71 +27,56 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#pragma once
-
 #include "bridge_frame_telemetry.h"
-#include "bridge_revision_clock.h"
-#include "main_thread_dispatcher.h"
-#include "resource_graph_adapter.h"
 
-#include "editor/plugins/editor_plugin.h"
+#include "core/variant/array.h"
+#include "core/variant/variant.h"
 
-#include "modules/codex_bridge/transport/bridge_transport_worker.h"
+void BridgeFrameTelemetry::reset(bool p_enabled) {
+	enabled = p_enabled;
+	overflow = false;
+	busy_frame_count = 0;
+	over_budget_count = 0;
+	max_elapsed_usec = 0;
+	samples_usec.clear();
+}
 
-class CodexBridgeService : public EditorPlugin {
-	GDCLASS(CodexBridgeService, EditorPlugin);
+void BridgeFrameTelemetry::record(uint64_t p_elapsed_usec, bool p_busy) {
+	if (!enabled || !p_busy) {
+		return;
+	}
 
-public:
-	enum State {
-		STATE_STOPPED,
-		STATE_STARTING,
-		STATE_RUNNING,
-		STATE_STOPPING,
-	};
+	busy_frame_count++;
+	max_elapsed_usec = MAX(max_elapsed_usec, p_elapsed_usec);
+	if (p_elapsed_usec > BUDGET_USEC) {
+		over_budget_count++;
+	}
+	if ((uint64_t)samples_usec.size() < MAX_SAMPLES) {
+		samples_usec.push_back((int64_t)p_elapsed_usec);
+	} else {
+		overflow = true;
+	}
+}
 
-private:
-	static CodexBridgeService *singleton;
+bool BridgeFrameTelemetry::is_enabled() const {
+	return enabled;
+}
 
-	State state = STATE_STOPPED;
-	MainThreadDispatcher dispatcher;
-	BridgeTransportWorker transport_worker;
-	BridgeRevisionClock revision_clock;
-	ResourceGraphAdapter resource_graph_adapter;
-	BridgeFrameTelemetry frame_telemetry;
-	bool editor_signals_connected = false;
-	bool scene_change_pending = false;
-	String pending_property;
+Dictionary BridgeFrameTelemetry::to_dictionary() const {
+	Array samples;
+	samples.resize(samples_usec.size());
+	for (int index = 0; index < samples_usec.size(); index++) {
+		samples[index] = samples_usec[index];
+	}
 
-	static void _dispatch_command(const MainThreadDispatcher::Command &p_command, void *p_userdata);
-	Dictionary _make_context() const;
-	String _get_current_scene_id() const;
-	void _connect_editor_signals();
-	void _disconnect_editor_signals();
-	void _publish_event(const String &p_event_type, const String &p_property = String(), bool p_scene_mutation = false);
-	void _on_selection_changed();
-	void _on_scene_changed();
-	void _on_property_edited(const String &p_property);
-	void _on_undo_redo_version_changed();
-	void _on_filesystem_changed();
-	void _on_resources_reimported(const Vector<String> &p_paths);
-	void _on_resources_reload(const PackedStringArray &p_paths);
-	void _flush_scene_change();
-	void _complete_snapshot(uint64_t p_request_id);
-	void _complete_resource_delta(uint64_t p_request_id, uint64_t p_after_resource_revision);
-	void _process_resource_graph(uint64_t p_budget_usec);
-
-protected:
-	void _notification(int p_what);
-
-public:
-	static CodexBridgeService *get_singleton();
-
-	Error start();
-	void stop();
-
-	State get_service_state() const;
-	MainThreadDispatcher &get_dispatcher();
-
-	CodexBridgeService();
-	~CodexBridgeService();
-};
+	Dictionary result;
+	result["schema_version"] = 1;
+	result["budget_usec"] = (int64_t)BUDGET_USEC;
+	result["sample_capacity"] = (int64_t)MAX_SAMPLES;
+	result["busy_frame_count"] = (int64_t)busy_frame_count;
+	result["samples_usec"] = samples;
+	result["max_elapsed_usec"] = (int64_t)max_elapsed_usec;
+	result["over_budget_count"] = (int64_t)over_budget_count;
+	result["overflow"] = overflow;
+	return result;
+}

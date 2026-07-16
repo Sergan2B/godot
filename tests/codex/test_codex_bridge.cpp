@@ -43,6 +43,7 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "core/templates/local_vector.h"
 
 #include "modules/codex_bridge/editor/bridge_revision_clock.h"
+#include "modules/codex_bridge/editor/bridge_frame_telemetry.h"
 #include "modules/codex_bridge/editor/main_thread_dispatcher.h"
 #include "modules/codex_bridge/editor/resource_delta_journal.h"
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
@@ -75,6 +76,33 @@ static MainThreadDispatcher::Command make_command(uint64_t p_request_id, uint64_
 	command.request_id = p_request_id;
 	command.deadline_usec = p_deadline_usec;
 	return command;
+}
+
+TEST_CASE("[CodexBridge] Evidence telemetry is opt-in, bounded, and records budget overruns") {
+	BridgeFrameTelemetry telemetry;
+	telemetry.reset(false);
+	telemetry.record(100, true);
+	CHECK((int64_t)telemetry.to_dictionary()["busy_frame_count"] == 0);
+
+	telemetry.reset(true);
+	telemetry.record(42, false);
+	telemetry.record(BridgeFrameTelemetry::BUDGET_USEC, true);
+	telemetry.record(BridgeFrameTelemetry::BUDGET_USEC + 1, true);
+	Dictionary result = telemetry.to_dictionary();
+	CHECK((int64_t)result["busy_frame_count"] == 2);
+	CHECK((int64_t)result["over_budget_count"] == 1);
+	CHECK((int64_t)result["max_elapsed_usec"] == (int64_t)BridgeFrameTelemetry::BUDGET_USEC + 1);
+	CHECK_FALSE((bool)result["overflow"]);
+	CHECK(Array(result["samples_usec"]).size() == 2);
+
+	for (uint64_t index = 2; index < BridgeFrameTelemetry::MAX_SAMPLES; index++) {
+		telemetry.record(1, true);
+	}
+	telemetry.record(1, true);
+	result = telemetry.to_dictionary();
+	CHECK((int64_t)result["busy_frame_count"] == (int64_t)BridgeFrameTelemetry::MAX_SAMPLES + 1);
+	CHECK(Array(result["samples_usec"]).size() == (int)BridgeFrameTelemetry::MAX_SAMPLES);
+	CHECK((bool)result["overflow"]);
 }
 
 static PackedByteArray bytes_from_range(uint8_t p_start, int p_count) {

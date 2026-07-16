@@ -1,9 +1,8 @@
 /**************************************************************************/
-/*  codex_bridge_service.h                                                */
+/*  bridge_frame_telemetry.h                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
-/*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
 /* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
@@ -30,69 +29,26 @@
 
 #pragma once
 
-#include "bridge_frame_telemetry.h"
-#include "bridge_revision_clock.h"
-#include "main_thread_dispatcher.h"
-#include "resource_graph_adapter.h"
+#include "core/templates/vector.h"
+#include "core/variant/dictionary.h"
 
-#include "editor/plugins/editor_plugin.h"
-
-#include "modules/codex_bridge/transport/bridge_transport_worker.h"
-
-class CodexBridgeService : public EditorPlugin {
-	GDCLASS(CodexBridgeService, EditorPlugin);
-
+class BridgeFrameTelemetry {
 public:
-	enum State {
-		STATE_STOPPED,
-		STATE_STARTING,
-		STATE_RUNNING,
-		STATE_STOPPING,
-	};
+	static constexpr uint64_t BUDGET_USEC = 2000;
+	static constexpr uint64_t MAX_SAMPLES = 16384;
 
 private:
-	static CodexBridgeService *singleton;
-
-	State state = STATE_STOPPED;
-	MainThreadDispatcher dispatcher;
-	BridgeTransportWorker transport_worker;
-	BridgeRevisionClock revision_clock;
-	ResourceGraphAdapter resource_graph_adapter;
-	BridgeFrameTelemetry frame_telemetry;
-	bool editor_signals_connected = false;
-	bool scene_change_pending = false;
-	String pending_property;
-
-	static void _dispatch_command(const MainThreadDispatcher::Command &p_command, void *p_userdata);
-	Dictionary _make_context() const;
-	String _get_current_scene_id() const;
-	void _connect_editor_signals();
-	void _disconnect_editor_signals();
-	void _publish_event(const String &p_event_type, const String &p_property = String(), bool p_scene_mutation = false);
-	void _on_selection_changed();
-	void _on_scene_changed();
-	void _on_property_edited(const String &p_property);
-	void _on_undo_redo_version_changed();
-	void _on_filesystem_changed();
-	void _on_resources_reimported(const Vector<String> &p_paths);
-	void _on_resources_reload(const PackedStringArray &p_paths);
-	void _flush_scene_change();
-	void _complete_snapshot(uint64_t p_request_id);
-	void _complete_resource_delta(uint64_t p_request_id, uint64_t p_after_resource_revision);
-	void _process_resource_graph(uint64_t p_budget_usec);
-
-protected:
-	void _notification(int p_what);
+	bool enabled = false;
+	bool overflow = false;
+	uint64_t busy_frame_count = 0;
+	uint64_t over_budget_count = 0;
+	uint64_t max_elapsed_usec = 0;
+	Vector<int64_t> samples_usec;
 
 public:
-	static CodexBridgeService *get_singleton();
+	void reset(bool p_enabled);
+	void record(uint64_t p_elapsed_usec, bool p_busy);
 
-	Error start();
-	void stop();
-
-	State get_service_state() const;
-	MainThreadDispatcher &get_dispatcher();
-
-	CodexBridgeService();
-	~CodexBridgeService();
+	bool is_enabled() const;
+	Dictionary to_dictionary() const;
 };

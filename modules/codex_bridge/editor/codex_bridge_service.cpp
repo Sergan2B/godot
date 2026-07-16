@@ -455,14 +455,16 @@ void CodexBridgeService::_notification(int p_what) {
 		} break;
 		case NOTIFICATION_PROCESS: {
 			if (state == STATE_RUNNING) {
+				const uint64_t frame_started_usec = OS::get_singleton()->get_ticks_usec();
 				const bool resource_work = resource_graph_adapter.has_pending_work();
 				const uint64_t dispatcher_budget = resource_work ?
 						MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME - ResourceGraphAdapter::RESOURCE_BUDGET_USEC :
 						MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME;
-				dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
+				const MainThreadDispatcher::ProcessStats dispatcher_stats = dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
 				if (resource_work) {
 					_process_resource_graph(ResourceGraphAdapter::RESOURCE_BUDGET_USEC);
 				}
+				frame_telemetry.record(OS::get_singleton()->get_ticks_usec() - frame_started_usec, resource_work || dispatcher_stats.consumed > 0);
 			}
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
@@ -497,6 +499,7 @@ Error CodexBridgeService::start() {
 
 	revision_clock.initialize(transport_worker.get_editor_session_id());
 	resource_graph_adapter.initialize(&revision_clock);
+	frame_telemetry.reset(OS::get_singleton()->get_environment("GODOT_CODEX_EVIDENCE_TELEMETRY") == "1");
 	_connect_editor_signals();
 	state = STATE_RUNNING;
 	print_verbose("[codex_bridge] Service started.");
@@ -517,6 +520,9 @@ void CodexBridgeService::stop() {
 	const BridgeTransportWorker::StopResult stop_result = transport_worker.stop();
 	if (stop_result == BridgeTransportWorker::STOP_TIMED_OUT) {
 		ERR_PRINT("[codex_bridge] Transport worker did not stop within the shutdown timeout.");
+	}
+	if (frame_telemetry.is_enabled()) {
+		print_line("[codex_bridge_evidence] " + JSON::stringify(frame_telemetry.to_dictionary(), "", true, true));
 	}
 	state = STATE_STOPPED;
 	print_verbose("[codex_bridge] Service stopped.");
