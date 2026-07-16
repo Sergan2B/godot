@@ -851,6 +851,133 @@ impl IndexGeneration {
         format!("sha256:{:x}", hasher.finalize())
     }
 
+    /// Computes the current resource-graph identity without editor-session or
+    /// durable-generation coordinates.
+    ///
+    /// A fresh editor session restarts its resource revision sequence and a
+    /// validating full snapshot receives a provisional index revision. Neither
+    /// changes the graph represented by an otherwise compatible persistent
+    /// generation. Diagnostic history and deletion tombstones are likewise
+    /// generation history rather than current graph facts.
+    #[must_use]
+    pub fn compute_graph_compatibility_digest(&self) -> String {
+        let mut resources: Vec<_> = self.resources.iter().collect();
+        resources.sort_by(|left, right| left.entity_id.cmp(&right.entity_id));
+        let mut source_documents: Vec<_> = self.source_documents.iter().collect();
+        source_documents.sort_by(|left, right| left.entity_id.cmp(&right.entity_id));
+        let mut dependencies: Vec<_> = self.dependencies.iter().collect();
+        dependencies.sort_by(|left, right| left.edge_id.cmp(&right.edge_id));
+        let mut diagnostics: Vec<_> = self
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.active)
+            .collect();
+        diagnostics.sort_by(|left, right| {
+            left.code
+                .cmp(&right.code)
+                .then_with(|| left.subject.cmp(&right.subject))
+                .then_with(|| left.detail.cmp(&right.detail))
+        });
+
+        let mut hasher = Sha256::new();
+        hasher.update(b"godot-codex/index-graph-compatibility/v1\0");
+        hasher.update(self.schema_version.major.to_be_bytes());
+        hasher.update(self.schema_version.minor.to_be_bytes());
+        update_field(&mut hasher, &self.project_id);
+        hasher.update(b"resources\0");
+        for resource in resources {
+            update_field(&mut hasher, &resource.entity_id);
+            update_field(&mut hasher, &resource.identity_input);
+            update_field(&mut hasher, resource.uid.as_deref().unwrap_or_default());
+            update_field(&mut hasher, &resource.display_path);
+            update_field(&mut hasher, &resource.comparison_path);
+            hasher.update([match resource.identity_strength {
+                IdentityStrength::ResourceUid => 1,
+                IdentityStrength::PathContentGeneration => 2,
+            }]);
+            update_field(&mut hasher, &resource.resource_type);
+            update_field(&mut hasher, &resource.source_kind);
+            update_field(&mut hasher, &resource.import_state);
+            update_field(&mut hasher, &resource.authority);
+            update_field(
+                &mut hasher,
+                resource.content_generation.as_deref().unwrap_or_default(),
+            );
+            hasher.update(resource.mtime_ns.to_be_bytes());
+            hasher.update(resource.byte_size.to_be_bytes());
+            hasher.update([match resource.validity {
+                RecordValidity::Valid => 1,
+                RecordValidity::Partial => 2,
+                RecordValidity::Invalid => 3,
+                RecordValidity::Deleted => 4,
+            }]);
+        }
+        hasher.update(b"source-documents\0");
+        for document in source_documents {
+            update_field(&mut hasher, &document.entity_id);
+            update_field(&mut hasher, &document.comparison_path);
+            hasher.update(document.size_before.to_be_bytes());
+            hasher.update(document.size_after.to_be_bytes());
+            hasher.update(document.mtime_before_ns.to_be_bytes());
+            hasher.update(document.mtime_after_ns.to_be_bytes());
+            update_field(
+                &mut hasher,
+                document.content_generation.as_deref().unwrap_or_default(),
+            );
+            update_field(&mut hasher, &document.ingest_state);
+        }
+        hasher.update(b"dependencies\0");
+        for edge in dependencies {
+            update_field(&mut hasher, &edge.edge_id);
+            update_field(&mut hasher, &edge.source_entity_id);
+            update_field(&mut hasher, edge.target_uid.as_deref().unwrap_or_default());
+            update_field(
+                &mut hasher,
+                edge.target_comparison_path.as_deref().unwrap_or_default(),
+            );
+            update_field(
+                &mut hasher,
+                edge.target_display_path.as_deref().unwrap_or_default(),
+            );
+            update_field(
+                &mut hasher,
+                edge.target_entity_id.as_deref().unwrap_or_default(),
+            );
+            update_field(
+                &mut hasher,
+                edge.resolved_target_path.as_deref().unwrap_or_default(),
+            );
+            update_field(&mut hasher, &edge.relation);
+            update_field(
+                &mut hasher,
+                edge.declared_type.as_deref().unwrap_or_default(),
+            );
+            update_field(&mut hasher, &edge.authority);
+            hasher.update([match edge.resolution {
+                DependencyResolution::Resolved => 1,
+                DependencyResolution::Missing => 2,
+                DependencyResolution::StaleUid => 3,
+            }]);
+        }
+        hasher.update(b"active-diagnostics\0");
+        for diagnostic in diagnostics {
+            update_field(&mut hasher, &diagnostic.code);
+            update_field(&mut hasher, &diagnostic.subject);
+            update_field(
+                &mut hasher,
+                diagnostic.detail.as_deref().unwrap_or_default(),
+            );
+        }
+        format!("sha256:{:x}", hasher.finalize())
+    }
+
+    /// Returns whether a validating full snapshot represents the same current
+    /// resource graph, independent of editor-session and index history.
+    #[must_use]
+    pub fn graph_is_compatible_with(&self, observed: &Self) -> bool {
+        self.compute_graph_compatibility_digest() == observed.compute_graph_compatibility_digest()
+    }
+
     /// Sorts all logical collections into canonical physical-ingest order.
     pub fn canonicalize(&mut self) {
         self.resources.sort_by(|left, right| {
@@ -1119,6 +1246,46 @@ mod tests {
         }
     }
 
+    fn reopened_snapshot(base: &IndexGeneration) -> IndexGeneration {
+        let mut observed = base.clone();
+        observed.generation_id = "validation-generation-2".to_owned();
+        observed.parent_generation_id = None;
+        observed.index_revision = 2;
+        observed.creation_reason = "full_snapshot".to_owned();
+        observed.checkpoint = IngestionCheckpoint {
+            editor_session_id: "session-2".to_owned(),
+            resource_revision: 7,
+            project_revision: 11,
+            index_revision: 2,
+            source_complete: true,
+            snapshot_checksum: "sha256:session-2-snapshot".to_owned(),
+            last_batch_id: None,
+            last_batch_checksum: None,
+        };
+        for resource in &mut observed.resources {
+            resource.resource_revision = 7;
+        }
+        for edge in &mut observed.dependencies {
+            edge.resource_revision = 7;
+        }
+        observed.validation_digest.clear();
+        observed.validation_digest = observed.compute_validation_digest();
+        observed
+    }
+
+    fn file_contents(path: &std::path::Path) -> BTreeMap<String, Vec<u8>> {
+        fs::read_dir(path)
+            .expect("artifact directory")
+            .map(|entry| {
+                let entry = entry.expect("artifact entry");
+                (
+                    entry.file_name().to_string_lossy().into_owned(),
+                    fs::read(entry.path()).expect("artifact bytes"),
+                )
+            })
+            .collect()
+    }
+
     #[test]
     fn validates_and_queries_direct_reverse_parity() {
         let generation = generation();
@@ -1259,6 +1426,99 @@ mod tests {
             store.active_generation().expect("active").generation_id,
             "generation-1"
         );
+    }
+
+    #[test]
+    fn reopened_editor_reuses_compatible_segments_and_changed_graph_rebuilds() {
+        let temp = TempDir::new().expect("temp");
+        let base = generation();
+        {
+            let mut store = SegmentStore::open(temp.path(), &base.project_id).expect("store");
+            store.activate(&base, None).expect("activate base");
+        }
+
+        let index_root = temp.path().join(".godot/codex/index");
+        let segments_before = file_contents(&index_root.join("segments"));
+        let generations_before = file_contents(&index_root.join("generations"));
+        let commits_before = file_contents(&index_root.join("commits"));
+        let mut store = SegmentStore::open(temp.path(), &base.project_id).expect("sidecar reopen");
+        let metadata_before = store.metadata().expect("metadata before reuse");
+        let observed = reopened_snapshot(&base);
+        let mut older_checkpoint = observed.clone();
+        older_checkpoint.index_revision = base.index_revision;
+        older_checkpoint.checkpoint.index_revision = base.index_revision;
+        older_checkpoint.validation_digest.clear();
+        older_checkpoint.validation_digest = older_checkpoint.compute_validation_digest();
+
+        assert!(base.graph_is_compatible_with(&observed));
+        assert!(matches!(
+            store.reuse_compatible_generation(&older_checkpoint),
+            Err(StoreError::ValidationFailed(reason)) if reason.contains("next index revision")
+        ));
+        assert!(
+            store
+                .reuse_compatible_generation(&observed)
+                .expect("compatible reuse")
+        );
+        let rebound = store
+            .active_generation()
+            .expect("rebound active generation");
+        assert_eq!(rebound.generation_id, base.generation_id);
+        assert_eq!(rebound.index_revision, base.index_revision);
+        assert_eq!(rebound.checkpoint.editor_session_id, "session-2");
+        assert_eq!(rebound.checkpoint.resource_revision, 7);
+        assert!(
+            rebound
+                .resources
+                .iter()
+                .all(|resource| resource.resource_revision == 7)
+        );
+        assert_eq!(
+            store.metadata().expect("metadata after reuse"),
+            metadata_before
+        );
+        assert_eq!(file_contents(&index_root.join("segments")), segments_before);
+        assert_eq!(
+            file_contents(&index_root.join("generations")),
+            generations_before
+        );
+        assert_eq!(file_contents(&index_root.join("commits")), commits_before);
+        assert!(matches!(
+            store.reuse_compatible_generation(&observed),
+            Err(StoreError::ValidationFailed(reason)) if reason.contains("new editor session")
+        ));
+
+        let mut changed = reopened_snapshot(&base);
+        changed.generation_id = "validation-generation-3".to_owned();
+        changed.checkpoint.editor_session_id = "session-3".to_owned();
+        changed.checkpoint.snapshot_checksum = "sha256:session-3-snapshot".to_owned();
+        changed.resources[0].content_generation = Some("sha256:changed".to_owned());
+        changed.source_documents[0].content_generation = Some("sha256:changed".to_owned());
+        changed.validation_digest.clear();
+        changed.validation_digest = changed.compute_validation_digest();
+        assert!(!base.graph_is_compatible_with(&changed));
+        assert!(
+            !store
+                .reuse_compatible_generation(&changed)
+                .expect("incompatible observation")
+        );
+        assert_eq!(
+            store
+                .active_generation()
+                .expect("still reused")
+                .generation_id,
+            base.generation_id
+        );
+
+        store
+            .activate(&changed, None)
+            .expect("changed graph rebuild");
+        let rebuilt = store.active_generation().expect("rebuilt generation");
+        assert_eq!(rebuilt.generation_id, changed.generation_id);
+        assert_eq!(rebuilt.index_revision, 2);
+        let metadata_after = store.metadata().expect("metadata after rebuild");
+        assert_eq!(metadata_after.full_rebuild_count, 2);
+        assert_eq!(metadata_after.index_revision, 2);
     }
 
     #[test]

@@ -1411,6 +1411,7 @@ mod tests {
         ResourceSnapshotAccepted, ResourceSnapshotBeginParams, ResourceSnapshotEndParams,
         ResourceSnapshotLimits, ResourceSnapshotPayload, UidResourceRef,
     };
+    use godot_codex_index_store::SegmentStore;
     use serde_json::Value;
     use tempfile::TempDir;
 
@@ -1559,6 +1560,63 @@ mod tests {
         }));
         generation.validate().unwrap();
 
+        let mut reopened_snapshot = snapshot.clone();
+        for revisions in [
+            &mut reopened_snapshot.accepted.revisions,
+            &mut reopened_snapshot.begin.revisions,
+            &mut reopened_snapshot.end.revisions,
+        ] {
+            revisions.editor_session_id = "editor:fedcba9876543210fedcba9876543210".to_owned();
+            revisions.resource_revision = 7;
+            revisions.project_revision = 11;
+        }
+        reopened_snapshot.accepted.resource_revision = 7;
+        reopened_snapshot.begin.resource_revision = 7;
+        reopened_snapshot.end.resource_revision = 7;
+        for resource in &mut reopened_snapshot.payload.resources {
+            resource.resource_revision = 7;
+        }
+        for dependency in &mut reopened_snapshot.payload.dependencies {
+            dependency.resource_revision = 7;
+        }
+        let reopened = normalizer
+            .normalize_full_snapshot("project:test", 2, &reopened_snapshot)
+            .unwrap();
+        assert_ne!(generation.generation_id, reopened.generation_id);
+        assert_ne!(generation.validation_digest, reopened.validation_digest);
+        assert!(generation.graph_is_compatible_with(&reopened));
+
+        let mut store = SegmentStore::open(temp.path(), "project:test").unwrap();
+        store.activate(&generation, None).unwrap();
+        assert!(store.reuse_compatible_generation(&reopened).unwrap());
+        let rebound = store.active_generation().unwrap();
+        let reopened_delta = ResourceDeltaBatch {
+            batch_id: "resource-batch:fedcba9876543210fedcba9876543210".to_owned(),
+            previous_resource_revision: 7,
+            resource_revision: 8,
+            project_revision: 12,
+            operations: vec![ResourceDeltaOperation::Remove {
+                resource_ref: ResourceRef::Uid(UidResourceRef {
+                    uid: "uid://b".to_owned(),
+                }),
+                path: "res://b.tres".to_owned(),
+            }],
+            source_complete: true,
+            checksum: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
+        };
+        let rebound_delta = normalizer
+            .normalize_incremental_batch(&rebound, &reopened_delta)
+            .unwrap()
+            .expect("new-session delta");
+        let rebound_next = rebound.apply_incremental_batch(&rebound_delta).unwrap();
+        store.activate(&rebound_next, None).unwrap();
+        assert_eq!(
+            rebound_next.checkpoint.editor_session_id,
+            reopened.checkpoint.editor_session_id
+        );
+        assert_eq!(rebound_next.checkpoint.resource_revision, 8);
+        assert_eq!(rebound_next.index_revision, 2);
+
         let delta = ResourceDeltaBatch {
             batch_id: "resource-batch:0123456789abcdef0123456789abcdef".to_owned(),
             previous_resource_revision: 1,
@@ -1606,5 +1664,13 @@ mod tests {
             .unwrap();
         assert_eq!(generation.generation_id, reordered.generation_id);
         assert_eq!(generation.validation_digest, reordered.validation_digest);
+
+        fs::write(temp.path().join("b.tres"), "changed").unwrap();
+        reopened_snapshot.payload.resources[1].byte_size = 7;
+        let changed = ResourceNormalizer::new(temp.path())
+            .unwrap()
+            .normalize_full_snapshot("project:test", 2, &reopened_snapshot)
+            .unwrap();
+        assert!(!generation.graph_is_compatible_with(&changed));
     }
 }

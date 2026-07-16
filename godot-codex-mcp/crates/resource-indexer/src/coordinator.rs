@@ -346,10 +346,15 @@ impl ResourceIndexCoordinator {
             Err(StoreError::NotReady) => None,
             Err(error) => return Err(error.into()),
         };
-        if active.as_ref().is_none_or(|generation| {
-            generation.checkpoint.editor_session_id != client.editor_session_id()
-        }) {
-            self.full_snapshot(client, store).await?;
+        match active {
+            None => self.full_snapshot(client, store).await?,
+            Some(generation)
+                if generation.checkpoint.editor_session_id != client.editor_session_id() =>
+            {
+                self.validate_reopened_editor(client, store, &generation)
+                    .await?;
+            }
+            Some(_) => {}
         }
 
         loop {
@@ -395,14 +400,7 @@ impl ResourceIndexCoordinator {
         client: &mut BridgeClient,
         store: &mut SegmentStore,
     ) -> Result<(), CoordinatorError> {
-        let next_index_revision = match store.active_generation() {
-            Ok(generation) => generation
-                .index_revision
-                .checked_add(1)
-                .ok_or(IndexerError::ObservationConflict("index_revision_overflow"))?,
-            Err(StoreError::NotReady) => 1,
-            Err(error) => return Err(error.into()),
-        };
+        let next_index_revision = next_index_revision(store)?;
         self.reader.set_status(if next_index_revision == 1 {
             ResourceIndexStatus::NotReady
         } else {
@@ -410,6 +408,43 @@ impl ResourceIndexCoordinator {
                 reason: ResourceIndexStaleReason::Rebuilding,
             }
         });
+        let generation = self
+            .capture_full_snapshot(client, next_index_revision)
+            .await?;
+        store.activate(&generation, None)?;
+        Ok(())
+    }
+
+    async fn validate_reopened_editor(
+        &mut self,
+        client: &mut BridgeClient,
+        store: &mut SegmentStore,
+        active: &godot_codex_index_store::IndexGeneration,
+    ) -> Result<(), CoordinatorError> {
+        let next_index_revision = active
+            .index_revision
+            .checked_add(1)
+            .ok_or(IndexerError::ObservationConflict("index_revision_overflow"))?;
+        self.reader.set_status(ResourceIndexStatus::NotCurrent {
+            reason: ResourceIndexStaleReason::StartupValidation,
+        });
+        let observed = self
+            .capture_full_snapshot(client, next_index_revision)
+            .await?;
+        if !store.reuse_compatible_generation(&observed)? {
+            self.reader.set_status(ResourceIndexStatus::NotCurrent {
+                reason: ResourceIndexStaleReason::Rebuilding,
+            });
+            store.activate(&observed, None)?;
+        }
+        Ok(())
+    }
+
+    async fn capture_full_snapshot(
+        &self,
+        client: &mut BridgeClient,
+        index_revision: u64,
+    ) -> Result<godot_codex_index_store::IndexGeneration, CoordinatorError> {
         let staging = self
             .project_root
             .join(".godot")
@@ -422,11 +457,10 @@ impl ResourceIndexCoordinator {
         let snapshot = spool.confirmed_snapshot()?;
         let generation = self.normalizer.normalize_full_snapshot(
             client.project_id(),
-            next_index_revision,
+            index_revision,
             &snapshot,
         )?;
-        store.activate(&generation, None)?;
-        Ok(())
+        Ok(generation)
     }
 
     fn mark_disconnected(&self, store: &Option<SegmentStore>) {
@@ -442,6 +476,17 @@ impl ResourceIndexCoordinator {
                 ResourceIndexStatus::NotReady
             },
         );
+    }
+}
+
+fn next_index_revision(store: &SegmentStore) -> Result<u64, CoordinatorError> {
+    match store.active_generation() {
+        Ok(generation) => generation
+            .index_revision
+            .checked_add(1)
+            .ok_or_else(|| IndexerError::ObservationConflict("index_revision_overflow").into()),
+        Err(StoreError::NotReady) => Ok(1),
+        Err(error) => Err(error.into()),
     }
 }
 

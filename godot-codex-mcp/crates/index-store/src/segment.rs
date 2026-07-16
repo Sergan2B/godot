@@ -683,6 +683,111 @@ impl SegmentStore {
         load_generation(&self.root, &manifest)
     }
 
+    /// Reuses the immutable active generation after a full snapshot from a new
+    /// editor session proves that the current graph is unchanged.
+    ///
+    /// Only the in-process session checkpoint and per-record source revisions
+    /// are rebound. No manifest, generation, commit marker, or content-addressed
+    /// segment is written; a later sidecar process validates the persisted
+    /// generation against its connected editor session again.
+    pub fn reuse_compatible_generation(
+        &mut self,
+        observed: &IndexGeneration,
+    ) -> Result<bool, StoreError> {
+        observed.validate()?;
+        if observed.project_id != self.project_id {
+            return Err(StoreError::ProjectMismatch);
+        }
+        if observed.creation_reason != "full_snapshot"
+            || !observed.checkpoint.source_complete
+            || observed.checkpoint.last_batch_id.is_some()
+            || observed.checkpoint.last_batch_checksum.is_some()
+        {
+            return Err(StoreError::ValidationFailed(
+                "cache reuse requires a complete full snapshot".to_owned(),
+            ));
+        }
+
+        let active = self
+            .active_cache
+            .as_ref()
+            .ok_or(StoreError::NotReady)?
+            .generation
+            .clone();
+        if active.checkpoint.editor_session_id == observed.checkpoint.editor_session_id {
+            return Err(StoreError::ValidationFailed(
+                "cache reuse requires a new editor session".to_owned(),
+            ));
+        }
+        let expected_validation_revision =
+            active.index_revision.checked_add(1).ok_or_else(|| {
+                StoreError::ValidationFailed("cache reuse index revision overflow".to_owned())
+            })?;
+        if observed.index_revision != expected_validation_revision {
+            return Err(StoreError::ValidationFailed(
+                "cache reuse requires the next index revision".to_owned(),
+            ));
+        }
+        if !active.checkpoint.source_complete || !active.graph_is_compatible_with(observed) {
+            return Ok(false);
+        }
+
+        let resource_revisions: BTreeMap<_, _> = observed
+            .resources
+            .iter()
+            .map(|resource| (resource.entity_id.as_str(), resource.resource_revision))
+            .collect();
+        let dependency_revisions: BTreeMap<_, _> = observed
+            .dependencies
+            .iter()
+            .map(|edge| (edge.edge_id.as_str(), edge.resource_revision))
+            .collect();
+        let mut rebound = active;
+        for resource in &mut rebound.resources {
+            resource.resource_revision = *resource_revisions
+                .get(resource.entity_id.as_str())
+                .ok_or_else(|| {
+                    StoreError::ValidationFailed("compatible resource revision missing".to_owned())
+                })?;
+        }
+        for edge in &mut rebound.dependencies {
+            edge.resource_revision =
+                *dependency_revisions
+                    .get(edge.edge_id.as_str())
+                    .ok_or_else(|| {
+                        StoreError::ValidationFailed(
+                            "compatible dependency revision missing".to_owned(),
+                        )
+                    })?;
+        }
+        rebound.checkpoint = observed.checkpoint.clone();
+        rebound.checkpoint.index_revision = rebound.index_revision;
+        rebound.validation_digest.clear();
+        rebound.validation_digest = rebound.compute_validation_digest();
+        rebound.validate()?;
+
+        let metadata = self.active_manifest()?.0.metadata;
+        if metadata.active_generation_id.as_deref() != Some(rebound.generation_id.as_str())
+            || metadata.index_revision != rebound.index_revision
+        {
+            return Err(StoreError::CorruptStore(
+                "active cache and manifest identity mismatch".to_owned(),
+            ));
+        }
+        let cache = Arc::new(SegmentCache::new(rebound));
+        let snapshot = IndexReadSnapshot {
+            metadata,
+            cache: cache.clone(),
+        };
+        self.active_cache = Some(cache);
+        *self
+            .reader_state
+            .write()
+            .map_err(|_| StoreError::StorageIo("segment reader state poisoned".to_owned()))? =
+            Some(snapshot);
+        Ok(true)
+    }
+
     /// Runs a direct dependency query against the active generation.
     pub fn direct(&self, query: &ResourceQuery) -> Result<ResourceQueryResult, StoreError> {
         let generation = self.active_cache.as_ref().ok_or(StoreError::NotReady)?;
