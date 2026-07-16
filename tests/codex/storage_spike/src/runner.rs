@@ -1895,8 +1895,9 @@ fn write_evidence<T: serde::Serialize>(path: &Path, evidence: &T) -> Result<(), 
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent).map_err(io_error)?;
-    let bytes = serde_json::to_vec_pretty(evidence)
+    let mut bytes = serde_json::to_vec_pretty(evidence)
         .map_err(|error| StoreError::StorageIo(error.to_string()))?;
+    bytes.push(b'\n');
     let mut temp = NamedTempFile::new_in(parent).map_err(io_error)?;
     temp.write_all(&bytes).map_err(io_error)?;
     temp.as_file_mut().sync_all().map_err(io_error)?;
@@ -2308,6 +2309,17 @@ mod tests {
         let decoded: f64 = serde_json::from_slice(&encoded).expect("deserialize evidence float");
 
         assert_eq!(decoded.to_bits(), recorded.to_bits());
+    }
+
+    #[test]
+    fn evidence_writer_emits_repository_file_format() {
+        let temp = TempDir::new().expect("temp");
+        let path = temp.path().join("evidence.json");
+        write_evidence(&path, &serde_json::json!({ "passed": true })).expect("write evidence");
+
+        let bytes = fs::read(path).expect("read evidence");
+        assert!(bytes.ends_with(b"\n"));
+        assert!(!bytes.ends_with(b"\n\n"));
     }
 
     #[test]
