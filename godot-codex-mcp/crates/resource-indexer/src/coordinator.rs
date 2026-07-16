@@ -86,6 +86,27 @@ impl ResourceIndexReader {
         }
     }
 
+    /// Creates a current reader only after the caller has independently
+    /// confirmed exact Bridge session/revision continuity for this store.
+    pub fn from_validated_store(
+        store: &SegmentStore,
+        editor_session_id: &str,
+        resource_revision: u64,
+    ) -> Result<Self, StoreError> {
+        let generation = store.active_generation()?;
+        if generation.checkpoint.editor_session_id != editor_session_id
+            || generation.checkpoint.resource_revision != resource_revision
+        {
+            return Err(StoreError::ValidationFailed(
+                "validated checkpoint does not match active generation".to_owned(),
+            ));
+        }
+        let reader = Self::new();
+        reader.install_reader(store.reader(), true);
+        reader.publish_current(store)?;
+        Ok(reader)
+    }
+
     /// Returns a safe status snapshot without exposing store or project paths.
     #[must_use]
     pub fn status(&self) -> ResourceIndexStatus {

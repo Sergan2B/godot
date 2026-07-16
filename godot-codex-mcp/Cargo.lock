@@ -339,11 +339,18 @@ dependencies = [
 name = "godot-codex-mcp-server"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "getrandom",
+ "godot-codex-index-store",
+ "godot-codex-resource-indexer",
  "godot-codex-semantic-model",
+ "hmac",
  "rmcp",
  "schemars",
  "serde",
  "serde_json",
+ "sha2",
+ "tempfile",
 ]
 
 [[package]]

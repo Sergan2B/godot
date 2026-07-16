@@ -378,6 +378,9 @@ pub struct ResourceQuery {
     pub selector: ResourceSelector,
     /// Maximum records, already validated against the public hard limit.
     pub limit: usize,
+    /// Canonical result offset carried only by a signed public cursor.
+    #[serde(default)]
+    pub offset: usize,
 }
 
 /// One committed query result bound to a generation and revision.
@@ -394,6 +397,8 @@ pub struct ResourceQueryResult {
     pub edges: Vec<DependencyEdge>,
     /// Whether the result is complete and exact for its direct domain.
     pub exact: bool,
+    /// Whether another deterministic page exists in this generation.
+    pub has_more: bool,
 }
 
 /// Stable storage-neutral failures.
@@ -914,16 +919,25 @@ pub fn query_generation(
         .cloned()
         .collect();
     edges.sort_by(|left, right| compare_dependency_edges(generation, left, right, reverse));
-    edges.truncate(query.limit);
     let exact = edges.iter().all(|edge| {
         edge.resolution == DependencyResolution::Resolved && edge.target_entity_id.is_some()
     });
+    let has_more = query
+        .offset
+        .checked_add(query.limit)
+        .is_some_and(|end| end < edges.len());
+    let edges = edges
+        .into_iter()
+        .skip(query.offset)
+        .take(query.limit)
+        .collect();
     Ok(ResourceQueryResult {
         generation_id: generation.generation_id.clone(),
         index_revision: generation.index_revision,
         resource,
         edges,
         exact,
+        has_more,
     })
 }
 
@@ -1114,6 +1128,7 @@ mod tests {
             &ResourceQuery {
                 selector: ResourceSelector::Uid("uid://a".to_owned()),
                 limit: 50,
+                offset: 0,
             },
             false,
         )
@@ -1123,6 +1138,7 @@ mod tests {
             &ResourceQuery {
                 selector: ResourceSelector::Uid("uid://b".to_owned()),
                 limit: 50,
+                offset: 0,
             },
             true,
         )

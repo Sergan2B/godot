@@ -669,6 +669,7 @@ fn benchmark(kind: BackendKind, config: &RunConfig) -> Result<BenchmarkResult, S
     let query = ResourceQuery {
         selector,
         limit: 200,
+        offset: 0,
     };
     for _ in 0..config.query_warmup {
         store.reverse(&query)?;
@@ -731,6 +732,7 @@ fn parity_gate(kind: BackendKind, generation: &IndexGeneration) -> Result<(), St
         let direct = store.direct(&ResourceQuery {
             selector: ResourceSelector::EntityId(edge.source_entity_id.clone()),
             limit: 200,
+            offset: 0,
         })?;
         if !direct
             .edges
@@ -746,6 +748,7 @@ fn parity_gate(kind: BackendKind, generation: &IndexGeneration) -> Result<(), St
             let reverse = store.reverse(&ResourceQuery {
                 selector: ResourceSelector::EntityId(target.clone()),
                 limit: 200,
+                offset: 0,
             })?;
             if !reverse
                 .edges

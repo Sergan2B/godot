@@ -48,11 +48,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let replicator = SnapshotReplicator::new();
     let bridge_task = tokio::spawn(run_bridge_sync(project_root.clone(), replicator.clone()));
-    let (resource_coordinator, _resource_index_reader) =
+    let (resource_coordinator, resource_index_reader) =
         ResourceIndexCoordinator::new(&project_root)?;
     let (shutdown_sender, shutdown_receiver) = tokio::sync::watch::channel(false);
     let resource_task = tokio::spawn(resource_coordinator.run(shutdown_receiver));
-    let server = GodotMcpServer::new(replicator)
+    let server = GodotMcpServer::with_resource_index(replicator, resource_index_reader)
         .serve(rmcp::transport::stdio())
         .await?;
     server.waiting().await?;

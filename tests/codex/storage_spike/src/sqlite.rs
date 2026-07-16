@@ -286,6 +286,7 @@ impl IndexRead for SqliteStore {
             &ResourceQuery {
                 selector: selector.clone(),
                 limit: 1,
+                offset: 0,
             },
             false,
         )
@@ -721,13 +722,19 @@ fn execute_query(
             .map_err(sql_error)?
     };
     let resource: ResourceEntity = from_json(&resource_json.ok_or(StoreError::ResourceNotFound)?)?;
+    let page_size = query
+        .limit
+        .checked_add(1)
+        .ok_or_else(|| StoreError::ValidationFailed("query limit overflow".to_owned()))?;
+    let offset = i64::try_from(query.offset)
+        .map_err(|_| StoreError::ValidationFailed("query offset overflow".to_owned()))?;
     let mut edges = if reverse {
         let mut statement = connection
             .prepare(
                 "SELECT record_json FROM dependency_edges
                  WHERE generation_id = ?1 AND
                    (target_entity_id = ?2 OR target_uid = ?3 OR target_path = ?4)
-                 ORDER BY edge_id LIMIT ?5",
+                 ORDER BY edge_id LIMIT ?5 OFFSET ?6",
             )
             .map_err(sql_error)?;
         statement
@@ -737,7 +744,8 @@ fn execute_query(
                     resource.entity_id,
                     resource.uid,
                     resource.comparison_path,
-                    i64::try_from(query.limit).expect("query limit is bounded")
+                    i64::try_from(page_size).expect("query page size is bounded"),
+                    offset,
                 ],
                 |row| row.get::<_, String>(0),
             )
@@ -749,7 +757,7 @@ fn execute_query(
             .prepare(
                 "SELECT record_json FROM dependency_edges
                  WHERE generation_id = ?1 AND source_entity_id = ?2
-                 ORDER BY edge_id LIMIT ?3",
+                 ORDER BY edge_id LIMIT ?3 OFFSET ?4",
             )
             .map_err(sql_error)?;
         statement
@@ -757,7 +765,8 @@ fn execute_query(
                 params![
                     generation_id,
                     resource.entity_id,
-                    i64::try_from(query.limit).expect("query limit is bounded")
+                    i64::try_from(page_size).expect("query page size is bounded"),
+                    offset,
                 ],
                 |row| row.get::<_, String>(0),
             )
@@ -766,6 +775,8 @@ fn execute_query(
             .collect::<Result<Vec<DependencyEdge>, StoreError>>()?
     };
     edges.sort_by(|left, right| left.edge_id.cmp(&right.edge_id));
+    let has_more = edges.len() > query.limit;
+    edges.truncate(query.limit);
     let exact = edges.iter().all(|edge| {
         edge.resolution == DependencyResolution::Resolved && edge.target_entity_id.is_some()
     });
@@ -776,6 +787,7 @@ fn execute_query(
         resource,
         edges,
         exact,
+        has_more,
     })
 }
 

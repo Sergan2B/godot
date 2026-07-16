@@ -236,13 +236,20 @@ impl SegmentCache {
         } else {
             self.direct.get(&resource.entity_id)
         };
+        let has_more = source.is_some_and(|edges| {
+            query
+                .offset
+                .checked_add(query.limit)
+                .is_some_and(|end| end < edges.len())
+        });
         let edges: Vec<_> = source
             .into_iter()
             .flatten()
+            .skip(query.offset)
             .take(query.limit)
             .cloned()
             .collect();
-        let exact = edges.iter().all(|edge| {
+        let exact = source.into_iter().flatten().all(|edge| {
             edge.resolution == DependencyResolution::Resolved && edge.target_entity_id.is_some()
         });
         Ok(ResourceQueryResult {
@@ -251,6 +258,7 @@ impl SegmentCache {
             resource,
             edges,
             exact,
+            has_more,
         })
     }
 }
@@ -780,6 +788,7 @@ impl IndexRead for SegmentStore {
                 &ResourceQuery {
                     selector: selector.clone(),
                     limit: 1,
+                    offset: 0,
                 },
                 false,
             )
@@ -809,6 +818,7 @@ impl IndexRead for IndexReadSnapshot {
                 &ResourceQuery {
                     selector: selector.clone(),
                     limit: 1,
+                    offset: 0,
                 },
                 false,
             )
