@@ -42,6 +42,17 @@
 class ResourceFormatImporter;
 class FileAccess;
 
+struct EditorFileSystemDependency {
+	String uid;
+	String declared_type;
+	String fallback_path;
+
+	static EditorFileSystemDependency from_cache(const String &p_dependency);
+	String get_uid_path() const;
+	String get_current_path() const;
+	bool has_existing_path_mismatch() const;
+};
+
 struct EditorProgressBG;
 class EditorFileSystemDirectory : public Object {
 	GDCLASS(EditorFileSystemDirectory, Object);
@@ -97,6 +108,8 @@ public:
 	StringName get_file_resource_script_class(int p_idx) const;
 	Vector<String> get_file_deps(int p_idx) const;
 	Vector<String> get_file_deps_raw(int p_idx) const;
+	int get_file_dep_count(int p_idx) const;
+	String get_file_dep_raw(int p_idx, int p_dependency_idx) const;
 	bool get_file_import_is_valid(int p_idx) const;
 	uint64_t get_file_modified_time(int p_idx) const;
 	uint64_t get_file_import_modified_time(int p_idx) const;

@@ -58,7 +58,72 @@ int EditorFileSystem::nb_files_total = 0;
 EditorFileSystem::ScannedDirectory *EditorFileSystem::first_scan_root_dir = nullptr;
 
 //the name is the version, to keep compatibility with different versions of Godot
-#define CACHE_FILE_NAME "filesystem_cache10"
+#define CACHE_FILE_NAME "filesystem_cache11"
+
+EditorFileSystemDependency EditorFileSystemDependency::from_cache(const String &p_dependency) {
+	EditorFileSystemDependency dependency;
+	const PackedStringArray parts = p_dependency.split("::", true, 2);
+	if (parts.is_empty()) {
+		return dependency;
+	}
+	if (parts[0].begins_with("uid://")) {
+		dependency.uid = parts[0];
+		if (parts.size() == 3) {
+			dependency.declared_type = parts[1];
+			dependency.fallback_path = parts[2];
+		} else if (parts.size() == 2) {
+			// Built-in loaders omit the empty type section, while custom loaders
+			// may omit the trailing fallback section.
+			if (parts[1].begins_with("res://")) {
+				dependency.fallback_path = parts[1];
+			} else {
+				dependency.declared_type = parts[1];
+			}
+		}
+	} else {
+		dependency.fallback_path = parts[0];
+		if (parts.size() >= 2) {
+			dependency.declared_type = parts[1];
+		}
+	}
+	return dependency;
+}
+
+String EditorFileSystemDependency::get_uid_path() const {
+	if (!uid.is_empty()) {
+		const ResourceUID::ID resource_uid = ResourceUID::get_singleton()->text_to_id(uid);
+		if (resource_uid != ResourceUID::INVALID_ID && ResourceUID::get_singleton()->has_id(resource_uid)) {
+			return ResourceUID::get_singleton()->get_id_path(resource_uid);
+		}
+	}
+	return String();
+}
+
+String EditorFileSystemDependency::get_current_path() const {
+	const String uid_path = get_uid_path();
+	if (!uid_path.is_empty()) {
+		return uid_path;
+	}
+	return fallback_path;
+}
+
+bool EditorFileSystemDependency::has_existing_path_mismatch() const {
+	const String uid_path = get_uid_path();
+	if (uid_path.is_empty() || fallback_path.is_empty() ||
+			(!FileAccess::exists(uid_path) && !ResourceLoader::exists(uid_path)) ||
+			(!FileAccess::exists(fallback_path) && !ResourceLoader::exists(fallback_path))) {
+		return false;
+	}
+	const String normalized_uid_path = uid_path.simplify_path();
+	const String normalized_fallback_path = fallback_path.simplify_path();
+	const Ref<DirAccess> dir = DirAccess::create_for_path(uid_path);
+	const bool case_sensitive = dir.is_null() || dir->is_case_sensitive(uid_path);
+	return case_sensitive ? normalized_uid_path != normalized_fallback_path : normalized_uid_path.nocasecmp_to(normalized_fallback_path) != 0;
+}
+
+static String dependency_path_from_cache(const String &p_dependency) {
+	return EditorFileSystemDependency::from_cache(p_dependency).get_current_path();
+}
 
 int EditorFileSystemDirectory::find_file_index(const String &p_file) const {
 	for (int i = 0; i < files.size(); i++) {
@@ -167,6 +232,17 @@ Vector<String> EditorFileSystemDirectory::get_file_deps(int p_idx) const {
 Vector<String> EditorFileSystemDirectory::get_file_deps_raw(int p_idx) const {
 	ERR_FAIL_INDEX_V(p_idx, files.size(), Vector<String>());
 	return files[p_idx]->deps;
+}
+
+int EditorFileSystemDirectory::get_file_dep_count(int p_idx) const {
+	ERR_FAIL_INDEX_V(p_idx, files.size(), 0);
+	return files[p_idx]->deps.size();
+}
+
+String EditorFileSystemDirectory::get_file_dep_raw(int p_idx, int p_dependency_idx) const {
+	ERR_FAIL_INDEX_V(p_idx, files.size(), String());
+	ERR_FAIL_INDEX_V(p_dependency_idx, files[p_idx]->deps.size(), String());
+	return files[p_idx]->deps[p_dependency_idx];
 }
 
 bool EditorFileSystemDirectory::get_file_import_is_valid(int p_idx) const {
@@ -1002,8 +1078,8 @@ bool EditorFileSystem::_update_scan_actions() {
 					reimports.push_back(full_path);
 					Vector<String> dependencies = _get_dependencies(full_path);
 					for (const String &dep : dependencies) {
-						const String &dependency_path = dep.contains("::") ? dep.get_slice("::", 0) : dep;
-						if (_can_import_file(dep)) {
+						const String dependency_path = dependency_path_from_cache(dep);
+						if (_can_import_file(dependency_path)) {
 							reimports.push_back(dependency_path);
 						}
 					}
@@ -2094,7 +2170,7 @@ Vector<String> EditorFileSystem::_get_dependencies(const String &p_path) {
 	}
 
 	List<String> deps;
-	ResourceLoader::get_dependencies(p_path, &deps);
+	ResourceLoader::get_dependencies(p_path, &deps, true);
 
 	Vector<String> ret;
 	for (const String &E : deps) {
@@ -2121,7 +2197,7 @@ void EditorFileSystem::_update_file_icon_path(EditorFileSystemDirectory::FileInf
 		icon_path = EditorNode::get_editor_data().script_class_get_icon_path(file_info->resource_script_class);
 	} else if (file_info->class_info.icon_path.is_empty() && !file_info->deps.is_empty()) {
 		const String &script_dep = file_info->deps[0]; // Assuming the first dependency is a script.
-		const String &script_path = script_dep.contains("::") ? script_dep.get_slice("::", 2) : script_dep;
+		const String script_path = dependency_path_from_cache(script_dep);
 		if (!script_path.is_empty()) {
 			String *cached = file_icon_cache.getptr(script_path);
 			if (cached) {
