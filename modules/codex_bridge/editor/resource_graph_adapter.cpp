@@ -110,6 +110,11 @@ void ResourceGraphAdapter::shutdown() {
 	snapshot_waiting_for_terminal = false;
 	snapshot_keys.clear();
 	snapshot_chunks.clear();
+	if (snapshot_checksum_active) {
+		unsigned char unused_digest[32];
+		snapshot_checksum_context.finish(unused_digest);
+		snapshot_checksum_active = false;
+	}
 }
 
 void ResourceGraphAdapter::request_refresh() {
@@ -513,6 +518,11 @@ Error ResourceGraphAdapter::begin_snapshot(uint64_t p_request_id, uint64_t p_now
 	snapshot_resource_revision = revision_clock ? revision_clock->get_resource_revision() : journal.get_current_resource_revision();
 	snapshot_revisions = revision_clock ? revision_clock->get_revision_vector() : Dictionary();
 	snapshot_context = p_context;
+	if (snapshot_checksum_context.start() != OK) {
+		snapshot_active = false;
+		return ERR_CANT_CREATE;
+	}
+	snapshot_checksum_active = true;
 	snapshot_keys.clear();
 	snapshot_keys.reserve(catalog.size());
 	for (const KeyValue<String, CatalogRecord> &entry : catalog) {
@@ -524,7 +534,18 @@ Error ResourceGraphAdapter::begin_snapshot(uint64_t p_request_id, uint64_t p_now
 	snapshot_dependency_index = 0;
 	snapshot_diagnostic_index = 0;
 	snapshot_chunks.clear();
-	snapshot_checksum_input.clear();
+	Dictionary begin_params;
+	begin_params["snapshot_id"] = snapshot_id;
+	begin_params["domain"] = "resource_graph";
+	begin_params["resource_revision"] = (int64_t)snapshot_resource_revision;
+	begin_params["revisions"] = snapshot_revisions;
+	Dictionary begin;
+	begin["protocol_version"] = "1.2";
+	begin["kind"] = "notification";
+	begin["method"] = "snapshot.begin";
+	begin["params"] = begin_params;
+	begin["context"] = snapshot_context;
+	snapshot_chunks.push_back(begin);
 	snapshot_resource_count = 0;
 	snapshot_dependency_count = 0;
 	snapshot_diagnostic_count = 0;
@@ -576,13 +597,16 @@ bool ResourceGraphAdapter::_flush_snapshot_payload() {
 	chunk["kind"] = "chunk";
 	chunk["snapshot_id"] = snapshot_id;
 	chunk["domain"] = "resource_graph";
-	chunk["chunk_index"] = snapshot_chunks.size();
+	chunk["chunk_index"] = snapshot_chunks.size() - 1;
 	chunk["payload"] = payload;
 	chunk["payload_json"] = payload_json;
 	chunk["checksum"] = checksum;
 	chunk["context"] = snapshot_context;
 	snapshot_chunks.push_back(chunk);
-	snapshot_checksum_input += checksum;
+	const CharString checksum_bytes = checksum.utf8();
+	if (snapshot_checksum_context.update(reinterpret_cast<const uint8_t *>(checksum_bytes.get_data()), checksum_bytes.length()) != OK) {
+		return false;
+	}
 	snapshot_resource_count += snapshot_resources.size();
 	snapshot_dependency_count += snapshot_dependencies.size();
 	snapshot_diagnostic_count += snapshot_diagnostics.size();
@@ -601,41 +625,38 @@ void ResourceGraphAdapter::_fail_snapshot(const String &p_code, const String &p_
 	snapshot_waiting_for_terminal = false;
 	snapshot_keys.clear();
 	snapshot_chunks.clear();
+	if (snapshot_checksum_active) {
+		unsigned char unused_digest[32];
+		snapshot_checksum_context.finish(unused_digest);
+		snapshot_checksum_active = false;
+	}
 }
 
 void ResourceGraphAdapter::_finish_snapshot(SnapshotCompletion &r_completion) {
-	if ((!snapshot_resources.is_empty() || !snapshot_dependencies.is_empty() || !snapshot_diagnostics.is_empty() || snapshot_chunks.is_empty()) && !_flush_snapshot_payload()) {
+	if ((!snapshot_resources.is_empty() || !snapshot_dependencies.is_empty() || !snapshot_diagnostics.is_empty() || snapshot_chunks.size() == 1) && !_flush_snapshot_payload()) {
 		_fail_snapshot("resource_limit_exceeded", "A resource graph record exceeds the snapshot chunk limit.", false, r_completion);
 		return;
 	}
 
-	Array messages;
-	Dictionary begin_params;
-	begin_params["snapshot_id"] = snapshot_id;
-	begin_params["domain"] = "resource_graph";
-	begin_params["resource_revision"] = (int64_t)snapshot_resource_revision;
-	begin_params["revisions"] = snapshot_revisions;
-	Dictionary begin;
-	begin["protocol_version"] = "1.2";
-	begin["kind"] = "notification";
-	begin["method"] = "snapshot.begin";
-	begin["params"] = begin_params;
-	begin["context"] = snapshot_context;
-	messages.push_back(begin);
-
-	for (int index = 0; index < snapshot_chunks.size(); index++) {
-		messages.push_back(snapshot_chunks[index]);
-	}
+	const int chunk_count = snapshot_chunks.size() - 1;
 
 	Dictionary end_params;
+	PackedByteArray snapshot_checksum;
+	snapshot_checksum.resize(32);
+	if (!snapshot_checksum_active || snapshot_checksum_context.finish(snapshot_checksum.ptrw()) != OK) {
+		snapshot_checksum_active = false;
+		_fail_snapshot("snapshot_checksum_failed", "The resource graph snapshot checksum could not be finalized.", true, r_completion);
+		return;
+	}
+	snapshot_checksum_active = false;
 	end_params["snapshot_id"] = snapshot_id;
 	end_params["domain"] = "resource_graph";
 	end_params["resource_revision"] = (int64_t)snapshot_resource_revision;
-	end_params["chunk_count"] = snapshot_chunks.size();
+	end_params["chunk_count"] = chunk_count;
 	end_params["resource_count"] = (int64_t)snapshot_resource_count;
 	end_params["dependency_count"] = (int64_t)snapshot_dependency_count;
 	end_params["diagnostic_count"] = (int64_t)snapshot_diagnostic_count;
-	end_params["checksum"] = _sha256_hex_utf8(snapshot_checksum_input);
+	end_params["checksum"] = BridgeCrypto::bytes_to_lower_hex(snapshot_checksum);
 	end_params["revisions"] = snapshot_revisions;
 	Dictionary end;
 	end["protocol_version"] = "1.2";
@@ -643,7 +664,7 @@ void ResourceGraphAdapter::_finish_snapshot(SnapshotCompletion &r_completion) {
 	end["method"] = "snapshot.end";
 	end["params"] = end_params;
 	end["context"] = snapshot_context;
-	messages.push_back(end);
+	snapshot_chunks.push_back(end);
 
 	Dictionary limits;
 	limits["resource_records"] = (int64_t)MAX_RESOURCES;
@@ -663,12 +684,12 @@ void ResourceGraphAdapter::_finish_snapshot(SnapshotCompletion &r_completion) {
 	r_completion.ready = true;
 	r_completion.request_id = snapshot_request_id;
 	r_completion.result = result;
-	r_completion.server_messages = messages;
+	r_completion.server_messages = snapshot_chunks;
 	// The frozen generation remains active while the transport applies ACK
 	// backpressure. COMMAND_CANCEL releases it on every terminal path.
 	snapshot_waiting_for_terminal = true;
 	snapshot_keys.clear();
-	snapshot_chunks.clear();
+	snapshot_chunks = Array();
 }
 
 bool ResourceGraphAdapter::process_snapshot(uint64_t p_now_usec, uint64_t p_budget_usec, SnapshotCompletion &r_completion) {
@@ -729,6 +750,11 @@ void ResourceGraphAdapter::cancel_snapshot(uint64_t p_request_id) {
 	snapshot_waiting_for_terminal = false;
 	snapshot_keys.clear();
 	snapshot_chunks.clear();
+	if (snapshot_checksum_active) {
+		unsigned char unused_digest[32];
+		snapshot_checksum_context.finish(unused_digest);
+		snapshot_checksum_active = false;
+	}
 	snapshot_resources.clear();
 	snapshot_dependencies.clear();
 	snapshot_diagnostics.clear();

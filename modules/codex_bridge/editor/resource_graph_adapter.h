@@ -10,6 +10,7 @@
 
 #include "resource_delta_journal.h"
 
+#include "core/crypto/crypto_core.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/vector.h"
@@ -27,7 +28,7 @@ public:
 	static constexpr uint32_t SNAPSHOT_CHUNK_BYTES = 256 * 1024;
 	static constexpr uint64_t SNAPSHOT_WINDOW_BYTES = 32 * 1024 * 1024;
 	static constexpr uint64_t SNAPSHOT_TIMEOUT_USEC = 120000000;
-	static constexpr uint64_t RESOURCE_BUDGET_USEC = 500;
+	static constexpr uint64_t RESOURCE_BUDGET_USEC = 250;
 	static constexpr uint32_t SNAPSHOT_BUILD_CHUNK_BYTES = 2 * 1024;
 	static constexpr uint32_t BULK_INVALIDATION_RECORD_DELTA = 512;
 
@@ -115,7 +116,8 @@ private:
 	Array snapshot_dependencies;
 	Array snapshot_diagnostics;
 	uint64_t snapshot_payload_bytes = 0;
-	String snapshot_checksum_input;
+	CryptoCore::SHA256Context snapshot_checksum_context;
+	bool snapshot_checksum_active = false;
 	uint64_t snapshot_resource_count = 0;
 	uint64_t snapshot_dependency_count = 0;
 	uint64_t snapshot_diagnostic_count = 0;
