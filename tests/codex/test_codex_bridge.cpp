@@ -807,7 +807,7 @@ TEST_CASE("[CodexBridge] Resource delta journal coalesces and distinguishes curr
 
 	Dictionary batch;
 	bool invalidated = false;
-	REQUIRE(journal.commit(2, operations, HashSet<String>(), batch, invalidated) == OK);
+	REQUIRE(journal.commit(2, 2, operations, HashSet<String>(), batch, invalidated) == OK);
 	CHECK_FALSE(invalidated);
 	const Array coalesced = batch["operations"];
 	REQUIRE(coalesced.size() == 1);
@@ -840,7 +840,7 @@ TEST_CASE("[CodexBridge] Resource delta journal collapses UID move chains and ev
 	moves.push_back(second);
 	Dictionary batch;
 	bool invalidated = false;
-	REQUIRE(journal.commit(2, moves, preexisting, batch, invalidated) == OK);
+	REQUIRE(journal.commit(2, 2, moves, preexisting, batch, invalidated) == OK);
 	const Dictionary move = Array(batch["operations"])[0];
 	CHECK(move["from_path"] == "res://a.tres");
 	CHECK(move["to_path"] == "res://c.tres");
@@ -848,7 +848,7 @@ TEST_CASE("[CodexBridge] Resource delta journal collapses UID move chains and ev
 	for (uint64_t revision = 3; revision <= ResourceDeltaJournal::MAX_ENTRIES + 2; revision++) {
 		Array update;
 		update.push_back(make_upsert(resource_ref, "res://c.tres", revision));
-		REQUIRE(journal.commit(revision, update, preexisting, batch, invalidated) == OK);
+		REQUIRE(journal.commit(revision, revision, update, preexisting, batch, invalidated) == OK);
 	}
 	CHECK(journal.get_entry_count() == ResourceDeltaJournal::MAX_ENTRIES);
 	CHECK(journal.query_after(1).status == ResourceDeltaJournal::QUERY_GAP);
@@ -869,7 +869,7 @@ TEST_CASE("[CodexBridge] Resource delta journal keeps one slot across add remove
 	operations.push_back(make_upsert(resource_ref, "res://temporary.tres", 2));
 	Dictionary batch;
 	bool invalidated = false;
-	REQUIRE(journal.commit(2, operations, HashSet<String>(), batch, invalidated) == OK);
+	REQUIRE(journal.commit(2, 2, operations, HashSet<String>(), batch, invalidated) == OK);
 	const Array coalesced = batch["operations"];
 	REQUIRE(coalesced.size() == 1);
 	const Dictionary latest_resource = Dictionary(Dictionary(coalesced[0])["value"])["resource"];
@@ -883,7 +883,7 @@ TEST_CASE("[CodexBridge] Resource delta journal keeps one slot across add remove
 	oversized_value["resource"] = oversized_resource;
 	oversized_upsert["value"] = oversized_value;
 	oversized.push_back(oversized_upsert);
-	REQUIRE(journal.commit(3, oversized, HashSet<String>(), batch, invalidated) == OK);
+	REQUIRE(journal.commit(3, 3, oversized, HashSet<String>(), batch, invalidated) == OK);
 	CHECK(invalidated);
 	CHECK(journal.get_entry_count() == 0);
 	CHECK(journal.query_after(2).status == ResourceDeltaJournal::QUERY_GAP);

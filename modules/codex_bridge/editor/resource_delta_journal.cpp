@@ -136,7 +136,7 @@ String ResourceDeltaJournal::resource_ref_key(const Dictionary &p_resource_ref) 
 	return _resource_ref_key(p_resource_ref);
 }
 
-Error ResourceDeltaJournal::commit(uint64_t p_next_resource_revision, const Array &p_operations, const HashSet<String> &p_preexisting_keys, Dictionary &r_batch, bool &r_invalidated) {
+Error ResourceDeltaJournal::commit(uint64_t p_next_resource_revision, uint64_t p_project_revision, const Array &p_operations, const HashSet<String> &p_preexisting_keys, Dictionary &r_batch, bool &r_invalidated) {
 	r_batch.clear();
 	r_invalidated = false;
 	ERR_FAIL_COND_V(p_next_resource_revision != current_resource_revision + 1, ERR_INVALID_PARAMETER);
@@ -150,6 +150,7 @@ Error ResourceDeltaJournal::commit(uint64_t p_next_resource_revision, const Arra
 	batch["batch_id"] = "resource-batch:" + sha256_hex_utf8(String::num_uint64(p_next_resource_revision) + ":" + operations_json).left(32);
 	batch["previous_resource_revision"] = (int64_t)current_resource_revision;
 	batch["resource_revision"] = (int64_t)p_next_resource_revision;
+	batch["project_revision"] = (int64_t)p_project_revision;
 	batch["operations"] = operations;
 	batch["source_complete"] = true;
 	batch["checksum"] = checksum;

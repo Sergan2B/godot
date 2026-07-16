@@ -432,9 +432,11 @@ void ResourceGraphAdapter::_finish_refresh(RefreshOutcome &r_outcome) {
 
 	const uint64_t previous_revision = revision_clock ? revision_clock->get_resource_revision() : journal.get_current_resource_revision();
 	const uint64_t committed_revision = revision_clock ? revision_clock->record_resource_change() : next_revision;
+	const Dictionary committed_revisions = revision_clock ? revision_clock->get_revision_vector() : Dictionary();
+	const uint64_t project_revision = committed_revisions.has("project_revision") ? (uint64_t)(int64_t)committed_revisions["project_revision"] : committed_revision;
 	Dictionary batch;
 	bool journal_invalidated = false;
-	if (journal.commit(committed_revision, operations, preexisting_keys, batch, journal_invalidated) != OK) {
+	if (journal.commit(committed_revision, project_revision, operations, preexisting_keys, batch, journal_invalidated) != OK) {
 		journal.invalidate_to(committed_revision);
 		journal_invalidated = true;
 	}
@@ -444,7 +446,7 @@ void ResourceGraphAdapter::_finish_refresh(RefreshOutcome &r_outcome) {
 	r_outcome.invalidated = journal_invalidated;
 	r_outcome.last_contiguous_resource_revision = previous_revision;
 	r_outcome.current_resource_revision = committed_revision;
-	r_outcome.revisions = revision_clock ? revision_clock->get_revision_vector() : Dictionary();
+	r_outcome.revisions = committed_revisions;
 }
 
 bool ResourceGraphAdapter::process_refresh(uint64_t p_budget_usec, RefreshOutcome &r_outcome) {

@@ -54,7 +54,7 @@ public:
 	static Array coalesce_operations(const Array &p_operations, const HashSet<String> &p_preexisting_keys);
 	static String resource_ref_key(const Dictionary &p_resource_ref);
 
-	Error commit(uint64_t p_next_resource_revision, const Array &p_operations, const HashSet<String> &p_preexisting_keys, Dictionary &r_batch, bool &r_invalidated);
+	Error commit(uint64_t p_next_resource_revision, uint64_t p_project_revision, const Array &p_operations, const HashSet<String> &p_preexisting_keys, Dictionary &r_batch, bool &r_invalidated);
 	QueryResult query_after(uint64_t p_after_resource_revision) const;
 	void invalidate_to(uint64_t p_resource_revision);
 

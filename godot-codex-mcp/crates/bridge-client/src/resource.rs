@@ -169,6 +169,7 @@ pub struct ResourceDeltaBatch {
     pub batch_id: String,
     pub previous_resource_revision: u64,
     pub resource_revision: u64,
+    pub project_revision: u64,
     pub operations: Vec<ResourceDeltaOperation>,
     pub source_complete: bool,
     pub checksum: String,
@@ -714,6 +715,7 @@ fn validate_delta_batch(
             .checked_add(1)
             .is_none_or(|next| batch.resource_revision != next)
         || batch.resource_revision > current_resource_revision
+        || batch.project_revision > MAX_SAFE_REVISION
         || current_resource_revision > MAX_SAFE_REVISION
         || batch.operations.is_empty()
         || batch.operations.len() > MAX_RESOURCE_RECORDS

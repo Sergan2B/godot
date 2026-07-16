@@ -389,7 +389,6 @@ impl ResourceNormalizer {
         &self,
         base: &IndexGeneration,
         batch: &BridgeDeltaBatch,
-        project_revision: u64,
     ) -> Result<Option<IncrementalBatch>, IndexerError> {
         if base.checkpoint.last_batch_id.as_deref() == Some(batch.batch_id.as_str()) {
             if base.checkpoint.last_batch_checksum.as_deref() == Some(batch.checksum.as_str())
@@ -572,7 +571,7 @@ impl ResourceNormalizer {
         let checkpoint = IngestionCheckpoint {
             editor_session_id: base.checkpoint.editor_session_id.clone(),
             resource_revision: batch.resource_revision,
-            project_revision,
+            project_revision: batch.project_revision,
             index_revision,
             source_complete: true,
             snapshot_checksum,
@@ -1541,6 +1540,7 @@ mod tests {
             batch_id: "resource-batch:0123456789abcdef0123456789abcdef".to_owned(),
             previous_resource_revision: 1,
             resource_revision: 2,
+            project_revision: 2,
             operations: vec![ResourceDeltaOperation::Remove {
                 resource_ref: ResourceRef::Uid(UidResourceRef {
                     uid: "uid://b".to_owned(),
@@ -1551,7 +1551,7 @@ mod tests {
             checksum: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
         };
         let normalized_delta = normalizer
-            .normalize_incremental_batch(&generation, &delta, 2)
+            .normalize_incremental_batch(&generation, &delta)
             .unwrap()
             .expect("new batch");
         let next = generation
@@ -1570,7 +1570,7 @@ mod tests {
         );
         assert!(
             normalizer
-                .normalize_incremental_batch(&next, &delta, 2)
+                .normalize_incremental_batch(&next, &delta)
                 .unwrap()
                 .is_none()
         );

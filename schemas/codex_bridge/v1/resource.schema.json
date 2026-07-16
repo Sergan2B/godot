@@ -174,13 +174,14 @@
     "resourceDeltaBatch": {
       "type": "object",
       "required": [
-        "batch_id", "previous_resource_revision", "resource_revision", "operations",
+        "batch_id", "previous_resource_revision", "resource_revision", "project_revision", "operations",
         "source_complete", "checksum"
       ],
       "properties": {
         "batch_id": { "type": "string", "pattern": "^resource-batch:[0-9a-f]{32}$" },
         "previous_resource_revision": { "$ref": "#/$defs/revision" },
         "resource_revision": { "$ref": "#/$defs/revision" },
+        "project_revision": { "$ref": "#/$defs/revision" },
         "operations": {
           "type": "array",
           "minItems": 1,
