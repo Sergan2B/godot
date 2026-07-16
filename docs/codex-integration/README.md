@@ -25,6 +25,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 19. [SPRINT-3-STAGE-2-PLAN.md](SPRINT-3-STAGE-2-PLAN.md) — completed local SQLite-versus-segment spike, fault matrix, metrics, and `D-05` decision.
 20. [SPRINT-3-STAGE-3-PLAN.md](SPRINT-3-STAGE-3-PLAN.md) — completed Bridge RPC 1.2, ResourceGraphAdapter, bounded journal, Rust wire-client, and local eight-phase evidence.
 21. [INDEX-001-semantic-index-storage-and-migrations.md](INDEX-001-semantic-index-storage-and-migrations.md) — frozen resource identity/logical-index contract and local segment-store decision.
+22. [SPRINT-3-STAGE-4-PLAN.md](SPRINT-3-STAGE-4-PLAN.md) — production resource index, ingestion/recovery, and two MCP resource tools.
 
 ## Document status
 

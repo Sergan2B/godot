@@ -419,16 +419,18 @@ then entity ID. Diagnostics order by code then diagnostic ID.
 - cursor lifetime: at most 5 minutes and never beyond retirement of its generation.
 
 A cursor is authenticated/opaque and bound to project ID, query kind, normalized
-selector, filters, page size, generation ID, and index revision. A mismatch or retired
-revision returns `stale_cursor`; a cursor never resumes against a newer generation.
+selector, filters, page size, generation ID, and index revision. A mismatch, expiry,
+sidecar restart, or retired revision returns `stale_cursor`; a cursor never resumes
+against a newer generation.
 
 ### 12.3 Completeness and errors
 
 Resolved and unresolved direct edges may be returned together. Missing/stale targets
 produce a partial result with their structured diagnostics. `exact` is allowed only when
 the active generation is complete for the requested domain. Other stable errors are
-`invalid_path`, `resource_not_found`, `stale_index`, `capability_unavailable`,
-`result_limit_exceeded`, and `project_not_bound`.
+`invalid_path`, `resource_not_found`, `index_not_ready`, `index_not_current`,
+`capability_unavailable`, `stale_cursor`, `result_limit_exceeded`, and
+`project_not_bound`.
 
 ## 13. Threading, hashing, and security boundaries
 

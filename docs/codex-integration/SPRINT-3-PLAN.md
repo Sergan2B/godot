@@ -249,7 +249,7 @@ committed compatible static generation.
 
 ```text
 resource: uid://... | res://...
-limit: 100 by default, bounded to 1..200
+limit: 50 by default, bounded to 1..200
 cursor: optional opaque cursor bound to project, generation, query, and expiry
 ```
 
@@ -280,9 +280,9 @@ Every success includes:
   `resource_loader_dependencies`) and revision coordinates.
 
 A known-but-unresolved UID returns a partial result with `stale_resource_uid`. A value
-that has never been indexed returns `resource_not_found`. Before cache validation or
-after a revision gap, tools return `index_not_current` rather than labeling stale data
-as current.
+that has never been indexed returns `resource_not_found`. Before the first committed
+generation tools return `index_not_ready`. Before cache validation or after a revision
+gap, tools return `index_not_current` rather than labeling stale data as current.
 
 ## 8. Work packages
 
