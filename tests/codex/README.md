@@ -127,3 +127,23 @@ python3 tests/codex/sprint3_stage3_live.py \
 The canonical project digest must remain unchanged. Normalized local evidence
 is written to `evidence/sprint-3-stage-3-bridge.json`; remote CI and unrun
 platforms are not inferred from this gate.
+
+## Sprint 3 Stage 4 persistent index and resource MCP gate
+
+The Stage 4 gate launches the real editor and release sidecar against fresh
+short-path copies of the resource oracle. It verifies all eight mutation phases,
+the production segment store, same-session cache reuse, full rebuild after a
+journal gap, both resource MCP tools, one-record signed pagination, and direct /
+reverse parity without a model:
+
+```sh
+python3 tests/codex/sprint3_stage4_index_mcp.py \
+  --godot bin/godot.macos.editor.dev.arm64 \
+  --timeout 240
+```
+
+The canonical macOS arm64 evidence is written to
+`evidence/sprint-3-stage-4-index-mcp-macos.json`. It contains raw query,
+change-visibility, and status/ping samples with p50/p95 summaries. Windows,
+Linux, and remote CI remain explicitly `not_run`; they belong to the later
+cross-platform smoke stage.

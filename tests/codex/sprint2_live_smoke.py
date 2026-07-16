@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, cast
 
 MCP_PROTOCOL = "2025-11-25"
-TOOL_NAMES = {
+REQUIRED_TOOL_NAMES = {
     "godot_get_current_scene",
     "godot_get_editor_state",
     "godot_get_selected_nodes",
@@ -334,8 +334,9 @@ def main() -> int:
         client.notify("notifications/initialized", {})
         listed = client.request("tools/list", {})
         tools = listed.get("result", {}).get("tools", [])
-        if {tool.get("name") for tool in tools} != TOOL_NAMES:
-            raise SmokeFailure("MCP tool set differs")
+        observed_tool_names = {tool.get("name") for tool in tools}
+        if not REQUIRED_TOOL_NAMES.issubset(observed_tool_names):
+            raise SmokeFailure("MCP tool set is missing a Sprint 2 read tool")
         if not all(tool.get("annotations", {}).get("readOnlyHint") is True for tool in tools):
             raise SmokeFailure("an MCP tool is not read-only")
 
@@ -374,7 +375,7 @@ def main() -> int:
                 "godot_version": godot_version,
                 "sidecar_version": sidecar_version,
                 "mcp_protocol": MCP_PROTOCOL,
-                "tools": sorted(TOOL_NAMES),
+                "tools": sorted(observed_tool_names),
                 "disk_value": DISK_VALUE,
                 "first": first,
                 "second": second,
