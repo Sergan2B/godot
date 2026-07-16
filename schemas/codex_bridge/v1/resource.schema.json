@@ -1,0 +1,432 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Bridge RPC 1.2 resource graph source projection",
+  "oneOf": [
+    { "$ref": "#/$defs/resourceSnapshotRequest" },
+    { "$ref": "#/$defs/resourceDeltaRequest" },
+    { "$ref": "#/$defs/resourceSnapshotBegin" },
+    { "$ref": "#/$defs/resourceSnapshotChunk" },
+    { "$ref": "#/$defs/resourceSnapshotEnd" },
+    { "$ref": "#/$defs/resourceSnapshotAck" },
+    { "$ref": "#/$defs/resourceGraphChanged" },
+    { "$ref": "#/$defs/resourceInvalidated" }
+  ],
+  "$defs": {
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "resourceRevisionVector": {
+      "allOf": [
+        { "$ref": "common.schema.json#/$defs/revisionVector" },
+        { "required": ["resource_revision"] }
+      ]
+    },
+    "resourcePath": {
+      "type": "string",
+      "minLength": 7,
+      "maxLength": 1024,
+      "pattern": "^res://[^\\\\?#\\u0000-\\u001f]+$",
+      "not": { "pattern": "(^|/)\\.\\.?(/|$)" }
+    },
+    "resourceUid": {
+      "type": "string",
+      "pattern": "^uid://[A-Za-z0-9_-]+$",
+      "maxLength": 128
+    },
+    "uidRef": {
+      "type": "object",
+      "required": ["uid"],
+      "properties": { "uid": { "$ref": "#/$defs/resourceUid" } },
+      "additionalProperties": false
+    },
+    "pathRef": {
+      "type": "object",
+      "required": ["uid_missing", "path"],
+      "properties": {
+        "uid_missing": { "const": true },
+        "path": { "$ref": "#/$defs/resourcePath" }
+      },
+      "additionalProperties": false
+    },
+    "resourceRef": {
+      "oneOf": [
+        { "$ref": "#/$defs/uidRef" },
+        { "$ref": "#/$defs/pathRef" }
+      ]
+    },
+    "resourceObservation": {
+      "type": "object",
+      "required": [
+        "resource_ref", "path", "godot_type", "source_kind", "import_state",
+        "modified_time_unix_seconds", "byte_size", "validity", "authority",
+        "resource_revision"
+      ],
+      "properties": {
+        "resource_ref": { "$ref": "#/$defs/resourceRef" },
+        "path": { "$ref": "#/$defs/resourcePath" },
+        "godot_type": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "source_kind": { "enum": ["source", "imported_source"] },
+        "import_state": { "enum": ["not_imported", "valid", "invalid"] },
+        "modified_time_unix_seconds": { "$ref": "#/$defs/revision" },
+        "byte_size": { "$ref": "#/$defs/revision" },
+        "validity": { "enum": ["valid", "partial", "invalid"] },
+        "authority": { "const": "editor_file_system" },
+        "resource_revision": { "$ref": "#/$defs/revision" }
+      },
+      "additionalProperties": false
+    },
+    "dependencyObservation": {
+      "type": "object",
+      "required": [
+        "source_ref", "fallback_path", "resolution", "authority", "resource_revision"
+      ],
+      "properties": {
+        "source_ref": { "$ref": "#/$defs/resourceRef" },
+        "target_uid": { "oneOf": [{ "$ref": "#/$defs/resourceUid" }, { "type": "null" }] },
+        "fallback_path": { "$ref": "#/$defs/resourcePath" },
+        "resolved_path": { "oneOf": [{ "$ref": "#/$defs/resourcePath" }, { "type": "null" }] },
+        "declared_type": { "type": ["string", "null"], "maxLength": 256 },
+        "resolution": { "enum": ["resolved", "missing", "stale_uid"] },
+        "authority": { "const": "resource_loader_dependencies" },
+        "resource_revision": { "$ref": "#/$defs/revision" }
+      },
+      "additionalProperties": false
+    },
+    "resourceDiagnostic": {
+      "type": "object",
+      "required": ["code", "subject", "resource_revision"],
+      "properties": {
+        "code": {
+          "enum": [
+            "missing_dependency", "stale_resource_uid", "resource_uid_path_mismatch",
+            "duplicate_resource_uid", "invalid_import", "resource_limit_exceeded"
+          ]
+        },
+        "subject": { "$ref": "#/$defs/resourceRef" },
+        "target_reference": { "type": ["string", "null"], "maxLength": 1024 },
+        "resource_revision": { "$ref": "#/$defs/revision" }
+      },
+      "additionalProperties": false
+    },
+    "resourceWithDependencies": {
+      "type": "object",
+      "required": ["resource", "dependencies"],
+      "properties": {
+        "resource": { "$ref": "#/$defs/resourceObservation" },
+        "dependencies": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/dependencyObservation" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "upsertOperation": {
+      "type": "object",
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": { "const": "upsert" },
+        "value": { "$ref": "#/$defs/resourceWithDependencies" }
+      },
+      "additionalProperties": false
+    },
+    "moveOperation": {
+      "type": "object",
+      "required": ["kind", "uid", "from_path", "to_path", "value"],
+      "properties": {
+        "kind": { "const": "move" },
+        "uid": { "$ref": "#/$defs/resourceUid" },
+        "from_path": { "$ref": "#/$defs/resourcePath" },
+        "to_path": { "$ref": "#/$defs/resourcePath" },
+        "value": { "$ref": "#/$defs/resourceWithDependencies" }
+      },
+      "additionalProperties": false
+    },
+    "removeOperation": {
+      "type": "object",
+      "required": ["kind", "resource_ref", "path"],
+      "properties": {
+        "kind": { "const": "remove" },
+        "resource_ref": { "$ref": "#/$defs/resourceRef" },
+        "path": { "$ref": "#/$defs/resourcePath" }
+      },
+      "additionalProperties": false
+    },
+    "reimportOperation": {
+      "type": "object",
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": { "const": "reimport" },
+        "value": { "$ref": "#/$defs/resourceWithDependencies" }
+      },
+      "additionalProperties": false
+    },
+    "deltaOperation": {
+      "oneOf": [
+        { "$ref": "#/$defs/upsertOperation" },
+        { "$ref": "#/$defs/moveOperation" },
+        { "$ref": "#/$defs/removeOperation" },
+        { "$ref": "#/$defs/reimportOperation" }
+      ]
+    },
+    "resourceDeltaBatch": {
+      "type": "object",
+      "required": [
+        "batch_id", "previous_resource_revision", "resource_revision", "operations",
+        "source_complete", "checksum"
+      ],
+      "properties": {
+        "batch_id": { "type": "string", "pattern": "^resource-batch:[0-9a-f]{32}$" },
+        "previous_resource_revision": { "$ref": "#/$defs/revision" },
+        "resource_revision": { "$ref": "#/$defs/revision" },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 250000,
+          "items": { "$ref": "#/$defs/deltaOperation" }
+        },
+        "source_complete": { "const": true },
+        "checksum": { "$ref": "common.schema.json#/$defs/sha256Hex" }
+      },
+      "additionalProperties": false
+    },
+    "resourceSnapshotParams": {
+      "type": "object",
+      "maxProperties": 0,
+      "additionalProperties": false
+    },
+    "resourceSnapshotAcceptedResult": {
+      "type": "object",
+      "required": ["snapshot_id", "domain", "resource_revision", "revisions", "limits_applied"],
+      "properties": {
+        "snapshot_id": { "$ref": "common.schema.json#/$defs/snapshotId" },
+        "domain": { "const": "resource_graph" },
+        "resource_revision": { "$ref": "#/$defs/revision" },
+        "revisions": { "$ref": "#/$defs/resourceRevisionVector" },
+        "limits_applied": {
+          "type": "object",
+          "required": ["resource_records", "resource_dependencies", "resource_dependencies_per_record", "resource_path_bytes", "snapshot_chunk_bytes", "snapshot_window_bytes", "snapshot_timeout_ms"],
+          "properties": {
+            "resource_records": { "const": 250000 },
+            "resource_dependencies": { "const": 2000000 },
+            "resource_dependencies_per_record": { "const": 4096 },
+            "resource_path_bytes": { "const": 1024 },
+            "snapshot_chunk_bytes": { "const": 262144 },
+            "snapshot_window_bytes": { "const": 33554432 },
+            "snapshot_timeout_ms": { "const": 120000 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "resourceSnapshotRequest": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/request" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.2" },
+            "method": { "const": "resource.snapshot.get" },
+            "params": { "$ref": "#/$defs/resourceSnapshotParams" }
+          }
+        }
+      ]
+    },
+    "resourceDeltaParams": {
+      "type": "object",
+      "required": ["after_resource_revision"],
+      "properties": { "after_resource_revision": { "$ref": "#/$defs/revision" } },
+      "additionalProperties": false
+    },
+    "resourceDeltaRequest": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/request" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.2" },
+            "method": { "const": "resource.delta.get" },
+            "params": { "$ref": "#/$defs/resourceDeltaParams" }
+          }
+        }
+      ]
+    },
+    "resourceDeltaCurrentResult": {
+      "type": "object",
+      "required": ["status", "current_resource_revision"],
+      "properties": {
+        "status": { "const": "current" },
+        "current_resource_revision": { "$ref": "#/$defs/revision" }
+      },
+      "additionalProperties": false
+    },
+    "resourceDeltaBatchResult": {
+      "type": "object",
+      "required": ["status", "current_resource_revision", "batch"],
+      "properties": {
+        "status": { "const": "batch" },
+        "current_resource_revision": { "$ref": "#/$defs/revision" },
+        "batch": { "$ref": "#/$defs/resourceDeltaBatch" }
+      },
+      "additionalProperties": false
+    },
+    "resourceDeltaResult": {
+      "oneOf": [
+        { "$ref": "#/$defs/resourceDeltaCurrentResult" },
+        { "$ref": "#/$defs/resourceDeltaBatchResult" }
+      ]
+    },
+    "resourceSnapshotBeginParams": {
+      "type": "object",
+      "required": ["snapshot_id", "domain", "resource_revision", "revisions"],
+      "properties": {
+        "snapshot_id": { "$ref": "common.schema.json#/$defs/snapshotId" },
+        "domain": { "const": "resource_graph" },
+        "resource_revision": { "$ref": "#/$defs/revision" },
+        "revisions": { "$ref": "#/$defs/resourceRevisionVector" }
+      },
+      "additionalProperties": false
+    },
+    "resourceSnapshotBegin": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/notification" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.2" },
+            "method": { "const": "snapshot.begin" },
+            "params": { "$ref": "#/$defs/resourceSnapshotBeginParams" }
+          }
+        }
+      ]
+    },
+    "resourceSnapshotPayload": {
+      "type": "object",
+      "required": ["resources", "dependencies", "diagnostics"],
+      "properties": {
+        "resources": { "type": "array", "items": { "$ref": "#/$defs/resourceObservation" } },
+        "dependencies": { "type": "array", "items": { "$ref": "#/$defs/dependencyObservation" } },
+        "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/resourceDiagnostic" } }
+      },
+      "additionalProperties": false
+    },
+    "resourceSnapshotChunk": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/chunk" },
+        {
+          "required": ["domain", "payload_json"],
+          "properties": {
+            "protocol_version": { "const": "1.2" },
+            "domain": { "const": "resource_graph" },
+            "payload": { "$ref": "#/$defs/resourceSnapshotPayload" },
+            "payload_json": { "type": "string", "minLength": 2, "maxLength": 262144 }
+          }
+        }
+      ]
+    },
+    "resourceSnapshotEndParams": {
+      "type": "object",
+      "required": ["snapshot_id", "domain", "resource_revision", "chunk_count", "resource_count", "dependency_count", "diagnostic_count", "checksum", "revisions"],
+      "properties": {
+        "snapshot_id": { "$ref": "common.schema.json#/$defs/snapshotId" },
+        "domain": { "const": "resource_graph" },
+        "resource_revision": { "$ref": "#/$defs/revision" },
+        "chunk_count": { "type": "integer", "minimum": 1, "maximum": 65536 },
+        "resource_count": { "type": "integer", "minimum": 0, "maximum": 250000 },
+        "dependency_count": { "type": "integer", "minimum": 0, "maximum": 2000000 },
+        "diagnostic_count": { "type": "integer", "minimum": 0, "maximum": 2000000 },
+        "checksum": { "$ref": "common.schema.json#/$defs/sha256Hex" },
+        "revisions": { "$ref": "#/$defs/resourceRevisionVector" }
+      },
+      "additionalProperties": false
+    },
+    "resourceSnapshotEnd": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/notification" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.2" },
+            "method": { "const": "snapshot.end" },
+            "params": { "$ref": "#/$defs/resourceSnapshotEndParams" }
+          }
+        }
+      ]
+    },
+    "resourceSnapshotAckParams": {
+      "type": "object",
+      "required": ["snapshot_id", "domain", "through_chunk"],
+      "properties": {
+        "snapshot_id": { "$ref": "common.schema.json#/$defs/snapshotId" },
+        "domain": { "const": "resource_graph" },
+        "through_chunk": { "type": "integer", "minimum": 0, "maximum": 65535 }
+      },
+      "additionalProperties": false
+    },
+    "resourceSnapshotAck": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/ack" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.2" },
+            "params": { "$ref": "#/$defs/resourceSnapshotAckParams" }
+          }
+        }
+      ]
+    },
+    "resourceGraphChangedParams": {
+      "type": "object",
+      "required": ["event_seq", "event_type", "resource_revision", "revisions"],
+      "properties": {
+        "event_seq": { "$ref": "#/$defs/revision" },
+        "event_type": { "const": "resource_graph_changed" },
+        "resource_revision": { "$ref": "#/$defs/revision" },
+        "revisions": { "$ref": "#/$defs/resourceRevisionVector" }
+      },
+      "additionalProperties": false
+    },
+    "resourceGraphChanged": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/notification" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.2" },
+            "method": { "const": "sync.event" },
+            "params": { "$ref": "#/$defs/resourceGraphChangedParams" }
+          }
+        }
+      ]
+    },
+    "resourceInvalidatedParams": {
+      "type": "object",
+      "required": ["reason", "last_contiguous_resource_revision", "current_resource_revision"],
+      "properties": {
+        "reason": { "const": "resource_journal_gap" },
+        "last_contiguous_resource_revision": { "$ref": "#/$defs/revision" },
+        "current_resource_revision": { "$ref": "#/$defs/revision" }
+      },
+      "additionalProperties": false
+    },
+    "resourceInvalidated": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/notification" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.2" },
+            "method": { "const": "sync.invalidated" },
+            "params": { "$ref": "#/$defs/resourceInvalidatedParams" }
+          }
+        }
+      ]
+    },
+    "resourceJournalGapData": {
+      "type": "object",
+      "required": ["requested_after", "oldest_available", "current_resource_revision"],
+      "properties": {
+        "requested_after": { "$ref": "#/$defs/revision" },
+        "oldest_available": { "$ref": "#/$defs/revision" },
+        "current_resource_revision": { "$ref": "#/$defs/revision" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -15,7 +15,7 @@ mod resource_graph_contract {
 }
 
 const SCHEMA_BASE_URI: &str = "https://godot-codex.local/schema/v1/";
-const SCHEMA_FILES: [&str; 7] = [
+const SCHEMA_FILES: [&str; 8] = [
     "common.schema.json",
     "discovery.schema.json",
     "fixture-manifest.schema.json",
@@ -23,6 +23,7 @@ const SCHEMA_FILES: [&str; 7] = [
     "rpc.schema.json",
     "lifecycle.schema.json",
     "sync.schema.json",
+    "resource.schema.json",
 ];
 
 fn bundle_root() -> PathBuf {
@@ -292,6 +293,39 @@ mod tests {
 
     #[test]
     fn canonical_schema_fixture_bundle_is_self_consistent() {
-        assert_eq!(validate_canonical_bundle().unwrap(), 51);
+        assert_eq!(validate_canonical_bundle().unwrap(), 67);
+    }
+
+    #[test]
+    fn resource_snapshot_and_delta_checksums_bind_exact_payloads() {
+        let root = bundle_root().join("fixtures/valid");
+        let chunk = read_json(&root.join("resource-snapshot-chunk.json")).unwrap();
+        let payload_json = required_string(&chunk, "payload_json").unwrap();
+        let parsed_payload: Value = serde_json::from_str(payload_json).unwrap();
+        assert_eq!(parsed_payload, chunk["payload"]);
+        let chunk_checksum = format!("{:x}", sha2::Sha256::digest(payload_json.as_bytes()));
+        assert_eq!(chunk_checksum, required_string(&chunk, "checksum").unwrap());
+
+        let end = read_json(&root.join("resource-snapshot-end.json")).unwrap();
+        let snapshot_checksum = format!("{:x}", sha2::Sha256::digest(chunk_checksum.as_bytes()));
+        assert_eq!(snapshot_checksum, end["params"]["checksum"]);
+
+        let delta = read_json(&root.join("resource-delta-batch-response.json")).unwrap();
+        let operations = &delta["result"]["batch"]["operations"];
+        let operations_json = serde_json::to_string(operations).unwrap();
+        let batch_checksum = format!("{:x}", sha2::Sha256::digest(operations_json.as_bytes()));
+        assert_eq!(batch_checksum, delta["result"]["batch"]["checksum"]);
+        assert_eq!(delta["result"]["batch"]["previous_resource_revision"], 1);
+        assert_eq!(delta["result"]["batch"]["resource_revision"], 2);
+
+        let mut oversized_chunk = chunk;
+        oversized_chunk["payload_json"] = Value::String("x".repeat(262_145));
+        assert!(
+            validate_instance(
+                "resource.schema.json#/$defs/resourceSnapshotChunk",
+                &oversized_chunk,
+            )
+            .is_err()
+        );
     }
 }

@@ -1,0 +1,70 @@
+{
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "kind": "response",
+  "protocol_version": "1.2",
+  "request_id": "req:resource-delta-0001",
+  "result": {
+    "batch": {
+      "batch_id": "resource-batch:0123456789abcdef0123456789abcdef",
+      "checksum": "22c674bfc6cbfa3f429444dd66b14d60c01d8f7b60a9db2aea02c214da12133f",
+      "operations": [
+        {
+          "kind": "upsert",
+          "value": {
+            "dependencies": [],
+            "resource": {
+              "authority": "editor_file_system", "byte_size": 100, "godot_type": "Resource",
+              "import_state": "not_imported", "modified_time_unix_seconds": 1,
+              "path": "res://resources/a.tres", "resource_ref": { "uid": "uid://a" },
+              "resource_revision": 2, "source_kind": "source", "validity": "valid"
+            }
+          }
+        },
+        {
+          "from_path": "res://resources/old.tres", "kind": "move",
+          "to_path": "res://resources/a.tres", "uid": "uid://a",
+          "value": {
+            "dependencies": [
+              {
+                "authority": "resource_loader_dependencies", "declared_type": null,
+                "fallback_path": "res://resources/missing.tres", "resolution": "missing",
+                "resolved_path": null, "resource_revision": 2,
+                "source_ref": { "uid": "uid://a" }, "target_uid": null
+              }
+            ],
+            "resource": {
+              "authority": "editor_file_system", "byte_size": 100, "godot_type": "Resource",
+              "import_state": "not_imported", "modified_time_unix_seconds": 1,
+              "path": "res://resources/a.tres", "resource_ref": { "uid": "uid://a" },
+              "resource_revision": 2, "source_kind": "source", "validity": "valid"
+            }
+          }
+        },
+        {
+          "kind": "remove", "path": "res://resources/removed.tres",
+          "resource_ref": { "path": "res://resources/removed.tres", "uid_missing": true }
+        },
+        {
+          "kind": "reimport",
+          "value": {
+            "dependencies": [],
+            "resource": {
+              "authority": "editor_file_system", "byte_size": 200, "godot_type": "Texture2D",
+              "import_state": "valid", "modified_time_unix_seconds": 2,
+              "path": "res://assets/icon.svg", "resource_ref": { "uid": "uid://c" },
+              "resource_revision": 2, "source_kind": "imported_source", "validity": "valid"
+            }
+          }
+        }
+      ],
+      "previous_resource_revision": 1,
+      "resource_revision": 2,
+      "source_complete": true
+    },
+    "current_resource_revision": 2,
+    "status": "batch"
+  }
+}

@@ -1,6 +1,121 @@
 {
-  "bundle_version": "1.1",
+  "bundle_version": "1.2",
   "cases": [
+    {
+      "expect": "valid",
+      "fixture": "valid/resource-snapshot-request.json",
+      "id": "schema.resource.snapshot-request",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/resource-snapshot-response.json",
+      "id": "schema.resource.snapshot-response-envelope",
+      "kind": "schema",
+      "schema_ref": "rpc.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/resource-snapshot-response.json",
+      "id": "schema.resource.snapshot-accepted-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json#/$defs/resourceSnapshotAcceptedResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/resource-snapshot-begin.json",
+      "id": "schema.resource.snapshot-begin",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/resource-snapshot-chunk.json",
+      "id": "schema.resource.snapshot-chunk",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/resource-snapshot-end.json",
+      "id": "schema.resource.snapshot-end",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/resource-snapshot-ack.json",
+      "id": "schema.resource.snapshot-ack",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/resource-delta-request.json",
+      "id": "schema.resource.delta-request",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/resource-delta-current-response.json",
+      "id": "schema.resource.delta-current-envelope",
+      "kind": "schema",
+      "schema_ref": "rpc.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/resource-delta-current-response.json",
+      "id": "schema.resource.delta-current-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json#/$defs/resourceDeltaResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/resource-delta-batch-response.json",
+      "id": "schema.resource.delta-batch-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json#/$defs/resourceDeltaResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/resource-graph-changed.json",
+      "id": "schema.resource.graph-changed",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/resource-invalidated.json",
+      "id": "schema.resource.invalidated",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/resource-delta-unknown-field.json",
+      "id": "schema.resource.delta-unknown-field",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/resource-snapshot-traversal.json",
+      "id": "schema.resource.snapshot-traversal",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/resource-snapshot-bad-checksum.json",
+      "id": "schema.resource.snapshot-bad-checksum",
+      "kind": "schema",
+      "schema_ref": "resource.schema.json"
+    },
     {
       "expect": "valid",
       "fixture": "valid/discovery.json",

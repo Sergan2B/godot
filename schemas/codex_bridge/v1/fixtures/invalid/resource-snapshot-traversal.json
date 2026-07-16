@@ -1,0 +1,26 @@
+{
+  "checksum": "5228ff9a9431dfc9a2cffc9fde2ee71832d75359d02509426c0c9cb782b09e0c",
+  "chunk_index": 0,
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "domain": "resource_graph",
+  "kind": "chunk",
+  "payload": {
+    "dependencies": [],
+    "diagnostics": [],
+    "resources": [
+      {
+        "authority": "editor_file_system", "byte_size": 1, "godot_type": "Resource",
+        "import_state": "not_imported", "modified_time_unix_seconds": 1,
+        "path": "res://../secret.tres",
+        "resource_ref": { "path": "res://../secret.tres", "uid_missing": true },
+        "resource_revision": 1, "source_kind": "source", "validity": "valid"
+      }
+    ]
+  },
+  "payload_json": "{}",
+  "protocol_version": "1.2",
+  "snapshot_id": "snapshot:1123456789abcdef0123456789abcdef"
+}

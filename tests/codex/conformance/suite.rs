@@ -602,20 +602,22 @@ fn validate_initialize_response(
             == Some(&discovery.editor_session_id),
         "initialize editor session binding mismatch",
     )?;
+    let event_seq = result
+        .pointer("/revisions/event_seq")
+        .and_then(Value::as_u64);
+    let project_revision = result
+        .pointer("/revisions/project_revision")
+        .and_then(Value::as_u64);
+    let operation_seq = result
+        .pointer("/revisions/operation_seq")
+        .and_then(Value::as_u64);
     require(
-        result
-            .pointer("/revisions/event_seq")
-            .and_then(Value::as_u64)
-            == Some(0)
-            && result
-                .pointer("/revisions/project_revision")
-                .and_then(Value::as_u64)
-                == Some(0)
-            && result
-                .pointer("/revisions/operation_seq")
-                .and_then(Value::as_u64)
-                == Some(0),
-        "initialize revisions are not session-scoped zero values",
+        matches!(
+            (event_seq, project_revision, operation_seq),
+            (Some(event), Some(project), Some(operation))
+                if project <= event && operation <= event
+        ),
+        "initialize revisions are not a valid session-scoped monotonic vector",
     )?;
     require_capabilities(response)
 }
