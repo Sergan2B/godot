@@ -5,9 +5,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use godot_codex_index_store::{
-    BuildState, DependencyEdge, DependencyResolution, GenerationBuilder, IncrementalBatch,
-    IndexGeneration, IndexMetadata, IndexRead, IndexWriteTransaction, MigrationRunner,
-    ResourceEntity, ResourceQuery, ResourceQueryResult, ResourceSelector, StoreError,
+    BuildState, DependencyEdge, GenerationBuilder, IncrementalBatch, IndexGeneration,
+    IndexMetadata, IndexRead, IndexWriteTransaction, MigrationRunner, ResourceEntity,
+    ResourceQuery, ResourceQueryResult, ResourceSelector, StoreError,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
@@ -731,10 +731,21 @@ fn execute_query(
     let mut edges = if reverse {
         let mut statement = connection
             .prepare(
-                "SELECT record_json FROM dependency_edges
-                 WHERE generation_id = ?1 AND
-                   (target_entity_id = ?2 OR target_uid = ?3 OR target_path = ?4)
-                 ORDER BY edge_id LIMIT ?5 OFFSET ?6",
+                "SELECT dependency_edges.record_json
+                 FROM dependency_edges
+                 JOIN resources AS source_resource
+                   ON source_resource.generation_id = dependency_edges.generation_id
+                  AND source_resource.entity_id = dependency_edges.source_entity_id
+                 WHERE dependency_edges.generation_id = ?1 AND
+                   (dependency_edges.target_entity_id = ?2
+                    OR dependency_edges.target_uid = ?3
+                    OR dependency_edges.target_path = ?4)
+                 ORDER BY source_resource.comparison_path,
+                          source_resource.uid IS NULL,
+                          COALESCE(source_resource.uid, ''),
+                          source_resource.entity_id,
+                          dependency_edges.edge_id
+                 LIMIT ?5 OFFSET ?6",
             )
             .map_err(sql_error)?;
         statement
@@ -755,9 +766,27 @@ fn execute_query(
     } else {
         let mut statement = connection
             .prepare(
-                "SELECT record_json FROM dependency_edges
-                 WHERE generation_id = ?1 AND source_entity_id = ?2
-                 ORDER BY edge_id LIMIT ?3 OFFSET ?4",
+                "SELECT dependency_edges.record_json
+                 FROM dependency_edges
+                 LEFT JOIN resources AS target_resource
+                   ON target_resource.generation_id = dependency_edges.generation_id
+                  AND target_resource.entity_id = dependency_edges.target_entity_id
+                 WHERE dependency_edges.generation_id = ?1
+                   AND dependency_edges.source_entity_id = ?2
+                 ORDER BY COALESCE(
+                              target_resource.comparison_path,
+                              dependency_edges.target_path,
+                              ''
+                          ),
+                          target_resource.uid IS NULL,
+                          COALESCE(target_resource.uid, ''),
+                          COALESCE(
+                              target_resource.entity_id,
+                              dependency_edges.target_entity_id,
+                              ''
+                          ),
+                          dependency_edges.edge_id
+                 LIMIT ?3 OFFSET ?4",
             )
             .map_err(sql_error)?;
         statement
@@ -774,12 +803,9 @@ fn execute_query(
             .map(|row| from_json(&row.map_err(sql_error)?))
             .collect::<Result<Vec<DependencyEdge>, StoreError>>()?
     };
-    edges.sort_by(|left, right| left.edge_id.cmp(&right.edge_id));
     let has_more = edges.len() > query.limit;
     edges.truncate(query.limit);
-    let exact = edges.iter().all(|edge| {
-        edge.resolution == DependencyResolution::Resolved && edge.target_entity_id.is_some()
-    });
+    let exact = query_exactness(connection, &generation_id, &resource, reverse)?;
     Ok(ResourceQueryResult {
         generation_id,
         index_revision: u64::try_from(index_revision)
@@ -789,6 +815,53 @@ fn execute_query(
         exact,
         has_more,
     })
+}
+
+fn query_exactness(
+    connection: &Connection,
+    generation_id: &str,
+    resource: &ResourceEntity,
+    reverse: bool,
+) -> Result<bool, StoreError> {
+    let inexact_predicate = "(target_entity_id IS NULL OR COALESCE(json_extract(record_json, '$.resolution'), '') <> 'resolved')";
+    let sql = if reverse {
+        format!(
+            "SELECT NOT EXISTS (
+               SELECT 1 FROM dependency_edges
+               WHERE generation_id = ?1
+                 AND (target_entity_id = ?2 OR target_uid = ?3 OR target_path = ?4)
+                 AND {inexact_predicate}
+             )"
+        )
+    } else {
+        format!(
+            "SELECT NOT EXISTS (
+               SELECT 1 FROM dependency_edges
+               WHERE generation_id = ?1 AND source_entity_id = ?2
+                 AND {inexact_predicate}
+             )"
+        )
+    };
+    if reverse {
+        connection
+            .query_row(
+                &sql,
+                params![
+                    generation_id,
+                    resource.entity_id,
+                    resource.uid,
+                    resource.comparison_path,
+                ],
+                |row| row.get(0),
+            )
+            .map_err(sql_error)
+    } else {
+        connection
+            .query_row(&sql, params![generation_id, resource.entity_id], |row| {
+                row.get(0)
+            })
+            .map_err(sql_error)
+    }
 }
 
 fn load_metadata(connection: &Connection) -> Result<IndexMetadata, StoreError> {
@@ -1028,6 +1101,7 @@ fn sql_u64(value: u64) -> Result<i64, StoreError> {
 
 #[cfg(test)]
 mod tests {
+    use godot_codex_index_store::{DependencyResolution, query_generation};
     use tempfile::TempDir;
 
     use super::*;
@@ -1102,5 +1176,128 @@ mod tests {
                 .index_revision,
             2
         );
+    }
+
+    #[test]
+    fn query_exactness_covers_edges_beyond_the_requested_page() {
+        let temp = TempDir::new().expect("temp");
+        let generation = paginated_exactness_generation();
+        let mut store = SqliteStore::open(temp.path(), &generation.project_id).expect("store");
+        store.activate(&generation, None).expect("activate");
+
+        let direct_query = ResourceQuery {
+            selector: ResourceSelector::EntityId(generation.resources[0].entity_id.clone()),
+            limit: 200,
+            offset: 0,
+        };
+        let expected_direct =
+            query_generation(&generation, &direct_query, false).expect("canonical direct query");
+        assert!(expected_direct.has_more);
+        assert!(!expected_direct.exact);
+        assert_eq!(
+            store.direct(&direct_query).expect("SQLite direct query"),
+            expected_direct
+        );
+
+        let reverse_query = ResourceQuery {
+            selector: ResourceSelector::EntityId(generation.resources[0].entity_id.clone()),
+            limit: 200,
+            offset: 0,
+        };
+        let expected_reverse =
+            query_generation(&generation, &reverse_query, true).expect("canonical reverse query");
+        assert!(expected_reverse.has_more);
+        assert!(!expected_reverse.exact);
+        assert_eq!(
+            store.reverse(&reverse_query).expect("SQLite reverse query"),
+            expected_reverse
+        );
+
+        let offset_query = ResourceQuery {
+            selector: direct_query.selector,
+            limit: 1,
+            offset: 200,
+        };
+        let expected_offset =
+            query_generation(&generation, &offset_query, false).expect("canonical offset query");
+        assert!(!expected_offset.exact);
+        assert_eq!(
+            store.direct(&offset_query).expect("SQLite offset query"),
+            expected_offset
+        );
+    }
+
+    fn paginated_exactness_generation() -> IndexGeneration {
+        let mut generation = synthetic_generation(205, 500, 1);
+        let resources = generation.resources.clone();
+        let direct_source = &resources[0];
+        let reverse_target = &resources[0];
+        let mut dependencies = Vec::new();
+
+        for (index, resource) in resources.iter().enumerate().skip(1).take(201) {
+            dependencies.push(resolved_edge(
+                format!("direct-{index:03}"),
+                direct_source,
+                resource,
+            ));
+            dependencies.push(resolved_edge(
+                format!("reverse-{index:03}"),
+                resource,
+                reverse_target,
+            ));
+        }
+        dependencies.push(DependencyEdge {
+            edge_id: "direct-inexact-last".to_owned(),
+            source_entity_id: direct_source.entity_id.clone(),
+            target_uid: None,
+            target_comparison_path: Some("res://zzzz/missing-direct.tres".to_owned()),
+            target_display_path: Some("res://zzzz/missing-direct.tres".to_owned()),
+            target_entity_id: None,
+            resolved_target_path: None,
+            relation: "references".to_owned(),
+            declared_type: None,
+            authority: "godot_resource_loader".to_owned(),
+            resolution: DependencyResolution::Missing,
+            resource_revision: 1,
+        });
+        dependencies.push(DependencyEdge {
+            edge_id: "reverse-inexact-last".to_owned(),
+            source_entity_id: resources[202].entity_id.clone(),
+            target_uid: reverse_target.uid.clone(),
+            target_comparison_path: Some(reverse_target.comparison_path.clone()),
+            target_display_path: Some(reverse_target.display_path.clone()),
+            target_entity_id: None,
+            resolved_target_path: None,
+            relation: "references".to_owned(),
+            declared_type: None,
+            authority: "godot_resource_loader".to_owned(),
+            resolution: DependencyResolution::StaleUid,
+            resource_revision: 1,
+        });
+        generation.dependencies = dependencies;
+        generation.canonicalize();
+        generation.validation_digest = generation.compute_validation_digest();
+        generation
+    }
+
+    fn resolved_edge(
+        edge_id: String,
+        source: &ResourceEntity,
+        target: &ResourceEntity,
+    ) -> DependencyEdge {
+        DependencyEdge {
+            edge_id,
+            source_entity_id: source.entity_id.clone(),
+            target_uid: target.uid.clone(),
+            target_comparison_path: Some(target.comparison_path.clone()),
+            target_display_path: Some(target.display_path.clone()),
+            target_entity_id: Some(target.entity_id.clone()),
+            resolved_target_path: Some(target.display_path.clone()),
+            relation: "references".to_owned(),
+            declared_type: None,
+            authority: "godot_resource_loader".to_owned(),
+            resolution: DependencyResolution::Resolved,
+            resource_revision: 1,
+        }
     }
 }
