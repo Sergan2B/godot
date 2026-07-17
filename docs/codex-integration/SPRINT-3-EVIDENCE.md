@@ -159,7 +159,8 @@ The deferred procedures are executable and documented in
 [`tests/codex/runners/README.md`](../../tests/codex/runners/README.md). They use
 a separate clean worktree at the exact freeze and fail closed on wrong
 architecture, dirty source, digest mismatch, CI markers, containers, incomplete
-SLOs, or failed segment gates/fault cases.
+SLOs, or failed segment gates/fault cases. The wrapper set is pinned to
+`a628470ded4ac713a915eb46da6dc009310c3fbb`.
 
 Required reports to return from the other devices:
 
@@ -168,6 +169,12 @@ tests/codex/evidence/sprint-3-resource-graph-windows.json
 tests/codex/evidence/platform/sprint-3-storage-spike-linux.json
 tests/codex/evidence/platform/sprint-3-storage-spike-windows.json
 ```
+
+The devices must also return `sprint-3-linux.receipt.json` and
+`sprint-3-windows.receipt.json`. These deterministic receipts bind the exact
+raw bytes, freeze coordinates, runner, and transfer helper. They are required
+for aggregation but are transport controls, not final evidence, and are never
+installed or committed.
 
 After those raw reports return, the deterministic aggregation runner must create:
 
@@ -197,6 +204,10 @@ No synthetic or re-labeled platform evidence is permitted.
 - A full Docker `linux/amd64` storage preflight passed both backends and selected
   segment, and the aggregation workflow was rehearsed on explicitly synthetic
   temporary inputs. Neither result is committed or used as acceptance evidence.
+- The deferred runners have cheap fail-closed preflight modes, no-overwrite and
+  failed-run cleanup, transfer receipts, pinned macOS inputs, and rollback-safe
+  five-file installation. Five receipt unit tests and injected success,
+  rollback, and input-mutation rehearsals pass outside the evidence tree.
 
 The available evidence proves the final macOS Stage 5 gates only. It does not
 prove Linux storage portability, Windows production-chain parity,
