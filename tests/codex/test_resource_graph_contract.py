@@ -123,6 +123,16 @@ class ResourceGraphContractTests(unittest.TestCase):
             self.assertEqual(first, second)
             self.assertFalse((work_root / ".godot").exists())
 
+    def test_godot_output_is_decoded_as_utf8_with_replacement(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="codex-rg-godot-output-") as temporary:
+            work_root = Path(temporary) / "project"
+            output = fixture._run_godot(
+                [sys.executable, "-c", "import os; os.write(1, b'\\x98')"],
+                work_root,
+            )
+
+        self.assertEqual("\ufffd", output)
+
     def test_oracle_is_independent_of_production_index(self) -> None:
         driver_source = Path(fixture.__file__).read_text(encoding="utf-8")
         probe_source = fixture.PROBE_SCRIPT.read_text(encoding="utf-8")

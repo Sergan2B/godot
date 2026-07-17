@@ -307,6 +307,8 @@ def _run_godot(command: list[str], work_root: Path) -> str:
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=120,
     )
     combined = result.stdout + result.stderr
