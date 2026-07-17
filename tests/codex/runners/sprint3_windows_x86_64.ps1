@@ -59,8 +59,8 @@ function Assert-MinimumFreeSpace {
     return $AvailableBytes
 }
 
-$FreezeCommit = "1144694d2293af2ff80d72a47e622479e51ee6f6"
-$ExpectedSourceSha256 = "sha256:46ef87410e472814f20cac0ff6d32a6b4634a90a28c5d378753a04006bc7dd2f"
+$FreezeCommit = "a90ddd06c81a6210f44552b46ff533248b93ed90"
+$ExpectedSourceSha256 = "sha256:73e99eec9897f8e2b4c6c210a3c56bd57a91ce347aedba030323eb01bf8438eb"
 $ExpectedOracleSha256 = "sha256:a41ddfc642f653ad88866aeeefe7852d7742b8701e469aec821aef5b9c046f3b"
 $RunnerPath = (Resolve-Path -LiteralPath $PSCommandPath).Path
 $RunnerItem = Get-Item -LiteralPath $RunnerPath

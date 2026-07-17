@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # This post-freeze wrapper installs evidence only after all canonical validators pass.
-readonly FREEZE_COMMIT="1144694d2293af2ff80d72a47e622479e51ee6f6"
-readonly EXPECTED_SOURCE_SHA256="sha256:46ef87410e472814f20cac0ff6d32a6b4634a90a28c5d378753a04006bc7dd2f"
+readonly FREEZE_COMMIT="a90ddd06c81a6210f44552b46ff533248b93ed90"
+readonly EXPECTED_SOURCE_SHA256="sha256:73e99eec9897f8e2b4c6c210a3c56bd57a91ce347aedba030323eb01bf8438eb"
 readonly EXPECTED_ORACLE_SHA256="sha256:a41ddfc642f653ad88866aeeefe7852d7742b8701e469aec821aef5b9c046f3b"
 # These superseded hashes intentionally keep aggregation closed until both
 # macOS reports are regenerated at FREEZE_COMMIT and explicitly repinned.
