@@ -6,11 +6,12 @@
 
 **Scope:** Stage 5 (`S3-09`, `S3-10`)
 
-**Current result:** a real Windows x86_64 attempt exposed non-portable physical
-generation filenames in the production segment store. The source fix is frozen
-at the coordinates below. It invalidates the earlier macOS arm64 Stage 5 reports,
-so macOS, Windows, and Linux qualifying reports must all be regenerated before
-the canonical aggregates can close Sprint 3.
+**Current result:** real Windows x86_64 attempts exposed non-portable physical
+generation filenames in the production segment store and locale-dependent Godot
+log decoding in the live fixture. Both source fixes are frozen at the coordinates
+below. They invalidate the earlier macOS arm64 Stage 5 reports, so macOS, Windows,
+and Linux qualifying reports must all be regenerated before the canonical
+aggregates can close Sprint 3.
 
 ## Decision summary
 
@@ -30,8 +31,8 @@ as Linux acceptance evidence.
 
 | Coordinate | Exact value |
 |---|---|
-| Source-freeze commit | `1144694d2293af2ff80d72a47e622479e51ee6f6` |
-| Scoped source SHA-256 | `sha256:46ef87410e472814f20cac0ff6d32a6b4634a90a28c5d378753a04006bc7dd2f` |
+| Source-freeze commit | `a90ddd06c81a6210f44552b46ff533248b93ed90` |
+| Scoped source SHA-256 | `sha256:73e99eec9897f8e2b4c6c210a3c56bd57a91ce347aedba030323eb01bf8438eb` |
 | Golden oracle SHA-256 | `sha256:a41ddfc642f653ad88866aeeefe7852d7742b8701e469aec821aef5b9c046f3b` |
 | Superseded macOS live evidence commit | `d7339412f0e88475faab7d5f4264629671853888` |
 | Superseded macOS storage evidence commit | `7d53adb993c463e4062a6cbfa4be17dd0319a163` |
@@ -56,7 +57,7 @@ coordinates; it is not the final macOS raw report.
 ## Superseded macOS live gate
 
 The following result describes the previous source freeze. It must not be used
-as current Stage 5 acceptance and must be replaced by a run at `1144694d2293`.
+as current Stage 5 acceptance and must be replaced by a run at `a90ddd06c81a`.
 
 The schema-3 report records `status=passed`, `execution=local_model_free`,
 `profile=acceptance`, and `platform=macos-arm64` on
@@ -165,7 +166,7 @@ The deferred procedures are executable and documented in
 a separate clean worktree at the exact freeze and fail closed on wrong
 architecture, dirty source, digest mismatch, CI markers, containers, incomplete
 SLOs, or failed segment gates/fault cases. The wrapper set is pinned to
-`419ce422e0280e428bd5de9388f53dbe380e07c0`.
+`a8dd7a73a756cc9b636dee4fe0552f94dc322593`.
 
 Required reports to return from the other devices:
 
@@ -207,6 +208,11 @@ No synthetic or re-labeled platform evidence is permitted.
   IDs containing `:` were used directly as physical segment-store filenames.
   Windows Rust tests reproduced `StorageIo(os error 87)`. The fix at the current
   freeze hashes only physical artifact stems and preserves logical IDs; no
+  partial Windows evidence was retained.
+- The next Windows run reached `rename_uid`, then failed closed because Python
+  used the CP1251 host locale to decode UTF-8 Godot output. The current fixture
+  explicitly decodes Godot output as UTF-8 with replacement for malformed log
+  bytes; a Windows-independent regression test covers that path. Again, no
   partial Windows evidence was retained.
 - One earlier previous-freeze macOS live attempt observed a single `4,869 µs`
   Bridge frame while the host was under unrelated heavy Docker/emulator load.
