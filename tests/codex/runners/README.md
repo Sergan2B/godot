@@ -15,7 +15,7 @@ replacement for either required host. `remote_ci` stays `not_run`.
 ## Pinned handoff revision
 
 The qualifying wrappers are pinned to runner commit
-`a628470ded4ac713a915eb46da6dc009310c3fbb`. Linux and Windows receipts bind
+`b84920a85bd640c979bf3d29f550280280bcd7c0`. Linux and Windows receipts bind
 the exact runner and `sprint3_transfer_manifest.py` bytes; aggregation rejects
 reports produced by a different wrapper set.
 
@@ -33,11 +33,11 @@ git clone --filter=blob:none --branch codex/integration \
 CONTROL=/absolute/path/GodotSTG
 git -C "$CONTROL" fetch origin codex/integration
 git -C "$CONTROL" cat-file -e \
-  a628470ded4ac713a915eb46da6dc009310c3fbb^{commit}
+  b84920a85bd640c979bf3d29f550280280bcd7c0^{commit}
 git -C "$CONTROL" cat-file -e \
   75364c2cc5fe50de5a508315c41cc43200b90024^{commit}
 git -C "$CONTROL" merge-base --is-ancestor \
-  a628470ded4ac713a915eb46da6dc009310c3fbb HEAD
+  b84920a85bd640c979bf3d29f550280280bcd7c0 HEAD
 if command -v shasum >/dev/null 2>&1; then
   (cd "$CONTROL/tests/codex/runners" && shasum -a 256 -c MANIFEST.sha256)
 else

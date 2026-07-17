@@ -160,7 +160,7 @@ The deferred procedures are executable and documented in
 a separate clean worktree at the exact freeze and fail closed on wrong
 architecture, dirty source, digest mismatch, CI markers, containers, incomplete
 SLOs, or failed segment gates/fault cases. The wrapper set is pinned to
-`a628470ded4ac713a915eb46da6dc009310c3fbb`.
+`b84920a85bd640c979bf3d29f550280280bcd7c0`.
 
 Required reports to return from the other devices:
 
