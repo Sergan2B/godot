@@ -2,23 +2,24 @@
 
 **Status:** In progress — not accepted
 
-**Snapshot:** 2026-07-17
+**Snapshot:** 2026-07-18
 
 **Scope:** Stage 5 (`S3-09`, `S3-10`)
 
-**Current result:** final macOS arm64 live and storage gates passed. The owner
-deferred the real Linux x86_64 and Windows x86_64 runs to other devices. Sprint
-3 completion is not claimed until those reports and the canonical aggregates
-exist and validate.
+**Current result:** a real Windows x86_64 attempt exposed non-portable physical
+generation filenames in the production segment store. The source fix is frozen
+at the coordinates below. It invalidates the earlier macOS arm64 Stage 5 reports,
+so macOS, Windows, and Linux qualifying reports must all be regenerated before
+the canonical aggregates can close Sprint 3.
 
 ## Decision summary
 
 | Gate | macOS arm64 | Windows x86_64 | Linux x86_64 | Overall |
 |---|---|---|---|---|
-| Editor → Bridge → sidecar → persistent index → MCP | **PASS** | **DEFERRED** — no artifact | Not required | Open |
-| Full D-05 storage and recovery profile | **PASS** | **DEFERRED** — no artifact | **DEFERRED** — no artifact | Open |
-| Cross-platform storage aggregate | Input ready | Input missing | Input missing | Not generated |
-| Final Sprint 3 acceptance | Input ready | Input missing | Input missing | Not generated |
+| Editor → Bridge → sidecar → persistent index → MCP | **STALE** — rerun required | **IN PROGRESS** — no artifact | Not required | Open |
+| Full D-05 storage and recovery profile | **STALE** — rerun required | **IN PROGRESS** — no artifact | **DEFERRED** — no artifact | Open |
+| Cross-platform storage aggregate | Input stale | Input missing | Input missing | Not generated |
+| Final Sprint 3 acceptance | Input stale | Input missing | Input missing | Not generated |
 | Remote CI | `not_run` | `not_run` | `not_run` | Not required |
 
 Docker `linux/amd64` was exercised only as a development preflight. It is not a
@@ -29,29 +30,33 @@ as Linux acceptance evidence.
 
 | Coordinate | Exact value |
 |---|---|
-| Source-freeze commit | `75364c2cc5fe50de5a508315c41cc43200b90024` |
-| Scoped source SHA-256 | `sha256:0540dc092e2a5d6c94ac8e23d84bd2bc7224ddfb2c78456f09443d14e80950d2` |
+| Source-freeze commit | `1144694d2293af2ff80d72a47e622479e51ee6f6` |
+| Scoped source SHA-256 | `sha256:46ef87410e472814f20cac0ff6d32a6b4634a90a28c5d378753a04006bc7dd2f` |
 | Golden oracle SHA-256 | `sha256:a41ddfc642f653ad88866aeeefe7852d7742b8701e469aec821aef5b9c046f3b` |
-| macOS live evidence commit | `d7339412f0e88475faab7d5f4264629671853888` |
-| macOS storage evidence commit | `7d53adb993c463e4062a6cbfa4be17dd0319a163` |
+| Superseded macOS live evidence commit | `d7339412f0e88475faab7d5f4264629671853888` |
+| Superseded macOS storage evidence commit | `7d53adb993c463e4062a6cbfa4be17dd0319a163` |
 
-The evidence-only commits descend from the source freeze and do not change its
-scoped bytes. Every future Linux or Windows raw report must record the exact
-freeze commit and both exact digests above. A source-scoped or validator change
-requires a new freeze and regeneration of every Stage 5 platform report.
+Every new macOS, Linux, or Windows raw report must record the exact freeze commit
+and both exact digests above. The tracked macOS reports record the previous
+freeze and remain only as historical development evidence. A further
+source-scoped or validator change requires another freeze and regeneration of
+every Stage 5 platform report.
 
-## Tracked final-host artifacts
+## Tracked superseded macOS artifacts
 
 | Artifact | Status | File SHA-256 | Bytes |
 |---|---|---|---:|
-| [`sprint-3-resource-graph-macos.json`](../../tests/codex/evidence/sprint-3-resource-graph-macos.json) | Qualifying macOS live **PASS** | `sha256:aeabdd3bc2501c5333d3464470199f0cd5fc05e5bbf253001b6596a4004f4040` | 199,017 |
-| [`sprint-3-storage-spike-macos.json`](../../tests/codex/evidence/platform/sprint-3-storage-spike-macos.json) | Qualifying macOS decision profile **PASS** | `sha256:655d62f705d1678c45e61dc293bc0e5c5002df6725cbc4592832c85085841494` | 352,547 |
+| [`sprint-3-resource-graph-macos.json`](../../tests/codex/evidence/sprint-3-resource-graph-macos.json) | Historical macOS live **PASS**, wrong freeze for current acceptance | `sha256:aeabdd3bc2501c5333d3464470199f0cd5fc05e5bbf253001b6596a4004f4040` | 199,017 |
+| [`sprint-3-storage-spike-macos.json`](../../tests/codex/evidence/platform/sprint-3-storage-spike-macos.json) | Historical macOS decision **PASS**, wrong freeze for current acceptance | `sha256:655d62f705d1678c45e61dc293bc0e5c5002df6725cbc4592832c85085841494` | 352,547 |
 
 The legacy `tests/codex/evidence/sprint-3-storage-spike.json` is excluded from
 Stage 5. It records an older commit, a dirty tree, and different source/oracle
 coordinates; it is not the final macOS raw report.
 
-## macOS live gate
+## Superseded macOS live gate
+
+The following result describes the previous source freeze. It must not be used
+as current Stage 5 acceptance and must be replaced by a run at `1144694d2293`.
 
 The schema-3 report records `status=passed`, `execution=local_model_free`,
 `profile=acceptance`, and `platform=macos-arm64` on
@@ -117,7 +122,7 @@ overflow, and a `2,000 µs` budget. Separately reported non-incremental timings
 were startup p95 `2,503.067 ms`, compatible reopen `3,999.849 ms`, and forced
 journal-gap rebuild `40,609.468 ms`; they are not mixed into ordinary visibility.
 
-## macOS D-05 storage and recovery
+## Superseded macOS D-05 storage and recovery
 
 The schema-2 decision report records `os=macos`, `architecture=aarch64`, a local
 runner with 14 logical CPUs, and Rust `1.94.1`. The full dataset contains 10,000
@@ -138,9 +143,9 @@ The raw macOS decision selected `segment`: both backends qualified and segment
 had the higher weighted score (`0.8119`). This is one platform result, not the
 missing canonical three-platform D-05 aggregate or validation receipt.
 
-## Local repository verification
+## Superseded freeze local repository verification
 
-The final freeze and macOS evidence were checked locally with:
+The previous freeze and its macOS evidence were checked locally with:
 
 - Python acceptance/fixture suite: 39 passed;
 - storage spike Rust suite: 18 passed, formatting and Clippy passed;
@@ -160,7 +165,7 @@ The deferred procedures are executable and documented in
 a separate clean worktree at the exact freeze and fail closed on wrong
 architecture, dirty source, digest mismatch, CI markers, containers, incomplete
 SLOs, or failed segment gates/fault cases. The wrapper set is pinned to
-`b84920a85bd640c979bf3d29f550280280bcd7c0`.
+`419ce422e0280e428bd5de9388f53dbe380e07c0`.
 
 Required reports to return from the other devices:
 
@@ -191,13 +196,19 @@ No synthetic or re-labeled platform evidence is permitted.
 |---|---|---|
 | `S3-09` cross-platform smoke | **OPEN** | Real Windows live report plus real Windows/Linux storage reports |
 | `S3-10` final audit | **OPEN** | Canonical storage and acceptance aggregates plus final document update |
-| `S3-AC-01`–`S3-AC-11` | macOS claims passed; cross-platform closure pending | Final acceptance aggregate |
+| `S3-AC-01`–`S3-AC-11` | Previous macOS claims are stale; current cross-platform closure pending | Final acceptance aggregate |
 | `S3-AC-12` normalized Windows/macOS graph equality | **DEFERRED** | Strict Windows report and per-phase digest equality |
 | Sprint 3 Definition of Done | **NOT MET** | Every preceding item closed |
 
 ## Operational notes
 
-- One earlier same-freeze macOS live attempt observed a single `4,869 µs`
+- The first real Windows run built Godot and the sidecar successfully, then
+  failed closed before the base live phase because protocol-shaped generation
+  IDs containing `:` were used directly as physical segment-store filenames.
+  Windows Rust tests reproduced `StorageIo(os error 87)`. The fix at the current
+  freeze hashes only physical artifact stems and preserves logical IDs; no
+  partial Windows evidence was retained.
+- One earlier previous-freeze macOS live attempt observed a single `4,869 µs`
   Bridge frame while the host was under unrelated heavy Docker/emulator load.
   It was not committed or relabeled. A controlled full rerun passed with maximum
   `1,510 µs`; future platform gates should use a dedicated host load profile.
@@ -209,8 +220,8 @@ No synthetic or re-labeled platform evidence is permitted.
   five-file installation. Five receipt unit tests and injected success,
   rollback, and input-mutation rehearsals pass outside the evidence tree.
 
-The available evidence proves the final macOS Stage 5 gates only. It does not
-prove Linux storage portability, Windows production-chain parity,
-cross-platform D-05 completion, `S3-AC-12`, or Sprint 3 Definition of Done;
-those items remain open until the missing real-host artifacts and canonical
-aggregates exist and validate.
+The available tracked macOS evidence proves the previous freeze only and does
+not qualify the current one. Linux storage portability, Windows production-chain
+parity, current macOS results, cross-platform D-05 completion, `S3-AC-12`, and
+Sprint 3 Definition of Done remain open until the regenerated real-host
+artifacts and canonical aggregates exist and validate.

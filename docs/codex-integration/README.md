@@ -27,7 +27,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 21. [INDEX-001-semantic-index-storage-and-migrations.md](INDEX-001-semantic-index-storage-and-migrations.md) — frozen resource identity/logical-index contract and local segment-store decision.
 22. [SPRINT-3-STAGE-4-PLAN.md](SPRINT-3-STAGE-4-PLAN.md) — production resource index, ingestion/recovery, and two MCP resource tools.
 23. [SPRINT-3-STAGE-5-PLAN.md](SPRINT-3-STAGE-5-PLAN.md) — local Windows/macOS live gates, three-host storage matrix, SLOs, and final evidence aggregation.
-24. [SPRINT-3-EVIDENCE.md](SPRINT-3-EVIDENCE.md) — final macOS evidence and explicitly deferred Linux/Windows closure state.
+24. [SPRINT-3-EVIDENCE.md](SPRINT-3-EVIDENCE.md) — superseded macOS evidence, the Windows portability correction, and current-freeze closure state.
 25. [Sprint 3 deferred host runs](../../tests/codex/runners/README.md) — fail-closed Linux, Windows, and deterministic aggregation runbook.
 
 ## Document status
@@ -52,8 +52,8 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | Sprint 3 Stage 2 | Complete locally; full macOS matrix selected segment store | Begin `S3-04`; keep Windows/Linux portability verification separate and explicit |
 | Sprint 3 Stage 3 | Complete and locally verified on macOS arm64 | Begin `S3-06` segment-store ingestion; Windows/Linux remain `not_run` |
 | Sprint 3 Stage 4 | Complete and locally verified on macOS arm64 | Run `S3-09`; Windows/Linux and remote CI remain `not_run` |
-| Sprint 3 Stage 5 | In progress; final macOS live/storage passed, Linux and Windows deferred to other devices | Execute the deferred host runbook, aggregate the returned raw reports, and close `S3-09`/`S3-10` |
-| Sprint 3 evidence | Interim; macOS qualifying artifacts committed, cross-platform acceptance not claimed | Add real Linux/Windows reports and canonical aggregates, then change the report to final |
+| Sprint 3 Stage 5 | In progress on new freeze `1144694d2293`; prior macOS reports are stale after the Windows portability fix | Regenerate macOS, Windows, and Linux reports, aggregate them, and close `S3-09`/`S3-10` |
+| Sprint 3 evidence | Interim; current-freeze platform artifacts and aggregates not yet complete | Add regenerated real-host reports and canonical aggregates, then change the report to final |
 | `INDEX-001` resource contract | Frozen; local `D-05` selects segment store | Implement the chosen backend in `S3-06`; do not claim unrun platform gates |
 
 ## Interim ownership

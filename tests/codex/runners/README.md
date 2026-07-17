@@ -15,7 +15,7 @@ replacement for either required host. `remote_ci` stays `not_run`.
 ## Pinned handoff revision
 
 The qualifying wrappers are pinned to runner commit
-`b84920a85bd640c979bf3d29f550280280bcd7c0`. Linux and Windows receipts bind
+`419ce422e0280e428bd5de9388f53dbe380e07c0`. Linux and Windows receipts bind
 the exact runner and `sprint3_transfer_manifest.py` bytes; aggregation rejects
 reports produced by a different wrapper set.
 
@@ -33,11 +33,11 @@ git clone --filter=blob:none --branch codex/integration \
 CONTROL=/absolute/path/GodotSTG
 git -C "$CONTROL" fetch origin codex/integration
 git -C "$CONTROL" cat-file -e \
-  b84920a85bd640c979bf3d29f550280280bcd7c0^{commit}
+  419ce422e0280e428bd5de9388f53dbe380e07c0^{commit}
 git -C "$CONTROL" cat-file -e \
-  75364c2cc5fe50de5a508315c41cc43200b90024^{commit}
+  1144694d2293af2ff80d72a47e622479e51ee6f6^{commit}
 git -C "$CONTROL" merge-base --is-ancestor \
-  b84920a85bd640c979bf3d29f550280280bcd7c0 HEAD
+  419ce422e0280e428bd5de9388f53dbe380e07c0 HEAD
 if command -v shasum >/dev/null 2>&1; then
   (cd "$CONTROL/tests/codex/runners" && shasum -a 256 -c MANIFEST.sha256)
 else
@@ -65,8 +65,8 @@ Every qualifying report must contain these exact values:
 
 | Coordinate | Required value |
 |---|---|
-| Git commit | `75364c2cc5fe50de5a508315c41cc43200b90024` |
-| Scoped source SHA-256 | `sha256:0540dc092e2a5d6c94ac8e23d84bd2bc7224ddfb2c78456f09443d14e80950d2` |
+| Git commit | `1144694d2293af2ff80d72a47e622479e51ee6f6` |
+| Scoped source SHA-256 | `sha256:46ef87410e472814f20cac0ff6d32a6b4634a90a28c5d378753a04006bc7dd2f` |
 | Oracle SHA-256 | `sha256:a41ddfc642f653ad88866aeeefe7852d7742b8701e469aec821aef5b9c046f3b` |
 
 ## Use two checkouts
@@ -77,7 +77,7 @@ worktree at the exact freeze:
 
 ```text
 GodotSTG/                 control checkout with tests/codex/runners
-GodotSTG-sprint3-freeze/ clean detached worktree at 75364c2...
+GodotSTG-sprint3-freeze/ clean detached worktree at 1144694...
 sprint3-raw/              output directory outside both checkouts
 ```
 
@@ -86,9 +86,9 @@ On Linux or macOS, prepare the worktree with:
 ```sh
 CONTROL=/absolute/path/GodotSTG
 FREEZE=/absolute/path/GodotSTG-sprint3-freeze
-git -C "$CONTROL" cat-file -e 75364c2cc5fe50de5a508315c41cc43200b90024^{commit}
+git -C "$CONTROL" cat-file -e 1144694d2293af2ff80d72a47e622479e51ee6f6^{commit}
 git -C "$CONTROL" worktree add --detach "$FREEZE" \
-  75364c2cc5fe50de5a508315c41cc43200b90024
+  1144694d2293af2ff80d72a47e622479e51ee6f6
 test -z "$(git -C "$FREEZE" status --porcelain)"
 ```
 
@@ -97,9 +97,9 @@ PowerShell equivalent:
 ```powershell
 $Control = "C:\absolute\path\GodotSTG"
 $Freeze = "C:\absolute\path\GodotSTG-sprint3-freeze"
-git -C $Control cat-file -e "75364c2cc5fe50de5a508315c41cc43200b90024^{commit}"
+git -C $Control cat-file -e "1144694d2293af2ff80d72a47e622479e51ee6f6^{commit}"
 if ($LASTEXITCODE -ne 0) { throw "source freeze is unavailable" }
-git -C $Control worktree add --detach $Freeze 75364c2cc5fe50de5a508315c41cc43200b90024
+git -C $Control worktree add --detach $Freeze 1144694d2293af2ff80d72a47e622479e51ee6f6
 if ($LASTEXITCODE -ne 0) { throw "freeze worktree creation failed" }
 if ((git -C $Freeze status --porcelain) -join "") { throw "freeze worktree is dirty" }
 ```
@@ -239,7 +239,11 @@ sprint-3-linux.receipt.json
 sprint-3-windows.receipt.json
 ```
 
-Keep the macOS reports already tracked in the repository unchanged.
+The tracked macOS reports belong to the superseded freeze. Regenerate both at
+`1144694d2293af2ff80d72a47e622479e51ee6f6`, replace them in a dedicated
+evidence commit, and update the approved macOS hashes in `sprint3_aggregate.sh`
+before aggregation. Never mix either old macOS report with current-freeze
+Windows or Linux reports.
 The two receipts are transfer-integrity/completion controls. They bind exact
 report bytes, sizes, freeze/source/oracle coordinates, runner bytes, and helper
 bytes. They are consumed by aggregation but are not Sprint evidence and are not
