@@ -136,10 +136,11 @@ $ContainerEnvironmentMarkers = @(
 $DetectedContainerMarkers = @(
     $ContainerEnvironmentMarkers | Where-Object { Test-Path -LiteralPath "Env:$_" }
 )
-$ContainerType = Get-ItemPropertyValue `
+$ControlRegistry = Get-ItemProperty `
     -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Control" `
-    -Name "ContainerType" `
-    -ErrorAction SilentlyContinue
+    -ErrorAction Stop
+$ContainerTypeProperty = $ControlRegistry.PSObject.Properties["ContainerType"]
+$ContainerType = if ($null -eq $ContainerTypeProperty) { $null } else { $ContainerTypeProperty.Value }
 if ($DetectedContainerMarkers.Count -ne 0 -or $null -ne $ContainerType) {
     throw "qualifying evidence requires a real Windows host, not a container"
 }
