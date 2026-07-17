@@ -1368,6 +1368,84 @@ mod tests {
     }
 
     #[test]
+    fn protocol_generation_ids_use_portable_physical_filenames() {
+        let temp = TempDir::new().expect("temp");
+        let mut base = generation();
+        base.generation_id = format!("generation:sha256:{}", "a".repeat(64));
+        base.validation_digest = base.compute_validation_digest();
+        {
+            let mut store = SegmentStore::open(temp.path(), &base.project_id).expect("store");
+            store.activate(&base, None).expect("activate base");
+            assert_eq!(
+                store.active_generation().expect("active").generation_id,
+                base.generation_id
+            );
+        }
+
+        let index_root = temp.path().join(".godot/codex/index");
+        for directory in ["generations", "commits"] {
+            for entry in fs::read_dir(index_root.join(directory)).expect("artifact directory") {
+                let name = entry
+                    .expect("artifact entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned();
+                assert!(!name.contains(':'), "non-portable artifact name: {name}");
+                assert!(
+                    name.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_')
+                    }),
+                    "unsafe artifact name: {name}"
+                );
+            }
+        }
+
+        let reopened = SegmentStore::open(temp.path(), &base.project_id).expect("reopen");
+        assert_eq!(
+            reopened
+                .active_generation()
+                .expect("reopened generation")
+                .generation_id,
+            base.generation_id
+        );
+    }
+
+    #[test]
+    fn legacy_safe_generation_artifact_names_remain_readable() {
+        let temp = TempDir::new().expect("temp");
+        let base = generation();
+        {
+            let mut store = SegmentStore::open(temp.path(), &base.project_id).expect("store");
+            store.activate(&base, None).expect("activate base");
+        }
+
+        let generation_directory = temp.path().join(".godot/codex/index/generations");
+        for entry in fs::read_dir(&generation_directory).expect("generation directory") {
+            let entry = entry.expect("generation artifact");
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let suffix = if name.ends_with(".generation.json") {
+                ".generation.json"
+            } else {
+                ".json"
+            };
+            fs::rename(
+                entry.path(),
+                generation_directory.join(format!("{}{suffix}", base.generation_id)),
+            )
+            .expect("legacy artifact rename");
+        }
+
+        let reopened = SegmentStore::open(temp.path(), &base.project_id).expect("legacy reopen");
+        assert_eq!(
+            reopened
+                .active_generation()
+                .expect("legacy generation")
+                .generation_id,
+            base.generation_id
+        );
+    }
+
+    #[test]
     fn segment_store_publishes_atomic_reader_snapshots() {
         let temp = TempDir::new().expect("temp");
         let base = generation();

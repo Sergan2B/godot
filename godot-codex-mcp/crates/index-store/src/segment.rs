@@ -422,10 +422,11 @@ impl SegmentStore {
         }
         hit(fault, SegmentFaultPoint::Capture)?;
 
+        let generation_stem = generation_file_stem(&generation.generation_id);
         let staging_path = self
             .root
             .join("staging")
-            .join(format!("{}.json", generation.generation_id));
+            .join(format!("{generation_stem}.json"));
         write_atomic_json(
             &staging_path,
             &serde_json::json!({
@@ -535,7 +536,7 @@ impl SegmentStore {
         let staged_manifest = self
             .root
             .join("staging")
-            .join(format!("{}.manifest", generation.generation_id));
+            .join(format!("{generation_stem}.manifest"));
         write_new_synced(&staged_manifest, &manifest_bytes)?;
         let mut generation_header = generation.clone();
         generation_header.resources.clear();
@@ -546,19 +547,19 @@ impl SegmentStore {
         let staged_generation = self
             .root
             .join("staging")
-            .join(format!("{}.generation", generation.generation_id));
+            .join(format!("{generation_stem}.generation"));
         write_new_synced(&staged_generation, &canonical_json(&generation_header)?)?;
         hit(fault, SegmentFaultPoint::PreCommit)?;
 
-        let generation_manifest = self
-            .root
-            .join("generations")
-            .join(format!("{}.json", generation.generation_id));
+        let generation_directory = self.root.join("generations");
+        let generation_manifest =
+            generation_artifact_path(&generation_directory, &generation.generation_id, ".json");
         fs::rename(&staged_manifest, &generation_manifest).map_err(io_error)?;
-        let generation_header_path = self
-            .root
-            .join("generations")
-            .join(format!("{}.generation.json", generation.generation_id));
+        let generation_header_path = generation_artifact_path(
+            &generation_directory,
+            &generation.generation_id,
+            ".generation.json",
+        );
         fs::rename(&staged_generation, &generation_header_path).map_err(io_error)?;
         sync_parent(&generation_manifest)?;
         let marker = ActivationMarker {
@@ -567,8 +568,8 @@ impl SegmentStore {
             manifest_digest,
         };
         let marker_path = self.root.join("commits").join(format!(
-            "{:020}-{}.json",
-            generation.index_revision, generation.generation_id
+            "{:020}-{generation_stem}.json",
+            generation.index_revision
         ));
         write_atomic_json(&marker_path, &marker)?;
         sync_parent(&marker_path)?;
@@ -608,10 +609,11 @@ impl SegmentStore {
         for marker_path in &retained {
             let marker: ActivationMarker = read_json(marker_path)?;
             retained_generations.insert(marker.generation_id.clone());
-            let manifest_path = self
-                .root
-                .join("generations")
-                .join(format!("{}.json", marker.generation_id));
+            let manifest_path = existing_generation_artifact_path(
+                &self.root.join("generations"),
+                &marker.generation_id,
+                ".json",
+            );
             let manifest: SegmentManifest = read_json(&manifest_path)?;
             for digest in manifest
                 .resources
@@ -633,12 +635,16 @@ impl SegmentStore {
             fs::remove_file(path).map_err(io_error)?;
             if !retained_generations.contains(&marker.generation_id) {
                 for generation_file in [
-                    self.root
-                        .join("generations")
-                        .join(format!("{}.json", marker.generation_id)),
-                    self.root
-                        .join("generations")
-                        .join(format!("{}.generation.json", marker.generation_id)),
+                    existing_generation_artifact_path(
+                        &self.root.join("generations"),
+                        &marker.generation_id,
+                        ".json",
+                    ),
+                    existing_generation_artifact_path(
+                        &self.root.join("generations"),
+                        &marker.generation_id,
+                        ".generation.json",
+                    ),
                 ] {
                     if generation_file.exists() {
                         fs::remove_file(generation_file).map_err(io_error)?;
@@ -964,9 +970,11 @@ fn read_active_manifest(root: &Path) -> Result<(SegmentManifest, ActivationMarke
         .map(std::fs::DirEntry::path)
         .ok_or(StoreError::NotReady)?;
     let marker: ActivationMarker = read_json(&marker_path)?;
-    let manifest_path = root
-        .join("generations")
-        .join(format!("{}.json", marker.generation_id));
+    let manifest_path = existing_generation_artifact_path(
+        &root.join("generations"),
+        &marker.generation_id,
+        ".json",
+    );
     let bytes = fs::read(&manifest_path).map_err(io_error)?;
     if sha256(&bytes) != marker.manifest_digest {
         return Err(StoreError::CorruptStore(
@@ -1025,9 +1033,11 @@ fn load_generation(root: &Path, manifest: &SegmentManifest) -> Result<IndexGener
             ));
         }
     }
-    let generation_path = root
-        .join("generations")
-        .join(format!("{}.generation.json", manifest.generation_id));
+    let generation_path = existing_generation_artifact_path(
+        &root.join("generations"),
+        &manifest.generation_id,
+        ".generation.json",
+    );
     let mut generation: IndexGeneration = read_json(&generation_path)?;
     generation.resources = resources;
     generation.source_documents = source_documents;
@@ -1315,6 +1325,35 @@ fn dependency_target(edge: &DependencyEdge) -> &str {
 
 fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
+}
+
+fn generation_file_stem(generation_id: &str) -> String {
+    format!("generation-{}", sha256(generation_id.as_bytes()))
+}
+
+fn generation_artifact_path(directory: &Path, generation_id: &str, suffix: &str) -> PathBuf {
+    directory.join(format!("{}{suffix}", generation_file_stem(generation_id)))
+}
+
+fn existing_generation_artifact_path(
+    directory: &Path,
+    generation_id: &str,
+    suffix: &str,
+) -> PathBuf {
+    let portable = generation_artifact_path(directory, generation_id, suffix);
+    if portable.exists() {
+        return portable;
+    }
+    let legacy_name_is_safe = generation_id
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'-' | b'_'));
+    if legacy_name_is_safe {
+        let legacy = directory.join(format!("{generation_id}{suffix}"));
+        if legacy.exists() {
+            return legacy;
+        }
+    }
+    portable
 }
 
 fn io_error(error: std::io::Error) -> StoreError {

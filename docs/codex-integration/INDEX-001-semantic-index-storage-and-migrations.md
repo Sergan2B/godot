@@ -366,6 +366,14 @@ partitioned into 256 stable shards by the first byte of a SHA-256 key. Generatio
 manifests bind the project, logical schema, physical version, checkpoint, validation
 digest, and every referenced segment digest.
 
+Logical generation IDs remain protocol values such as `generation:sha256:<hex>`, but
+physical generation, staging, and commit artifact names use
+`generation-<lowerhex-SHA256(UTF-8 generation_id)>`. This keeps the layout identical
+and filename-safe on Windows, macOS, and Linux without changing query-visible identity.
+Readers prefer the portable name and may fall back only to a legacy raw-ID artifact
+whose ID contains ASCII alphanumerics, `:`, `-`, or `_`; path separators and other
+unsafe legacy names are never resolved.
+
 One writer holds `.godot/codex/index.lock`; a competing writer receives `store_busy`.
 Data and indexes are written as new files and flushed before their staging manifest is
 renamed into `generations/`. Activation writes a new uniquely named commit marker only
