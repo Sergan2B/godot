@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from scene_graph_fixture import GOLDEN_PATH, MANIFEST_PATH, PHASES, PROJECT_SOURCE, strict_json_load
 from sprint2_live_smoke import MCP_PROTOCOL, LineProcess, McpClient
@@ -26,9 +26,7 @@ DRIVER = SCRIPT_DIR / "resource_graph_live_driver.gd"
 SOURCE_SCOPE_PATH = SCRIPT_DIR / "sprint4_source_scopes.txt"
 SOURCE_SCOPE_MANIFEST = SOURCE_SCOPE_PATH.relative_to(REPOSITORY_ROOT).as_posix()
 SOURCE_SCOPES = tuple(
-    line
-    for line in SOURCE_SCOPE_PATH.read_text(encoding="utf-8").splitlines()
-    if line and not line.startswith("#")
+    line for line in SOURCE_SCOPE_PATH.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#")
 )
 TOOL_NAMES = {
     "godot_find_resource_owners",
@@ -84,6 +82,13 @@ def percentile(samples: list[float] | list[int], value: int) -> float | None:
 
 def metric(samples: list[float] | list[int]) -> dict[str, Any]:
     return {"samples": samples, "p50": percentile(samples, 50), "p95": percentile(samples, 95)}
+
+
+def required_percentile(samples: list[float] | list[int], value: int, context: str) -> float:
+    result = percentile(samples, value)
+    if result is None:
+        raise SceneGateError(f"{context} percentile is unavailable")
+    return result
 
 
 def command_output(command: list[str], cwd: Path = REPOSITORY_ROOT) -> str:
@@ -253,7 +258,10 @@ def parse_telemetry(path: Path) -> dict[str, Any]:
     ]
     if len(records) != 1:
         raise SceneGateError(f"Godot emitted {len(records)} Bridge telemetry records")
-    record = records[0]
+    raw_record = records[0]
+    if not isinstance(raw_record, dict):
+        raise SceneGateError("Bridge telemetry record is not an object")
+    record = cast(dict[str, Any], raw_record)
     samples = record.get("samples_usec")
     if (
         record.get("schema_version") != 1
@@ -485,31 +493,37 @@ def without_runtime_coordinates(value: Any) -> Any:
 
 
 def normalized_inspection(value: dict[str, Any]) -> dict[str, Any]:
-    return without_runtime_coordinates({
-        "node": value["node"],
-        "properties": value["properties"],
-        "attached_script_resource_id": value["attached_script_resource_id"],
-        "resources": value["resources"],
-        "groups": value["groups"],
-        "connections": value["connections"],
-        "animation_references": value["animation_references"],
-        "diagnostic_codes": sorted(
-            diagnostic.get("code") for diagnostic in value["diagnostics"] if diagnostic.get("code")
-        ),
-    })
+    return cast(
+        dict[str, Any],
+        without_runtime_coordinates({
+            "node": value["node"],
+            "properties": value["properties"],
+            "attached_script_resource_id": value["attached_script_resource_id"],
+            "resources": value["resources"],
+            "groups": value["groups"],
+            "connections": value["connections"],
+            "animation_references": value["animation_references"],
+            "diagnostic_codes": sorted(
+                diagnostic.get("code") for diagnostic in value["diagnostics"] if diagnostic.get("code")
+            ),
+        }),
+    )
 
 
 def normalized_semantics(graph: dict[str, Any], actor: dict[str, Any], animation: dict[str, Any]) -> dict[str, Any]:
-    return without_runtime_coordinates({
-        "scene": graph["scene"],
-        "nodes": graph["nodes"],
-        "project_context": normalized_context(graph["project_context"]),
-        "diagnostic_codes": sorted(
-            diagnostic.get("code") for diagnostic in graph["diagnostics"] if diagnostic.get("code")
-        ),
-        "actor_player": normalized_inspection(actor),
-        "animation_player": normalized_inspection(animation),
-    })
+    return cast(
+        dict[str, Any],
+        without_runtime_coordinates({
+            "scene": graph["scene"],
+            "nodes": graph["nodes"],
+            "project_context": normalized_context(graph["project_context"]),
+            "diagnostic_codes": sorted(
+                diagnostic.get("code") for diagnostic in graph["diagnostics"] if diagnostic.get("code")
+            ),
+            "actor_player": normalized_inspection(actor),
+            "animation_player": normalized_inspection(animation),
+        }),
+    )
 
 
 def replace_once(path: Path, before: str, after: str) -> None:
@@ -528,9 +542,9 @@ def apply_mutation(project: Path, phase: str) -> None:
             base,
             '[node name="Marker" type="Marker2D" parent="." unique_id=1003]\nposition = Vector2(32, 0)',
             '[node name="MarkerRenamed" type="Marker2D" parent="." unique_id=1003]\n'
-            'position = Vector2(32, 0)\n\n'
+            "position = Vector2(32, 0)\n\n"
             '[node name="MarkerCopy" type="Marker2D" parent="." unique_id=1004]\n'
-            'position = Vector2(64, 0)',
+            "position = Vector2(64, 0)",
         )
         replace_once(base, 'target = NodePath("../Marker")', 'target = NodePath("../MarkerRenamed")')
     elif phase == "node_reparent":
@@ -570,7 +584,9 @@ def expected_ids() -> dict[str, str]:
 
 
 def property_by_name(inspection: dict[str, Any], name: str) -> dict[str, Any]:
-    matches = [property_value for property_value in inspection["properties"] if property_value["name"] == name]
+    matches: list[dict[str, Any]] = [
+        property_value for property_value in inspection["properties"] if property_value["name"] == name
+    ]
     if len(matches) != 1:
         raise SceneGateError(f"expected one effective property: {name}")
     return matches[0]
@@ -588,28 +604,26 @@ def verify_order_equivalence(client: McpClient, samples: list[float]) -> bool:
     observed = []
     for scene in ("res://scenes/order_a.tscn", "res://scenes/order_b.tscn"):
         value = inspect_node(client, samples, ".", scene)
-        observed.append(
-            {
-                "properties": sorted(
-                    (
-                        item["name"],
-                        item["value"]["type"],
-                        item["value"]["value"].get("godot_type"),
-                        item["value"]["value"].get("scene_unique_id"),
-                    )
-                    for item in value["properties"]
-                ),
-                "subresources": sorted(
-                    (
-                        item["attributes"]["resource_type"],
-                        item["attributes"]["scene_unique_id"],
-                        item["attributes"]["ownership_paths"],
-                    )
-                    for item in value["resources"]
-                    if item["kind"] == "subresource"
-                ),
-            }
-        )
+        observed.append({
+            "properties": sorted(
+                (
+                    item["name"],
+                    item["value"]["type"],
+                    item["value"]["value"].get("godot_type"),
+                    item["value"]["value"].get("scene_unique_id"),
+                )
+                for item in value["properties"]
+            ),
+            "subresources": sorted(
+                (
+                    item["attributes"]["resource_type"],
+                    item["attributes"]["scene_unique_id"],
+                    item["attributes"]["ownership_paths"],
+                )
+                for item in value["resources"]
+                if item["kind"] == "subresource"
+            ),
+        })
     if observed[0] != observed[1]:
         raise SceneGateError("order-equivalent scenes produced different semantics")
     return True
@@ -669,8 +683,7 @@ def verify_phase(
         )
     elif phase == "instance_mutation":
         assertions["instance_closure_advanced"] = all(
-            path in by_path
-            for path in ("Child/NestedActor2", "Child/NestedActor2/Player", "Child/NestedActor2/Marker")
+            path in by_path for path in ("Child/NestedActor2", "Child/NestedActor2/Player", "Child/NestedActor2/Marker")
         )
     elif phase == "signal_group":
         assertions["signal_group_atomic"] = (
@@ -685,30 +698,27 @@ def verify_phase(
             and "broken_animation_node_path" not in graph["partial_reasons"]
         )
     elif phase == "journal_gap":
-        assertions["gap_scene_recovered"] = graph["freshness"] == "current" and graph["validated_checkpoint"]["source_complete"] is True
-    if phase == "base":
-        assertions.update(
-            {
-                "inheritance_and_instances": by_path["Actor/Player"]["origin_scene_id"]
-                != graph["scene"]["scene_id"],
-                "attached_script": isinstance(actor["attached_script_resource_id"], str),
-                "external_and_nested_subresources": {"GradientTexture1D", "Gradient"}.issubset(
-                    resource_types(actor)
-                )
-                and {"AnimationLibrary", "Animation"}.issubset(resource_types(animation)),
-                "persistent_subresource_identity": all(
-                    relation["source"].startswith("godot:subresource:scene-id:v1:")
-                    for inspection in (actor, animation)
-                    for relation in inspection["resources"]
-                    if relation["kind"] == "subresource"
-                ),
-                "signal_and_group": actor["groups"][0]["group"] == "actors"
-                and actor["connections"][0]["method"] == "_on_player_ready"
-                and actor["connections"][0]["flags"] == 2,
-                "animation_resolution": {item["resolution"] for item in animation["animation_references"]}
-                == {"resolved", "broken"},
-            }
+        assertions["gap_scene_recovered"] = (
+            graph["freshness"] == "current" and graph["validated_checkpoint"]["source_complete"] is True
         )
+    if phase == "base":
+        assertions.update({
+            "inheritance_and_instances": by_path["Actor/Player"]["origin_scene_id"] != graph["scene"]["scene_id"],
+            "attached_script": isinstance(actor["attached_script_resource_id"], str),
+            "external_and_nested_subresources": {"GradientTexture1D", "Gradient"}.issubset(resource_types(actor))
+            and {"AnimationLibrary", "Animation"}.issubset(resource_types(animation)),
+            "persistent_subresource_identity": all(
+                relation["source"].startswith("godot:subresource:scene-id:v1:")
+                for inspection in (actor, animation)
+                for relation in inspection["resources"]
+                if relation["kind"] == "subresource"
+            ),
+            "signal_and_group": actor["groups"][0]["group"] == "actors"
+            and actor["connections"][0]["method"] == "_on_player_ready"
+            and actor["connections"][0]["flags"] == 2,
+            "animation_resolution": {item["resolution"] for item in animation["animation_references"]}
+            == {"resolved", "broken"},
+        })
     if not all(assertions.values()):
         failed = ", ".join(sorted(name for name, passed in assertions.items() if not passed))
         raise SceneGateError(f"{phase} semantic assertions failed: {failed}")
@@ -932,8 +942,7 @@ def run_phase(
             runtime_leaks = [
                 path
                 for path in runtime.iterdir()
-                if path.name in {"bridge.json", "session.token", "bridge.lock"}
-                or path.suffix in {".sock", ".pipe"}
+                if path.name in {"bridge.json", "session.token", "bridge.lock"} or path.suffix in {".sock", ".pipe"}
             ]
         if runtime_leaks:
             raise SceneGateError(f"{phase} left Bridge runtime artifacts")
@@ -982,9 +991,7 @@ def main() -> int:
 
         cached = [sample for phase in phases for sample in phase["cached_scene_query_samples_ms"]]
         ordinary_visibility = [
-            phase["change_visibility_ms"]
-            for phase in phases
-            if phase["phase"] not in {"base", "journal_gap"}
+            phase["change_visibility_ms"] for phase in phases if phase["phase"] not in {"base", "journal_gap"}
         ]
         control = [sample for phase in phases for sample in phase["bulk_status_ping_samples_ms"]]
         bridge = [sample for record in all_telemetry for sample in record["samples_usec"]]
@@ -994,9 +1001,12 @@ def main() -> int:
             "bulk_status_ping_ms": metric(control),
             "bridge_main_thread_usec": metric(bridge),
             "gates": {
-                "cached_scene_query_p95_lte_300ms": percentile(cached, 95) <= 300,
-                "ordinary_change_visibility_p95_lte_2000ms": percentile(ordinary_visibility, 95) <= 2000,
-                "bulk_status_ping_p95_lte_200ms": percentile(control, 95) <= 200,
+                "cached_scene_query_p95_lte_300ms": required_percentile(cached, 95, "cached scene query") <= 300,
+                "ordinary_change_visibility_p95_lte_2000ms": required_percentile(
+                    ordinary_visibility, 95, "ordinary change visibility"
+                )
+                <= 2000,
+                "bulk_status_ping_p95_lte_200ms": required_percentile(control, 95, "bulk status ping") <= 200,
                 "bridge_main_thread_zero_over_2000us": all(sample <= 2000 for sample in bridge),
             },
         }

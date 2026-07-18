@@ -79,9 +79,7 @@ class SceneGraphContractTests(unittest.TestCase):
         forbidden = ("godot_codex_mcp", "SceneStateAdapter", "modules/codex_bridge", "IndexStore")
         self.assertFalse(any(name in source for name in forbidden))
         imports = {
-            node.names[0].name.split(".")[0]
-            for node in ast.walk(ast.parse(source))
-            if isinstance(node, ast.Import)
+            node.names[0].name.split(".")[0] for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Import)
         }
         self.assertFalse({"godot_codex_mcp", "codex_bridge"} & imports)
 

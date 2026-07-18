@@ -48,9 +48,9 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "core/templates/safe_refcount.h"
 #include "editor/file_system/editor_file_system.h"
 
+#include "modules/codex_bridge/editor/bounded_variant_projector.h"
 #include "modules/codex_bridge/editor/bridge_frame_telemetry.h"
 #include "modules/codex_bridge/editor/bridge_revision_clock.h"
-#include "modules/codex_bridge/editor/bounded_variant_projector.h"
 #include "modules/codex_bridge/editor/main_thread_dispatcher.h"
 #include "modules/codex_bridge/editor/resource_delta_journal.h"
 #include "modules/codex_bridge/editor/resource_graph_adapter.h"

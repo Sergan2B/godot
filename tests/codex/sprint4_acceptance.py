@@ -10,16 +10,14 @@ import math
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from scene_graph_fixture import PHASES
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_SCOPE_PATH = REPOSITORY_ROOT / "tests" / "codex" / "sprint4_source_scopes.txt"
 SOURCE_SCOPES = tuple(
-    line
-    for line in SOURCE_SCOPE_PATH.read_text(encoding="utf-8").splitlines()
-    if line and not line.startswith("#")
+    line for line in SOURCE_SCOPE_PATH.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#")
 )
 PLATFORM_TARGETS = {
     "macos-arm64": "aarch64-apple-darwin",
@@ -78,7 +76,7 @@ def strict_json_load(path: Path) -> dict[str, Any]:
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise AcceptanceError(f"cannot read strict evidence: {path.name}") from error
     require(isinstance(value, dict), "evidence root must be an object")
-    return value
+    return cast(dict[str, Any], value)
 
 
 def sha256_file(path: Path) -> str:
@@ -115,32 +113,35 @@ def metric(samples: list[float] | list[int]) -> dict[str, Any]:
 
 
 def expected_performance(phases: list[dict[str, Any]]) -> dict[str, Any]:
-    cached = [sample for phase in phases for sample in phase["cached_scene_query_samples_ms"]]
-    visibility = [
-        phase["change_visibility_ms"]
-        for phase in phases
-        if phase["phase"] not in {"base", "journal_gap"}
+    cached: list[float] = [sample for phase in phases for sample in phase["cached_scene_query_samples_ms"]]
+    visibility: list[float] = [
+        phase["change_visibility_ms"] for phase in phases if phase["phase"] not in {"base", "journal_gap"}
     ]
-    control = [sample for phase in phases for sample in phase["bulk_status_ping_samples_ms"]]
-    bridge = [
+    control: list[float] = [sample for phase in phases for sample in phase["bulk_status_ping_samples_ms"]]
+    bridge: list[int] = [
         sample
         for phase in phases
         for session in phase["bridge_main_thread_sessions"]
         for sample in session["samples_usec"]
     ]
     require(
-        cached and len(visibility) >= 6 and len(visibility) % 6 == 0 and control and bridge,
+        bool(cached) and len(visibility) >= 6 and len(visibility) % 6 == 0 and bool(control) and bool(bridge),
         "required SLO populations are incomplete",
     )
+    cached_p95 = percentile(cached, 95)
+    visibility_p95 = percentile(visibility, 95)
+    control_p95 = percentile(control, 95)
+    if cached_p95 is None or visibility_p95 is None or control_p95 is None:
+        raise AcceptanceError("required SLO percentiles are unavailable")
     return {
         "cached_scene_query_ms": metric(cached),
         "ordinary_change_visibility_ms": metric(visibility),
         "bulk_status_ping_ms": metric(control),
         "bridge_main_thread_usec": metric(bridge),
         "gates": {
-            "cached_scene_query_p95_lte_300ms": percentile(cached, 95) <= 300,
-            "ordinary_change_visibility_p95_lte_2000ms": percentile(visibility, 95) <= 2000,
-            "bulk_status_ping_p95_lte_200ms": percentile(control, 95) <= 200,
+            "cached_scene_query_p95_lte_300ms": cached_p95 <= 300,
+            "ordinary_change_visibility_p95_lte_2000ms": visibility_p95 <= 2000,
+            "bulk_status_ping_p95_lte_200ms": control_p95 <= 200,
             "bridge_main_thread_zero_over_2000us": all(sample <= 2000 for sample in bridge),
         },
     }
@@ -151,7 +152,8 @@ def validate_telemetry(record: dict[str, Any]) -> None:
     require(record.get("schema_version") == 1, "Bridge telemetry schema differs")
     require(record.get("budget_usec") == 2000, "Bridge telemetry budget differs")
     require(record.get("overflow") is False, "Bridge telemetry overflowed")
-    require(isinstance(samples, list) and samples, "Bridge telemetry samples are empty")
+    if not isinstance(samples, list) or not samples:
+        raise AcceptanceError("Bridge telemetry samples are empty")
     require(record.get("busy_frame_count") == len(samples), "Bridge telemetry omitted samples")
     require(record.get("max_elapsed_usec") == max(samples), "Bridge telemetry maximum differs")
     require(
@@ -168,15 +170,18 @@ def validate_platform_report(
 ) -> dict[str, Any]:
     require(set(report) == TOP_LEVEL_FIELDS, "platform evidence fields differ")
     platform_tag = report.get("platform")
-    require(platform_tag in PLATFORM_TARGETS, "unsupported Sprint 4 platform")
+    if not isinstance(platform_tag, str) or platform_tag not in PLATFORM_TARGETS:
+        raise AcceptanceError("unsupported Sprint 4 platform")
     if expected_platform is not None:
         require(platform_tag == expected_platform, "platform evidence coordinate differs")
     require(report.get("schema_version") == 1 and report.get("sprint") == 4, "evidence version differs")
     require(report.get("profile") == "qualifying" and report.get("status") == "passed", "report is not qualifying")
     require(report.get("remote_ci") == "not_run", "remote CI coordinate must remain not_run")
 
-    source = report.get("source")
-    require(isinstance(source, dict), "source coordinates are missing")
+    source_value = report.get("source")
+    if not isinstance(source_value, dict):
+        raise AcceptanceError("source coordinates are missing")
+    source: dict[str, Any] = source_value
     require(source.get("relevant_source_clean") is True, "producer source was dirty")
     require(isinstance(source.get("git_commit"), str) and len(source["git_commit"]) >= 40, "source commit is invalid")
     for field in (
@@ -198,8 +203,10 @@ def validate_platform_report(
         )
         require(commit.returncode == 0, "source-freeze commit is unavailable")
 
-    versions = report.get("versions")
-    require(isinstance(versions, dict), "version coordinates are missing")
+    versions_value = report.get("versions")
+    if not isinstance(versions_value, dict):
+        raise AcceptanceError("version coordinates are missing")
+    versions: dict[str, Any] = versions_value
     require(versions.get("rust_target") == PLATFORM_TARGETS[platform_tag], "Rust target differs from platform")
     require(
         versions.get("bridge_rpc") == "1.3"
@@ -207,27 +214,36 @@ def validate_platform_report(
         and versions.get("physical_store") == "segment-v2",
         "Sprint 4 protocol/store versions differ",
     )
-    contract = report.get("mcp_contract")
-    require(isinstance(contract, dict) and set(contract) == MCP_CONTRACT_FIELDS, "MCP contract fields differ")
+    contract_value = report.get("mcp_contract")
+    if not isinstance(contract_value, dict):
+        raise AcceptanceError("MCP contract fields differ")
+    contract: dict[str, Any] = contract_value
+    require(set(contract) == MCP_CONTRACT_FIELDS, "MCP contract fields differ")
     require(all(value is True for value in contract.values()), "MCP contract is incomplete")
 
-    phases = report.get("phases")
-    require(
-        isinstance(phases, list) and [phase.get("phase") for phase in phases] == list(PHASES),
-        "canonical phase sequence differs",
-    )
+    phase_values = report.get("phases")
+    if not isinstance(phase_values, list) or not all(isinstance(phase, dict) for phase in phase_values):
+        raise AcceptanceError("canonical phase sequence differs")
+    phases = cast(list[dict[str, Any]], phase_values)
+    require([phase.get("phase") for phase in phases] == list(PHASES), "canonical phase sequence differs")
     for phase in phases:
         require(phase.get("passed") is True, f"phase did not pass: {phase.get('phase')}")
         require(
-            isinstance(phase.get("normalized_scene_sha256"), str)
-            and len(phase["normalized_scene_sha256"]) == 71,
+            isinstance(phase.get("normalized_scene_sha256"), str) and len(phase["normalized_scene_sha256"]) == 71,
             "phase semantic digest is invalid",
         )
         assertions = phase.get("assertions")
-        require(isinstance(assertions, dict) and assertions, "phase assertions are missing")
+        if not isinstance(assertions, dict) or not assertions:
+            raise AcceptanceError("phase assertions are missing")
         require(all(value is True for value in assertions.values()), "phase semantic assertion failed")
-        sessions = phase.get("bridge_main_thread_sessions")
-        require(isinstance(sessions, list) and sessions, "phase Bridge telemetry is missing")
+        session_values = phase.get("bridge_main_thread_sessions")
+        if (
+            not isinstance(session_values, list)
+            or not session_values
+            or not all(isinstance(session, dict) for session in session_values)
+        ):
+            raise AcceptanceError("phase Bridge telemetry is missing")
+        sessions = cast(list[dict[str, Any]], session_values)
         require(len(sessions) == (2 if phase["phase"] == "base" else 1), "phase editor-session count differs")
         for session in sessions:
             validate_telemetry(session)
@@ -235,17 +251,22 @@ def validate_platform_report(
     require(report.get("performance") == performance, "reported SLO metrics do not match raw samples")
     require(all(performance["gates"].values()), "one or more Sprint 4 SLOs failed")
 
-    completion = report.get("completion")
+    completion_value = report.get("completion")
+    if not isinstance(completion_value, dict):
+        raise AcceptanceError("completion evidence is incomplete")
+    completion: dict[str, Any] = completion_value
     require(
-        isinstance(completion, dict)
-        and completion.get("requested_phases") == list(PHASES)
+        completion.get("requested_phases") == list(PHASES)
         and completion.get("completed_phases") == list(PHASES)
-        and all(value is True for key, value in completion.items() if key not in {"requested_phases", "completed_phases"}),
+        and all(
+            value is True for key, value in completion.items() if key not in {"requested_phases", "completed_phases"}
+        ),
         "completion evidence is incomplete",
     )
     for section in ("cleanup", "redaction"):
         value = report.get(section)
-        require(isinstance(value, dict) and value and all(member is True for member in value.values()), f"{section} failed")
+        if not isinstance(value, dict) or not value or not all(member is True for member in value.values()):
+            raise AcceptanceError(f"{section} failed")
     return report
 
 
@@ -256,12 +277,8 @@ def merge(
     *,
     check_checkout: bool = True,
 ) -> dict[str, Any]:
-    macos = validate_platform_report(
-        strict_json_load(macos_path), "macos-arm64", check_checkout=check_checkout
-    )
-    windows = validate_platform_report(
-        strict_json_load(windows_path), "windows-x86_64", check_checkout=check_checkout
-    )
+    macos = validate_platform_report(strict_json_load(macos_path), "macos-arm64", check_checkout=check_checkout)
+    windows = validate_platform_report(strict_json_load(windows_path), "windows-x86_64", check_checkout=check_checkout)
     source_fields = (
         "git_commit",
         "relevant_source_sha256",
@@ -295,9 +312,7 @@ def merge(
         "S4-AC-04": base["inheritance_and_instances"] and by_name["instance_mutation"]["instance_closure_advanced"],
         "S4-AC-05": base["signal_and_group"] and by_name["signal_group"]["signal_group_atomic"],
         "S4-AC-06": base["animation_resolution"] and by_name["animation_fix"]["animation_paths_resolved"],
-        "S4-AC-07": base["attached_script"]
-        and base["external_and_nested_subresources"]
-        and base["project_context"],
+        "S4-AC-07": base["attached_script"] and base["external_and_nested_subresources"] and base["project_context"],
         "S4-AC-08": base["subresource_order_equivalence"],
         "S4-AC-09": by_name["journal_gap"]["gap_scene_recovered"]
         and all(phase["passed"] for phase in macos["phases"] + windows["phases"]),

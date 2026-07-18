@@ -232,8 +232,18 @@ def validate_golden() -> dict[str, dict[str, Mapping[str, Any]]]:
     if not isinstance(golden, dict):
         raise FixtureError("golden scene graph must be an object")
     categories = (
-        "scenes", "nodes", "occurrences", "properties", "resource_references", "instances", "subresources",
-        "connections", "groups", "animation_tracks", "project_context", "diagnostics",
+        "scenes",
+        "nodes",
+        "occurrences",
+        "properties",
+        "resource_references",
+        "instances",
+        "subresources",
+        "connections",
+        "groups",
+        "animation_tracks",
+        "project_context",
+        "diagnostics",
     )
     records = {category: _records(golden, category) for category in categories}
     scenes, nodes, occurrences = records["scenes"], records["nodes"], records["occurrences"]
@@ -371,8 +381,15 @@ def run_draft_schema_tests() -> None:
         raise FixtureError("cargo is required for Draft 2020-12 validation")
     result = subprocess.run(
         [
-            cargo, "test", "--manifest-path", str(SCRIPT_DIR / "Cargo.toml"), "--locked", "--offline",
-            "scene_graph_contract", "--", "--nocapture",
+            cargo,
+            "test",
+            "--manifest-path",
+            str(SCRIPT_DIR / "Cargo.toml"),
+            "--locked",
+            "--offline",
+            "scene_graph_contract",
+            "--",
+            "--nocapture",
         ],
         cwd=REPOSITORY_ROOT,
         check=False,
