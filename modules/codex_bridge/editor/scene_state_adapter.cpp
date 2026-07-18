@@ -630,7 +630,7 @@ bool SceneStateAdapter::_capture_project_context() {
 	}
 
 	if (project_context_phase == PROJECT_CONTEXT_SETTINGS) {
-		for (int processed = 0; processed < 64 && project_context_source_index < project_context_source_keys.size(); processed++) {
+		for (int processed = 0; processed < PROJECT_SETTINGS_PER_SLICE && project_context_source_index < project_context_source_keys.size(); processed++) {
 			const String source_key = project_context_source_keys[project_context_source_index++];
 			if (source_key.begins_with("input/") && settings->has_setting(source_key) && !settings->is_builtin_setting(source_key)) {
 				if (project_context_actions.size() >= (int)MAX_SCENES) {
@@ -677,7 +677,7 @@ bool SceneStateAdapter::_capture_project_context() {
 	}
 
 	if (project_context_phase == PROJECT_CONTEXT_ACTIONS) {
-		for (int processed = 0; processed < 16 && project_context_action_index < project_context_actions.size(); processed++) {
+		for (int processed = 0; processed < PROJECT_ACTIONS_PER_SLICE && project_context_action_index < project_context_actions.size(); processed++) {
 			const String action = project_context_actions[project_context_action_index++];
 			if (action.is_empty() || action.contains("/") || action.length() > 506 || project_context_values.size() >= (int)MAX_SCENES) {
 				return _reject_project_context_capture();

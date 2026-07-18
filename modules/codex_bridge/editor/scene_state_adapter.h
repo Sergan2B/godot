@@ -58,6 +58,11 @@ public:
 	static constexpr uint64_t SNAPSHOT_WINDOW_BYTES = 32 * 1024 * 1024;
 	static constexpr uint64_t SNAPSHOT_TIMEOUT_USEC = 120000000;
 	static constexpr uint64_t SCENE_BUDGET_USEC = 1200;
+	// ProjectSettings reads and Variant projection are indivisible within a
+	// slice. Keep these batches small enough to preserve the 2 ms frame ceiling
+	// on slower Windows hosts while still advancing the capture every frame.
+	static constexpr int PROJECT_SETTINGS_PER_SLICE = 32;
+	static constexpr int PROJECT_ACTIONS_PER_SLICE = 4;
 	static constexpr uint32_t MAX_INSTANCE_DEPTH = 64;
 
 	struct RefreshOutcome {
