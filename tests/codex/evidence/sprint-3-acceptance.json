@@ -1,0 +1,136 @@
+{
+  "acceptance_criteria": {
+    "S3-AC-01": {
+      "passed": true,
+      "proof": [
+        "live.direct_reverse_oracle"
+      ]
+    },
+    "S3-AC-02": {
+      "passed": true,
+      "proof": [
+        "live.uid_rename_incremental"
+      ]
+    },
+    "S3-AC-03": {
+      "passed": true,
+      "proof": [
+        "live.stale_uid_diagnostic"
+      ]
+    },
+    "S3-AC-04": {
+      "passed": true,
+      "proof": [
+        "live.compatible_reopen",
+        "storage.reopen"
+      ]
+    },
+    "S3-AC-05": {
+      "passed": true,
+      "proof": [
+        "storage.cancellation_matrix"
+      ]
+    },
+    "S3-AC-06": {
+      "passed": true,
+      "proof": [
+        "storage.corruption_migration_recovery"
+      ]
+    },
+    "S3-AC-07": {
+      "passed": true,
+      "proof": [
+        "live.format_import_matrix",
+        "live.all_phases"
+      ]
+    },
+    "S3-AC-08": {
+      "passed": true,
+      "proof": [
+        "live.delete_readd_reimport_gap"
+      ]
+    },
+    "S3-AC-09": {
+      "passed": true,
+      "proof": [
+        "mcp.resource_contract"
+      ]
+    },
+    "S3-AC-10": {
+      "passed": true,
+      "proof": [
+        "live.query_visibility_slo"
+      ]
+    },
+    "S3-AC-11": {
+      "passed": true,
+      "proof": [
+        "live.bulk_status_main_thread_slo"
+      ]
+    },
+    "S3-AC-12": {
+      "passed": true,
+      "proof": [
+        "live.cross_platform_graph_digest"
+      ]
+    }
+  },
+  "claims": {
+    "live.all_phases": true,
+    "live.bulk_status_main_thread_slo": true,
+    "live.compatible_reopen": true,
+    "live.cross_platform_graph_digest": true,
+    "live.delete_readd_reimport_gap": true,
+    "live.direct_reverse_oracle": true,
+    "live.format_import_matrix": true,
+    "live.query_visibility_slo": true,
+    "live.stale_uid_diagnostic": true,
+    "live.uid_rename_incremental": true,
+    "mcp.resource_contract": true,
+    "storage.cancellation_matrix": true,
+    "storage.corruption_migration_recovery": true,
+    "storage.reopen": true
+  },
+  "live": {
+    "macos-arm64": {
+      "file": "sprint-3-resource-graph-macos.json",
+      "sha256": "sha256:bb56c6e7e514a7741ae1f29de5eb1127a22757691b736cd9285e37d3f93f7ef3",
+      "slo": {
+        "all_passed": true,
+        "bridge_main_thread_over_2000us_zero": true,
+        "bulk_status_ping_p95_lte_200ms": true,
+        "cached_resource_query_p95_lte_300ms": true,
+        "ordinary_incremental_visibility_p95_lte_2000ms": true
+      }
+    },
+    "normalized_graphs_equal": true,
+    "windows-x86_64": {
+      "file": "sprint-3-resource-graph-windows.json",
+      "sha256": "sha256:ae9308db6d15b5ab72059aa893f7bc1e229c6b989d0a2fb979b04b6f2ac0b4e3",
+      "slo": {
+        "all_passed": true,
+        "bridge_main_thread_over_2000us_zero": true,
+        "bulk_status_ping_p95_lte_200ms": true,
+        "cached_resource_query_p95_lte_300ms": true,
+        "ordinary_incremental_visibility_p95_lte_2000ms": true
+      }
+    }
+  },
+  "live_source_tree_sha256": "sha256:73e99eec9897f8e2b4c6c210a3c56bd57a91ce347aedba030323eb01bf8438eb",
+  "oracle_sha256": "sha256:a41ddfc642f653ad88866aeeefe7852d7742b8701e469aec821aef5b9c046f3b",
+  "remote_ci": "not_run",
+  "schema_version": 3,
+  "source_commit": "a90ddd06c81a6210f44552b46ff533248b93ed90",
+  "sprint": 3,
+  "status": "passed",
+  "storage": {
+    "chosen_backend": "segment",
+    "file": "sprint-3-storage-spike-cross-platform.json",
+    "platforms": [
+      "macos",
+      "windows"
+    ],
+    "sha256": "sha256:4a1ae7633c73c0fe3f9c1eef1483f1be6e6e6d1404acd3d8652d559cb0fb882d"
+  },
+  "storage_source_tree_sha256": "sha256:73e99eec9897f8e2b4c6c210a3c56bd57a91ce347aedba030323eb01bf8438eb"
+}
