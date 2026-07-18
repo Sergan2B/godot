@@ -22,7 +22,7 @@
     {
       "declaration_scope": "base",
       "emitter": "base_player",
-      "flags": 1,
+      "flags": 2,
       "method": "_on_player_ready",
       "oracle_id": "player_tree_entered",
       "receiver": "base_root",

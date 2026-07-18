@@ -20,7 +20,7 @@
   "fixture_manifest_sha256": "b040a9bcce609a1fcfab132e67a410d62563979705e9e44a01b1005188ab32bd",
   "fixture_version": 1,
   "godot_version": "4.8.dev.custom_build.75364c2cc",
-  "golden_scene_graph_sha256": "29beda93afcdf0395152b8bee293e9c4788de8e92c3f83f00461697c00aa2c2e",
+  "golden_scene_graph_sha256": "56238f143efd9038162966ef1af3d5a0009ac957cb8567fde390b1fe0bd02d6e",
   "identity_vectors_sha256": "d36c658b9d23fb11e49aded55a5d4ccf3d80367954418b32366c080c061e539d",
   "identity_vectors": 11,
   "nodes": 11,

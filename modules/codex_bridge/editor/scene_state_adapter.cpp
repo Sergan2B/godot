@@ -483,6 +483,32 @@ bool SceneStateAdapter::_observe_subresource() {
 		_append_diagnostic(active_record.diagnostics, diagnostic);
 	}
 
+	// SceneState exposes the subresources directly referenced by node properties,
+	// but nested built-ins (for example a Gradient owned by a
+	// GradientTexture1D, or an Animation owned by an AnimationLibrary) must be
+	// reached through the owning Resource's serialized properties. Keep this
+	// traversal bounded and append newly discovered built-ins to the same work
+	// queue so every nested resource receives its own identity and ownership path.
+	List<PropertyInfo> properties;
+	resource->get_property_list(&properties);
+	int stored_property_count = 0;
+	const String ownership_root = ownership_paths[0];
+	for (const PropertyInfo &property : properties) {
+		if (!(property.usage & PROPERTY_USAGE_STORAGE)) {
+			continue;
+		}
+		if (++stored_property_count > BoundedVariantProjector::MAX_CONTAINER_ITEMS) {
+			refresh_limit_exceeded = true;
+			return false;
+		}
+		const String property_name = String(property.name);
+		if (property_name.is_empty() || property_name.length() > 512) {
+			refresh_limit_exceeded = true;
+			return false;
+		}
+		_collect_resource_ownership(resource->get(property.name), ownership_root + ":" + property_name, 1, active_resource_ownership, active_subresource_values);
+	}
+
 	AnimationLibrary *library = Object::cast_to<AnimationLibrary>(resource.ptr());
 	if (!library) {
 		return true;
