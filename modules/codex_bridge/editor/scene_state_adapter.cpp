@@ -608,20 +608,69 @@ bool SceneStateAdapter::_reject_project_context_capture() {
 	return true;
 }
 
+void SceneStateAdapter::_collect_project_context_keys_thread(void *p_userdata) {
+	SceneStateAdapter *adapter = static_cast<SceneStateAdapter *>(p_userdata);
+	ProjectSettings *settings = ProjectSettings::get_singleton();
+	if (!settings) {
+		adapter->project_context_keys_limit_exceeded = true;
+		return;
+	}
+	List<PropertyInfo> properties;
+	settings->get_property_list(&properties);
+	if (properties.size() > (int)MAX_PROPERTIES) {
+		adapter->project_context_keys_limit_exceeded = true;
+		return;
+	}
+	for (const PropertyInfo &property : properties) {
+		adapter->project_context_source_keys.push_back(String(property.name));
+	}
+}
+
+void SceneStateAdapter::_wait_for_project_context_keys() {
+	if (project_context_keys_task < 0) {
+		return;
+	}
+	WorkerThreadPool *worker_pool = WorkerThreadPool::get_singleton();
+	if (worker_pool) {
+		worker_pool->wait_for_task_completion(project_context_keys_task);
+	}
+	project_context_keys_task = -1;
+}
+
 bool SceneStateAdapter::_capture_project_context() {
 	ProjectSettings *settings = ProjectSettings::get_singleton();
 	ERR_FAIL_NULL_V(settings, _reject_project_context_capture());
 
 	if (project_context_phase == PROJECT_CONTEXT_COLLECT_KEYS) {
 		if (!project_context_keys_valid) {
-			List<PropertyInfo> properties;
-			settings->get_property_list(&properties);
-			if (properties.size() > (int)MAX_PROPERTIES) {
-				return _reject_project_context_capture();
+			WorkerThreadPool *worker_pool = WorkerThreadPool::get_singleton();
+			if (project_context_keys_task < 0) {
+				project_context_source_keys.clear();
+				project_context_keys_limit_exceeded = false;
+				project_context_keys_task_generation = project_context_keys_generation;
+				if (worker_pool) {
+					project_context_keys_task = worker_pool->add_native_task(
+							_collect_project_context_keys_thread,
+							this,
+							false,
+							SNAME("CodexSceneProjectSettings"));
+				}
+				if (project_context_keys_task >= 0) {
+					return false;
+				}
+				_collect_project_context_keys_thread(this);
+			} else {
+				if (worker_pool && !worker_pool->is_task_completed(project_context_keys_task)) {
+					return false;
+				}
+				_wait_for_project_context_keys();
 			}
-			project_context_source_keys.clear();
-			for (const PropertyInfo &property : properties) {
-				project_context_source_keys.push_back(String(property.name));
+			if (project_context_keys_task_generation != project_context_keys_generation) {
+				project_context_source_keys.clear();
+				return false;
+			}
+			if (project_context_keys_limit_exceeded) {
+				return _reject_project_context_capture();
 			}
 			project_context_keys_valid = true;
 		}
@@ -925,6 +974,7 @@ void SceneStateAdapter::initialize(BridgeRevisionClock *p_revision_clock) {
 
 void SceneStateAdapter::shutdown() {
 	_wait_for_journal_preparation();
+	_wait_for_project_context_keys();
 	_reset_reconcile();
 	_reset_active_scene();
 	_reset_snapshot();
@@ -953,6 +1003,7 @@ void SceneStateAdapter::request_refresh() {
 }
 
 void SceneStateAdapter::invalidate_project_context() {
+	project_context_keys_generation++;
 	project_context_keys_valid = false;
 	request_refresh();
 }

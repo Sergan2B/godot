@@ -172,6 +172,10 @@ private:
 	};
 	ProjectContextPhase project_context_phase = PROJECT_CONTEXT_COLLECT_KEYS;
 	bool project_context_keys_valid = false;
+	bool project_context_keys_limit_exceeded = false;
+	int64_t project_context_keys_task = -1;
+	uint64_t project_context_keys_generation = 0;
+	uint64_t project_context_keys_task_generation = 0;
 	Vector<String> project_context_source_keys;
 	int project_context_source_index = 0;
 	RBMap<String, Dictionary> project_context_values;
@@ -220,6 +224,8 @@ private:
 	bool _finish_active_scene();
 	void _reset_project_context_capture();
 	bool _reject_project_context_capture();
+	static void _collect_project_context_keys_thread(void *p_userdata);
+	void _wait_for_project_context_keys();
 	bool _capture_project_context();
 	void _reset_reconcile();
 	static void _prepare_journal_batch_thread(void *p_userdata);
