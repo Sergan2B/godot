@@ -12,6 +12,8 @@ thirdparty/* linguist-vendored
 misc/msvs/* eol=crlf
 # And some test files where the EOL matters
 *.test.txt -text
+# Windows evidence hashes bind the original CRLF byte stream from the host runner.
+tests/codex/evidence/sprint-3-resource-graph-windows.json -text
 
 # The above only works properly for Git 2.10+, so for older versions
 # we need to manually list the binary files we don't want modified.
