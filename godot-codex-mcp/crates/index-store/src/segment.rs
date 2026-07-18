@@ -11,17 +11,28 @@ use crate::{
     IncrementalBatch, IndexGeneration, IndexMetadata, IndexRead, IndexWriteTransaction,
     MigrationRunner, ResourceEntity, ResourceQuery, ResourceQueryResult, ResourceSelector,
     SceneAnimationReference, SceneConnection, SceneEntity, SceneGroupMembership, SceneNode,
-    SceneProperty, SceneRelation, SourceDocument, StoreError, Tombstone,
+    SceneProperty, SceneRelation, ScriptDiagnostic, ScriptDocument, ScriptReference,
+    ScriptRelation, ScriptSymbol, SourceDocument, StoreError, Tombstone,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// Production physical format selected by D-05.
-pub const SEGMENT_PHYSICAL_VERSION: u32 = 2;
+pub const SEGMENT_PHYSICAL_VERSION: u32 = 3;
 
 const RESOURCE_LOOKUP_PHYSICAL_VERSION: u32 = 1;
 const SCENE_SHARDS_PHYSICAL_VERSION: u32 = 2;
+const SCRIPT_SHARDS_PHYSICAL_VERSION: u32 = 3;
+
+fn logical_schema_for_physical(physical_version: u32) -> Result<crate::SchemaVersion, StoreError> {
+    match physical_version {
+        1 => Ok(crate::LOGICAL_SCHEMA_RESOURCE_V1),
+        2 => Ok(crate::LOGICAL_SCHEMA_SCENE_V1),
+        3 => Ok(crate::LOGICAL_SCHEMA_V1),
+        _ => Err(StoreError::IncompatibleSchema),
+    }
+}
 
 /// Named durability boundaries used by the process-level fault harness.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -113,6 +124,18 @@ struct SegmentManifest {
     scene_animations: BTreeMap<u8, String>,
     #[serde(default)]
     scene_lookup: Option<BTreeMap<u8, String>>,
+    #[serde(default)]
+    script_documents: BTreeMap<u8, String>,
+    #[serde(default)]
+    script_symbols: BTreeMap<u8, String>,
+    #[serde(default)]
+    script_relations: BTreeMap<u8, String>,
+    #[serde(default)]
+    script_references: BTreeMap<u8, String>,
+    #[serde(default)]
+    script_diagnostics: BTreeMap<u8, String>,
+    #[serde(default)]
+    script_lookup: Option<BTreeMap<u8, String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -134,6 +157,14 @@ struct LookupRecord {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SceneLookupRecord {
+    kind: String,
+    value: String,
+    entity_id: String,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScriptLookupRecord {
     kind: String,
     value: String,
     entity_id: String,
@@ -438,11 +469,7 @@ impl SegmentStore {
             return Err(StoreError::ProjectMismatch);
         }
         generation.validate()?;
-        if (physical_version < SCENE_SHARDS_PHYSICAL_VERSION
-            && generation.schema_version.minor >= crate::LOGICAL_SCHEMA_V1.minor)
-            || (physical_version >= SCENE_SHARDS_PHYSICAL_VERSION
-                && generation.schema_version != crate::LOGICAL_SCHEMA_V1)
-        {
+        if generation.schema_version != logical_schema_for_physical(physical_version)? {
             return Err(StoreError::IncompatibleSchema);
         }
         if let Some(active) = &self.active_cache
@@ -482,7 +509,12 @@ impl SegmentStore {
             + generation.scene.relations.len()
             + generation.scene.connections.len()
             + generation.scene.groups.len()
-            + generation.scene.animations.len();
+            + generation.scene.animations.len()
+            + generation.script.documents.len()
+            + generation.script.symbols.len()
+            + generation.script.relations.len()
+            + generation.script.references.len()
+            + generation.script.diagnostics.len();
         let mut progress = StagingProgress::new(logical_records, fault);
         let resources = write_shards(
             &self.root,
@@ -656,6 +688,69 @@ impl SegmentStore {
                 None,
             )
         };
+        let (
+            script_documents,
+            script_symbols,
+            script_relations,
+            script_references,
+            script_diagnostics,
+            script_lookup,
+        ) = if physical_version >= SCRIPT_SHARDS_PHYSICAL_VERSION {
+            let script_documents = write_shards(
+                &self.root,
+                &generation.script.documents,
+                |record| shard(&record.script_resource_id),
+                Some(&mut progress),
+            )?;
+            let script_symbols = write_shards(
+                &self.root,
+                &generation.script.symbols,
+                |record| shard(&record.symbol_id),
+                Some(&mut progress),
+            )?;
+            let script_relations = write_shards(
+                &self.root,
+                &generation.script.relations,
+                |record| shard(&record.relation_id),
+                Some(&mut progress),
+            )?;
+            let script_references = write_shards(
+                &self.root,
+                &generation.script.references,
+                |record| shard(&record.reference_id),
+                Some(&mut progress),
+            )?;
+            let script_diagnostics = write_shards(
+                &self.root,
+                &generation.script.diagnostics,
+                |record| shard(&record.diagnostic_id),
+                Some(&mut progress),
+            )?;
+            let lookup = script_lookup_records(&generation.script);
+            let script_lookup = Some(write_shards(
+                &self.root,
+                &lookup,
+                script_lookup_shard,
+                None,
+            )?);
+            (
+                script_documents,
+                script_symbols,
+                script_relations,
+                script_references,
+                script_diagnostics,
+                script_lookup,
+            )
+        } else {
+            (
+                BTreeMap::new(),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                None,
+            )
+        };
         progress.finish()?;
 
         let previous = self
@@ -683,6 +778,12 @@ impl SegmentStore {
             scene_groups,
             scene_animations,
             scene_lookup,
+            script_documents,
+            script_symbols,
+            script_relations,
+            script_references,
+            script_diagnostics,
+            script_lookup,
         };
         let manifest_bytes = canonical_json(&manifest)?;
         let manifest_digest = sha256(&manifest_bytes);
@@ -704,6 +805,11 @@ impl SegmentStore {
         generation_header.scene.connections.clear();
         generation_header.scene.groups.clear();
         generation_header.scene.animations.clear();
+        generation_header.script.documents.clear();
+        generation_header.script.symbols.clear();
+        generation_header.script.relations.clear();
+        generation_header.script.references.clear();
+        generation_header.script.diagnostics.clear();
         let staged_generation = self
             .root
             .join("staging")
@@ -790,6 +896,11 @@ impl SegmentStore {
                 .chain(manifest.scene_connections.values())
                 .chain(manifest.scene_groups.values())
                 .chain(manifest.scene_animations.values())
+                .chain(manifest.script_documents.values())
+                .chain(manifest.script_symbols.values())
+                .chain(manifest.script_relations.values())
+                .chain(manifest.script_references.values())
+                .chain(manifest.script_diagnostics.values())
             {
                 retained_segments.insert(digest.clone());
             }
@@ -797,6 +908,9 @@ impl SegmentStore {
                 retained_segments.extend(lookup.into_values());
             }
             if let Some(lookup) = manifest.scene_lookup {
+                retained_segments.extend(lookup.into_values());
+            }
+            if let Some(lookup) = manifest.script_lookup {
                 retained_segments.extend(lookup.into_values());
             }
         }
@@ -976,8 +1090,8 @@ impl SegmentStore {
         generation.query(query, true)
     }
 
-    /// Migrates the active resource-only generation to logical 1.2 and
-    /// `segment-v2`, preserving resource records and adding an empty scene domain.
+    /// Migrates an older active generation to logical 1.3 and `segment-v3`,
+    /// preserving resource/scene records and adding an empty script domain.
     pub fn migrate_current(&mut self) -> Result<IndexMetadata, StoreError> {
         self.migrate_current_with_fault(None)
     }
@@ -998,11 +1112,14 @@ impl SegmentStore {
         })?;
         generation.checkpoint.index_revision = generation.index_revision;
         generation.schema_version = crate::LOGICAL_SCHEMA_V1;
-        generation.scene = crate::SceneDomainGeneration::default();
+        if manifest.physical_version < SCENE_SHARDS_PHYSICAL_VERSION {
+            generation.scene = crate::SceneDomainGeneration::default();
+        }
+        generation.script = crate::ScriptDomainGeneration::default();
         generation.generation_id =
-            format!("segment-v2-migration-{:020}", generation.index_revision);
+            format!("segment-v3-migration-{:020}", generation.index_revision);
         generation.creation_reason =
-            format!("physical_segment_v{}_to_v2", manifest.physical_version);
+            format!("physical_segment_v{}_to_v3", manifest.physical_version);
         generation.canonicalize();
         generation.validation_digest.clear();
         generation.validation_digest = generation.compute_validation_digest();
@@ -1182,13 +1299,13 @@ fn load_generation(root: &Path, manifest: &SegmentManifest) -> Result<IndexGener
     if manifest.physical_version > SEGMENT_PHYSICAL_VERSION {
         return Err(StoreError::IncompatibleSchema);
     }
+    let expected_schema = logical_schema_for_physical(manifest.physical_version)?;
     if manifest.metadata.project_id != manifest.project_id
         || manifest.metadata.schema_version.major != crate::LOGICAL_SCHEMA_V1.major
         || manifest.metadata.schema_version.minor > crate::LOGICAL_SCHEMA_V1.minor
         || crate::LOGICAL_SCHEMA_V1.minor < manifest.metadata.reader_min_minor
         || manifest.metadata.reader_min_minor > manifest.metadata.reader_max_minor
-        || (manifest.physical_version >= SCENE_SHARDS_PHYSICAL_VERSION
-            && manifest.metadata.schema_version != crate::LOGICAL_SCHEMA_V1)
+        || manifest.metadata.schema_version != expected_schema
     {
         return Err(StoreError::IncompatibleSchema);
     }
@@ -1263,6 +1380,31 @@ fn load_generation(root: &Path, manifest: &SegmentManifest) -> Result<IndexGener
     } else if !generation.scene.is_empty() {
         return Err(StoreError::CorruptStore(
             "segment-v1 generation contains scene-domain records".to_owned(),
+        ));
+    }
+    if manifest.physical_version >= SCRIPT_SHARDS_PHYSICAL_VERSION {
+        generation.script.documents =
+            read_shards::<ScriptDocument>(root, &manifest.script_documents)?;
+        generation.script.symbols = read_shards::<ScriptSymbol>(root, &manifest.script_symbols)?;
+        generation.script.relations =
+            read_shards::<ScriptRelation>(root, &manifest.script_relations)?;
+        generation.script.references =
+            read_shards::<ScriptReference>(root, &manifest.script_references)?;
+        generation.script.diagnostics =
+            read_shards::<ScriptDiagnostic>(root, &manifest.script_diagnostics)?;
+        let lookup_shards = manifest.script_lookup.as_ref().ok_or_else(|| {
+            StoreError::CorruptStore("script lookup shards are missing".to_owned())
+        })?;
+        let mut lookup: Vec<ScriptLookupRecord> = read_shards(root, lookup_shards)?;
+        lookup.sort();
+        if lookup != script_lookup_records(&generation.script) {
+            return Err(StoreError::CorruptStore(
+                "script lookup parity mismatch".to_owned(),
+            ));
+        }
+    } else if !generation.script.is_empty() {
+        return Err(StoreError::CorruptStore(
+            "pre-segment-v3 generation contains script-domain records".to_owned(),
         ));
     }
     generation.canonicalize();
@@ -1392,12 +1534,25 @@ fn write_segment<T: Serialize>(root: &Path, records: &[T]) -> Result<String, Sto
     let digest = sha256(&bytes);
     let path = root.join("segments").join(format!("{digest}.seg"));
     let index_path = root.join("segments").join(format!("{digest}.idx"));
-    if !path.exists() {
+    if path.exists() {
+        let existing = fs::read(&path).map_err(io_error)?;
+        if sha256(&existing) != digest {
+            return Err(StoreError::CorruptStore(
+                "existing content-addressed segment is corrupt".to_owned(),
+            ));
+        }
+    } else {
         write_new_synced(&path, &bytes)?;
         sync_parent(&path)?;
     }
-    if !index_path.exists() {
-        let index_bytes: Vec<_> = offsets.into_iter().flat_map(u64::to_be_bytes).collect();
+    let index_bytes: Vec<_> = offsets.into_iter().flat_map(u64::to_be_bytes).collect();
+    if index_path.exists() {
+        if fs::read(&index_path).map_err(io_error)? != index_bytes {
+            return Err(StoreError::CorruptStore(
+                "existing content-addressed segment index is corrupt".to_owned(),
+            ));
+        }
+    } else {
         write_new_synced(&index_path, &index_bytes)?;
         sync_parent(&index_path)?;
     }
@@ -1527,6 +1682,43 @@ fn hit(fault: Option<SegmentFaultInjection>, point: SegmentFaultPoint) -> Result
     fault.map_or(Ok(()), |fault| fault.hit(point))
 }
 
+fn script_lookup_records(domain: &crate::ScriptDomainGeneration) -> Vec<ScriptLookupRecord> {
+    let mut lookup = Vec::with_capacity(domain.documents.len() * 2 + domain.symbols.len() * 3);
+    for document in &domain.documents {
+        lookup.push(ScriptLookupRecord {
+            kind: "script_id".to_owned(),
+            value: document.script_resource_id.clone(),
+            entity_id: document.script_resource_id.clone(),
+        });
+        lookup.push(ScriptLookupRecord {
+            kind: "script_path".to_owned(),
+            value: document.path.clone(),
+            entity_id: document.script_resource_id.clone(),
+        });
+    }
+    for symbol in &domain.symbols {
+        lookup.push(ScriptLookupRecord {
+            kind: "symbol_id".to_owned(),
+            value: symbol.symbol_id.clone(),
+            entity_id: symbol.symbol_id.clone(),
+        });
+        lookup.push(ScriptLookupRecord {
+            kind: "symbol_qualified".to_owned(),
+            value: format!("{}\0{}", symbol.script_resource_id, symbol.qualified_key),
+            entity_id: symbol.symbol_id.clone(),
+        });
+        if let Some(name) = &symbol.name {
+            lookup.push(ScriptLookupRecord {
+                kind: "symbol_name".to_owned(),
+                value: name.clone(),
+                entity_id: symbol.symbol_id.clone(),
+            });
+        }
+    }
+    lookup.sort();
+    lookup
+}
+
 fn shard(value: &str) -> u8 {
     Sha256::digest(value.as_bytes())[0]
 }
@@ -1540,6 +1732,14 @@ fn lookup_shard(record: &LookupRecord) -> u8 {
 }
 
 fn scene_lookup_shard(record: &SceneLookupRecord) -> u8 {
+    let mut digest = Sha256::new();
+    digest.update(record.kind.as_bytes());
+    digest.update([0]);
+    digest.update(record.value.as_bytes());
+    digest.finalize()[0]
+}
+
+fn script_lookup_shard(record: &ScriptLookupRecord) -> u8 {
     let mut digest = Sha256::new();
     digest.update(record.kind.as_bytes());
     digest.update([0]);

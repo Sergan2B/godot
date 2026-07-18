@@ -391,6 +391,7 @@ impl ResourceNormalizer {
             diagnostics: diagnostics.into_values().collect(),
             tombstones: Vec::new(),
             scene: godot_codex_index_store::SceneDomainGeneration::default(),
+            script: godot_codex_index_store::ScriptDomainGeneration::default(),
             validation_digest: String::new(),
         };
         generation.canonicalize();
@@ -610,6 +611,7 @@ impl ResourceNormalizer {
             diagnostics,
             tombstones,
             scene: base.scene.clone(),
+            script: base.script.clone(),
             validation_digest: String::new(),
         };
         next.canonicalize();

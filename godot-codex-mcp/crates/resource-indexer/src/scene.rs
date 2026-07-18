@@ -1533,6 +1533,7 @@ mod tests {
             diagnostics: Vec::new(),
             tombstones: Vec::new(),
             scene: SceneDomainGeneration::default(),
+            script: godot_codex_index_store::ScriptDomainGeneration::default(),
             validation_digest: String::new(),
         };
         let node = |path: &str, name: &str, unique_id: Option<u32>, properties: Value| {

@@ -1869,6 +1869,7 @@ mod tests {
             } else {
                 SceneDomainGeneration::default()
             },
+            script: godot_codex_index_store::ScriptDomainGeneration::default(),
             validation_digest: String::new(),
         };
         generation.canonicalize();

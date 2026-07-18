@@ -4,10 +4,18 @@
 //! Physical stores implement these interfaces without changing the observable
 //! generation, revision, validation, and query rules.
 
+mod script;
 mod segment;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+pub use script::{
+    ScriptAdapterAvailability, ScriptAdapterProfile, ScriptAdapterStatus, ScriptCompleteness,
+    ScriptConfidence, ScriptDiagnostic, ScriptDiagnosticAuthority, ScriptDiagnosticSeverity,
+    ScriptDocument, ScriptDomainGeneration, ScriptEndpoint, ScriptIdentityScope, ScriptLanguage,
+    ScriptModifier, ScriptPredicate, ScriptReference, ScriptRelation, ScriptRelationAuthority,
+    ScriptSourceRange, ScriptSymbol, ScriptSymbolKind, ScriptTypeState, ScriptVisibility,
+};
 pub use segment::{
     IndexReadSnapshot, SEGMENT_PHYSICAL_VERSION, SegmentFaultInjection, SegmentFaultMode,
     SegmentFaultPoint, SegmentIndexReader, SegmentIndexStore, SegmentStore, SegmentTransaction,
@@ -18,7 +26,10 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 /// Current logical semantic-index schema.
-pub const LOGICAL_SCHEMA_V1: SchemaVersion = SchemaVersion { major: 1, minor: 2 };
+pub const LOGICAL_SCHEMA_V1: SchemaVersion = SchemaVersion { major: 1, minor: 3 };
+
+/// Last resource/scene logical schema written by `segment-v2`.
+pub const LOGICAL_SCHEMA_SCENE_V1: SchemaVersion = SchemaVersion { major: 1, minor: 2 };
 
 /// Last resource-only logical schema written by `segment-v1`.
 pub const LOGICAL_SCHEMA_RESOURCE_V1: SchemaVersion = SchemaVersion { major: 1, minor: 1 };
@@ -893,6 +904,9 @@ pub struct IndexGeneration {
     /// Independently checkpointed scene domain added by logical schema 1.2.
     #[serde(default)]
     pub scene: SceneDomainGeneration,
+    /// Independently checkpointed script domain added by logical schema 1.3.
+    #[serde(default)]
+    pub script: ScriptDomainGeneration,
     /// Digest of the canonical normalized generation.
     pub validation_digest: String,
 }
@@ -1162,6 +1176,7 @@ impl IndexGeneration {
             diagnostics: diagnostics.into_values().collect(),
             tombstones: tombstones.into_values().collect(),
             scene: self.scene.clone(),
+            script: self.script.clone(),
             validation_digest: String::new(),
         };
         next.canonicalize();
@@ -1288,12 +1303,19 @@ impl IndexGeneration {
                 "diagnostic detail exceeds limit".to_owned(),
             ));
         }
-        if self.schema_version.minor < 2 {
+        if self.schema_version.minor < LOGICAL_SCHEMA_SCENE_V1.minor {
             if !self.scene.is_empty() {
                 return Err(StoreError::IncompatibleSchema);
             }
         } else {
             self.scene.validate()?;
+        }
+        if self.schema_version.minor < LOGICAL_SCHEMA_V1.minor {
+            if !self.script.is_empty() {
+                return Err(StoreError::IncompatibleSchema);
+            }
+        } else {
+            self.script.validate()?;
         }
 
         let expected = self.compute_validation_digest();
@@ -1439,8 +1461,11 @@ impl IndexGeneration {
             hasher.update(tombstone.deleted_index_revision.to_be_bytes());
             hasher.update(tombstone.retain_through_index_revision.to_be_bytes());
         }
-        if self.schema_version.minor >= 2 {
+        if self.schema_version.minor >= LOGICAL_SCHEMA_SCENE_V1.minor {
             update_field(&mut hasher, &self.scene.compute_validation_digest());
+        }
+        if self.schema_version.minor >= LOGICAL_SCHEMA_V1.minor {
+            update_field(&mut hasher, &self.script.compute_validation_digest());
         }
         format!("sha256:{:x}", hasher.finalize())
     }
@@ -1592,6 +1617,7 @@ impl IndexGeneration {
         self.tombstones
             .sort_by(|left, right| left.entity_id.cmp(&right.entity_id));
         self.scene.canonicalize();
+        self.script.canonicalize();
     }
 }
 
@@ -1802,6 +1828,7 @@ mod tests {
             diagnostics: Vec::new(),
             tombstones: Vec::new(),
             scene: SceneDomainGeneration::default(),
+            script: ScriptDomainGeneration::default(),
             validation_digest: String::new(),
         };
         generation.validation_digest = generation.compute_validation_digest();
@@ -1947,6 +1974,168 @@ mod tests {
         domain
     }
 
+    fn script_domain() -> ScriptDomainGeneration {
+        let script_id = "godot:resource:uid:v1:script-test".to_owned();
+        let csharp_id = "godot:resource:uid:v1:csharp-test".to_owned();
+        let class_id = "godot:script-symbol:named:v1:class-test".to_owned();
+        let method_id = "godot:script-symbol:named:v1:method-test".to_owned();
+        let content_sha256 = format!("sha256:{}", "a".repeat(64));
+        let declaration_range =
+            |start_byte, end_byte, start_column, end_column| ScriptSourceRange {
+                path: "res://scripts/player.gd".to_owned(),
+                content_sha256: content_sha256.clone(),
+                start_byte,
+                end_byte,
+                start_line: 0,
+                start_column,
+                end_line: 0,
+                end_column,
+            };
+        let contains_target = ScriptEndpoint::Symbol {
+            symbol_id: method_id.clone(),
+        };
+        let contains_source = ScriptEndpoint::Symbol {
+            symbol_id: class_id.clone(),
+        };
+        let mut domain = ScriptDomainGeneration {
+            editor_session_id: "session-1".to_owned(),
+            resource_revision: 1,
+            scene_graph_revision: 3,
+            script_graph_revision: 5,
+            source_complete: true,
+            snapshot_checksum: "b".repeat(64),
+            semantic_digest: format!("sha256:{}", "c".repeat(64)),
+            documents: vec![
+                ScriptDocument {
+                    script_resource_id: script_id.clone(),
+                    path: "res://scripts/player.gd".to_owned(),
+                    language: ScriptLanguage::Gdscript,
+                    content_sha256: content_sha256.clone(),
+                    adapter_profile: ScriptAdapterProfile::GdscriptParserAnalyzerV1,
+                    completeness: ScriptCompleteness::Complete,
+                    resource_revision: 1,
+                    script_graph_revision: 5,
+                },
+                ScriptDocument {
+                    script_resource_id: csharp_id,
+                    path: "res://scripts/Enemy.cs".to_owned(),
+                    language: ScriptLanguage::Csharp,
+                    content_sha256: format!("sha256:{}", "d".repeat(64)),
+                    adapter_profile: ScriptAdapterProfile::CsharpDiscoveryOnlyV1,
+                    completeness: ScriptCompleteness::Unavailable,
+                    resource_revision: 1,
+                    script_graph_revision: 5,
+                },
+            ],
+            symbols: vec![
+                ScriptSymbol {
+                    symbol_id: class_id.clone(),
+                    script_resource_id: script_id.clone(),
+                    language: ScriptLanguage::Gdscript,
+                    kind: ScriptSymbolKind::Class,
+                    name: Some("Player".to_owned()),
+                    qualified_key: "class:Player".to_owned(),
+                    owner_symbol_id: None,
+                    identity_scope: ScriptIdentityScope::Persistent,
+                    signature: None,
+                    type_name: Some("Player".to_owned()),
+                    type_state: ScriptTypeState::Explicit,
+                    visibility: ScriptVisibility::Public,
+                    modifiers: Vec::new(),
+                    declaration_range: declaration_range(0, 6, 0, 6),
+                    documentation_present: true,
+                    script_graph_revision: 5,
+                },
+                ScriptSymbol {
+                    symbol_id: method_id.clone(),
+                    script_resource_id: script_id.clone(),
+                    language: ScriptLanguage::Gdscript,
+                    kind: ScriptSymbolKind::Method,
+                    name: Some("attack".to_owned()),
+                    qualified_key: "class:Player/method:attack".to_owned(),
+                    owner_symbol_id: Some(class_id.clone()),
+                    identity_scope: ScriptIdentityScope::Persistent,
+                    signature: Some("attack(target: Node) -> void".to_owned()),
+                    type_name: Some("Callable".to_owned()),
+                    type_state: ScriptTypeState::Inferred,
+                    visibility: ScriptVisibility::Public,
+                    modifiers: vec![ScriptModifier::Override],
+                    declaration_range: declaration_range(7, 13, 7, 13),
+                    documentation_present: false,
+                    script_graph_revision: 5,
+                },
+            ],
+            relations: vec![
+                ScriptRelation {
+                    relation_id: "relation-contains".to_owned(),
+                    script_resource_id: script_id.clone(),
+                    source: contains_source.clone(),
+                    predicate: ScriptPredicate::Contains,
+                    target: Some(contains_target.clone()),
+                    confidence: ScriptConfidence::Exact,
+                    evidence_range: Some(declaration_range(7, 13, 7, 13)),
+                    detail: Some("declared_member".to_owned()),
+                    authority: ScriptRelationAuthority::GdscriptParserAnalyzer,
+                    script_graph_revision: 5,
+                },
+                ScriptRelation {
+                    relation_id: "relation-dynamic-call".to_owned(),
+                    script_resource_id: script_id.clone(),
+                    source: contains_target.clone(),
+                    predicate: ScriptPredicate::Calls,
+                    target: None,
+                    confidence: ScriptConfidence::Dynamic,
+                    evidence_range: Some(declaration_range(14, 18, 14, 18)),
+                    detail: Some("dynamic_method_name".to_owned()),
+                    authority: ScriptRelationAuthority::GdscriptParserAnalyzer,
+                    script_graph_revision: 5,
+                },
+            ],
+            references: vec![ScriptReference {
+                reference_id: "reference-contains".to_owned(),
+                relation_id: "relation-contains".to_owned(),
+                script_resource_id: script_id.clone(),
+                source: contains_source,
+                predicate: ScriptPredicate::Contains,
+                target: contains_target,
+                authority: ScriptRelationAuthority::GdscriptParserAnalyzer,
+                script_graph_revision: 5,
+            }],
+            diagnostics: vec![ScriptDiagnostic {
+                diagnostic_id: "godot:script-diagnostic:v1:dynamic-call".to_owned(),
+                script_resource_id: script_id,
+                language: ScriptLanguage::Gdscript,
+                content_sha256: content_sha256.clone(),
+                code: "DYNAMIC_CALL_TARGET".to_owned(),
+                severity: ScriptDiagnosticSeverity::Warning,
+                safe_message: "Dynamic call target is not statically resolvable.".to_owned(),
+                range: Some(declaration_range(14, 18, 14, 18)),
+                authority: ScriptDiagnosticAuthority::GdscriptAnalyzer,
+                script_graph_revision: 5,
+            }],
+            adapter_statuses: vec![
+                ScriptAdapterStatus {
+                    language: ScriptLanguage::Gdscript,
+                    availability: ScriptAdapterAvailability::Available,
+                    profile: Some(ScriptAdapterProfile::GdscriptParserAnalyzerV1),
+                    version: Some("4.8".to_owned()),
+                    diagnostic: None,
+                },
+                ScriptAdapterStatus {
+                    language: ScriptLanguage::Csharp,
+                    availability: ScriptAdapterAvailability::DiscoveryOnly,
+                    profile: Some(ScriptAdapterProfile::CsharpDiscoveryOnlyV1),
+                    version: Some("1.0".to_owned()),
+                    diagnostic: None,
+                },
+            ],
+            validation_digest: String::new(),
+        };
+        domain.canonicalize();
+        domain.validation_digest = domain.compute_validation_digest();
+        domain
+    }
+
     fn generation_with_scene(base: &IndexGeneration, generation_id: &str) -> IndexGeneration {
         let mut generation = base.clone();
         generation.parent_generation_id = Some(base.generation_id.clone());
@@ -1955,6 +2144,20 @@ mod tests {
         generation.checkpoint.index_revision = generation.index_revision;
         generation.creation_reason = "scene_full_snapshot".to_owned();
         generation.scene = scene_domain();
+        generation.canonicalize();
+        generation.validation_digest.clear();
+        generation.validation_digest = generation.compute_validation_digest();
+        generation
+    }
+
+    fn generation_with_script(base: &IndexGeneration, generation_id: &str) -> IndexGeneration {
+        let mut generation = base.clone();
+        generation.parent_generation_id = Some(base.generation_id.clone());
+        generation.generation_id = generation_id.to_owned();
+        generation.index_revision = base.index_revision + 1;
+        generation.checkpoint.index_revision = generation.index_revision;
+        generation.creation_reason = "script_full_snapshot".to_owned();
+        generation.script = script_domain();
         generation.canonicalize();
         generation.validation_digest.clear();
         generation.validation_digest = generation.compute_validation_digest();
@@ -2037,6 +2240,21 @@ mod tests {
             .collect()
     }
 
+    fn manifest_for_physical(
+        index_root: &std::path::Path,
+        physical_version: u64,
+    ) -> serde_json::Value {
+        fs::read_dir(index_root.join("generations"))
+            .expect("generation directory")
+            .filter_map(Result::ok)
+            .filter(|entry| !entry.file_name().to_string_lossy().contains(".generation."))
+            .filter_map(|entry| {
+                serde_json::from_slice::<serde_json::Value>(&fs::read(entry.path()).ok()?).ok()
+            })
+            .find(|manifest| manifest["physical_version"].as_u64() == Some(physical_version))
+            .expect("physical manifest")
+    }
+
     #[test]
     fn validates_and_queries_direct_reverse_parity() {
         let generation = generation();
@@ -2063,6 +2281,72 @@ mod tests {
         .expect("reverse query");
         assert_eq!(direct.edges, reverse.edges);
         assert!(direct.exact && reverse.exact);
+    }
+
+    #[test]
+    fn logical_schema_1_3_validates_script_identity_and_reference_parity() {
+        let domain = script_domain();
+        domain.validate().expect("valid script domain");
+
+        let mut reordered = domain.clone();
+        reordered.documents.reverse();
+        reordered.symbols.reverse();
+        reordered.relations.reverse();
+        reordered.adapter_statuses.reverse();
+        assert_eq!(
+            reordered.compute_validation_digest(),
+            domain.validation_digest
+        );
+
+        let mut missing_reference = domain.clone();
+        missing_reference.references.clear();
+        missing_reference.validation_digest.clear();
+        assert!(matches!(
+            missing_reference.validate(),
+            Err(StoreError::ValidationFailed(reason))
+                if reason == "script relation/reference shard parity mismatch"
+        ));
+
+        let mut stale_range = domain.clone();
+        stale_range.symbols[0].declaration_range.content_sha256 =
+            format!("sha256:{}", "e".repeat(64));
+        stale_range.validation_digest.clear();
+        assert!(stale_range.validate().is_err());
+
+        let mut stale_symbols = domain.clone();
+        stale_symbols
+            .documents
+            .iter_mut()
+            .find(|document| document.language == ScriptLanguage::Gdscript)
+            .expect("GDScript document")
+            .completeness = ScriptCompleteness::Invalid;
+        stale_symbols.validation_digest.clear();
+        assert!(stale_symbols.validate().is_err());
+
+        let mut false_dynamic_target = domain;
+        false_dynamic_target.relations[1].target = Some(ScriptEndpoint::Symbol {
+            symbol_id: false_dynamic_target.symbols[0].symbol_id.clone(),
+        });
+        false_dynamic_target.validation_digest.clear();
+        assert!(false_dynamic_target.validate().is_err());
+    }
+
+    #[test]
+    fn logical_schema_1_2_generation_defaults_the_absent_script_domain() {
+        let mut legacy = generation_with_scene(&generation(), "legacy-segment-v2");
+        legacy.schema_version = LOGICAL_SCHEMA_SCENE_V1;
+        legacy.script = ScriptDomainGeneration::default();
+        legacy.validation_digest.clear();
+        legacy.validation_digest = legacy.compute_validation_digest();
+        let mut encoded = serde_json::to_value(&legacy).expect("legacy generation value");
+        encoded
+            .as_object_mut()
+            .expect("generation object")
+            .remove("script");
+        let decoded: IndexGeneration =
+            serde_json::from_value(encoded).expect("legacy generation without script field");
+        assert!(decoded.script.is_empty());
+        decoded.validate().expect("compatible logical schema 1.2");
     }
 
     #[test]
@@ -2431,7 +2715,120 @@ mod tests {
     }
 
     #[test]
-    fn segment_v2_persists_and_validates_all_scene_shard_classes() {
+    fn segment_v2_migrates_to_v3_with_parity_recovery_and_shard_reuse() {
+        let temp = TempDir::new().expect("temp");
+        let mut base = generation_with_scene(&generation(), "generation-segment-v2");
+        base.schema_version = LOGICAL_SCHEMA_SCENE_V1;
+        base.script = ScriptDomainGeneration::default();
+        base.validation_digest.clear();
+        base.validation_digest = base.compute_validation_digest();
+        base.validate().expect("valid segment-v2 generation");
+        let query = ResourceQuery {
+            selector: ResourceSelector::Uid("uid://a".to_owned()),
+            limit: 50,
+            offset: 0,
+        };
+
+        let before;
+        {
+            let mut store = SegmentStore::open_with_version(temp.path(), &base.project_id, 2)
+                .expect("segment-v2 store");
+            store.activate(&base, None).expect("segment-v2 activation");
+            before = store.direct(&query).expect("segment-v2 query");
+            assert_eq!(
+                store.migrate_current_with_fault(Some(SegmentFaultInjection {
+                    point: SegmentFaultPoint::Staging,
+                    mode: SegmentFaultMode::Cancel,
+                })),
+                Err(StoreError::Cancelled)
+            );
+            assert_eq!(store.physical_version().expect("preserved version"), 2);
+            assert_eq!(store.active_generation().expect("preserved base"), base);
+        }
+
+        let index_root = temp.path().join(".godot/codex/index");
+        assert!(
+            fs::read_dir(index_root.join("staging"))
+                .expect("staging after cancellation")
+                .next()
+                .is_some(),
+            "cancelled migration should leave recoverable staging artifacts"
+        );
+        let v2_manifest = manifest_for_physical(&index_root, 2);
+        let mut store = SegmentStore::open(temp.path(), &base.project_id).expect("reopen v2");
+        assert!(
+            fs::read_dir(index_root.join("staging"))
+                .expect("cleaned staging")
+                .next()
+                .is_none(),
+            "restart must remove incomplete staging"
+        );
+        let metadata = store.migrate_current().expect("segment-v3 migration");
+        assert_eq!(
+            store.physical_version().expect("segment-v3 version"),
+            SEGMENT_PHYSICAL_VERSION
+        );
+        let migrated = store.active_generation().expect("migrated generation");
+        assert_eq!(migrated.schema_version, LOGICAL_SCHEMA_V1);
+        assert_eq!(migrated.scene, base.scene);
+        assert!(migrated.script.is_empty());
+        let after = store.direct(&query).expect("segment-v3 query");
+        assert_eq!(after.resource, before.resource);
+        assert_eq!(after.edges, before.edges);
+        assert_eq!(after.exact, before.exact);
+        assert_eq!(after.has_more, before.has_more);
+
+        let v3_manifest = manifest_for_physical(&index_root, 3);
+        for shard_class in [
+            "resources",
+            "source_documents",
+            "direct_edges",
+            "reverse_edges",
+            "diagnostics",
+            "tombstones",
+            "resource_lookup",
+            "scenes",
+            "scene_nodes",
+            "scene_properties",
+            "scene_relations",
+            "scene_connections",
+            "scene_groups",
+            "scene_animations",
+            "scene_lookup",
+        ] {
+            assert_eq!(
+                v3_manifest[shard_class], v2_manifest[shard_class],
+                "migration rewrote {shard_class} shard bindings"
+            );
+        }
+        assert!(
+            v3_manifest["script_documents"]
+                .as_object()
+                .is_some_and(serde_json::Map::is_empty)
+        );
+        assert!(
+            v3_manifest["script_lookup"]
+                .as_object()
+                .is_some_and(serde_json::Map::is_empty)
+        );
+
+        let commit_count = fs::read_dir(index_root.join("commits"))
+            .expect("commit markers")
+            .count();
+        assert_eq!(
+            store.migrate_current().expect("idempotent migration"),
+            metadata
+        );
+        assert_eq!(
+            fs::read_dir(index_root.join("commits"))
+                .expect("commit markers after retry")
+                .count(),
+            commit_count
+        );
+    }
+
+    #[test]
+    fn segment_v3_preserves_and_validates_all_scene_shard_classes() {
         let temp = TempDir::new().expect("temp");
         let base = generation();
         let generation = generation_with_scene(&base, "generation-scene-2");
@@ -2454,7 +2851,7 @@ mod tests {
             .find_map(|entry| {
                 serde_json::from_slice::<serde_json::Value>(&fs::read(entry.path()).ok()?).ok()
             })
-            .expect("segment-v2 manifest");
+            .expect("segment-v3 manifest");
         for shard_class in [
             "scenes",
             "scene_nodes",
@@ -2489,6 +2886,216 @@ mod tests {
             SegmentStore::open(temp.path(), &generation.project_id),
             Err(StoreError::CorruptStore(_))
         ));
+    }
+
+    #[test]
+    fn segment_v3_persists_and_validates_all_script_shard_classes() {
+        let temp = TempDir::new().expect("temp");
+        let base = generation();
+        let generation = generation_with_script(&base, "generation-script-2");
+
+        {
+            let mut store = SegmentStore::open(temp.path(), &generation.project_id).expect("store");
+            store
+                .activate(&generation, None)
+                .expect("activate script generation");
+        }
+        let reopened = SegmentStore::open(temp.path(), &generation.project_id).expect("reopen");
+        assert_eq!(reopened.active_generation().expect("active"), generation);
+        drop(reopened);
+
+        let generation_directory = temp.path().join(".godot/codex/index/generations");
+        let manifest: serde_json::Value = fs::read_dir(&generation_directory)
+            .expect("generation directory")
+            .filter_map(Result::ok)
+            .filter(|entry| !entry.file_name().to_string_lossy().contains(".generation."))
+            .find_map(|entry| {
+                serde_json::from_slice::<serde_json::Value>(&fs::read(entry.path()).ok()?).ok()
+            })
+            .expect("segment-v3 manifest");
+        for shard_class in [
+            "script_documents",
+            "script_symbols",
+            "script_relations",
+            "script_references",
+            "script_diagnostics",
+            "script_lookup",
+        ] {
+            assert!(
+                manifest[shard_class]
+                    .as_object()
+                    .is_some_and(|shards| !shards.is_empty()),
+                "missing {shard_class} shards"
+            );
+        }
+
+        let symbol_digest = manifest["script_symbols"]
+            .as_object()
+            .and_then(|shards| shards.values().next())
+            .and_then(serde_json::Value::as_str)
+            .expect("script symbol shard digest");
+        let symbol_segment = temp
+            .path()
+            .join(".godot/codex/index/segments")
+            .join(format!("{symbol_digest}.seg"));
+        let mut bytes = fs::read(&symbol_segment).expect("script symbol segment");
+        bytes[0] ^= 0xff;
+        fs::write(symbol_segment, bytes).expect("corrupt script symbol segment");
+        assert!(matches!(
+            SegmentStore::open(temp.path(), &generation.project_id),
+            Err(StoreError::CorruptStore(_))
+        ));
+    }
+
+    #[test]
+    fn corrupt_uncommitted_script_shard_never_activates_and_is_recoverable() {
+        let temp = TempDir::new().expect("temp");
+        let base = generation();
+        let script = generation_with_script(&base, "generation-script-corrupt-staging");
+        let segment_directory = temp.path().join(".godot/codex/index/segments");
+        {
+            let mut store = SegmentStore::open(temp.path(), &base.project_id).expect("store");
+            store.activate(&base, None).expect("activate base");
+            let existing: BTreeSet<_> = fs::read_dir(&segment_directory)
+                .expect("base segments")
+                .filter_map(Result::ok)
+                .map(|entry| entry.file_name())
+                .collect();
+            assert_eq!(
+                store.activate(
+                    &script,
+                    Some(SegmentFaultInjection {
+                        point: SegmentFaultPoint::PreCommit,
+                        mode: SegmentFaultMode::Cancel,
+                    }),
+                ),
+                Err(StoreError::Cancelled)
+            );
+            let new_segment = fs::read_dir(&segment_directory)
+                .expect("staged segments")
+                .filter_map(Result::ok)
+                .find(|entry| {
+                    entry
+                        .path()
+                        .extension()
+                        .is_some_and(|extension| extension == "seg")
+                        && !existing.contains(&entry.file_name())
+                })
+                .expect("new script segment")
+                .path();
+            let mut bytes = fs::read(&new_segment).expect("new script segment bytes");
+            bytes[0] ^= 0xff;
+            fs::write(&new_segment, bytes).expect("corrupt uncommitted script segment");
+
+            assert!(matches!(
+                store.activate(&script, None),
+                Err(StoreError::CorruptStore(_))
+            ));
+            assert_eq!(store.active_generation().expect("preserved base"), base);
+        }
+
+        let mut recovered =
+            SegmentStore::open(temp.path(), &base.project_id).expect("recover store");
+        assert_eq!(recovered.active_generation().expect("recovered base"), base);
+        recovered
+            .activate(&script, None)
+            .expect("retry after orphan cleanup");
+        assert_eq!(
+            recovered.active_generation().expect("active script"),
+            script
+        );
+    }
+
+    #[test]
+    fn script_staging_cancel_and_process_crash_preserve_previous_generation() {
+        const CHILD_ENV: &str = "CODEX_SCRIPT_STORE_CRASH_CHILD";
+        const ROOT_ENV: &str = "CODEX_SCRIPT_STORE_CRASH_ROOT";
+        if std::env::var_os(CHILD_ENV).is_some() {
+            let root = std::env::var_os(ROOT_ENV).expect("child project root");
+            let mut store =
+                SegmentStore::open(std::path::Path::new(&root), "project-1").expect("child store");
+            let base = store.active_generation().expect("child base");
+            let script = generation_with_script(&base, "generation-script-crash");
+            let _ = store.activate(
+                &script,
+                Some(SegmentFaultInjection {
+                    point: SegmentFaultPoint::PreCommit,
+                    mode: SegmentFaultMode::Crash,
+                }),
+            );
+            panic!("crash fault unexpectedly returned");
+        }
+
+        let cancel_temp = TempDir::new().expect("cancel temp");
+        let base = generation();
+        {
+            let mut store =
+                SegmentStore::open(cancel_temp.path(), &base.project_id).expect("store");
+            store.activate(&base, None).expect("activate base");
+            let script = generation_with_script(&base, "generation-script-cancel");
+            assert_eq!(
+                store.activate(
+                    &script,
+                    Some(SegmentFaultInjection {
+                        point: SegmentFaultPoint::Staging,
+                        mode: SegmentFaultMode::Cancel,
+                    }),
+                ),
+                Err(StoreError::Cancelled)
+            );
+            assert_eq!(store.active_generation().expect("preserved base"), base);
+        }
+        assert_eq!(
+            SegmentStore::open(cancel_temp.path(), &base.project_id)
+                .expect("reopen after cancel")
+                .active_generation()
+                .expect("active after cancel"),
+            base
+        );
+
+        let crash_temp = TempDir::new().expect("crash temp");
+        {
+            let mut store = SegmentStore::open(crash_temp.path(), &base.project_id).expect("store");
+            store.activate(&base, None).expect("activate base");
+        }
+        let ready = crash_temp.path().join("fault-ready");
+        let mut child = Command::new(std::env::current_exe().expect("test executable"))
+            .args([
+                "--exact",
+                "tests::script_staging_cancel_and_process_crash_preserve_previous_generation",
+                "--nocapture",
+            ])
+            .env(CHILD_ENV, "1")
+            .env(ROOT_ENV, crash_temp.path())
+            .env("CODEX_SEGMENT_STORE_FAULT_READY", &ready)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn crash worker");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !ready.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !ready.exists() {
+            let status = child.try_wait().expect("poll crash worker");
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("crash worker did not reach pre-commit boundary: {status:?}");
+        }
+        child.kill().expect("kill crash worker");
+        child.wait().expect("reap crash worker");
+
+        let mut recovered =
+            SegmentStore::open(crash_temp.path(), &base.project_id).expect("reopen after crash");
+        assert_eq!(
+            recovered.active_generation().expect("active after crash"),
+            base
+        );
+        let retry = generation_with_script(&base, "generation-script-retry");
+        recovered
+            .activate(&retry, None)
+            .expect("idempotent recovery retry");
+        assert_eq!(recovered.active_generation().expect("active retry"), retry);
     }
 
     #[test]
