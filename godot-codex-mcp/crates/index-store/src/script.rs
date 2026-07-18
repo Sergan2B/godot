@@ -290,6 +290,78 @@ pub struct ScriptAdapterStatus {
     pub diagnostic: Option<String>,
 }
 
+/// Name comparison supported by deterministic declaration search.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScriptSymbolMatch {
+    /// Match the complete declaration name.
+    Exact,
+    /// Match declarations whose name starts with the query.
+    Prefix,
+}
+
+/// Storage-neutral declaration search over one immutable script generation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScriptSymbolQuery {
+    pub query: String,
+    pub match_mode: ScriptSymbolMatch,
+    #[serde(default)]
+    pub language: Option<ScriptLanguage>,
+    #[serde(default)]
+    pub kind: Option<ScriptSymbolKind>,
+    #[serde(default)]
+    pub script_resource_id: Option<String>,
+    pub limit: usize,
+    #[serde(default)]
+    pub offset: usize,
+}
+
+/// Deterministic declaration page from one immutable script generation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScriptSymbolQueryResult {
+    pub symbols: Vec<ScriptSymbol>,
+    pub total_matches: usize,
+    pub has_more: bool,
+}
+
+/// Exact selector accepted by symbol inspection.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum ScriptSymbolSelector {
+    /// Select by the canonical opaque symbol identity.
+    SymbolId { symbol_id: String },
+    /// Select one canonical declaration within an exact script resource.
+    ScriptQualified {
+        script_resource_id: String,
+        qualified_key: String,
+    },
+}
+
+/// Storage-neutral symbol inspection over one immutable script generation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScriptSymbolInspectionQuery {
+    pub selector: ScriptSymbolSelector,
+    pub limit: usize,
+    #[serde(default)]
+    pub offset: usize,
+}
+
+/// Declaration details and bounded forward evidence for one symbol.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScriptSymbolInspectionResult {
+    pub document: ScriptDocument,
+    pub symbol: ScriptSymbol,
+    pub owner: Option<ScriptSymbol>,
+    pub relations: Vec<ScriptRelation>,
+    pub total_relations: usize,
+    pub has_more: bool,
+    pub diagnostics: Vec<ScriptDiagnostic>,
+}
+
 /// Independently checkpointed script-domain records inside one generation.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -362,6 +434,176 @@ impl ScriptDomainGeneration {
         hasher.update(b"godot-codex/script-domain/v1\0");
         hasher.update(bytes);
         format!("sha256:{:x}", hasher.finalize())
+    }
+
+    /// Searches persistent declarations by exact name or prefix.
+    ///
+    /// Parameters, locals, and lambdas are deliberately excluded from the
+    /// Sprint 5 public declaration surface even when they are persisted for
+    /// later internal analysis.
+    pub fn search_symbols(
+        &self,
+        query: &ScriptSymbolQuery,
+    ) -> Result<ScriptSymbolQueryResult, StoreError> {
+        if self.is_empty() {
+            return Err(StoreError::NotReady);
+        }
+        if query.query.is_empty() || query.limit == 0 {
+            return invalid("script symbol query is empty or unbounded");
+        }
+
+        let mut matches: Vec<_> = self
+            .symbols
+            .iter()
+            .filter(|symbol| {
+                !matches!(
+                    symbol.kind,
+                    ScriptSymbolKind::Parameter
+                        | ScriptSymbolKind::Local
+                        | ScriptSymbolKind::Lambda
+                ) && symbol
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| match query.match_mode {
+                        ScriptSymbolMatch::Exact => name == query.query,
+                        ScriptSymbolMatch::Prefix => name.starts_with(&query.query),
+                    })
+                    && query
+                        .language
+                        .is_none_or(|language| symbol.language == language)
+                    && query.kind.is_none_or(|kind| symbol.kind == kind)
+                    && query
+                        .script_resource_id
+                        .as_ref()
+                        .is_none_or(|script_id| symbol.script_resource_id == *script_id)
+            })
+            .collect();
+        matches.sort_by(|left, right| {
+            left.name
+                .cmp(&right.name)
+                .then_with(|| left.language.cmp(&right.language))
+                .then_with(|| left.kind.cmp(&right.kind))
+                .then_with(|| left.qualified_key.cmp(&right.qualified_key))
+                .then_with(|| left.script_resource_id.cmp(&right.script_resource_id))
+                .then_with(|| left.symbol_id.cmp(&right.symbol_id))
+        });
+        if query.offset > matches.len() {
+            return Err(StoreError::QueryOffsetOutOfRange);
+        }
+        let total_matches = matches.len();
+        let symbols = matches
+            .into_iter()
+            .skip(query.offset)
+            .take(query.limit)
+            .cloned()
+            .collect::<Vec<_>>();
+        let has_more = query
+            .offset
+            .checked_add(symbols.len())
+            .is_some_and(|next| next < total_matches);
+        Ok(ScriptSymbolQueryResult {
+            symbols,
+            total_matches,
+            has_more,
+        })
+    }
+
+    /// Inspects one exact declaration with only its forward relations and
+    /// owning-script scene attachments. Reverse usage aggregation belongs to
+    /// Sprint 6 and is intentionally absent here.
+    pub fn inspect_symbol(
+        &self,
+        query: &ScriptSymbolInspectionQuery,
+    ) -> Result<ScriptSymbolInspectionResult, StoreError> {
+        if self.is_empty() {
+            return Err(StoreError::NotReady);
+        }
+        if query.limit == 0 {
+            return invalid("script symbol inspection is unbounded");
+        }
+        let selected: Vec<_> = self
+            .symbols
+            .iter()
+            .filter(|symbol| match &query.selector {
+                ScriptSymbolSelector::SymbolId { symbol_id } => symbol.symbol_id == *symbol_id,
+                ScriptSymbolSelector::ScriptQualified {
+                    script_resource_id,
+                    qualified_key,
+                } => {
+                    symbol.script_resource_id == *script_resource_id
+                        && symbol.qualified_key == *qualified_key
+                }
+            })
+            .collect();
+        let [symbol] = selected.as_slice() else {
+            return if selected.is_empty() {
+                Err(StoreError::ScriptSymbolNotFound)
+            } else {
+                invalid("script symbol selector is ambiguous")
+            };
+        };
+        let document = self
+            .documents
+            .iter()
+            .find(|document| document.script_resource_id == symbol.script_resource_id)
+            .ok_or_else(|| {
+                StoreError::ValidationFailed("script symbol document is missing".to_owned())
+            })?;
+        let owner = symbol
+            .owner_symbol_id
+            .as_deref()
+            .map(|owner_id| {
+                self.symbols
+                    .iter()
+                    .find(|candidate| candidate.symbol_id == owner_id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        StoreError::ValidationFailed("script symbol owner is missing".to_owned())
+                    })
+            })
+            .transpose()?;
+        let mut relations: Vec<_> = self
+            .relations
+            .iter()
+            .filter(|relation| {
+                matches!(
+                    &relation.source,
+                    ScriptEndpoint::Symbol { symbol_id } if symbol_id == &symbol.symbol_id
+                ) || (relation.predicate == ScriptPredicate::AttachesScript
+                    && relation.script_resource_id == symbol.script_resource_id)
+            })
+            .collect();
+        relations.sort_by(|left, right| left.relation_id.cmp(&right.relation_id));
+        if query.offset > relations.len() {
+            return Err(StoreError::QueryOffsetOutOfRange);
+        }
+        let total_relations = relations.len();
+        let relations = relations
+            .into_iter()
+            .skip(query.offset)
+            .take(query.limit)
+            .cloned()
+            .collect::<Vec<_>>();
+        let has_more = query
+            .offset
+            .checked_add(relations.len())
+            .is_some_and(|next| next < total_relations);
+        let mut diagnostics = self
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.script_resource_id == symbol.script_resource_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        diagnostics.sort_by(|left, right| left.diagnostic_id.cmp(&right.diagnostic_id));
+        Ok(ScriptSymbolInspectionResult {
+            document: document.clone(),
+            symbol: (*symbol).clone(),
+            owner,
+            relations,
+            total_relations,
+            has_more,
+            diagnostics,
+        })
     }
 
     /// Validates checkpoint, identities, references, bounds, and semantic parity.

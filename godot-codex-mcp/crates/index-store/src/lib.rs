@@ -14,7 +14,9 @@ pub use script::{
     ScriptConfidence, ScriptDiagnostic, ScriptDiagnosticAuthority, ScriptDiagnosticSeverity,
     ScriptDocument, ScriptDomainGeneration, ScriptEndpoint, ScriptIdentityScope, ScriptLanguage,
     ScriptModifier, ScriptPredicate, ScriptReference, ScriptRelation, ScriptRelationAuthority,
-    ScriptSourceRange, ScriptSymbol, ScriptSymbolKind, ScriptTypeState, ScriptVisibility,
+    ScriptSourceRange, ScriptSymbol, ScriptSymbolInspectionQuery, ScriptSymbolInspectionResult,
+    ScriptSymbolKind, ScriptSymbolMatch, ScriptSymbolQuery, ScriptSymbolQueryResult,
+    ScriptSymbolSelector, ScriptTypeState, ScriptVisibility,
 };
 pub use segment::{
     IndexReadSnapshot, SEGMENT_PHYSICAL_VERSION, SegmentFaultInjection, SegmentFaultMode,
@@ -1023,6 +1025,12 @@ pub enum StoreError {
     /// Selector does not identify a resource.
     #[error("resource_not_found")]
     ResourceNotFound,
+    /// Selector does not identify a script declaration.
+    #[error("script_symbol_not_found")]
+    ScriptSymbolNotFound,
+    /// A signed cursor points outside the immutable result set.
+    #[error("query_offset_out_of_range")]
+    QueryOffsetOutOfRange,
     /// Physical backend I/O failed.
     #[error("storage_io: {0}")]
     StorageIo(String),
@@ -2347,6 +2355,108 @@ mod tests {
             serde_json::from_value(encoded).expect("legacy generation without script field");
         assert!(decoded.script.is_empty());
         decoded.validate().expect("compatible logical schema 1.2");
+    }
+
+    #[test]
+    fn script_symbol_search_is_filtered_deterministic_and_bounded() {
+        let mut domain = script_domain();
+        let mut second = domain
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name.as_deref() == Some("Player"))
+            .expect("Player symbol")
+            .clone();
+        second.symbol_id = "godot:script-symbol:named:v1:class-player-two".to_owned();
+        second.name = Some("PlayerTwo".to_owned());
+        second.qualified_key = "class:PlayerTwo".to_owned();
+        domain.symbols.push(second);
+        let mut local = domain
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name.as_deref() == Some("attack"))
+            .expect("attack symbol")
+            .clone();
+        local.symbol_id = "godot:script-symbol:content-revision:v1:local-player".to_owned();
+        local.kind = ScriptSymbolKind::Local;
+        local.name = Some("PlayerLocal".to_owned());
+        local.qualified_key = "class:Player/method:attack/local:PlayerLocal@7".to_owned();
+        local.identity_scope = ScriptIdentityScope::ContentRevision;
+        domain.symbols.push(local);
+
+        let first = domain
+            .search_symbols(&ScriptSymbolQuery {
+                query: "Player".to_owned(),
+                match_mode: ScriptSymbolMatch::Prefix,
+                language: Some(ScriptLanguage::Gdscript),
+                kind: Some(ScriptSymbolKind::Class),
+                script_resource_id: None,
+                limit: 1,
+                offset: 0,
+            })
+            .expect("first page");
+        assert_eq!(first.total_matches, 2);
+        assert_eq!(first.symbols[0].name.as_deref(), Some("Player"));
+        assert!(first.has_more);
+
+        let second = domain
+            .search_symbols(&ScriptSymbolQuery {
+                query: "Player".to_owned(),
+                match_mode: ScriptSymbolMatch::Prefix,
+                language: Some(ScriptLanguage::Gdscript),
+                kind: Some(ScriptSymbolKind::Class),
+                script_resource_id: None,
+                limit: 1,
+                offset: 1,
+            })
+            .expect("second page");
+        assert_eq!(second.symbols[0].name.as_deref(), Some("PlayerTwo"));
+        assert!(!second.has_more);
+        assert!(matches!(
+            domain.search_symbols(&ScriptSymbolQuery {
+                query: "Player".to_owned(),
+                match_mode: ScriptSymbolMatch::Prefix,
+                language: None,
+                kind: None,
+                script_resource_id: None,
+                limit: 1,
+                offset: 4,
+            }),
+            Err(StoreError::QueryOffsetOutOfRange)
+        ));
+    }
+
+    #[test]
+    fn script_symbol_inspection_returns_only_forward_evidence() {
+        let domain = script_domain();
+        let result = domain
+            .inspect_symbol(&ScriptSymbolInspectionQuery {
+                selector: ScriptSymbolSelector::ScriptQualified {
+                    script_resource_id: "godot:resource:uid:v1:script-test".to_owned(),
+                    qualified_key: "class:Player/method:attack".to_owned(),
+                },
+                limit: 50,
+                offset: 0,
+            })
+            .expect("symbol inspection");
+        assert_eq!(result.symbol.name.as_deref(), Some("attack"));
+        assert_eq!(
+            result.owner.and_then(|owner| owner.name),
+            Some("Player".to_owned())
+        );
+        assert_eq!(result.relations.len(), 1);
+        assert_eq!(result.relations[0].confidence, ScriptConfidence::Dynamic);
+        assert_eq!(result.diagnostics.len(), 1);
+        assert!(!result.has_more);
+        assert!(matches!(
+            domain.inspect_symbol(&ScriptSymbolInspectionQuery {
+                selector: ScriptSymbolSelector::SymbolId {
+                    symbol_id: "godot:script-symbol:named:v1:missing".to_owned(),
+                },
+                limit: 50,
+                offset: 0,
+            }),
+            Err(StoreError::ScriptSymbolNotFound)
+        ));
     }
 
     #[test]
