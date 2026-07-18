@@ -10,14 +10,18 @@ use crate::{
     BuildState, DependencyEdge, DependencyResolution, Diagnostic, GenerationBuilder,
     IncrementalBatch, IndexGeneration, IndexMetadata, IndexRead, IndexWriteTransaction,
     MigrationRunner, ResourceEntity, ResourceQuery, ResourceQueryResult, ResourceSelector,
-    SourceDocument, StoreError, Tombstone,
+    SceneAnimationReference, SceneConnection, SceneEntity, SceneGroupMembership, SceneNode,
+    SceneProperty, SceneRelation, SourceDocument, StoreError, Tombstone,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// Production physical format selected by D-05.
-pub const SEGMENT_PHYSICAL_VERSION: u32 = 1;
+pub const SEGMENT_PHYSICAL_VERSION: u32 = 2;
+
+const RESOURCE_LOOKUP_PHYSICAL_VERSION: u32 = 1;
+const SCENE_SHARDS_PHYSICAL_VERSION: u32 = 2;
 
 /// Named durability boundaries used by the process-level fault harness.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,6 +97,22 @@ struct SegmentManifest {
     diagnostics: BTreeMap<u8, String>,
     tombstones: BTreeMap<u8, String>,
     resource_lookup: Option<BTreeMap<u8, String>>,
+    #[serde(default)]
+    scenes: BTreeMap<u8, String>,
+    #[serde(default)]
+    scene_nodes: BTreeMap<u8, String>,
+    #[serde(default)]
+    scene_properties: BTreeMap<u8, String>,
+    #[serde(default)]
+    scene_relations: BTreeMap<u8, String>,
+    #[serde(default)]
+    scene_connections: BTreeMap<u8, String>,
+    #[serde(default)]
+    scene_groups: BTreeMap<u8, String>,
+    #[serde(default)]
+    scene_animations: BTreeMap<u8, String>,
+    #[serde(default)]
+    scene_lookup: Option<BTreeMap<u8, String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -106,6 +126,14 @@ struct ActivationMarker {
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct LookupRecord {
+    kind: String,
+    value: String,
+    entity_id: String,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SceneLookupRecord {
     kind: String,
     value: String,
     entity_id: String,
@@ -410,6 +438,13 @@ impl SegmentStore {
             return Err(StoreError::ProjectMismatch);
         }
         generation.validate()?;
+        if (physical_version < SCENE_SHARDS_PHYSICAL_VERSION
+            && generation.schema_version.minor >= crate::LOGICAL_SCHEMA_V1.minor)
+            || (physical_version >= SCENE_SHARDS_PHYSICAL_VERSION
+                && generation.schema_version != crate::LOGICAL_SCHEMA_V1)
+        {
+            return Err(StoreError::IncompatibleSchema);
+        }
         if let Some(active) = &self.active_cache
             && active.generation.generation_id == generation.generation_id
         {
@@ -440,7 +475,14 @@ impl SegmentStore {
             + generation.source_documents.len()
             + generation.dependencies.len()
             + generation.diagnostics.len()
-            + generation.tombstones.len();
+            + generation.tombstones.len()
+            + generation.scene.scenes.len()
+            + generation.scene.nodes.len()
+            + generation.scene.properties.len()
+            + generation.scene.relations.len()
+            + generation.scene.connections.len()
+            + generation.scene.groups.len()
+            + generation.scene.animations.len();
         let mut progress = StagingProgress::new(logical_records, fault);
         let resources = write_shards(
             &self.root,
@@ -485,8 +527,7 @@ impl SegmentStore {
             |record| shard(&record.entity_id),
             Some(&mut progress),
         )?;
-        progress.finish()?;
-        let resource_lookup = if physical_version >= SEGMENT_PHYSICAL_VERSION {
+        let resource_lookup = if physical_version >= RESOURCE_LOOKUP_PHYSICAL_VERSION {
             let mut lookup = Vec::with_capacity(generation.resources.len() * 3);
             for resource in &generation.resources {
                 lookup.push(LookupRecord {
@@ -512,6 +553,110 @@ impl SegmentStore {
         } else {
             None
         };
+        let (
+            scenes,
+            scene_nodes,
+            scene_properties,
+            scene_relations,
+            scene_connections,
+            scene_groups,
+            scene_animations,
+            scene_lookup,
+        ) = if physical_version >= SCENE_SHARDS_PHYSICAL_VERSION {
+            let scenes = write_shards(
+                &self.root,
+                &generation.scene.scenes,
+                |record| shard(&record.scene_entity_id),
+                Some(&mut progress),
+            )?;
+            let scene_nodes = write_shards(
+                &self.root,
+                &generation.scene.nodes,
+                |record| shard(&record.node_entity_id),
+                Some(&mut progress),
+            )?;
+            let scene_properties = write_shards(
+                &self.root,
+                &generation.scene.properties,
+                |record| shard(&record.property_id),
+                Some(&mut progress),
+            )?;
+            let scene_relations = write_shards(
+                &self.root,
+                &generation.scene.relations,
+                |record| shard(&record.relation_id),
+                Some(&mut progress),
+            )?;
+            let scene_connections = write_shards(
+                &self.root,
+                &generation.scene.connections,
+                |record| shard(&record.connection_id),
+                Some(&mut progress),
+            )?;
+            let scene_groups = write_shards(
+                &self.root,
+                &generation.scene.groups,
+                |record| shard(&record.membership_id),
+                Some(&mut progress),
+            )?;
+            let scene_animations = write_shards(
+                &self.root,
+                &generation.scene.animations,
+                |record| shard(&record.animation_reference_id),
+                Some(&mut progress),
+            )?;
+            let mut lookup = Vec::with_capacity(
+                generation.scene.scenes.len() * 2 + generation.scene.nodes.len() * 2,
+            );
+            for scene in &generation.scene.scenes {
+                lookup.push(SceneLookupRecord {
+                    kind: "scene_id".to_owned(),
+                    value: scene.scene_entity_id.clone(),
+                    entity_id: scene.scene_entity_id.clone(),
+                });
+                lookup.push(SceneLookupRecord {
+                    kind: "scene_path".to_owned(),
+                    value: scene.comparison_path.clone(),
+                    entity_id: scene.scene_entity_id.clone(),
+                });
+            }
+            for node in &generation.scene.nodes {
+                lookup.push(SceneLookupRecord {
+                    kind: "node_id".to_owned(),
+                    value: node.node_entity_id.clone(),
+                    entity_id: node.node_entity_id.clone(),
+                });
+                lookup.push(SceneLookupRecord {
+                    kind: "node_path".to_owned(),
+                    value: format!("{}\0{}", node.scene_entity_id, node.node_path),
+                    entity_id: node.node_entity_id.clone(),
+                });
+            }
+            lookup.sort();
+            let scene_lookup = Some(write_shards(&self.root, &lookup, scene_lookup_shard, None)?);
+            (
+                scenes,
+                scene_nodes,
+                scene_properties,
+                scene_relations,
+                scene_connections,
+                scene_groups,
+                scene_animations,
+                scene_lookup,
+            )
+        } else {
+            (
+                BTreeMap::new(),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                BTreeMap::new(),
+                None,
+            )
+        };
+        progress.finish()?;
 
         let previous = self
             .active_manifest()
@@ -530,6 +675,14 @@ impl SegmentStore {
             diagnostics,
             tombstones,
             resource_lookup,
+            scenes,
+            scene_nodes,
+            scene_properties,
+            scene_relations,
+            scene_connections,
+            scene_groups,
+            scene_animations,
+            scene_lookup,
         };
         let manifest_bytes = canonical_json(&manifest)?;
         let manifest_digest = sha256(&manifest_bytes);
@@ -544,6 +697,13 @@ impl SegmentStore {
         generation_header.dependencies.clear();
         generation_header.diagnostics.clear();
         generation_header.tombstones.clear();
+        generation_header.scene.scenes.clear();
+        generation_header.scene.nodes.clear();
+        generation_header.scene.properties.clear();
+        generation_header.scene.relations.clear();
+        generation_header.scene.connections.clear();
+        generation_header.scene.groups.clear();
+        generation_header.scene.animations.clear();
         let staged_generation = self
             .root
             .join("staging")
@@ -623,10 +783,20 @@ impl SegmentStore {
                 .chain(manifest.reverse_edges.values())
                 .chain(manifest.diagnostics.values())
                 .chain(manifest.tombstones.values())
+                .chain(manifest.scenes.values())
+                .chain(manifest.scene_nodes.values())
+                .chain(manifest.scene_properties.values())
+                .chain(manifest.scene_relations.values())
+                .chain(manifest.scene_connections.values())
+                .chain(manifest.scene_groups.values())
+                .chain(manifest.scene_animations.values())
             {
                 retained_segments.insert(digest.clone());
             }
             if let Some(lookup) = manifest.resource_lookup {
+                retained_segments.extend(lookup.into_values());
+            }
+            if let Some(lookup) = manifest.scene_lookup {
                 retained_segments.extend(lookup.into_values());
             }
         }
@@ -806,22 +976,37 @@ impl SegmentStore {
         generation.query(query, true)
     }
 
-    /// Migrates a synthetic pre-production fixture to `segment-v1`.
+    /// Migrates the active resource-only generation to logical 1.2 and
+    /// `segment-v2`, preserving resource records and adding an empty scene domain.
     pub fn migrate_current(&mut self) -> Result<IndexMetadata, StoreError> {
+        self.migrate_current_with_fault(None)
+    }
+
+    /// Testable migration entry point with an injected durability-boundary fault.
+    pub fn migrate_current_with_fault(
+        &mut self,
+        fault: Option<SegmentFaultInjection>,
+    ) -> Result<IndexMetadata, StoreError> {
         let (manifest, _) = self.active_manifest()?;
         if manifest.physical_version >= SEGMENT_PHYSICAL_VERSION {
             return Ok(manifest.metadata);
         }
         let mut generation = load_generation(&self.root, &manifest)?;
         generation.parent_generation_id = Some(generation.generation_id.clone());
-        generation.index_revision += 1;
+        generation.index_revision = generation.index_revision.checked_add(1).ok_or_else(|| {
+            StoreError::ValidationFailed("migration index revision overflow".to_owned())
+        })?;
         generation.checkpoint.index_revision = generation.index_revision;
+        generation.schema_version = crate::LOGICAL_SCHEMA_V1;
+        generation.scene = crate::SceneDomainGeneration::default();
         generation.generation_id =
-            format!("segment-v1-migration-{:020}", generation.index_revision);
-        generation.creation_reason = "physical_segment_v0_to_v1".to_owned();
+            format!("segment-v2-migration-{:020}", generation.index_revision);
+        generation.creation_reason =
+            format!("physical_segment_v{}_to_v2", manifest.physical_version);
+        generation.canonicalize();
         generation.validation_digest.clear();
         generation.validation_digest = generation.compute_validation_digest();
-        self.activate_with_version(&generation, SEGMENT_PHYSICAL_VERSION, None)
+        self.activate_with_version(&generation, SEGMENT_PHYSICAL_VERSION, fault)
     }
 
     /// Returns the active physical format version.
@@ -999,9 +1184,11 @@ fn load_generation(root: &Path, manifest: &SegmentManifest) -> Result<IndexGener
     }
     if manifest.metadata.project_id != manifest.project_id
         || manifest.metadata.schema_version.major != crate::LOGICAL_SCHEMA_V1.major
+        || manifest.metadata.schema_version.minor > crate::LOGICAL_SCHEMA_V1.minor
         || crate::LOGICAL_SCHEMA_V1.minor < manifest.metadata.reader_min_minor
-        || crate::LOGICAL_SCHEMA_V1.minor > manifest.metadata.reader_max_minor
         || manifest.metadata.reader_min_minor > manifest.metadata.reader_max_minor
+        || (manifest.physical_version >= SCENE_SHARDS_PHYSICAL_VERSION
+            && manifest.metadata.schema_version != crate::LOGICAL_SCHEMA_V1)
     {
         return Err(StoreError::IncompatibleSchema);
     }
@@ -1018,9 +1205,9 @@ fn load_generation(root: &Path, manifest: &SegmentManifest) -> Result<IndexGener
             "direct/reverse segment parity mismatch".to_owned(),
         ));
     }
-    if manifest.physical_version >= SEGMENT_PHYSICAL_VERSION {
+    if manifest.physical_version >= RESOURCE_LOOKUP_PHYSICAL_VERSION {
         let digest = manifest.resource_lookup.as_ref().ok_or_else(|| {
-            StoreError::CorruptStore("segment-v1 resource lookup missing".to_owned())
+            StoreError::CorruptStore("resource lookup shards are missing".to_owned())
         })?;
         let lookup: Vec<LookupRecord> = read_shards(root, digest)?;
         let entity_lookups = lookup
@@ -1044,6 +1231,40 @@ fn load_generation(root: &Path, manifest: &SegmentManifest) -> Result<IndexGener
     generation.dependencies = dependencies;
     generation.diagnostics = diagnostics;
     generation.tombstones = tombstones;
+    if manifest.physical_version >= SCENE_SHARDS_PHYSICAL_VERSION {
+        generation.scene.scenes = read_shards::<SceneEntity>(root, &manifest.scenes)?;
+        generation.scene.nodes = read_shards::<SceneNode>(root, &manifest.scene_nodes)?;
+        generation.scene.properties =
+            read_shards::<SceneProperty>(root, &manifest.scene_properties)?;
+        generation.scene.relations = read_shards::<SceneRelation>(root, &manifest.scene_relations)?;
+        generation.scene.connections =
+            read_shards::<SceneConnection>(root, &manifest.scene_connections)?;
+        generation.scene.groups =
+            read_shards::<SceneGroupMembership>(root, &manifest.scene_groups)?;
+        generation.scene.animations =
+            read_shards::<SceneAnimationReference>(root, &manifest.scene_animations)?;
+        let lookup_shards = manifest.scene_lookup.as_ref().ok_or_else(|| {
+            StoreError::CorruptStore("scene lookup shards are missing".to_owned())
+        })?;
+        let lookup: Vec<SceneLookupRecord> = read_shards(root, lookup_shards)?;
+        let scene_ids = lookup
+            .iter()
+            .filter(|record| record.kind == "scene_id")
+            .count();
+        let node_ids = lookup
+            .iter()
+            .filter(|record| record.kind == "node_id")
+            .count();
+        if scene_ids != generation.scene.scenes.len() || node_ids != generation.scene.nodes.len() {
+            return Err(StoreError::CorruptStore(
+                "scene lookup parity mismatch".to_owned(),
+            ));
+        }
+    } else if !generation.scene.is_empty() {
+        return Err(StoreError::CorruptStore(
+            "segment-v1 generation contains scene-domain records".to_owned(),
+        ));
+    }
     generation.canonicalize();
     if generation.project_id != manifest.project_id
         || generation.generation_id != manifest.generation_id
@@ -1073,6 +1294,9 @@ fn next_metadata(previous: Option<&IndexMetadata>, generation: &IndexGeneration)
         quarantine_count: 0,
         failed_migration_count: 0,
     });
+    metadata.schema_version = generation.schema_version;
+    metadata.reader_min_minor = 0;
+    metadata.reader_max_minor = generation.schema_version.minor;
     metadata.active_generation_id = Some(generation.generation_id.clone());
     metadata.index_revision = generation.index_revision;
     metadata.build_state = BuildState::Ready;
@@ -1308,6 +1532,14 @@ fn shard(value: &str) -> u8 {
 }
 
 fn lookup_shard(record: &LookupRecord) -> u8 {
+    let mut digest = Sha256::new();
+    digest.update(record.kind.as_bytes());
+    digest.update([0]);
+    digest.update(record.value.as_bytes());
+    digest.finalize()[0]
+}
+
+fn scene_lookup_shard(record: &SceneLookupRecord) -> u8 {
     let mut digest = Sha256::new();
     digest.update(record.kind.as_bytes());
     digest.update([0]);

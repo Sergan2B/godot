@@ -400,6 +400,29 @@ The segment store's slower full build did not outweigh those results under the f
 weighted rule. Windows/Linux process-level portability remains `not_run`; it is a
 separate later validation gate, not remote-CI evidence for this local decision.
 
+### 11.2 `segment-v2` scene-domain extension
+
+Sprint 4 advances the logical schema from 1.1 to 1.2 and the production physical
+format from `segment-v1` to `segment-v2`. The resource, source-document, direct,
+reverse, diagnostic, tombstone, and resource-lookup shard contracts are unchanged.
+`segment-v2` adds independent content-addressed shard maps for scene definitions,
+nodes, properties, structural relations, signal connections, group memberships,
+animation references, and materialized scene/node lookup keys.
+
+The logical generation contains an independently checkpointed scene domain with its
+editor session, resource revision, scene graph revision, completeness flag, normalized
+snapshot checksum, and semantic validation digest. Scene records retain authority and
+both resource/scene revision coordinates. Public semantic IDs never expose physical
+segment digests or offsets.
+
+Migration reads and validates the active `segment-v1` resource generation, advances
+its logical schema to 1.2, creates an intentionally empty non-current scene domain,
+and writes a new `segment-v2` manifest. Unchanged resource segments and lookup shards
+are reused by digest. Activation still occurs only through a durable commit marker;
+cancellation, process death, validation failure, or corruption leaves the prior
+generation active. The migration is idempotent once `segment-v2` is current and a
+restart removes incomplete staging artifacts before retrying.
+
 ## 12. Direct query contract
 
 ### 12.1 Lookup

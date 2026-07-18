@@ -696,6 +696,7 @@ mod tests {
             dependencies,
             diagnostics,
             tombstones: Vec::new(),
+            scene: godot_codex_index_store::SceneDomainGeneration::default(),
             validation_digest: String::new(),
         };
         generation.canonicalize();

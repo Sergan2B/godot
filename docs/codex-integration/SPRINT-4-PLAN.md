@@ -1,6 +1,6 @@
 # Sprint 4 plan — scene semantics and node graph
 
-**Status:** In progress — `S4-01/S4-02` complete locally; Bridge RPC 1.3 next
+**Status:** In progress — `S4-01`–`S4-04` and `S4-06` complete locally; Rust normalization/composition next
 
 **Planned duration:** 10 working days
 
@@ -66,6 +66,15 @@ remote CI are not Sprint 4 acceptance coordinates.
 | `S4-08` | Two scene MCP tools | Query contract, one-generation pagination, cursor isolation, partial results, and redaction pass |
 | `S4-09` | macOS and Windows live gates | Both hosts pass the same source freeze, mutations, recovery matrix, and SLOs |
 | `S4-10` | Deterministic final aggregate | `S4-AC-01`–`S4-AC-12` pass; docs and raw evidence hashes match the aggregate |
+
+`S4-06` advances the storage-neutral logical schema to 1.2 and the production
+physical format to `segment-v2`. The store persists scenes, nodes, properties,
+relations, connections, groups, animations, and materialized scene lookup in
+independent immutable shard classes. A `segment-v1` migration reuses unchanged
+content-addressed resource shards, activates an empty scene domain, and leaves the
+previous generation readable until normal retention removes it. Local tests cover
+resource-query parity plus cancellation, process death before commit, and scene-shard
+corruption without publishing a partial generation.
 
 The contract/oracle boundary is locally frozen by
 `tests/codex/evidence/sprint-4-stage-1-contracts.json`. It validates strict Draft

@@ -17,8 +17,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-/// Current logical resource-index schema.
-pub const LOGICAL_SCHEMA_V1: SchemaVersion = SchemaVersion { major: 1, minor: 1 };
+/// Current logical semantic-index schema.
+pub const LOGICAL_SCHEMA_V1: SchemaVersion = SchemaVersion { major: 1, minor: 2 };
+
+/// Last resource-only logical schema written by `segment-v1`.
+pub const LOGICAL_SCHEMA_RESOURCE_V1: SchemaVersion = SchemaVersion { major: 1, minor: 1 };
 
 /// Version of the storage-neutral logical schema.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -282,6 +285,579 @@ pub struct Tombstone {
     pub retain_through_index_revision: u64,
 }
 
+/// Persistence scope of a canonical scene-domain identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneIdentityScope {
+    /// Godot supplied a stable UID or scene-unique identifier.
+    Persistent,
+    /// Identity is valid only for one resource content generation.
+    ContentRevision,
+}
+
+/// Provenance of an effective serialized scene property.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScenePropertyOrigin {
+    /// Declared by a node owned by the queried scene.
+    Local,
+    /// Inherited from a base scene without a later override.
+    Inherited,
+    /// Declared as an override of an instantiated scene node.
+    InstanceOverride,
+}
+
+/// One normalized scene definition.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneEntity {
+    /// Canonical D-06 scene entity identifier.
+    pub scene_entity_id: String,
+    /// Resource-index entity that owns the scene, when resolved.
+    pub source_resource_entity_id: Option<String>,
+    /// Canonical Godot resource UID, when present.
+    pub uid: Option<String>,
+    /// Normalized `res://` comparison path.
+    pub comparison_path: String,
+    /// Scene content generation used by weak identities.
+    pub content_generation: String,
+    /// Persistence scope of this scene identity.
+    pub identity_scope: SceneIdentityScope,
+    /// Canonical base-scene entity, when this scene is inherited.
+    pub base_scene_entity_id: Option<String>,
+    /// Godot authority that produced the record.
+    pub authority: String,
+    /// Resource graph revision represented by this record.
+    pub resource_revision: u64,
+    /// Scene graph revision represented by this record.
+    pub scene_graph_revision: u64,
+}
+
+/// One normalized saved node definition.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneNode {
+    /// Canonical D-06 node-definition identifier.
+    pub node_entity_id: String,
+    /// Defining scene entity.
+    pub scene_entity_id: String,
+    /// Canonical relative node-only path; `.` selects the root.
+    pub node_path: String,
+    /// Persistence scope of this node identity.
+    pub identity_scope: SceneIdentityScope,
+    /// Godot scene-unique node ID, when usable.
+    pub unique_scene_id: Option<u32>,
+    /// Parent node definition, when present in the same defining scene.
+    pub parent_node_entity_id: Option<String>,
+    /// Owner node definition, when present in the same defining scene.
+    pub owner_node_entity_id: Option<String>,
+    /// Serialized node name.
+    pub name: String,
+    /// Godot node type.
+    pub godot_type: String,
+    /// Stable serialized sibling index.
+    pub node_index: i32,
+    /// Whether the node is owned by the defining scene.
+    pub owned: bool,
+    /// Whether Godot reports the definition as internal.
+    pub internal: bool,
+    /// Resolved attached-script resource entity, when available.
+    pub attached_script_entity_id: Option<String>,
+    /// Godot authority that produced the record.
+    pub authority: String,
+    /// Resource graph revision represented by this record.
+    pub resource_revision: u64,
+    /// Scene graph revision represented by this record.
+    pub scene_graph_revision: u64,
+}
+
+/// One serialized or effective property fact.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneProperty {
+    /// Deterministic semantic fact identifier.
+    pub property_id: String,
+    /// Query/owning scene entity.
+    pub scene_entity_id: String,
+    /// Node definition or occurrence that receives the value.
+    pub subject_entity_id: String,
+    /// Serialized property name.
+    pub name: String,
+    /// Bounded projected Godot Variant type.
+    pub value_type: String,
+    /// Bounded projected value; never a raw imported payload.
+    pub value: serde_json::Value,
+    /// Whether bounded projection truncated the value.
+    pub truncated: bool,
+    /// Scene that declared this fact.
+    pub declaring_scene_entity_id: String,
+    /// Node that declared this fact.
+    pub declaring_node_entity_id: String,
+    /// Effective provenance of the value.
+    pub origin: ScenePropertyOrigin,
+    /// Fact replaced by this override, when applicable.
+    pub overridden_property_id: Option<String>,
+    /// Godot authority that produced the record.
+    pub authority: String,
+    /// Resource graph revision represented by this record.
+    pub resource_revision: u64,
+    /// Scene graph revision represented by this record.
+    pub scene_graph_revision: u64,
+}
+
+/// One normalized structural relation not covered by a dedicated shard.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneRelation {
+    /// Deterministic semantic relation identifier.
+    pub relation_id: String,
+    /// Query/owning scene entity, absent only for project context.
+    pub scene_entity_id: Option<String>,
+    /// Frozen relation kind such as `instance`, `occurrence`, or `subresource`.
+    pub relation: String,
+    /// Canonical source entity or project-context key.
+    pub source: String,
+    /// Canonical target entity, when resolved.
+    pub target: Option<String>,
+    /// Declaration scope retained for provenance.
+    pub declaration_scope: Option<String>,
+    /// Bounded additive relation attributes.
+    pub attributes: BTreeMap<String, serde_json::Value>,
+    /// Godot or composition authority that produced the record.
+    pub authority: String,
+    /// Resource graph revision represented by this record.
+    pub resource_revision: u64,
+    /// Scene graph revision represented by this record.
+    pub scene_graph_revision: u64,
+}
+
+/// One saved signal connection.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneConnection {
+    /// Deterministic semantic connection identifier.
+    pub connection_id: String,
+    /// Query/owning scene entity.
+    pub scene_entity_id: String,
+    /// Canonical emitter node entity.
+    pub emitter_node_entity_id: String,
+    /// Serialized signal name.
+    pub signal: String,
+    /// Canonical receiver node entity, when resolved.
+    pub receiver_node_entity_id: Option<String>,
+    /// Serialized target method name without source-code resolution.
+    pub method: String,
+    /// Godot connection flags.
+    pub flags: u32,
+    /// Serialized unbind count.
+    pub unbinds: usize,
+    /// Bounded projected bind values.
+    pub binds: Vec<serde_json::Value>,
+    /// Declaration scope retained for provenance.
+    pub declaration_scope: String,
+    /// Godot authority that produced the record.
+    pub authority: String,
+    /// Resource graph revision represented by this record.
+    pub resource_revision: u64,
+    /// Scene graph revision represented by this record.
+    pub scene_graph_revision: u64,
+}
+
+/// One saved group membership.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneGroupMembership {
+    /// Deterministic semantic membership identifier.
+    pub membership_id: String,
+    /// Query/owning scene entity.
+    pub scene_entity_id: String,
+    /// Canonical member node entity.
+    pub member_node_entity_id: String,
+    /// Serialized group name.
+    pub group: String,
+    /// Declaration scope retained for provenance.
+    pub declaration_scope: String,
+    /// Godot authority that produced the record.
+    pub authority: String,
+    /// Resource graph revision represented by this record.
+    pub resource_revision: u64,
+    /// Scene graph revision represented by this record.
+    pub scene_graph_revision: u64,
+}
+
+/// Resolution status of an animation track NodePath.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SceneAnimationResolution {
+    /// The node component resolved to one canonical entity.
+    Resolved,
+    /// The saved path is syntactically valid but its target is missing.
+    Broken,
+    /// Resolution is unavailable without inventing dynamic semantics.
+    Unresolved,
+}
+
+/// One animation track NodePath reference.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneAnimationReference {
+    /// Deterministic semantic track-reference identifier.
+    pub animation_reference_id: String,
+    /// Query/owning scene entity.
+    pub scene_entity_id: String,
+    /// Canonical mixer/player node entity.
+    pub mixer_node_entity_id: String,
+    /// Animation library name.
+    pub library: String,
+    /// Animation name.
+    pub animation: String,
+    /// Serialized track index.
+    pub track_index: usize,
+    /// Original bounded NodePath spelling.
+    pub node_path: String,
+    /// Resolved node entity, when exact.
+    pub target_node_entity_id: Option<String>,
+    /// Deterministic resolution status.
+    pub resolution: SceneAnimationResolution,
+    /// Godot authority that produced the record.
+    pub authority: String,
+    /// Resource graph revision represented by this record.
+    pub resource_revision: u64,
+    /// Scene graph revision represented by this record.
+    pub scene_graph_revision: u64,
+}
+
+/// Independently checkpointed scene-domain records inside one semantic generation.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SceneDomainGeneration {
+    /// Editor session that produced the observation.
+    pub editor_session_id: String,
+    /// Resource revision joined by the scene snapshot.
+    pub resource_revision: u64,
+    /// Project-wide Bridge scene graph revision.
+    pub scene_graph_revision: u64,
+    /// Whether the scene domain is a complete current snapshot.
+    pub source_complete: bool,
+    /// SHA-256 of the normalized scene input.
+    pub snapshot_checksum: String,
+    /// Normalized scene definitions.
+    pub scenes: Vec<SceneEntity>,
+    /// Normalized node definitions and composed occurrences.
+    pub nodes: Vec<SceneNode>,
+    /// Serialized and effective property facts.
+    pub properties: Vec<SceneProperty>,
+    /// Instances, occurrences, resources, project context, and diagnostics.
+    pub relations: Vec<SceneRelation>,
+    /// Saved signal connections.
+    pub connections: Vec<SceneConnection>,
+    /// Saved group memberships.
+    pub groups: Vec<SceneGroupMembership>,
+    /// Animation track references.
+    pub animations: Vec<SceneAnimationReference>,
+    /// Digest of the canonical normalized scene domain.
+    pub validation_digest: String,
+}
+
+impl SceneDomainGeneration {
+    /// Returns whether this is the intentionally empty scene domain produced by
+    /// a resource-only `segment-v1` migration.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.editor_session_id.is_empty()
+            && self.resource_revision == 0
+            && self.scene_graph_revision == 0
+            && !self.source_complete
+            && self.snapshot_checksum.is_empty()
+            && self.scenes.is_empty()
+            && self.nodes.is_empty()
+            && self.properties.is_empty()
+            && self.relations.is_empty()
+            && self.connections.is_empty()
+            && self.groups.is_empty()
+            && self.animations.is_empty()
+    }
+
+    /// Sorts every scene-domain collection by its deterministic semantic key.
+    pub fn canonicalize(&mut self) {
+        self.scenes
+            .sort_by(|left, right| left.scene_entity_id.cmp(&right.scene_entity_id));
+        self.nodes
+            .sort_by(|left, right| left.node_entity_id.cmp(&right.node_entity_id));
+        self.properties
+            .sort_by(|left, right| left.property_id.cmp(&right.property_id));
+        self.relations
+            .sort_by(|left, right| left.relation_id.cmp(&right.relation_id));
+        self.connections
+            .sort_by(|left, right| left.connection_id.cmp(&right.connection_id));
+        self.groups
+            .sort_by(|left, right| left.membership_id.cmp(&right.membership_id));
+        self.animations.sort_by(|left, right| {
+            left.animation_reference_id
+                .cmp(&right.animation_reference_id)
+        });
+    }
+
+    /// Computes the layout-independent digest of all normalized scene facts.
+    #[must_use]
+    pub fn compute_validation_digest(&self) -> String {
+        let mut canonical = self.clone();
+        canonical.canonicalize();
+        canonical.validation_digest.clear();
+        let bytes = serde_json::to_vec(&canonical).expect("scene domain is serializable");
+        let mut hasher = Sha256::new();
+        hasher.update(b"godot-codex/scene-domain/v1\0");
+        hasher.update(bytes);
+        format!("sha256:{:x}", hasher.finalize())
+    }
+
+    /// Validates scene identities, references, bounds, and the semantic digest.
+    pub fn validate(&self) -> Result<(), StoreError> {
+        if self.is_empty() {
+            if self.validation_digest.is_empty()
+                || self.validation_digest == self.compute_validation_digest()
+            {
+                return Ok(());
+            }
+            return Err(StoreError::ValidationFailed(
+                "scene domain validation digest mismatch".to_owned(),
+            ));
+        }
+        if self.editor_session_id.is_empty()
+            || self.resource_revision == 0
+            || self.scene_graph_revision == 0
+            || !self.source_complete
+            || self.snapshot_checksum.is_empty()
+        {
+            return Err(StoreError::ValidationFailed(
+                "scene domain checkpoint is incomplete".to_owned(),
+            ));
+        }
+
+        let mut scene_ids = BTreeSet::new();
+        let mut scene_paths = BTreeSet::new();
+        for scene in &self.scenes {
+            validate_scene_record_coordinates(
+                &scene.scene_entity_id,
+                &scene.authority,
+                scene.resource_revision,
+                scene.scene_graph_revision,
+                self,
+            )?;
+            if scene.comparison_path.is_empty() || scene.content_generation.is_empty() {
+                return Err(StoreError::ValidationFailed(
+                    "scene identity input is incomplete".to_owned(),
+                ));
+            }
+            if !scene_ids.insert(scene.scene_entity_id.as_str()) {
+                return Err(StoreError::ValidationFailed(
+                    "duplicate scene entity".to_owned(),
+                ));
+            }
+            if !scene_paths.insert(scene.comparison_path.as_str()) {
+                return Err(StoreError::ValidationFailed(
+                    "duplicate scene comparison path".to_owned(),
+                ));
+            }
+        }
+
+        let mut node_ids = BTreeSet::new();
+        let mut node_paths = BTreeSet::new();
+        for node in &self.nodes {
+            validate_scene_record_coordinates(
+                &node.node_entity_id,
+                &node.authority,
+                node.resource_revision,
+                node.scene_graph_revision,
+                self,
+            )?;
+            if !scene_ids.contains(node.scene_entity_id.as_str())
+                || node.node_path.is_empty()
+                || node.name.is_empty()
+                || node.godot_type.is_empty()
+            {
+                return Err(StoreError::ValidationFailed(
+                    "scene node identity or owner is incomplete".to_owned(),
+                ));
+            }
+            if !node_ids.insert(node.node_entity_id.as_str())
+                || !node_paths.insert((node.scene_entity_id.as_str(), node.node_path.as_str()))
+            {
+                return Err(StoreError::ValidationFailed(
+                    "duplicate scene node identity or path".to_owned(),
+                ));
+            }
+        }
+
+        let mut property_ids = BTreeSet::new();
+        for property in &self.properties {
+            validate_scene_record_coordinates(
+                &property.property_id,
+                &property.authority,
+                property.resource_revision,
+                property.scene_graph_revision,
+                self,
+            )?;
+            if !scene_ids.contains(property.scene_entity_id.as_str())
+                || property.subject_entity_id.is_empty()
+                || property.name.is_empty()
+                || property.value_type.is_empty()
+                || !property_ids.insert(property.property_id.as_str())
+                || encoded_len(&property.value)? > 65_536
+            {
+                return Err(StoreError::ValidationFailed(
+                    "invalid scene property record".to_owned(),
+                ));
+            }
+        }
+
+        validate_scene_records(
+            &self.relations,
+            |record| {
+                (
+                    &record.relation_id,
+                    &record.authority,
+                    record.resource_revision,
+                    record.scene_graph_revision,
+                )
+            },
+            self,
+        )?;
+        validate_scene_records(
+            &self.connections,
+            |record| {
+                (
+                    &record.connection_id,
+                    &record.authority,
+                    record.resource_revision,
+                    record.scene_graph_revision,
+                )
+            },
+            self,
+        )?;
+        validate_scene_records(
+            &self.groups,
+            |record| {
+                (
+                    &record.membership_id,
+                    &record.authority,
+                    record.resource_revision,
+                    record.scene_graph_revision,
+                )
+            },
+            self,
+        )?;
+        validate_scene_records(
+            &self.animations,
+            |record| {
+                (
+                    &record.animation_reference_id,
+                    &record.authority,
+                    record.resource_revision,
+                    record.scene_graph_revision,
+                )
+            },
+            self,
+        )?;
+        for relation in &self.relations {
+            if relation.relation.is_empty()
+                || relation.source.is_empty()
+                || encoded_len(&relation.attributes)? > 65_536
+                || relation
+                    .scene_entity_id
+                    .as_deref()
+                    .is_some_and(|scene_id| !scene_ids.contains(scene_id))
+            {
+                return Err(StoreError::ValidationFailed(
+                    "invalid scene relation record".to_owned(),
+                ));
+            }
+        }
+        if self.connections.iter().any(|record| {
+            !scene_ids.contains(record.scene_entity_id.as_str())
+                || record.emitter_node_entity_id.is_empty()
+                || record.signal.is_empty()
+                || record.method.is_empty()
+                || record.declaration_scope.is_empty()
+        }) || self.groups.iter().any(|record| {
+            !scene_ids.contains(record.scene_entity_id.as_str())
+                || record.member_node_entity_id.is_empty()
+                || record.group.is_empty()
+                || record.declaration_scope.is_empty()
+        }) || self.animations.iter().any(|record| {
+            !scene_ids.contains(record.scene_entity_id.as_str())
+                || record.mixer_node_entity_id.is_empty()
+                || record.animation.is_empty()
+                || record.node_path.is_empty()
+        }) {
+            return Err(StoreError::ValidationFailed(
+                "scene relation owner or required field is missing".to_owned(),
+            ));
+        }
+
+        let expected = self.compute_validation_digest();
+        if !self.validation_digest.is_empty() && self.validation_digest != expected {
+            return Err(StoreError::ValidationFailed(
+                "scene domain validation digest mismatch".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn validate_scene_record_coordinates(
+    record_id: &str,
+    authority: &str,
+    resource_revision: u64,
+    scene_graph_revision: u64,
+    domain: &SceneDomainGeneration,
+) -> Result<(), StoreError> {
+    if record_id.is_empty()
+        || record_id.len() > 1_024
+        || authority.is_empty()
+        || resource_revision > domain.resource_revision
+        || scene_graph_revision > domain.scene_graph_revision
+    {
+        return Err(StoreError::ValidationFailed(
+            "scene record coordinates are invalid".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_scene_records<'a, T, F>(
+    records: &'a [T],
+    identity: F,
+    domain: &SceneDomainGeneration,
+) -> Result<(), StoreError>
+where
+    F: Fn(&'a T) -> (&'a String, &'a String, u64, u64),
+{
+    let mut ids = BTreeSet::new();
+    for record in records {
+        let (record_id, authority, resource_revision, scene_graph_revision) = identity(record);
+        validate_scene_record_coordinates(
+            record_id,
+            authority,
+            resource_revision,
+            scene_graph_revision,
+            domain,
+        )?;
+        if !ids.insert(record_id.as_str()) {
+            return Err(StoreError::ValidationFailed(
+                "duplicate scene semantic record".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn encoded_len<T: Serialize>(value: &T) -> Result<usize, StoreError> {
+    serde_json::to_vec(value)
+        .map(|bytes| bytes.len())
+        .map_err(|error| StoreError::ValidationFailed(error.to_string()))
+}
+
 /// Immutable logical generation shared by both spike backends.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -312,6 +888,9 @@ pub struct IndexGeneration {
     pub diagnostics: Vec<Diagnostic>,
     /// Bounded deletion records.
     pub tombstones: Vec<Tombstone>,
+    /// Independently checkpointed scene domain added by logical schema 1.2.
+    #[serde(default)]
+    pub scene: SceneDomainGeneration,
     /// Digest of the canonical normalized generation.
     pub validation_digest: String,
 }
@@ -580,6 +1159,7 @@ impl IndexGeneration {
             dependencies: dependencies.into_values().collect(),
             diagnostics: diagnostics.into_values().collect(),
             tombstones: tombstones.into_values().collect(),
+            scene: self.scene.clone(),
             validation_digest: String::new(),
         };
         next.canonicalize();
@@ -590,7 +1170,9 @@ impl IndexGeneration {
 
     /// Validates frozen project/schema/identity/direct-reverse invariants.
     pub fn validate(&self) -> Result<(), StoreError> {
-        if self.schema_version.major != LOGICAL_SCHEMA_V1.major {
+        if self.schema_version.major != LOGICAL_SCHEMA_V1.major
+            || self.schema_version.minor > LOGICAL_SCHEMA_V1.minor
+        {
             return Err(StoreError::IncompatibleSchema);
         }
         if self.project_id.is_empty() || self.generation_id.is_empty() {
@@ -703,6 +1285,13 @@ impl IndexGeneration {
             return Err(StoreError::ValidationFailed(
                 "diagnostic detail exceeds limit".to_owned(),
             ));
+        }
+        if self.schema_version.minor < 2 {
+            if !self.scene.is_empty() {
+                return Err(StoreError::IncompatibleSchema);
+            }
+        } else {
+            self.scene.validate()?;
         }
 
         let expected = self.compute_validation_digest();
@@ -847,6 +1436,9 @@ impl IndexGeneration {
             update_field(&mut hasher, &tombstone.entity_id);
             hasher.update(tombstone.deleted_index_revision.to_be_bytes());
             hasher.update(tombstone.retain_through_index_revision.to_be_bytes());
+        }
+        if self.schema_version.minor >= 2 {
+            update_field(&mut hasher, &self.scene.compute_validation_digest());
         }
         format!("sha256:{:x}", hasher.finalize())
     }
@@ -997,6 +1589,7 @@ impl IndexGeneration {
             .sort_by(|left, right| left.diagnostic_id.cmp(&right.diagnostic_id));
         self.tombstones
             .sort_by(|left, right| left.entity_id.cmp(&right.entity_id));
+        self.scene.canonicalize();
     }
 }
 
@@ -1134,6 +1727,8 @@ fn update_field(hasher: &mut Sha256, value: &str) {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
 
     use super::*;
     use tempfile::TempDir;
@@ -1204,8 +1799,160 @@ mod tests {
             }],
             diagnostics: Vec::new(),
             tombstones: Vec::new(),
+            scene: SceneDomainGeneration::default(),
             validation_digest: String::new(),
         };
+        generation.validation_digest = generation.compute_validation_digest();
+        generation
+    }
+
+    fn scene_domain() -> SceneDomainGeneration {
+        let scene_id = "godot:scene:test".to_owned();
+        let root_id = "godot:node:root".to_owned();
+        let child_id = "godot:node:child".to_owned();
+        let mut domain = SceneDomainGeneration {
+            editor_session_id: "session-1".to_owned(),
+            resource_revision: 1,
+            scene_graph_revision: 3,
+            source_complete: true,
+            snapshot_checksum: "sha256:scene-snapshot".to_owned(),
+            scenes: vec![SceneEntity {
+                scene_entity_id: scene_id.clone(),
+                source_resource_entity_id: Some("entity-a".to_owned()),
+                uid: Some("uid://scene-test".to_owned()),
+                comparison_path: "res://main.tscn".to_owned(),
+                content_generation: "sha256:scene-content".to_owned(),
+                identity_scope: SceneIdentityScope::Persistent,
+                base_scene_entity_id: None,
+                authority: "godot_scene_state".to_owned(),
+                resource_revision: 1,
+                scene_graph_revision: 3,
+            }],
+            nodes: vec![
+                SceneNode {
+                    node_entity_id: root_id.clone(),
+                    scene_entity_id: scene_id.clone(),
+                    node_path: ".".to_owned(),
+                    identity_scope: SceneIdentityScope::Persistent,
+                    unique_scene_id: Some(1001),
+                    parent_node_entity_id: None,
+                    owner_node_entity_id: None,
+                    name: "Main".to_owned(),
+                    godot_type: "Node2D".to_owned(),
+                    node_index: 0,
+                    owned: true,
+                    internal: false,
+                    attached_script_entity_id: None,
+                    authority: "godot_scene_state".to_owned(),
+                    resource_revision: 1,
+                    scene_graph_revision: 3,
+                },
+                SceneNode {
+                    node_entity_id: child_id.clone(),
+                    scene_entity_id: scene_id.clone(),
+                    node_path: "Player".to_owned(),
+                    identity_scope: SceneIdentityScope::Persistent,
+                    unique_scene_id: Some(1002),
+                    parent_node_entity_id: Some(root_id.clone()),
+                    owner_node_entity_id: Some(root_id.clone()),
+                    name: "Player".to_owned(),
+                    godot_type: "CharacterBody2D".to_owned(),
+                    node_index: 0,
+                    owned: true,
+                    internal: false,
+                    attached_script_entity_id: Some("entity-b".to_owned()),
+                    authority: "godot_scene_state".to_owned(),
+                    resource_revision: 1,
+                    scene_graph_revision: 3,
+                },
+            ],
+            properties: vec![SceneProperty {
+                property_id: "property:player-speed".to_owned(),
+                scene_entity_id: scene_id.clone(),
+                subject_entity_id: child_id.clone(),
+                name: "speed".to_owned(),
+                value_type: "float".to_owned(),
+                value: serde_json::json!(240.0),
+                truncated: false,
+                declaring_scene_entity_id: scene_id.clone(),
+                declaring_node_entity_id: child_id.clone(),
+                origin: ScenePropertyOrigin::Local,
+                overridden_property_id: None,
+                authority: "godot_scene_state".to_owned(),
+                resource_revision: 1,
+                scene_graph_revision: 3,
+            }],
+            relations: vec![SceneRelation {
+                relation_id: "relation:main-scene".to_owned(),
+                scene_entity_id: None,
+                relation: "project_context".to_owned(),
+                source: "application/run/main_scene".to_owned(),
+                target: Some(scene_id.clone()),
+                declaration_scope: None,
+                attributes: BTreeMap::from([(
+                    "value".to_owned(),
+                    serde_json::json!("uid://scene-test"),
+                )]),
+                authority: "godot_project_settings".to_owned(),
+                resource_revision: 1,
+                scene_graph_revision: 3,
+            }],
+            connections: vec![SceneConnection {
+                connection_id: "connection:ready".to_owned(),
+                scene_entity_id: scene_id.clone(),
+                emitter_node_entity_id: child_id.clone(),
+                signal: "ready".to_owned(),
+                receiver_node_entity_id: Some(root_id.clone()),
+                method: "_on_player_ready".to_owned(),
+                flags: 1,
+                unbinds: 0,
+                binds: Vec::new(),
+                declaration_scope: "local".to_owned(),
+                authority: "godot_scene_state".to_owned(),
+                resource_revision: 1,
+                scene_graph_revision: 3,
+            }],
+            groups: vec![SceneGroupMembership {
+                membership_id: "group:actors:player".to_owned(),
+                scene_entity_id: scene_id.clone(),
+                member_node_entity_id: child_id.clone(),
+                group: "actors".to_owned(),
+                declaration_scope: "local".to_owned(),
+                authority: "godot_scene_state".to_owned(),
+                resource_revision: 1,
+                scene_graph_revision: 3,
+            }],
+            animations: vec![SceneAnimationReference {
+                animation_reference_id: "animation:walk:0".to_owned(),
+                scene_entity_id: scene_id,
+                mixer_node_entity_id: root_id,
+                library: String::new(),
+                animation: "walk".to_owned(),
+                track_index: 0,
+                node_path: "Player:position".to_owned(),
+                target_node_entity_id: Some(child_id),
+                resolution: SceneAnimationResolution::Resolved,
+                authority: "godot_animation".to_owned(),
+                resource_revision: 1,
+                scene_graph_revision: 3,
+            }],
+            validation_digest: String::new(),
+        };
+        domain.canonicalize();
+        domain.validation_digest = domain.compute_validation_digest();
+        domain
+    }
+
+    fn generation_with_scene(base: &IndexGeneration, generation_id: &str) -> IndexGeneration {
+        let mut generation = base.clone();
+        generation.parent_generation_id = Some(base.generation_id.clone());
+        generation.generation_id = generation_id.to_owned();
+        generation.index_revision = base.index_revision + 1;
+        generation.checkpoint.index_revision = generation.index_revision;
+        generation.creation_reason = "scene_full_snapshot".to_owned();
+        generation.scene = scene_domain();
+        generation.canonicalize();
+        generation.validation_digest.clear();
         generation.validation_digest = generation.compute_validation_digest();
         generation
     }
@@ -1602,28 +2349,69 @@ mod tests {
     #[test]
     fn segment_store_reopens_migrates_and_detects_corruption() {
         let temp = TempDir::new().expect("temp");
-        let base = generation();
+        let mut base = generation();
+        base.schema_version = LOGICAL_SCHEMA_RESOURCE_V1;
+        base.scene = SceneDomainGeneration::default();
+        base.validation_digest.clear();
+        base.validation_digest = base.compute_validation_digest();
+        let query = ResourceQuery {
+            selector: ResourceSelector::Uid("uid://a".to_owned()),
+            limit: 50,
+            offset: 0,
+        };
+        let before = query_generation(&base, &query, false).expect("legacy query");
         {
-            let mut store =
-                SegmentStore::open_with_version(temp.path(), &base.project_id, 0).expect("legacy");
+            let mut store = SegmentStore::open_with_version(temp.path(), &base.project_id, 1)
+                .expect("segment-v1");
             store.activate(&base, None).expect("legacy activation");
-            assert_eq!(store.physical_version().expect("legacy version"), 0);
+            assert_eq!(store.physical_version().expect("legacy version"), 1);
+            assert_eq!(
+                store.migrate_current_with_fault(Some(SegmentFaultInjection {
+                    point: SegmentFaultPoint::PreCommit,
+                    mode: SegmentFaultMode::Cancel,
+                })),
+                Err(StoreError::Cancelled)
+            );
+            assert_eq!(store.physical_version().expect("preserved version"), 1);
+            assert_eq!(
+                store.active_generation().expect("preserved generation"),
+                base
+            );
+        }
+
+        let index_root = temp.path().join(".godot/codex/index");
+        let legacy_generations = file_contents(&index_root.join("generations"));
+        let legacy_segments = file_contents(&index_root.join("segments"));
+        {
+            let mut store = SegmentStore::open(temp.path(), &base.project_id).expect("reopen v1");
             store.migrate_current().expect("migration");
             assert_eq!(
                 store.physical_version().expect("current version"),
                 SEGMENT_PHYSICAL_VERSION
             );
-        }
-        {
-            let store = SegmentStore::open(temp.path(), &base.project_id).expect("reopen");
+            let migrated = store.active_generation().expect("migrated generation");
+            assert_eq!(migrated.schema_version, LOGICAL_SCHEMA_V1);
+            assert!(migrated.scene.is_empty());
+            let after = store.direct(&query).expect("migrated query");
+            assert_eq!(after.resource, before.resource);
+            assert_eq!(after.edges, before.edges);
+            assert_eq!(after.exact, before.exact);
+            assert_eq!(after.has_more, before.has_more);
             assert_eq!(
                 store.metadata().expect("metadata").index_revision,
                 base.index_revision + 1
             );
         }
+        let current_generations = file_contents(&index_root.join("generations"));
+        let current_segments = file_contents(&index_root.join("segments"));
+        for (name, bytes) in legacy_generations {
+            assert_eq!(current_generations.get(&name), Some(&bytes));
+        }
+        for (name, bytes) in legacy_segments {
+            assert_eq!(current_segments.get(&name), Some(&bytes));
+        }
 
-        let segments = temp.path().join(".godot/codex/index/segments");
-        let segment = fs::read_dir(segments)
+        let segment = fs::read_dir(index_root.join("segments"))
             .expect("segments")
             .filter_map(Result::ok)
             .map(|entry| entry.path())
@@ -1636,5 +2424,153 @@ mod tests {
             SegmentStore::open(temp.path(), &base.project_id),
             Err(StoreError::CorruptStore(_))
         ));
+    }
+
+    #[test]
+    fn segment_v2_persists_and_validates_all_scene_shard_classes() {
+        let temp = TempDir::new().expect("temp");
+        let base = generation();
+        let generation = generation_with_scene(&base, "generation-scene-2");
+
+        {
+            let mut store = SegmentStore::open(temp.path(), &generation.project_id).expect("store");
+            store
+                .activate(&generation, None)
+                .expect("activate scene generation");
+        }
+        let reopened = SegmentStore::open(temp.path(), &generation.project_id).expect("reopen");
+        assert_eq!(reopened.active_generation().expect("active"), generation);
+        drop(reopened);
+
+        let generation_directory = temp.path().join(".godot/codex/index/generations");
+        let manifest: serde_json::Value = fs::read_dir(&generation_directory)
+            .expect("generation directory")
+            .filter_map(Result::ok)
+            .filter(|entry| !entry.file_name().to_string_lossy().contains(".generation."))
+            .find_map(|entry| {
+                serde_json::from_slice::<serde_json::Value>(&fs::read(entry.path()).ok()?).ok()
+            })
+            .expect("segment-v2 manifest");
+        for shard_class in [
+            "scenes",
+            "scene_nodes",
+            "scene_properties",
+            "scene_relations",
+            "scene_connections",
+            "scene_groups",
+            "scene_animations",
+            "scene_lookup",
+        ] {
+            assert!(
+                manifest[shard_class]
+                    .as_object()
+                    .is_some_and(|shards| !shards.is_empty()),
+                "missing {shard_class} shards"
+            );
+        }
+
+        let node_digest = manifest["scene_nodes"]
+            .as_object()
+            .and_then(|shards| shards.values().next())
+            .and_then(serde_json::Value::as_str)
+            .expect("scene node shard digest");
+        let node_segment = temp
+            .path()
+            .join(".godot/codex/index/segments")
+            .join(format!("{node_digest}.seg"));
+        let mut bytes = fs::read(&node_segment).expect("scene node segment");
+        bytes[0] ^= 0xff;
+        fs::write(node_segment, bytes).expect("corrupt scene node segment");
+        assert!(matches!(
+            SegmentStore::open(temp.path(), &generation.project_id),
+            Err(StoreError::CorruptStore(_))
+        ));
+    }
+
+    #[test]
+    fn scene_staging_cancel_and_process_crash_preserve_previous_generation() {
+        const CHILD_ENV: &str = "CODEX_SCENE_STORE_CRASH_CHILD";
+        const ROOT_ENV: &str = "CODEX_SCENE_STORE_CRASH_ROOT";
+        if std::env::var_os(CHILD_ENV).is_some() {
+            let root = std::env::var_os(ROOT_ENV).expect("child project root");
+            let mut store =
+                SegmentStore::open(std::path::Path::new(&root), "project-1").expect("child store");
+            let base = store.active_generation().expect("child base");
+            let scene = generation_with_scene(&base, "generation-scene-crash");
+            let _ = store.activate(
+                &scene,
+                Some(SegmentFaultInjection {
+                    point: SegmentFaultPoint::PreCommit,
+                    mode: SegmentFaultMode::Crash,
+                }),
+            );
+            panic!("crash fault unexpectedly returned");
+        }
+
+        let cancel_temp = TempDir::new().expect("cancel temp");
+        let base = generation();
+        {
+            let mut store =
+                SegmentStore::open(cancel_temp.path(), &base.project_id).expect("store");
+            store.activate(&base, None).expect("activate base");
+            let scene = generation_with_scene(&base, "generation-scene-cancel");
+            assert_eq!(
+                store.activate(
+                    &scene,
+                    Some(SegmentFaultInjection {
+                        point: SegmentFaultPoint::Staging,
+                        mode: SegmentFaultMode::Cancel,
+                    }),
+                ),
+                Err(StoreError::Cancelled)
+            );
+            assert_eq!(store.active_generation().expect("preserved base"), base);
+        }
+        assert_eq!(
+            SegmentStore::open(cancel_temp.path(), &base.project_id)
+                .expect("reopen after cancel")
+                .active_generation()
+                .expect("active after cancel"),
+            base
+        );
+
+        let crash_temp = TempDir::new().expect("crash temp");
+        {
+            let mut store = SegmentStore::open(crash_temp.path(), &base.project_id).expect("store");
+            store.activate(&base, None).expect("activate base");
+        }
+        let ready = crash_temp.path().join("fault-ready");
+        let mut child = Command::new(std::env::current_exe().expect("test executable"))
+            .args([
+                "--exact",
+                "tests::scene_staging_cancel_and_process_crash_preserve_previous_generation",
+                "--nocapture",
+            ])
+            .env(CHILD_ENV, "1")
+            .env(ROOT_ENV, crash_temp.path())
+            .env("CODEX_SEGMENT_STORE_FAULT_READY", &ready)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn crash worker");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !ready.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !ready.exists() {
+            let status = child.try_wait().expect("poll crash worker");
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("crash worker did not reach pre-commit boundary: {status:?}");
+        }
+        child.kill().expect("kill crash worker");
+        child.wait().expect("reap crash worker");
+        assert_eq!(
+            SegmentStore::open(crash_temp.path(), &base.project_id)
+                .expect("reopen after crash")
+                .active_generation()
+                .expect("active after crash"),
+            base
+        );
     }
 }
