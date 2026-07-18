@@ -51,34 +51,47 @@ void SceneDeltaJournal::initialize(uint64_t p_initial_revision) {
 	invalidating = false;
 }
 
-Error SceneDeltaJournal::commit(uint64_t p_next_revision, uint64_t p_resource_revision, uint64_t p_project_revision, const Array &p_operations, Dictionary &r_batch, bool &r_invalidated) {
-	r_batch.clear();
-	r_invalidated = false;
-	ERR_FAIL_COND_V(p_next_revision != current_revision + 1 || p_operations.is_empty(), ERR_INVALID_PARAMETER);
-
+Error SceneDeltaJournal::prepare_batch(uint64_t p_next_revision, const Array &p_operations, PreparedBatch &r_prepared) {
+	r_prepared = PreparedBatch();
+	ERR_FAIL_COND_V(p_next_revision == 0 || p_operations.is_empty(), ERR_INVALID_PARAMETER);
 	const String operations_json = JSON::stringify(p_operations, "", true, true);
 	const uint64_t operations_bytes = operations_json.utf8().length();
 	if (operations_bytes > MAX_BATCH_BYTES) {
-		invalidate_to(p_next_revision);
-		r_invalidated = true;
 		return ERR_OUT_OF_MEMORY;
 	}
+	r_prepared.operations = p_operations;
+	r_prepared.batch_id = "scene-batch:" + scene_sha256_hex(String::num_uint64(p_next_revision) + ":" + operations_json).left(32);
+	r_prepared.checksum = scene_sha256_hex(operations_json);
+	r_prepared.operations_bytes = operations_bytes;
+	return OK;
+}
+
+Error SceneDeltaJournal::commit_prepared(uint64_t p_next_revision, uint64_t p_resource_revision, uint64_t p_project_revision, const PreparedBatch &p_prepared, Dictionary &r_batch, bool &r_invalidated) {
+	r_batch.clear();
+	r_invalidated = false;
+	ERR_FAIL_COND_V(p_next_revision != current_revision + 1 || p_prepared.operations.is_empty() || p_prepared.batch_id.is_empty() || p_prepared.checksum.is_empty() || p_prepared.operations_bytes == 0, ERR_INVALID_PARAMETER);
 
 	Dictionary batch;
-	batch["batch_id"] = "scene-batch:" + scene_sha256_hex(String::num_uint64(p_next_revision) + ":" + operations_json).left(32);
+	batch["batch_id"] = p_prepared.batch_id;
 	batch["previous_scene_graph_revision"] = (int64_t)current_revision;
 	batch["scene_graph_revision"] = (int64_t)p_next_revision;
 	batch["resource_revision"] = (int64_t)p_resource_revision;
 	batch["project_revision"] = (int64_t)p_project_revision;
-	batch["operations"] = p_operations;
+	// Encode the potentially large operation array exactly once. The canonical
+	// batch envelope is measured with an empty array and its two bytes are
+	// replaced by the already measured operations JSON length.
+	batch["operations"] = Array();
 	batch["source_complete"] = true;
-	batch["checksum"] = scene_sha256_hex(operations_json);
-	const uint64_t batch_bytes = JSON::stringify(batch, "", true, true).utf8().length();
+	batch["checksum"] = p_prepared.checksum;
+	const uint64_t empty_batch_bytes = JSON::stringify(batch, "", true, true).utf8().length();
+	ERR_FAIL_COND_V(empty_batch_bytes < 2, ERR_BUG);
+	const uint64_t batch_bytes = empty_batch_bytes - 2 + p_prepared.operations_bytes;
 	if (batch_bytes > MAX_BATCH_BYTES) {
 		invalidate_to(p_next_revision);
 		r_invalidated = true;
 		return ERR_OUT_OF_MEMORY;
 	}
+	batch["operations"] = p_prepared.operations;
 
 	StoredBatch stored;
 	stored.previous_revision = current_revision;
@@ -97,6 +110,18 @@ Error SceneDeltaJournal::commit(uint64_t p_next_revision, uint64_t p_resource_re
 	}
 	r_batch = batch;
 	return OK;
+}
+
+Error SceneDeltaJournal::commit(uint64_t p_next_revision, uint64_t p_resource_revision, uint64_t p_project_revision, const Array &p_operations, Dictionary &r_batch, bool &r_invalidated) {
+	PreparedBatch prepared;
+	const Error prepare_error = prepare_batch(p_next_revision, p_operations, prepared);
+	if (prepare_error != OK) {
+		invalidate_to(p_next_revision);
+		r_batch.clear();
+		r_invalidated = true;
+		return prepare_error;
+	}
+	return commit_prepared(p_next_revision, p_resource_revision, p_project_revision, prepared, r_batch, r_invalidated);
 }
 
 void SceneDeltaJournal::invalidate_to(uint64_t p_revision) {

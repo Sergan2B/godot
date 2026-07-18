@@ -40,6 +40,7 @@
 #include "core/io/resource_loader.h"
 #include "core/io/resource_uid.h"
 #include "core/object/property_info.h"
+#include "core/object/worker_thread_pool.h"
 #include "core/os/os.h"
 #include "core/os/thread.h"
 #include "editor/file_system/editor_file_system.h"
@@ -151,6 +152,7 @@ bool SceneStateAdapter::_append_diagnostic(Array &r_diagnostics, const Dictionar
 
 void SceneStateAdapter::_reset_active_scene() {
 	active_path.clear();
+	active_load_requested = false;
 	active_scene.unref();
 	active_state.unref();
 	active_record = CatalogRecord();
@@ -200,13 +202,34 @@ bool SceneStateAdapter::_collect_one_path() {
 }
 
 bool SceneStateAdapter::_begin_active_scene() {
-	_reset_active_scene();
-	if (scene_path_index >= scene_paths.size()) {
-		refresh_phase = REFRESH_PROJECT_CONTEXT;
+	if (active_path.is_empty()) {
+		if (scene_path_index >= scene_paths.size()) {
+			refresh_phase = REFRESH_PROJECT_CONTEXT;
+			return false;
+		}
+		active_path = scene_paths[scene_path_index++];
+		const Error request_error = ResourceLoader::load_threaded_request(active_path, "PackedScene", true, ResourceFormatLoader::CACHE_MODE_REUSE);
+		if (request_error != OK) {
+			Dictionary diagnostic;
+			diagnostic["code"] = "scene_load_failed";
+			diagnostic["subject"] = active_path;
+			diagnostic["scene_graph_revision"] = (int64_t)target_scene_graph_revision;
+			_append_diagnostic(observed_diagnostics, diagnostic);
+			refresh_phase = REFRESH_SCENE_FINISH;
+			return true;
+		}
+		active_load_requested = true;
+		return true;
+	}
+	ERR_FAIL_COND_V(!active_load_requested, false);
+	const ResourceLoader::ThreadLoadStatus load_status = ResourceLoader::load_threaded_get_status(active_path);
+	if (load_status == ResourceLoader::THREAD_LOAD_IN_PROGRESS) {
 		return false;
 	}
-	active_path = scene_paths[scene_path_index++];
-	active_scene = ResourceLoader::load(active_path, "PackedScene", ResourceFormatLoader::CACHE_MODE_REUSE);
+	if (load_status == ResourceLoader::THREAD_LOAD_LOADED) {
+		active_scene = ResourceLoader::load_threaded_get(active_path);
+	}
+	active_load_requested = false;
 	if (active_scene.is_null() || !active_scene->can_instantiate()) {
 		Dictionary diagnostic;
 		diagnostic["code"] = "scene_load_failed";
@@ -569,89 +592,130 @@ bool SceneStateAdapter::_finish_active_scene() {
 	return true;
 }
 
+void SceneStateAdapter::_reset_project_context_capture() {
+	project_context_phase = PROJECT_CONTEXT_COLLECT_KEYS;
+	project_context_source_index = 0;
+	project_context_values.clear();
+	project_context_actions.clear();
+	project_context_action_index = 0;
+}
+
+bool SceneStateAdapter::_reject_project_context_capture() {
+	refresh_limit_exceeded = true;
+	_reset_project_context_capture();
+	refresh_phase = REFRESH_RECONCILE;
+	return true;
+}
+
 bool SceneStateAdapter::_capture_project_context() {
-	RBMap<String, Dictionary> values;
-	Vector<String> actions;
 	ProjectSettings *settings = ProjectSettings::get_singleton();
-	List<PropertyInfo> properties;
-	settings->get_property_list(&properties);
-	for (const PropertyInfo &property : properties) {
-		const String source_key = String(property.name);
-		if (source_key.begins_with("input/") && settings->has_setting(source_key) && !settings->is_builtin_setting(source_key)) {
-			actions.push_back(source_key.trim_prefix("input/"));
-			continue;
-		}
-		const bool layer_setting = source_key.begins_with("layer_names/2d_physics/layer_") || source_key.begins_with("layer_names/2d_render/layer_") ||
-				source_key.begins_with("layer_names/3d_physics/layer_") || source_key.begins_with("layer_names/3d_render/layer_") ||
-				source_key.begins_with("layer_names/navigation/layer_");
-		const bool allowed = source_key == "application/run/main_scene" || source_key.begins_with("autoload/") || layer_setting;
-		if (!allowed || !settings->has_setting(source_key)) {
-			continue;
-		}
-		const Variant setting_value = settings->get_setting(source_key);
-		if (layer_setting && String(setting_value).is_empty()) {
-			continue;
-		}
-		String key = source_key;
-		if (layer_setting) {
-			const String leaf = source_key.get_file();
-			const String layer_number = leaf.trim_prefix("layer_");
-			if (!layer_number.is_valid_int() || layer_number.to_int() < 1) {
-				refresh_limit_exceeded = true;
-				return false;
+	ERR_FAIL_NULL_V(settings, _reject_project_context_capture());
+
+	if (project_context_phase == PROJECT_CONTEXT_COLLECT_KEYS) {
+		if (!project_context_keys_valid) {
+			List<PropertyInfo> properties;
+			settings->get_property_list(&properties);
+			if (properties.size() > (int)MAX_PROPERTIES) {
+				return _reject_project_context_capture();
 			}
-			key = source_key.get_base_dir().path_join(layer_number);
+			project_context_source_keys.clear();
+			for (const PropertyInfo &property : properties) {
+				project_context_source_keys.push_back(String(property.name));
+			}
+			project_context_keys_valid = true;
 		}
-		const String autoload_name = key.begins_with("autoload/") ? key.trim_prefix("autoload/") : String();
-		if (key.length() > 512 || (key.begins_with("autoload/") && (autoload_name.is_empty() || autoload_name.contains("/")))) {
-			refresh_limit_exceeded = true;
-			return false;
-		}
-		Dictionary fact;
-		fact["key"] = key;
-		fact["value"] = BoundedVariantProjector::project_typed(setting_value);
-		fact["authority"] = "project_settings";
-		fact["scene_graph_revision"] = (int64_t)target_scene_graph_revision;
-		values.insert(key, fact);
+		project_context_phase = PROJECT_CONTEXT_SETTINGS;
+		return true;
 	}
 
-	actions.sort();
-	for (const String &action : actions) {
-		if (action.is_empty() || action.contains("/") || action.length() > 506 || values.size() >= (int)MAX_SCENES) {
-			refresh_limit_exceeded = true;
-			return false;
-		}
-		const Variant setting = settings->get_setting("input/" + action);
-		if (setting.get_type() != Variant::DICTIONARY) {
-			refresh_limit_exceeded = true;
-			return false;
-		}
-		const Dictionary action_setting = setting;
-		Dictionary input_value;
-		input_value["deadzone"] = action_setting.get("deadzone", 0.5);
-		Array events;
-		const Array action_events = action_setting.get("events", Array());
-		int count = 0;
-		for (const Variant &event_value : action_events) {
-			if (count++ >= BoundedVariantProjector::MAX_CONTAINER_ITEMS) {
-				break;
+	if (project_context_phase == PROJECT_CONTEXT_SETTINGS) {
+		for (int processed = 0; processed < 64 && project_context_source_index < project_context_source_keys.size(); processed++) {
+			const String source_key = project_context_source_keys[project_context_source_index++];
+			if (source_key.begins_with("input/") && settings->has_setting(source_key) && !settings->is_builtin_setting(source_key)) {
+				if (project_context_actions.size() >= (int)MAX_SCENES) {
+					return _reject_project_context_capture();
+				}
+				project_context_actions.push_back(source_key.trim_prefix("input/"));
+				continue;
 			}
-			const Ref<InputEvent> event = event_value;
-			events.push_back(event.is_valid() ? event->as_text().left(1024) : String());
+			const bool layer_setting = source_key.begins_with("layer_names/2d_physics/layer_") || source_key.begins_with("layer_names/2d_render/layer_") ||
+					source_key.begins_with("layer_names/3d_physics/layer_") || source_key.begins_with("layer_names/3d_render/layer_") ||
+					source_key.begins_with("layer_names/navigation/layer_");
+			const bool allowed = source_key == "application/run/main_scene" || source_key.begins_with("autoload/") || layer_setting;
+			if (!allowed || !settings->has_setting(source_key)) {
+				continue;
+			}
+			const Variant setting_value = settings->get_setting(source_key);
+			if (layer_setting && String(setting_value).is_empty()) {
+				continue;
+			}
+			String key = source_key;
+			if (layer_setting) {
+				const String layer_number = source_key.get_file().trim_prefix("layer_");
+				if (!layer_number.is_valid_int() || layer_number.to_int() < 1) {
+					return _reject_project_context_capture();
+				}
+				key = source_key.get_base_dir().path_join(layer_number);
+			}
+			const String autoload_name = key.begins_with("autoload/") ? key.trim_prefix("autoload/") : String();
+			if (key.length() > 512 || (key.begins_with("autoload/") && (autoload_name.is_empty() || autoload_name.contains("/")))) {
+				return _reject_project_context_capture();
+			}
+			Dictionary fact;
+			fact["key"] = key;
+			fact["value"] = BoundedVariantProjector::project_typed(setting_value);
+			fact["authority"] = "project_settings";
+			fact["scene_graph_revision"] = (int64_t)target_scene_graph_revision;
+			project_context_values.insert(key, fact);
 		}
-		input_value["events"] = events;
-		Dictionary fact;
-		fact["key"] = "input/" + action;
-		fact["value"] = BoundedVariantProjector::project_typed(input_value);
-		fact["authority"] = "input_map";
-		fact["scene_graph_revision"] = (int64_t)target_scene_graph_revision;
-		values.insert("input/" + action, fact);
+		if (project_context_source_index >= project_context_source_keys.size()) {
+			project_context_actions.sort();
+			project_context_phase = PROJECT_CONTEXT_ACTIONS;
+		}
+		return true;
+	}
+
+	if (project_context_phase == PROJECT_CONTEXT_ACTIONS) {
+		for (int processed = 0; processed < 16 && project_context_action_index < project_context_actions.size(); processed++) {
+			const String action = project_context_actions[project_context_action_index++];
+			if (action.is_empty() || action.contains("/") || action.length() > 506 || project_context_values.size() >= (int)MAX_SCENES) {
+				return _reject_project_context_capture();
+			}
+			const Variant setting = settings->get_setting("input/" + action);
+			if (setting.get_type() != Variant::DICTIONARY) {
+				return _reject_project_context_capture();
+			}
+			const Dictionary action_setting = setting;
+			Dictionary input_value;
+			input_value["deadzone"] = action_setting.get("deadzone", 0.5);
+			Array events;
+			const Array action_events = action_setting.get("events", Array());
+			int count = 0;
+			for (const Variant &event_value : action_events) {
+				if (count++ >= BoundedVariantProjector::MAX_CONTAINER_ITEMS) {
+					break;
+				}
+				const Ref<InputEvent> event = event_value;
+				events.push_back(event.is_valid() ? event->as_text().left(1024) : String());
+			}
+			input_value["events"] = events;
+			Dictionary fact;
+			fact["key"] = "input/" + action;
+			fact["value"] = BoundedVariantProjector::project_typed(input_value);
+			fact["authority"] = "input_map";
+			fact["scene_graph_revision"] = (int64_t)target_scene_graph_revision;
+			project_context_values.insert("input/" + action, fact);
+		}
+		if (project_context_action_index >= project_context_actions.size()) {
+			project_context_phase = PROJECT_CONTEXT_FINALIZE;
+		}
+		return true;
 	}
 
 	project_context.clear();
 	project_context_checksum.clear();
 	Array checksum_context;
-	for (const KeyValue<String, Dictionary> &entry : values) {
+	for (const KeyValue<String, Dictionary> &entry : project_context_values) {
 		project_context.push_back(entry.value);
 		Dictionary checksum_fact = entry.value.duplicate(true);
 		checksum_fact.erase("scene_graph_revision");
@@ -665,11 +729,74 @@ bool SceneStateAdapter::_capture_project_context() {
 		checksum_diagnostics[index] = diagnostic;
 	}
 	observed_diagnostics_checksum = _sha256_hex(JSON::stringify(checksum_diagnostics, "", true, true));
+	_reset_project_context_capture();
 	refresh_phase = REFRESH_RECONCILE;
 	return true;
 }
 
+void SceneStateAdapter::_reset_reconcile() {
+	reconcile_operations = Array();
+	reconcile_previous_revision = 0;
+	reconcile_next_revision = 0;
+	reconcile_preparing = false;
+	journal_prepare_task = -1;
+	journal_prepare_error = OK;
+	journal_prepared_batch = SceneDeltaJournal::PreparedBatch();
+}
+
+void SceneStateAdapter::_prepare_journal_batch_thread(void *p_userdata) {
+	SceneStateAdapter *adapter = static_cast<SceneStateAdapter *>(p_userdata);
+	adapter->journal_prepare_error = SceneDeltaJournal::prepare_batch(
+			adapter->reconcile_next_revision,
+			adapter->reconcile_operations,
+			adapter->journal_prepared_batch);
+}
+
+void SceneStateAdapter::_wait_for_journal_preparation() {
+	if (journal_prepare_task < 0) {
+		return;
+	}
+	WorkerThreadPool *worker_pool = WorkerThreadPool::get_singleton();
+	if (worker_pool) {
+		worker_pool->wait_for_task_completion(journal_prepare_task);
+	}
+	journal_prepare_task = -1;
+}
+
 bool SceneStateAdapter::_reconcile(RefreshOutcome &r_outcome) {
+	if (reconcile_preparing) {
+		WorkerThreadPool *worker_pool = WorkerThreadPool::get_singleton();
+		if (journal_prepare_task >= 0 && worker_pool && !worker_pool->is_task_completed(journal_prepare_task)) {
+			return false;
+		}
+		_wait_for_journal_preparation();
+		const uint64_t current = revision_clock ? revision_clock->record_scene_graph_change() : reconcile_next_revision;
+		const Dictionary revisions = revision_clock ? revision_clock->get_revision_vector() : Dictionary();
+		bool invalidated = current != reconcile_next_revision || journal_prepare_error != OK;
+		if (invalidated) {
+			journal.invalidate_to(current);
+		} else {
+			Dictionary batch;
+			const uint64_t resource_revision = revisions.get("resource_revision", 1);
+			const uint64_t project_revision = revisions.get("project_revision", 0);
+			if (journal.commit_prepared(current, resource_revision, project_revision, journal_prepared_batch, batch, invalidated) != OK) {
+				journal.invalidate_to(current);
+				invalidated = true;
+			}
+		}
+		catalog = std::move(observed_catalog);
+		diagnostics = observed_diagnostics.duplicate(true);
+		diagnostics_checksum = observed_diagnostics_checksum;
+		active_project_context_checksum = project_context_checksum;
+		r_outcome.changed = !invalidated;
+		r_outcome.invalidated = invalidated;
+		r_outcome.last_contiguous_scene_graph_revision = reconcile_previous_revision;
+		r_outcome.current_scene_graph_revision = current;
+		r_outcome.revisions = revisions;
+		_reset_reconcile();
+		refresh_phase = REFRESH_IDLE;
+		return true;
+	}
 	if (refresh_limit_exceeded) {
 		const uint64_t previous = revision_clock ? revision_clock->get_scene_graph_revision() : journal.get_current_revision();
 		const uint64_t current = revision_clock ? revision_clock->record_scene_graph_change() : previous + 1;
@@ -740,27 +867,24 @@ bool SceneStateAdapter::_reconcile(RefreshOutcome &r_outcome) {
 		return true;
 	}
 
-	const uint64_t previous = revision_clock ? revision_clock->get_scene_graph_revision() : journal.get_current_revision();
-	const uint64_t current = revision_clock ? revision_clock->record_scene_graph_change() : previous + 1;
-	const Dictionary revisions = revision_clock ? revision_clock->get_revision_vector() : Dictionary();
-	Dictionary batch;
-	bool invalidated = false;
-	const Error error = journal.commit(current, revision_clock ? revision_clock->get_resource_revision() : 1, revisions.get("project_revision", 0), operations, batch, invalidated);
-	if (error != OK) {
-		journal.invalidate_to(current);
-		invalidated = true;
+	reconcile_operations = operations;
+	reconcile_previous_revision = revision_clock ? revision_clock->get_scene_graph_revision() : journal.get_current_revision();
+	reconcile_next_revision = reconcile_previous_revision + 1;
+	reconcile_preparing = true;
+	journal_prepare_error = OK;
+	journal_prepared_batch = SceneDeltaJournal::PreparedBatch();
+	WorkerThreadPool *worker_pool = WorkerThreadPool::get_singleton();
+	if (worker_pool) {
+		journal_prepare_task = worker_pool->add_native_task(
+				_prepare_journal_batch_thread,
+				this,
+				false,
+				SNAME("CodexSceneDeltaBatch"));
 	}
-	catalog = std::move(observed_catalog);
-	diagnostics = observed_diagnostics.duplicate(true);
-	diagnostics_checksum = observed_diagnostics_checksum;
-	active_project_context_checksum = project_context_checksum;
-	r_outcome.changed = !invalidated;
-	r_outcome.invalidated = invalidated;
-	r_outcome.last_contiguous_scene_graph_revision = previous;
-	r_outcome.current_scene_graph_revision = current;
-	r_outcome.revisions = revisions;
-	refresh_phase = REFRESH_IDLE;
-	return true;
+	if (journal_prepare_task < 0) {
+		_prepare_journal_batch_thread(this);
+	}
+	return false;
 }
 
 bool SceneStateAdapter::_process_refresh_step(RefreshOutcome &r_outcome) {
@@ -794,10 +918,13 @@ bool SceneStateAdapter::_process_refresh_step(RefreshOutcome &r_outcome) {
 void SceneStateAdapter::initialize(BridgeRevisionClock *p_revision_clock) {
 	revision_clock = p_revision_clock;
 	journal.initialize(revision_clock ? revision_clock->get_scene_graph_revision() : 1);
+	_reset_reconcile();
 	request_refresh();
 }
 
 void SceneStateAdapter::shutdown() {
+	_wait_for_journal_preparation();
+	_reset_reconcile();
 	_reset_active_scene();
 	_reset_snapshot();
 	catalog.clear();
@@ -811,6 +938,9 @@ void SceneStateAdapter::shutdown() {
 	project_context.clear();
 	project_context_checksum.clear();
 	active_project_context_checksum.clear();
+	_reset_project_context_capture();
+	project_context_source_keys.clear();
+	project_context_keys_valid = false;
 	refresh_phase = REFRESH_IDLE;
 	refresh_requested = false;
 	catalog_ready = false;
@@ -819,6 +949,11 @@ void SceneStateAdapter::shutdown() {
 
 void SceneStateAdapter::request_refresh() {
 	refresh_requested = true;
+}
+
+void SceneStateAdapter::invalidate_project_context() {
+	project_context_keys_valid = false;
+	request_refresh();
 }
 
 bool SceneStateAdapter::process_refresh(uint64_t p_budget_usec, RefreshOutcome &r_outcome) {
@@ -856,6 +991,12 @@ bool SceneStateAdapter::process_refresh(uint64_t p_budget_usec, RefreshOutcome &
 		if (r_outcome.changed || r_outcome.invalidated || refresh_phase == REFRESH_IDLE) {
 			return true;
 		}
+		// ProjectSettings enumeration and reconciliation are bounded but denser
+		// than an ordinary node/property step. Start each on a fresh frame rather
+		// than appending it to the tail of the final scene slice.
+		if (refresh_phase == REFRESH_PROJECT_CONTEXT || refresh_phase == REFRESH_RECONCILE) {
+			return false;
+		}
 	} while (OS::get_singleton()->get_ticks_usec() - started < p_budget_usec);
 	return false;
 }
@@ -867,28 +1008,52 @@ void SceneStateAdapter::_reset_snapshot() {
 	snapshot_id.clear();
 	snapshot_resource_revision = 0;
 	snapshot_scene_graph_revision = 0;
-	snapshot_revisions.clear();
-	snapshot_context.clear();
+	snapshot_revisions = Dictionary();
+	snapshot_context = Dictionary();
 	snapshot_record = nullptr;
-	snapshot_messages.clear();
-	snapshot_scenes.clear();
-	snapshot_diagnostics.clear();
+	snapshot_pending_message = Dictionary();
+	snapshot_scenes = Array();
+	snapshot_diagnostics = Array();
 	snapshot_chunk_count = 0;
-	snapshot_bytes = 0;
 	snapshot_phase = 0;
-	snapshot_chunk_checksums.clear();
+}
+
+Array SceneStateAdapter::_take_abandoned_snapshot_data() {
+	Array abandoned;
+	if (!snapshot_pending_message.is_empty()) {
+		abandoned.push_back(snapshot_pending_message);
+	}
+	if (!snapshot_scenes.is_empty()) {
+		abandoned.push_back(snapshot_scenes);
+	}
+	if (!snapshot_diagnostics.is_empty()) {
+		abandoned.push_back(snapshot_diagnostics);
+	}
+	snapshot_pending_message = Dictionary();
+	snapshot_scenes = Array();
+	snapshot_diagnostics = Array();
+	return abandoned;
+}
+
+bool SceneStateAdapter::_emit_pending_snapshot_message(SnapshotCompletion &r_completion) {
+	if (snapshot_pending_message.is_empty()) {
+		return false;
+	}
+	r_completion.ready = true;
+	r_completion.request_id = snapshot_request_id;
+	r_completion.server_message = snapshot_pending_message;
+	snapshot_pending_message = Dictionary();
+	return true;
 }
 
 bool SceneStateAdapter::_flush_snapshot_chunk() {
-	Dictionary payload;
-	payload["scenes"] = snapshot_scenes.duplicate(true);
-	payload["project_context"] = snapshot_phase >= 2 ? project_context.duplicate(true) : Array();
-	payload["diagnostics"] = snapshot_diagnostics.duplicate(true);
-	const String payload_json = JSON::stringify(payload, "", true, true);
-	if (payload_json.utf8().length() > (int)SNAPSHOT_CHUNK_BYTES) {
+	if (!snapshot_pending_message.is_empty() || snapshot_chunk_count >= MAX_SCENES + 1) {
 		return false;
 	}
-	const String checksum = _sha256_hex(payload_json);
+	Dictionary payload;
+	payload["scenes"] = snapshot_scenes;
+	payload["project_context"] = snapshot_phase >= 2 ? project_context : Array();
+	payload["diagnostics"] = snapshot_diagnostics;
 	Dictionary chunk;
 	chunk["protocol_version"] = "1.3";
 	chunk["kind"] = "chunk";
@@ -896,19 +1061,15 @@ bool SceneStateAdapter::_flush_snapshot_chunk() {
 	chunk["domain"] = "scene_graph";
 	chunk["chunk_index"] = (int64_t)snapshot_chunk_count;
 	chunk["payload"] = payload;
-	chunk["payload_json"] = payload_json;
-	chunk["checksum"] = checksum;
-	chunk["context"] = snapshot_context.duplicate(true);
-	const uint64_t bytes = JSON::stringify(chunk, "", true, true).utf8().length();
-	if (bytes > SNAPSHOT_WINDOW_BYTES - snapshot_bytes) {
-		return false;
-	}
-	snapshot_messages.push_back(chunk);
-	snapshot_bytes += bytes;
-	snapshot_chunk_checksums.push_back(checksum);
+	chunk["context"] = snapshot_context;
+	// Canonical JSON, exact chunk/window limits, and checksums are prepared by
+	// the transport worker so no full scene record is serialized on the editor
+	// main thread.
+	snapshot_pending_message = chunk;
 	snapshot_chunk_count++;
-	snapshot_scenes.clear();
-	snapshot_diagnostics.clear();
+	// Detach the builders rather than mutating the arrays now owned by payload.
+	snapshot_scenes = Array();
+	snapshot_diagnostics = Array();
 	return true;
 }
 
@@ -919,29 +1080,26 @@ void SceneStateAdapter::_fail_snapshot(const String &p_code, const String &p_mes
 	r_completion.error_code = p_code;
 	r_completion.error_message = p_message;
 	r_completion.error_retryable = p_retryable;
+	r_completion.abandoned_messages = _take_abandoned_snapshot_data();
 	_reset_snapshot();
 }
 
 void SceneStateAdapter::_finish_snapshot(SnapshotCompletion &r_completion) {
-	String checksums;
-	for (const String &checksum : snapshot_chunk_checksums) {
-		checksums += checksum;
-	}
 	Dictionary end_params;
 	end_params["snapshot_id"] = snapshot_id;
 	end_params["domain"] = "scene_graph";
 	end_params["resource_revision"] = (int64_t)snapshot_resource_revision;
 	end_params["scene_graph_revision"] = (int64_t)snapshot_scene_graph_revision;
-	end_params["revisions"] = snapshot_revisions.duplicate(true);
+	end_params["revisions"] = snapshot_revisions;
 	end_params["chunk_count"] = (int64_t)snapshot_chunk_count;
-	end_params["checksum"] = _sha256_hex(checksums);
+	// Filled by the transport worker after it serializes each exact payload.
+	end_params["checksum"] = "";
 	Dictionary end;
 	end["protocol_version"] = "1.3";
 	end["kind"] = "notification";
 	end["method"] = "snapshot.end";
 	end["params"] = end_params;
-	end["context"] = snapshot_context.duplicate(true);
-	snapshot_messages.push_back(end);
+	end["context"] = snapshot_context;
 
 	Dictionary limits;
 	limits["scene_records"] = (int64_t)MAX_SCENES;
@@ -957,12 +1115,13 @@ void SceneStateAdapter::_finish_snapshot(SnapshotCompletion &r_completion) {
 	result["domain"] = "scene_graph";
 	result["resource_revision"] = (int64_t)snapshot_resource_revision;
 	result["scene_graph_revision"] = (int64_t)snapshot_scene_graph_revision;
-	result["revisions"] = snapshot_revisions.duplicate(true);
+	result["revisions"] = snapshot_revisions;
 	result["limits_applied"] = limits;
 	r_completion.ready = true;
+	r_completion.terminal = true;
 	r_completion.request_id = snapshot_request_id;
 	r_completion.result = result;
-	r_completion.server_messages = snapshot_messages.duplicate(true);
+	r_completion.server_message = end;
 	_reset_snapshot();
 }
 
@@ -990,58 +1149,61 @@ Error SceneStateAdapter::begin_snapshot(uint64_t p_request_id, uint64_t p_now_us
 
 bool SceneStateAdapter::process_snapshot(uint64_t p_now_usec, uint64_t p_budget_usec, SnapshotCompletion &r_completion) {
 	r_completion = SnapshotCompletion();
+	(void)p_budget_usec;
 	if (!snapshot_active) {
 		return false;
+	}
+	if (_emit_pending_snapshot_message(r_completion)) {
+		return true;
 	}
 	if (p_now_usec - snapshot_started_usec >= SNAPSHOT_TIMEOUT_USEC) {
 		_fail_snapshot("deadline_exceeded", "The scene graph snapshot exceeded its bounded lifetime.", true, r_completion);
 		return true;
 	}
-	const uint64_t started = OS::get_singleton()->get_ticks_usec();
-	do {
-		if (snapshot_phase == 0) {
-			Dictionary params;
-			params["snapshot_id"] = snapshot_id;
-			params["domain"] = "scene_graph";
-			params["resource_revision"] = (int64_t)snapshot_resource_revision;
-			params["scene_graph_revision"] = (int64_t)snapshot_scene_graph_revision;
-			params["revisions"] = snapshot_revisions.duplicate(true);
-			Dictionary begin;
-			begin["protocol_version"] = "1.3";
-			begin["kind"] = "notification";
-			begin["method"] = "snapshot.begin";
-			begin["params"] = params;
-			begin["context"] = snapshot_context.duplicate(true);
-			snapshot_messages.push_back(begin);
-			snapshot_phase = 1;
-		} else if (snapshot_phase == 1) {
-			if (snapshot_record) {
-				snapshot_scenes.push_back(snapshot_record->value().value);
-				for (const Variant &diagnostic : snapshot_record->value().diagnostics) {
-					snapshot_diagnostics.push_back(diagnostic);
-				}
-				if (!_flush_snapshot_chunk()) {
-					_fail_snapshot("scene_limit_exceeded", "A scene graph snapshot chunk exceeded its negotiated limit.", false, r_completion);
-					return true;
-				}
-				snapshot_record = snapshot_record->next();
-			} else {
-				snapshot_phase = 2;
-			}
-		} else if (snapshot_phase == 2) {
-			for (const Variant &diagnostic : diagnostics) {
+	// Advance exactly one bounded snapshot unit per frame. Canonical encoding
+	// and checksum work happens after each unit reaches the transport worker.
+	if (snapshot_phase == 0) {
+		Dictionary params;
+		params["snapshot_id"] = snapshot_id;
+		params["domain"] = "scene_graph";
+		params["resource_revision"] = (int64_t)snapshot_resource_revision;
+		params["scene_graph_revision"] = (int64_t)snapshot_scene_graph_revision;
+		params["revisions"] = snapshot_revisions;
+		Dictionary begin;
+		begin["protocol_version"] = "1.3";
+		begin["kind"] = "notification";
+		begin["method"] = "snapshot.begin";
+		begin["params"] = params;
+		begin["context"] = snapshot_context;
+		snapshot_pending_message = begin;
+		snapshot_phase = 1;
+	} else if (snapshot_phase == 1) {
+		if (snapshot_record) {
+			snapshot_scenes.push_back(snapshot_record->value().value);
+			for (const Variant &diagnostic : snapshot_record->value().diagnostics) {
 				snapshot_diagnostics.push_back(diagnostic);
 			}
 			if (!_flush_snapshot_chunk()) {
-				_fail_snapshot("scene_limit_exceeded", "Project context exceeded its negotiated snapshot limit.", false, r_completion);
+				_fail_snapshot("scene_limit_exceeded", "A scene graph snapshot chunk exceeded its negotiated limit.", false, r_completion);
 				return true;
 			}
-			snapshot_phase = 3;
+			snapshot_record = snapshot_record->next();
 		} else {
-			_finish_snapshot(r_completion);
+			snapshot_phase = 2;
+		}
+	} else if (snapshot_phase == 2) {
+		for (const Variant &diagnostic : diagnostics) {
+			snapshot_diagnostics.push_back(diagnostic);
+		}
+		if (!_flush_snapshot_chunk()) {
+			_fail_snapshot("scene_limit_exceeded", "Project context exceeded its negotiated snapshot limit.", false, r_completion);
 			return true;
 		}
-	} while (OS::get_singleton()->get_ticks_usec() - started < p_budget_usec);
+		snapshot_phase = 3;
+	} else {
+		_finish_snapshot(r_completion);
+		return true;
+	}
 	return false;
 }
 
@@ -1049,7 +1211,7 @@ Array SceneStateAdapter::cancel_snapshot(uint64_t p_request_id) {
 	if (!snapshot_active || snapshot_request_id != p_request_id) {
 		return Array();
 	}
-	Array abandoned = snapshot_messages;
+	Array abandoned = _take_abandoned_snapshot_data();
 	_reset_snapshot();
 	return abandoned;
 }

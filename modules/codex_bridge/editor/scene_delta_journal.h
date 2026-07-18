@@ -52,6 +52,13 @@ public:
 		Dictionary batch;
 	};
 
+	struct PreparedBatch {
+		Array operations;
+		String batch_id;
+		String checksum;
+		uint64_t operations_bytes = 0;
+	};
+
 private:
 	struct StoredBatch {
 		uint64_t previous_revision = 0;
@@ -67,7 +74,9 @@ private:
 
 public:
 	void initialize(uint64_t p_initial_revision = 1);
+	static Error prepare_batch(uint64_t p_next_revision, const Array &p_operations, PreparedBatch &r_prepared);
 	Error commit(uint64_t p_next_revision, uint64_t p_resource_revision, uint64_t p_project_revision, const Array &p_operations, Dictionary &r_batch, bool &r_invalidated);
+	Error commit_prepared(uint64_t p_next_revision, uint64_t p_resource_revision, uint64_t p_project_revision, const PreparedBatch &p_prepared, Dictionary &r_batch, bool &r_invalidated);
 	void invalidate_to(uint64_t p_revision);
 	QueryResult query_after(uint64_t p_after_revision) const;
 	uint64_t get_current_revision() const;

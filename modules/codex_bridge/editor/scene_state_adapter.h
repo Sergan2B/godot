@@ -69,6 +69,7 @@ public:
 
 	struct SnapshotCompletion {
 		bool ready = false;
+		bool terminal = false;
 		uint64_t request_id = 0;
 		bool is_error = false;
 		String error_code;
@@ -76,7 +77,8 @@ public:
 		bool error_retryable = false;
 		Dictionary error_data;
 		Dictionary result;
-		Array server_messages;
+		Dictionary server_message;
+		Array abandoned_messages;
 	};
 
 private:
@@ -130,6 +132,7 @@ private:
 	uint64_t observed_diagnostic_count = 0;
 
 	String active_path;
+	bool active_load_requested = false;
 	Ref<PackedScene> active_scene;
 	Ref<SceneState> active_state;
 	CatalogRecord active_record;
@@ -151,6 +154,26 @@ private:
 	Array project_context;
 	String project_context_checksum;
 	String active_project_context_checksum;
+	enum ProjectContextPhase {
+		PROJECT_CONTEXT_COLLECT_KEYS,
+		PROJECT_CONTEXT_SETTINGS,
+		PROJECT_CONTEXT_ACTIONS,
+		PROJECT_CONTEXT_FINALIZE,
+	};
+	ProjectContextPhase project_context_phase = PROJECT_CONTEXT_COLLECT_KEYS;
+	bool project_context_keys_valid = false;
+	Vector<String> project_context_source_keys;
+	int project_context_source_index = 0;
+	RBMap<String, Dictionary> project_context_values;
+	Vector<String> project_context_actions;
+	int project_context_action_index = 0;
+	Array reconcile_operations;
+	uint64_t reconcile_previous_revision = 0;
+	uint64_t reconcile_next_revision = 0;
+	bool reconcile_preparing = false;
+	int64_t journal_prepare_task = -1;
+	Error journal_prepare_error = OK;
+	SceneDeltaJournal::PreparedBatch journal_prepared_batch;
 
 	bool snapshot_active = false;
 	uint64_t snapshot_request_id = 0;
@@ -161,13 +184,11 @@ private:
 	Dictionary snapshot_revisions;
 	Dictionary snapshot_context;
 	RBMap<String, CatalogRecord>::Element *snapshot_record = nullptr;
-	Array snapshot_messages;
+	Dictionary snapshot_pending_message;
 	Array snapshot_scenes;
 	Array snapshot_diagnostics;
 	uint32_t snapshot_chunk_count = 0;
-	uint64_t snapshot_bytes = 0;
 	int snapshot_phase = 0;
-	Vector<String> snapshot_chunk_checksums;
 
 	static bool _is_scene_path(const String &p_path);
 	static Dictionary _make_resource_ref(const String &p_path);
@@ -187,11 +208,18 @@ private:
 	bool _observe_connection();
 	bool _observe_subresource();
 	bool _finish_active_scene();
+	void _reset_project_context_capture();
+	bool _reject_project_context_capture();
 	bool _capture_project_context();
+	void _reset_reconcile();
+	static void _prepare_journal_batch_thread(void *p_userdata);
+	void _wait_for_journal_preparation();
 	bool _reconcile(RefreshOutcome &r_outcome);
 	bool _process_refresh_step(RefreshOutcome &r_outcome);
 
 	void _reset_snapshot();
+	Array _take_abandoned_snapshot_data();
+	bool _emit_pending_snapshot_message(SnapshotCompletion &r_completion);
 	bool _flush_snapshot_chunk();
 	void _fail_snapshot(const String &p_code, const String &p_message, bool p_retryable, SnapshotCompletion &r_completion);
 	void _finish_snapshot(SnapshotCompletion &r_completion);
@@ -200,6 +228,7 @@ public:
 	void initialize(BridgeRevisionClock *p_revision_clock);
 	void shutdown();
 	void request_refresh();
+	void invalidate_project_context();
 	bool process_refresh(uint64_t p_budget_usec, RefreshOutcome &r_outcome);
 
 	Error begin_snapshot(uint64_t p_request_id, uint64_t p_now_usec, const Dictionary &p_context, Dictionary &r_error_data);

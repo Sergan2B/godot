@@ -298,6 +298,17 @@ TEST_CASE("[CodexBridge] Scene paths and delta journal fail closed") {
 	CHECK((int64_t)batch["project_revision"] == 7);
 	CHECK(String(batch["batch_id"]).begins_with("scene-batch:"));
 	CHECK(String(batch["checksum"]).length() == 64);
+	SceneDeltaJournal prepared_journal;
+	prepared_journal.initialize(1);
+	SceneDeltaJournal::PreparedBatch prepared;
+	REQUIRE(SceneDeltaJournal::prepare_batch(2, operations, prepared) == OK);
+	Dictionary prepared_batch;
+	bool prepared_invalidated = false;
+	REQUIRE(prepared_journal.commit_prepared(2, 4, 7, prepared, prepared_batch, prepared_invalidated) == OK);
+	CHECK_FALSE(prepared_invalidated);
+	CHECK(prepared_batch["batch_id"] == batch["batch_id"]);
+	CHECK(prepared_batch["checksum"] == batch["checksum"]);
+	CHECK(prepared_batch["operations"] == batch["operations"]);
 	CHECK(journal.query_after(2).status == SceneDeltaJournal::QUERY_CURRENT);
 	CHECK(journal.query_after(1).status == SceneDeltaJournal::QUERY_BATCH);
 	CHECK(journal.query_after(0).status == SceneDeltaJournal::QUERY_GAP);

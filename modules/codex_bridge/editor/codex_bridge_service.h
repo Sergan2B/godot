@@ -62,6 +62,7 @@ private:
 	SceneStateAdapter scene_state_adapter;
 	BridgeFrameTelemetry frame_telemetry;
 	bool editor_signals_connected = false;
+	bool scene_bulk_turn = false;
 	bool scene_change_pending = false;
 	String pending_property;
 
@@ -78,6 +79,7 @@ private:
 	void _on_filesystem_changed();
 	void _on_resources_reimported(const Vector<String> &p_paths);
 	void _on_resources_reload(const PackedStringArray &p_paths);
+	void _on_project_settings_changed();
 	void _flush_scene_change();
 	void _complete_snapshot(uint64_t p_request_id);
 	void _complete_resource_delta(uint64_t p_request_id, uint64_t p_after_resource_revision);

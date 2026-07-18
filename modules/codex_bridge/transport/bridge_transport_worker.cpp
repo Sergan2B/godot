@@ -52,10 +52,11 @@ static constexpr int MAX_OUTBOUND_BYTES = 33554432;
 static constexpr uint64_t SNAPSHOT_TIMEOUT_USEC = 120000000;
 static constexpr int MAX_NOTIFICATION_ENTRIES = 4096;
 static constexpr int MAX_NOTIFICATION_BYTES = 16777216;
-static constexpr int MAX_RESOURCE_SNAPSHOT_CHUNKS = 65536;
-static constexpr uint64_t MAX_RESOURCE_SNAPSHOT_MESSAGES = MAX_RESOURCE_SNAPSHOT_CHUNKS + 2;
+static constexpr int MAX_SNAPSHOT_CHUNKS = 100001;
+static constexpr uint64_t MAX_SNAPSHOT_MESSAGES = MAX_SNAPSHOT_CHUNKS + 2;
 static constexpr uint64_t MAX_RESOURCE_SNAPSHOT_SPOOL_BYTES =
-		MAX_RESOURCE_SNAPSHOT_MESSAGES * (BridgeFrameCodec::MAX_PAYLOAD_BYTES + 8ULL);
+		(65536ULL + 2) * (BridgeFrameCodec::MAX_PAYLOAD_BYTES + 8ULL);
+static constexpr uint64_t MAX_SCENE_SNAPSHOT_SPOOL_BYTES = 32 * 1024 * 1024;
 
 struct SnapshotStreamState {
 	bool active = false;
@@ -78,6 +79,7 @@ struct SnapshotPreparation {
 	int next_message = 0;
 	int next_chunk = 0;
 	String snapshot_id;
+	String domain;
 	Ref<FileAccess> spool;
 	Ref<HashingContext> checksum_context;
 	uint64_t spool_bytes = 0;
@@ -142,11 +144,15 @@ static bool is_resource_protocol(const String &p_protocol_version) {
 	return p_protocol_version == "1.2" || p_protocol_version == "1.3";
 }
 
-static bool open_resource_snapshot_spool(SnapshotPreparation &r_preparation) {
+static bool is_snapshot_protocol(const String &p_protocol_version, const String &p_domain) {
+	return p_domain == "resource_graph" ? is_resource_protocol(p_protocol_version) : p_domain == "scene_graph" && p_protocol_version == "1.3";
+}
+
+static bool open_snapshot_spool(SnapshotPreparation &r_preparation) {
 	Error error = OK;
 	r_preparation.spool = FileAccess::create_temp(
 			FileAccess::WRITE_READ,
-			"codex-resource-snapshot",
+			"codex-graph-snapshot",
 			"spool",
 			false,
 			&error);
@@ -165,13 +171,14 @@ static bool open_resource_snapshot_spool(SnapshotPreparation &r_preparation) {
 	return r_preparation.checksum_context->start(HashingContext::HASH_SHA256) == OK;
 }
 
-static bool append_resource_snapshot_frame(SnapshotPreparation &r_preparation, const PackedByteArray &p_encoded) {
+static bool append_snapshot_frame(SnapshotPreparation &r_preparation, const PackedByteArray &p_encoded) {
 	if (r_preparation.spool.is_null() || p_encoded.is_empty() || p_encoded.size() > (int64_t)BridgeFrameCodec::MAX_PAYLOAD_BYTES + 4 ||
-			r_preparation.next_message >= (int)MAX_RESOURCE_SNAPSHOT_MESSAGES) {
+			r_preparation.next_message >= (int)MAX_SNAPSHOT_MESSAGES) {
 		return false;
 	}
 	const uint64_t record_bytes = sizeof(uint32_t) + (uint64_t)p_encoded.size();
-	if (record_bytes > MAX_RESOURCE_SNAPSHOT_SPOOL_BYTES - r_preparation.spool_bytes ||
+	const uint64_t spool_limit = r_preparation.domain == "scene_graph" ? MAX_SCENE_SNAPSHOT_SPOOL_BYTES : MAX_RESOURCE_SNAPSHOT_SPOOL_BYTES;
+	if (r_preparation.spool_bytes > spool_limit || record_bytes > spool_limit - r_preparation.spool_bytes ||
 			!r_preparation.spool->store_32((uint32_t)p_encoded.size()) ||
 			!r_preparation.spool->store_buffer(p_encoded)) {
 		return false;
@@ -180,17 +187,17 @@ static bool append_resource_snapshot_frame(SnapshotPreparation &r_preparation, c
 	return true;
 }
 
-static SnapshotPreparationResult prepare_resource_snapshot_dictionary(SnapshotPreparation &r_preparation, Dictionary &r_message, bool p_final_message) {
+static SnapshotPreparationResult prepare_snapshot_dictionary(SnapshotPreparation &r_preparation, Dictionary &r_message, bool p_final_message) {
 	Dictionary &message = r_message;
 	const String kind = message.get("kind", String());
 	if (kind == "chunk") {
 		if (p_final_message || r_preparation.next_message == 0 || r_preparation.spool.is_null() || r_preparation.checksum_context.is_null() ||
-				!is_resource_protocol(String(message.get("protocol_version", String()))) || String(message.get("domain", String())) != "resource_graph" ||
+				!is_snapshot_protocol(String(message.get("protocol_version", String())), r_preparation.domain) || String(message.get("domain", String())) != r_preparation.domain ||
 				String(message.get("snapshot_id", String())) != r_preparation.snapshot_id ||
 				!message.has("chunk_index") || message["chunk_index"].get_type() != Variant::INT ||
 				(int64_t)message["chunk_index"] != r_preparation.next_chunk ||
 				!message.has("payload") || message["payload"].get_type() != Variant::DICTIONARY ||
-				r_preparation.next_chunk >= MAX_RESOURCE_SNAPSHOT_CHUNKS) {
+				r_preparation.next_chunk >= MAX_SNAPSHOT_CHUNKS) {
 			return SNAPSHOT_PREPARATION_FAILED;
 		}
 		const String payload_json = JSON::stringify(message["payload"], "", true, true);
@@ -210,11 +217,11 @@ static SnapshotPreparationResult prepare_resource_snapshot_dictionary(SnapshotPr
 		r_preparation.next_chunk++;
 	} else if (String(message.get("method", String())) == "snapshot.end") {
 		if (!p_final_message || r_preparation.next_message < 2 || r_preparation.checksum_context.is_null() ||
-				!is_resource_protocol(String(message.get("protocol_version", String()))) || !message.has("params") || message["params"].get_type() != Variant::DICTIONARY) {
+				!is_snapshot_protocol(String(message.get("protocol_version", String())), r_preparation.domain) || !message.has("params") || message["params"].get_type() != Variant::DICTIONARY) {
 			return SNAPSHOT_PREPARATION_FAILED;
 		}
 		Dictionary params = message["params"];
-		if (String(params.get("domain", String())) != "resource_graph" || String(params.get("snapshot_id", String())) != r_preparation.snapshot_id ||
+		if (String(params.get("domain", String())) != r_preparation.domain || String(params.get("snapshot_id", String())) != r_preparation.snapshot_id ||
 				!params.has("chunk_count") || params["chunk_count"].get_type() != Variant::INT || (int64_t)params["chunk_count"] != r_preparation.next_chunk) {
 			return SNAPSHOT_PREPARATION_FAILED;
 		}
@@ -226,18 +233,19 @@ static SnapshotPreparationResult prepare_resource_snapshot_dictionary(SnapshotPr
 		params["checksum"] = BridgeCrypto::bytes_to_lower_hex(checksum_digest);
 		message["params"] = params;
 	} else {
-		if (p_final_message || r_preparation.next_message != 0 || !is_resource_protocol(String(message.get("protocol_version", String()))) ||
+		if (p_final_message || r_preparation.next_message != 0 ||
 				String(message.get("method", String())) != "snapshot.begin" || !message.has("params") || message["params"].get_type() != Variant::DICTIONARY) {
 			return SNAPSHOT_PREPARATION_FAILED;
 		}
 		const Dictionary params = message["params"];
 		r_preparation.snapshot_id = params.get("snapshot_id", String());
-		if (r_preparation.snapshot_id.is_empty() || String(params.get("domain", String())) != "resource_graph" || !open_resource_snapshot_spool(r_preparation)) {
+		r_preparation.domain = params.get("domain", String());
+		if (r_preparation.snapshot_id.is_empty() || !is_snapshot_protocol(String(message.get("protocol_version", String())), r_preparation.domain) || !open_snapshot_spool(r_preparation)) {
 			return SNAPSHOT_PREPARATION_FAILED;
 		}
 	}
 	PackedByteArray encoded;
-	if (!encode_response(message, encoded) || !append_resource_snapshot_frame(r_preparation, encoded)) {
+	if (!encode_response(message, encoded) || !append_snapshot_frame(r_preparation, encoded)) {
 		return SNAPSHOT_PREPARATION_FAILED;
 	}
 	r_preparation.next_message++;
@@ -393,7 +401,7 @@ static bool start_snapshot_stream(TransportClient &r_client, uint64_t p_internal
 
 static bool start_spooled_snapshot_stream(TransportClient &r_client, uint64_t p_internal_request_id, const String &p_request_id, const String &p_snapshot_id, const Ref<FileAccess> &p_spool, int p_chunk_count, uint64_t p_now_usec) {
 	if (r_client.snapshot_stream.active || !is_resource_protocol(r_client.rpc.get_protocol_version()) || p_request_id.is_empty() || p_snapshot_id.is_empty() ||
-			p_spool.is_null() || p_chunk_count <= 0 || p_chunk_count > MAX_RESOURCE_SNAPSHOT_CHUNKS || p_spool->get_position() != 0 || p_spool->get_length() == 0) {
+			p_spool.is_null() || p_chunk_count <= 0 || p_chunk_count > MAX_SNAPSHOT_CHUNKS || p_spool->get_position() != 0 || p_spool->get_length() == 0) {
 		return false;
 	}
 	r_client.snapshot_stream.active = true;
@@ -714,7 +722,7 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 				message["protocol_version"] = pending_protocol_version;
 				if (preparation_index >= 0) {
 					SnapshotPreparation &preparation = snapshot_preparations.write[preparation_index];
-					preparation_result = prepare_resource_snapshot_dictionary(
+					preparation_result = prepare_snapshot_dictionary(
 							preparation, message, event.kind == BridgeTransportWorker::Completion::KIND_RESOURCE_SNAPSHOT_END);
 				}
 				if (preparation_result == SNAPSHOT_PREPARATION_READY && preparation_index >= 0) {
@@ -728,8 +736,9 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 					BridgeTransportWorker::Completion failure;
 					failure.request_id = event.request_id;
 					failure.is_error = true;
-					failure.error_code = "resource_limit_exceeded";
-					failure.error_message = "The resource graph snapshot could not be framed within the negotiated limits.";
+					const bool scene_snapshot = preparation_index >= 0 && snapshot_preparations[preparation_index].domain == "scene_graph";
+					failure.error_code = scene_snapshot ? "scene_limit_exceeded" : "resource_limit_exceeded";
+					failure.error_message = scene_snapshot ? "The scene graph snapshot could not be framed within the negotiated limits." : "The resource graph snapshot could not be framed within the negotiated limits.";
 					failure.error_retryable = false;
 					failure.cancel_dispatch = true;
 					completions.push_back(failure);

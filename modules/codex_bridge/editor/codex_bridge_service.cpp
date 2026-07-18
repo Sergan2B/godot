@@ -122,7 +122,10 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 			if (!abandoned.is_empty()) {
 				service->transport_worker.abort_resource_snapshot(p_command.request_id, abandoned);
 			}
-			service->scene_state_adapter.cancel_snapshot(p_command.request_id);
+			const Array abandoned_scene = service->scene_state_adapter.cancel_snapshot(p_command.request_id);
+			if (!abandoned_scene.is_empty()) {
+				service->transport_worker.abort_resource_snapshot(p_command.request_id, abandoned_scene);
+			}
 		} break;
 		case MainThreadDispatcher::COMMAND_PING:
 		case MainThreadDispatcher::COMMAND_SHUTDOWN:
@@ -163,6 +166,9 @@ void CodexBridgeService::_connect_editor_signals() {
 		EditorFileSystem::get_singleton()->connect(SNAME("resources_reimported"), callable_mp(this, &CodexBridgeService::_on_resources_reimported));
 		EditorFileSystem::get_singleton()->connect(SNAME("resources_reload"), callable_mp(this, &CodexBridgeService::_on_resources_reload));
 	}
+	if (ProjectSettings::get_singleton()) {
+		ProjectSettings::get_singleton()->connect(SNAME("settings_changed"), callable_mp(this, &CodexBridgeService::_on_project_settings_changed));
+	}
 	editor_signals_connected = true;
 }
 
@@ -194,6 +200,9 @@ void CodexBridgeService::_disconnect_editor_signals() {
 	}
 	if (EditorFileSystem::get_singleton() && EditorFileSystem::get_singleton()->is_connected(SNAME("resources_reload"), callable_mp(this, &CodexBridgeService::_on_resources_reload))) {
 		EditorFileSystem::get_singleton()->disconnect(SNAME("resources_reload"), callable_mp(this, &CodexBridgeService::_on_resources_reload));
+	}
+	if (ProjectSettings::get_singleton() && ProjectSettings::get_singleton()->is_connected(SNAME("settings_changed"), callable_mp(this, &CodexBridgeService::_on_project_settings_changed))) {
+		ProjectSettings::get_singleton()->disconnect(SNAME("settings_changed"), callable_mp(this, &CodexBridgeService::_on_project_settings_changed));
 	}
 	editor_signals_connected = false;
 }
@@ -277,6 +286,10 @@ void CodexBridgeService::_on_resources_reload(const PackedStringArray &p_paths) 
 		resource_graph_adapter.request_refresh();
 		scene_state_adapter.request_refresh();
 	}
+}
+
+void CodexBridgeService::_on_project_settings_changed() {
+	scene_state_adapter.invalidate_project_context();
 }
 
 void CodexBridgeService::_flush_scene_change() {
@@ -503,9 +516,14 @@ void CodexBridgeService::_process_scene_graph(uint64_t p_budget_usec) {
 		SceneStateAdapter::SnapshotCompletion snapshot;
 		if (scene_state_adapter.process_snapshot(OS::get_singleton()->get_ticks_usec(), p_budget_usec, snapshot) && snapshot.ready) {
 			if (snapshot.is_error) {
+				if (!snapshot.abandoned_messages.is_empty()) {
+					transport_worker.abort_resource_snapshot(snapshot.request_id, snapshot.abandoned_messages);
+				}
 				transport_worker.complete_request_error(snapshot.request_id, snapshot.error_code, snapshot.error_message, snapshot.error_retryable, snapshot.error_data);
+			} else if (snapshot.terminal) {
+				transport_worker.complete_resource_snapshot(snapshot.request_id, snapshot.result, snapshot.server_message);
 			} else {
-				transport_worker.complete_request(snapshot.request_id, snapshot.result, snapshot.server_messages);
+				transport_worker.stage_resource_snapshot_message(snapshot.request_id, snapshot.server_message);
 			}
 		}
 		return;
@@ -555,22 +573,28 @@ void CodexBridgeService::_notification(int p_what) {
 				const uint64_t frame_started_usec = OS::get_singleton()->get_ticks_usec();
 				const bool resource_work = resource_graph_adapter.has_pending_work();
 				const bool scene_work = scene_state_adapter.has_pending_work();
+				const bool run_scene_bulk = scene_work && (!resource_work || scene_bulk_turn);
+				const bool run_resource_bulk = resource_work && (!scene_work || !scene_bulk_turn);
+				if (resource_work && scene_work) {
+					scene_bulk_turn = !scene_bulk_turn;
+				}
 				const uint64_t dispatcher_budget = MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME -
 						ResourceGraphAdapter::FRAME_SAFETY_MARGIN_USEC -
-						(resource_work ? ResourceGraphAdapter::RESOURCE_BUDGET_USEC : 0) -
-						(scene_work ? SceneStateAdapter::SCENE_BUDGET_USEC : 0);
+						(run_resource_bulk ? ResourceGraphAdapter::RESOURCE_BUDGET_USEC : 0) -
+						(run_scene_bulk ? SceneStateAdapter::SCENE_BUDGET_USEC : 0);
 				const MainThreadDispatcher::ProcessStats dispatcher_stats = dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
 				// Control traffic retains the higher-priority lane, but a stream of
-				// short status requests must not starve an active resource refresh.
-				// Skip the bulk slice only when dispatcher work already consumed its
-				// complete reserved share of the common 2 ms ceiling.
-				if (resource_work && dispatcher_stats.elapsed_usec < dispatcher_budget) {
+				// short status requests must not starve either graph domain. Resource
+				// and scene bulk work alternate when both are pending, preserving one
+				// safety margin under the common 2 ms ceiling.
+				if (run_resource_bulk && dispatcher_stats.elapsed_usec < dispatcher_budget) {
 					_process_resource_graph(ResourceGraphAdapter::RESOURCE_BUDGET_USEC);
 				}
-				if (scene_work && dispatcher_stats.elapsed_usec < dispatcher_budget) {
+				if (run_scene_bulk && dispatcher_stats.elapsed_usec < dispatcher_budget) {
 					_process_scene_graph(SceneStateAdapter::SCENE_BUDGET_USEC);
 				}
-				frame_telemetry.record(OS::get_singleton()->get_ticks_usec() - frame_started_usec, resource_work || scene_work || dispatcher_stats.consumed > 0);
+				const uint64_t frame_elapsed_usec = OS::get_singleton()->get_ticks_usec() - frame_started_usec;
+				frame_telemetry.record(frame_elapsed_usec, resource_work || scene_work || dispatcher_stats.consumed > 0);
 			}
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
@@ -606,6 +630,7 @@ Error CodexBridgeService::start() {
 	revision_clock.initialize(transport_worker.get_editor_session_id());
 	resource_graph_adapter.initialize(&revision_clock);
 	scene_state_adapter.initialize(&revision_clock);
+	scene_bulk_turn = false;
 	frame_telemetry.reset(OS::get_singleton()->get_environment("GODOT_CODEX_EVIDENCE_TELEMETRY") == "1");
 	_connect_editor_signals();
 	state = STATE_RUNNING;
@@ -622,6 +647,7 @@ void CodexBridgeService::stop() {
 	_disconnect_editor_signals();
 	resource_graph_adapter.shutdown();
 	scene_state_adapter.shutdown();
+	scene_bulk_turn = false;
 	scene_change_pending = false;
 	pending_property.clear();
 	dispatcher.begin_shutdown();
