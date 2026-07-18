@@ -1,0 +1,26 @@
+{
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "kind": "notification",
+  "method": "snapshot.begin",
+  "params": {
+    "domain": "script_graph",
+    "resource_revision": 7,
+    "revisions": {
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+      "event_seq": 12,
+      "operation_seq": 0,
+      "project_revision": 9,
+      "resource_revision": 7,
+      "scene_graph_revision": 5,
+      "scene_revisions": {},
+      "script_graph_revision": 11
+    },
+    "scene_graph_revision": 5,
+    "script_graph_revision": 11,
+    "snapshot_id": "snapshot:4123456789abcdef0123456789abcdef"
+  },
+  "protocol_version": "1.4"
+}

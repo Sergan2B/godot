@@ -1,0 +1,16 @@
+{
+  "authority": "gdscript_parser_analyzer",
+  "confidence": "dynamic",
+  "detail": "dynamic_method_name",
+  "evidence_range": null,
+  "predicate": "calls",
+  "script_graph_revision": 11,
+  "source": {
+    "kind": "symbol",
+    "symbol_id": "godot:script-symbol:named:v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+  },
+  "target": {
+    "kind": "symbol",
+    "symbol_id": "godot:script-symbol:named:v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

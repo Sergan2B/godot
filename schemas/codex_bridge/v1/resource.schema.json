@@ -228,7 +228,7 @@
         { "$ref": "rpc.schema.json#/$defs/request" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.2", "1.3"] },
+            "protocol_version": { "enum": ["1.2", "1.3", "1.4"] },
             "method": { "const": "resource.snapshot.get" },
             "params": { "$ref": "#/$defs/resourceSnapshotParams" }
           }
@@ -246,7 +246,7 @@
         { "$ref": "rpc.schema.json#/$defs/request" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.2", "1.3"] },
+            "protocol_version": { "enum": ["1.2", "1.3", "1.4"] },
             "method": { "const": "resource.delta.get" },
             "params": { "$ref": "#/$defs/resourceDeltaParams" }
           }
@@ -294,7 +294,7 @@
         { "$ref": "rpc.schema.json#/$defs/notification" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.2", "1.3"] },
+            "protocol_version": { "enum": ["1.2", "1.3", "1.4"] },
             "method": { "const": "snapshot.begin" },
             "params": { "$ref": "#/$defs/resourceSnapshotBeginParams" }
           }
@@ -317,7 +317,7 @@
         {
           "required": ["domain", "payload_json"],
           "properties": {
-            "protocol_version": { "enum": ["1.2", "1.3"] },
+            "protocol_version": { "enum": ["1.2", "1.3", "1.4"] },
             "domain": { "const": "resource_graph" },
             "payload": { "$ref": "#/$defs/resourceSnapshotPayload" },
             "payload_json": { "type": "string", "minLength": 2, "maxLength": 262144 }
@@ -346,7 +346,7 @@
         { "$ref": "rpc.schema.json#/$defs/notification" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.2", "1.3"] },
+            "protocol_version": { "enum": ["1.2", "1.3", "1.4"] },
             "method": { "const": "snapshot.end" },
             "params": { "$ref": "#/$defs/resourceSnapshotEndParams" }
           }
@@ -368,7 +368,7 @@
         { "$ref": "rpc.schema.json#/$defs/ack" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.2", "1.3"] },
+            "protocol_version": { "enum": ["1.2", "1.3", "1.4"] },
             "params": { "$ref": "#/$defs/resourceSnapshotAckParams" }
           }
         }
@@ -390,7 +390,7 @@
         { "$ref": "rpc.schema.json#/$defs/notification" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.2", "1.3"] },
+            "protocol_version": { "enum": ["1.2", "1.3", "1.4"] },
             "method": { "const": "sync.event" },
             "params": { "$ref": "#/$defs/resourceGraphChangedParams" }
           }
@@ -412,7 +412,7 @@
         { "$ref": "rpc.schema.json#/$defs/notification" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.2", "1.3"] },
+            "protocol_version": { "enum": ["1.2", "1.3", "1.4"] },
             "method": { "const": "sync.invalidated" },
             "params": { "$ref": "#/$defs/resourceInvalidatedParams" }
           }

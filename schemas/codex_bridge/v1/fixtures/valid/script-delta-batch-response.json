@@ -1,0 +1,30 @@
+{
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "kind": "response",
+  "protocol_version": "1.4",
+  "request_id": "req:script-delta-batch",
+  "result": {
+    "batch": {
+      "batch_id": "script-batch:5123456789abcdef0123456789abcdef",
+      "checksum": "accb59c542f2e59a4b63822673363721b32978dd6286b945e5ee4622544c879e",
+      "operations": [
+        {
+          "kind": "remove_document",
+          "path": "res://scripts/removed.gd",
+          "script_ref": {"uid": "uid://s5removedscript"}
+        }
+      ],
+      "previous_script_graph_revision": 11,
+      "project_revision": 10,
+      "resource_revision": 8,
+      "scene_graph_revision": 5,
+      "script_graph_revision": 12,
+      "source_complete": true
+    },
+    "current_script_graph_revision": 12,
+    "status": "batch"
+  }
+}

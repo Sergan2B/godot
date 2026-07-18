@@ -1,10 +1,10 @@
 # PROTOCOL-001 — Bridge RPC 1.x
 
-**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.3 extensions implemented through Sprint 4 protocol freeze
+**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.4 extensions implemented through Sprint 5 `S5-03` protocol freeze
 
 **Date:** 2026-07-18
 
-**Protocol versions:** `1.0` baseline; `1.1`, `1.2` fallback; `1.3` current
+**Protocol versions:** `1.0` baseline; `1.1`–`1.3` fallback; `1.4` current
 
 **Decision owner:** `Sergan2B` (interim Sidecar/Protocol and Security owner)
 
@@ -32,7 +32,8 @@ This specification defines:
 Bridge RPC 1.1 adds capability-gated editor snapshots, event notifications,
 chunks, and acknowledgments on the same authenticated session. Bridge RPC 1.2
 adds the ResourceUID/dependency graph. Bridge RPC 1.3 adds authoritative
-`PackedScene`/`SceneState` observations and project context. MCP, persistent
+`PackedScene`/`SceneState` observations and project context. Bridge RPC 1.4 adds
+the bounded saved-script semantic profile. MCP, persistent
 indexing, runtime observation, and transactions remain outside the bridge wire
 surface.
 
@@ -212,7 +213,7 @@ The absolute root is never included in discovery, handshake, normal RPC, logs, o
 
 ## 6. Version negotiation and compatibility
 
-Discovery and `handshake.client_hello` advertise the maximum supported minor for each supported major. An implementation advertises at most one entry per major. Support for `1.3` means support for compatible minors `1.0` through `1.3`.
+Discovery and `handshake.client_hello` advertise the maximum supported minor for each supported major. An implementation advertises at most one entry per major. Support for `1.4` means support for compatible minors `1.0` through `1.4`.
 
 The server selects the highest major supported by both peers and the lower of their maximum minors for that major. Version 1.0 currently advertises only `1.0`.
 
@@ -509,10 +510,17 @@ The authoritative bundle is [`schemas/codex_bridge/v1`](../../schemas/codex_brid
 - `sync.schema.json` — Bridge RPC 1.1 full snapshots and ordered invalidation events;
 - `resource.schema.json` — Bridge RPC 1.2 resource snapshot/delta projection;
 - `scene.schema.json` — Bridge RPC 1.3 scene snapshot/delta and project-context projection;
+- `script.schema.json` — Bridge RPC 1.4 saved-script document, symbol, relation,
+  diagnostic, adapter-status, snapshot, delta, and journal projection;
 - `fixture-manifest.schema.json` — conformance case manifest;
 - `fixtures/` — positive, negative, fragmentation, compatibility, project-ID, and proof vectors.
 
-Schemas use JSON Schema 2020-12. Unknown properties are intentionally permitted so a compatible minor release can add optional fields. Implementations still apply hard byte/depth/item limits before ignoring an unknown field.
+Schemas use JSON Schema 2020-12. The established common and RPC envelopes allow
+unknown optional fields so a compatible minor can extend them. Newly introduced
+domain DTOs are closed with `additionalProperties: false`; their evolution uses
+new definitions or a later compatible profile rather than accepting ambiguous
+semantic data. Implementations apply hard byte/depth/item limits before either
+validating or ignoring a field.
 
 Schema validation is necessary but not sufficient. The conformance client also checks sequencing, negotiated version, duplicate request IDs, exact terminal responses, byte-size limits, HMAC vectors, project binding, cancellation/deadline races, and cleanup.
 
@@ -645,8 +653,38 @@ observations. The sidecar MUST NOT raw-parse `.tscn` as a second semantic
 authority. Exact DTOs, limits, allowed settings, NodePath grammar, and negative
 cases are frozen in `scene.schema.json` and `SCENE-001`.
 
-Negotiation selects the highest supported minor no greater than 1.3. A 1.3
-server accepts 1.0–1.2 clients without advertising or sending scene-domain
-messages; resource-domain messages remain available to both 1.2 and 1.3
-clients. Revision vectors omit `scene_graph_revision` below 1.3 and omit
-`resource_revision` below 1.2.
+Bridge RPC 1.4 retains the complete 1.3 scene profile. A negotiated 1.3 session
+does not advertise, accept, or emit script-domain fields, while a 1.4 session
+continues to accept both resource and scene methods. Revision vectors omit
+`scene_graph_revision` below 1.3 and omit `resource_revision` below 1.2.
+
+## 20. Bridge RPC 1.4 saved-script semantics
+
+Bridge RPC 1.4 adds capabilities `script.gdscript_semantics`,
+`script.incremental_index`, `script.diagnostics`, and
+`script.csharp_discovery`; methods `script.snapshot.get` and
+`script.delta.get`; domain `script_graph`; revision
+`script_graph_revision`; and notifications `script_graph_changed` and
+`script_journal_gap`.
+
+The strict projection contains only bounded project-relative document
+coordinates, content hashes, declarations, exact or dynamic relations,
+diagnostics, and language-adapter status. It never carries raw source bytes,
+absolute paths, parser nodes, engine object IDs, or analyzer pointers. Exact
+relations require a target; dynamic relations must not contain one. Snapshot
+and delta checksums bind the exact canonical payloads and the resource, scene,
+and script revision coordinates used for normalization.
+
+`S5-03` freezes the wire and negotiation boundary before the production adapter
+exists. Therefore the four 1.4 script capabilities are present with readiness
+`unavailable`, and script requests complete with `capability_unavailable`.
+`S5-04` may change readiness to `ready` only when the matching bounded adapter
+and journal are installed; a GDScript-disabled build continues to report
+unavailability. Sessions negotiated at 1.0–1.3 omit every script capability,
+limit, revision, method, notification, and payload field.
+
+The canonical bundle contains 101 cases: 18 script-profile cases, including
+strict negatives for downgrade, unknown fields, absolute paths, raw source, and
+false dynamic targets, plus two explicit resource/scene compatibility cases for
+1.4. The local cross-language freeze is recorded in
+[`tests/codex/evidence/sprint-5-stage-3-bridge.json`](../../tests/codex/evidence/sprint-5-stage-3-bridge.json).

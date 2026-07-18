@@ -1,0 +1,24 @@
+{
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "kind": "notification",
+  "method": "script_journal_gap",
+  "params": {
+    "current_script_graph_revision": 19,
+    "event_type": "script_journal_gap",
+    "last_contiguous_script_graph_revision": 12,
+    "revisions": {
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+      "event_seq": 20,
+      "operation_seq": 0,
+      "project_revision": 17,
+      "resource_revision": 10,
+      "scene_graph_revision": 6,
+      "scene_revisions": {},
+      "script_graph_revision": 19
+    }
+  },
+  "protocol_version": "1.4"
+}

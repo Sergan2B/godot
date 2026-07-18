@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Codex Bridge RPC 1.3 PackedScene and SceneState source projection",
+  "title": "Codex Bridge RPC 1.3+ PackedScene and SceneState source projection",
   "oneOf": [
     {"$ref": "#/$defs/sceneSnapshotRequest"},
     {"$ref": "#/$defs/sceneDeltaRequest"},
@@ -313,7 +313,7 @@
         {"$ref": "rpc.schema.json#/$defs/request"},
         {
           "properties": {
-            "protocol_version": {"const": "1.3"},
+            "protocol_version": {"enum": ["1.3", "1.4"]},
             "method": {"const": "scene.snapshot.get"},
             "params": {"$ref": "#/$defs/sceneSnapshotParams"}
           }
@@ -325,7 +325,7 @@
         {"$ref": "rpc.schema.json#/$defs/notification"},
         {
           "properties": {
-            "protocol_version": {"const": "1.3"},
+            "protocol_version": {"enum": ["1.3", "1.4"]},
             "method": {"const": "snapshot.begin"},
             "params": {
               "type": "object",
@@ -348,7 +348,7 @@
         {"$ref": "rpc.schema.json#/$defs/chunk"},
         {
           "properties": {
-            "protocol_version": {"const": "1.3"},
+            "protocol_version": {"enum": ["1.3", "1.4"]},
             "domain": {"const": "scene_graph"},
             "payload": {"$ref": "#/$defs/sceneSnapshotPayload"}
           },
@@ -361,7 +361,7 @@
         {"$ref": "rpc.schema.json#/$defs/notification"},
         {
           "properties": {
-            "protocol_version": {"const": "1.3"},
+            "protocol_version": {"enum": ["1.3", "1.4"]},
             "method": {"const": "snapshot.end"},
             "params": {
               "type": "object",
@@ -386,7 +386,7 @@
         {"$ref": "rpc.schema.json#/$defs/ack"},
         {
           "properties": {
-            "protocol_version": {"const": "1.3"},
+            "protocol_version": {"enum": ["1.3", "1.4"]},
             "params": {
               "type": "object",
               "required": ["snapshot_id", "domain", "through_chunk"],
@@ -414,7 +414,7 @@
         {"$ref": "rpc.schema.json#/$defs/request"},
         {
           "properties": {
-            "protocol_version": {"const": "1.3"},
+            "protocol_version": {"enum": ["1.3", "1.4"]},
             "method": {"const": "scene.delta.get"},
             "params": {"$ref": "#/$defs/sceneDeltaParams"}
           }
@@ -505,7 +505,7 @@
         {"$ref": "rpc.schema.json#/$defs/notification"},
         {
           "properties": {
-            "protocol_version": {"const": "1.3"},
+            "protocol_version": {"enum": ["1.3", "1.4"]},
             "method": {"const": "scene_graph_changed"},
             "params": {
               "type": "object",
@@ -527,7 +527,7 @@
         {"$ref": "rpc.schema.json#/$defs/notification"},
         {
           "properties": {
-            "protocol_version": {"const": "1.3"},
+            "protocol_version": {"enum": ["1.3", "1.4"]},
             "method": {"const": "scene_journal_gap"},
             "params": {
               "type": "object",

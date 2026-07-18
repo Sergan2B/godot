@@ -172,7 +172,7 @@ Error BridgeHandshakeSession::_handle_client_hello(const Dictionary &p_message, 
 		seen_client_nonces->insert(nonce_encoded);
 	}
 
-	selected_version = offered_major_one_minor >= 3 ? "1.3" : (offered_major_one_minor >= 2 ? "1.2" : (offered_major_one_minor >= 1 ? "1.1" : "1.0"));
+	selected_version = offered_major_one_minor >= 4 ? "1.4" : (offered_major_one_minor >= 3 ? "1.3" : (offered_major_one_minor >= 2 ? "1.2" : (offered_major_one_minor >= 1 ? "1.1" : "1.0")));
 	Error error = BridgeCrypto::random_bytes(BridgeCrypto::RANDOM_VALUE_BYTES, server_nonce);
 	if (error != OK) {
 		state = STATE_CLOSED;
@@ -252,6 +252,7 @@ Error BridgeHandshakeSession::_handle_client_authenticate(const Dictionary &p_me
 
 BridgeHandshakeSession::BridgeHandshakeSession(const PackedByteArray &p_token, const String &p_project_id, const String &p_editor_session_id, uint64_t p_accepted_at_usec, HashSet<String> *p_seen_client_nonces) :
 		deadline_usec(p_accepted_at_usec + HANDSHAKE_TIMEOUT_USEC), token(p_token), project_id(p_project_id), editor_session_id(p_editor_session_id), seen_client_nonces(p_seen_client_nonces) {
+	supported_versions.push_back("1.4");
 	supported_versions.push_back("1.3");
 	supported_versions.push_back("1.2");
 	supported_versions.push_back("1.1");

@@ -46,6 +46,8 @@ public:
 		METHOD_RESOURCE_DELTA,
 		METHOD_SCENE_SNAPSHOT,
 		METHOD_SCENE_DELTA,
+		METHOD_SCRIPT_SNAPSHOT,
+		METHOD_SCRIPT_DELTA,
 		METHOD_SHUTDOWN,
 	};
 
@@ -106,6 +108,8 @@ private:
 	bool _validate_resource_delta_params(const Dictionary &p_params) const;
 	bool _validate_scene_snapshot_params(const Dictionary &p_params) const;
 	bool _validate_scene_delta_params(const Dictionary &p_params) const;
+	bool _validate_script_snapshot_params(const Dictionary &p_params) const;
+	bool _validate_script_delta_params(const Dictionary &p_params) const;
 	bool _validate_shutdown_params(const Dictionary &p_params) const;
 	void _remove_pending(uint64_t p_internal_request_id);
 	void _set_error_outcome(const String &p_request_id, const String &p_code, const String &p_message, bool p_retryable, Outcome &r_outcome) const;

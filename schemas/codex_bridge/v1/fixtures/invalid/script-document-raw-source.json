@@ -1,0 +1,11 @@
+{
+  "adapter_profile": "gdscript_parser_analyzer_v1",
+  "completeness": "complete",
+  "content_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "language": "gdscript",
+  "path": "res://scripts/player.gd",
+  "raw_source": "extends Node",
+  "resource_revision": 7,
+  "script_graph_revision": 11,
+  "script_ref": {"uid": "uid://s5player"}
+}

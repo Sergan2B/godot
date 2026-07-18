@@ -725,7 +725,7 @@ TEST_CASE("[CodexBridge] Handshake negotiates the compatible 1.1 minor") {
 	CHECK(handshake.get_selected_protocol_version() == "1.1");
 }
 
-TEST_CASE("[CodexBridge] Handshake caps future major-one minors at Bridge RPC 1.3") {
+TEST_CASE("[CodexS5BridgeProfile] Handshake negotiates Bridge RPC 1.4 and caps future major-one minors") {
 	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
 	const PackedByteArray token = bytes_from_range(0xa0, 32);
@@ -735,8 +735,13 @@ TEST_CASE("[CodexBridge] Handshake caps future major-one minors at Bridge RPC 1.
 	BridgeHandshakeSession handshake(token, project_id, editor_session_id, 0);
 	BridgeHandshakeSession::Outcome challenge;
 	REQUIRE(handshake.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, "1.9"), 1, challenge) == OK);
-	CHECK(challenge.response["selected_protocol_version"] == "1.3");
-	CHECK(handshake.get_selected_protocol_version() == "1.3");
+	CHECK(challenge.response["selected_protocol_version"] == "1.4");
+	CHECK(handshake.get_selected_protocol_version() == "1.4");
+
+	BridgeHandshakeSession exact(token, project_id, editor_session_id, 0);
+	REQUIRE(exact.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, "1.4"), 1, challenge) == OK);
+	CHECK(challenge.response["selected_protocol_version"] == "1.4");
+	CHECK(exact.get_selected_protocol_version() == "1.4");
 }
 
 TEST_CASE("[CodexBridge] Handshake rejects binding, version, proof, replay, and timeout failures") {
@@ -1062,6 +1067,130 @@ TEST_CASE("[CodexBridge] Scene methods fail explicitly after a 1.2 downgrade") {
 	CHECK(rpc_error_code(outcome) == "capability_unavailable");
 }
 
+TEST_CASE("[CodexS5BridgeProfile] RPC 1.4 negotiates a strict unavailable script profile") {
+	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
+	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
+	BridgeRpcSession rpc(project_id, editor_session_id);
+	rpc.set_protocol_version("1.4");
+	BridgeRpcSession::Outcome outcome;
+
+	REQUIRE(rpc.handle_message(make_rpc_request("req:init-script", "bridge.initialize", make_initialize_params(), project_id, editor_session_id, 5000, "1.4"), 0, 1, outcome) == OK);
+	REQUIRE(rpc.complete(1, 1, outcome) == OK);
+	const Dictionary initialize_result = outcome.response["result"];
+	CHECK(initialize_result["protocol_version"] == "1.4");
+	const Array capabilities = initialize_result["capabilities"];
+	CHECK(capabilities.size() == 15);
+	int script_capabilities = 0;
+	for (int index = 0; index < capabilities.size(); index++) {
+		const Dictionary capability = capabilities[index];
+		if (String(capability["name"]).begins_with("script.")) {
+			script_capabilities++;
+			CHECK(capability["readiness"] == "unavailable");
+		}
+	}
+	CHECK(script_capabilities == 4);
+	const Dictionary limits = initialize_result["limits"];
+	CHECK((int64_t)limits["script_documents"] == 250000);
+	CHECK((int64_t)limits["script_symbols"] == 2000000);
+	CHECK((int64_t)limits["script_snapshot_chunk_bytes"] == 524288);
+	const Dictionary revisions = initialize_result["revisions"];
+	CHECK((int64_t)revisions["resource_revision"] == 1);
+	CHECK((int64_t)revisions["scene_graph_revision"] == 1);
+	CHECK((int64_t)revisions["script_graph_revision"] == 1);
+
+	REQUIRE(rpc.handle_message(make_rpc_request("req:resource-on-1.4", "resource.snapshot.get", Dictionary(), project_id, editor_session_id, 5000, "1.4"), 2, 2, outcome) == OK);
+	CHECK(outcome.method == BridgeRpcSession::METHOD_RESOURCE_SNAPSHOT);
+	Dictionary resource_result;
+	resource_result["snapshot_id"] = "snapshot:6123456789abcdef0123456789abcdef";
+	resource_result["domain"] = "resource_graph";
+	REQUIRE(rpc.complete(2, 3, resource_result, outcome) == OK);
+
+	REQUIRE(rpc.handle_message(make_rpc_request("req:scene-on-1.4", "scene.snapshot.get", Dictionary(), project_id, editor_session_id, 5000, "1.4"), 4, 3, outcome) == OK);
+	CHECK(outcome.method == BridgeRpcSession::METHOD_SCENE_SNAPSHOT);
+	Dictionary scene_result;
+	scene_result["snapshot_id"] = "snapshot:7123456789abcdef0123456789abcdef";
+	scene_result["domain"] = "scene_graph";
+	REQUIRE(rpc.complete(3, 5, scene_result, outcome) == OK);
+
+	REQUIRE(rpc.handle_message(make_rpc_request("req:script-snapshot", "script.snapshot.get", Dictionary(), project_id, editor_session_id, 5000, "1.4"), 6, 4, outcome) == OK);
+	CHECK(outcome.method == BridgeRpcSession::METHOD_SCRIPT_SNAPSHOT);
+	CHECK(outcome.deadline_usec == 120000006);
+	Dictionary snapshot_result;
+	snapshot_result["snapshot_id"] = "snapshot:8123456789abcdef0123456789abcdef";
+	snapshot_result["domain"] = "script_graph";
+	REQUIRE(rpc.complete(4, 7, snapshot_result, outcome) == OK);
+	CHECK(Dictionary(outcome.response["result"])["domain"] == "script_graph");
+
+	Dictionary delta_params;
+	delta_params["after_script_graph_revision"] = (int64_t)1;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:script-delta", "script.delta.get", delta_params, project_id, editor_session_id, 5000, "1.4"), 8, 5, outcome) == OK);
+	CHECK(outcome.method == BridgeRpcSession::METHOD_SCRIPT_DELTA);
+	Dictionary delta_result;
+	delta_result["status"] = "current";
+	delta_result["current_script_graph_revision"] = (int64_t)1;
+	REQUIRE(rpc.complete(5, 9, delta_result, outcome) == OK);
+	CHECK(Dictionary(outcome.response["result"])["status"] == "current");
+
+	Dictionary invalid_delta = delta_params;
+	invalid_delta["unknown"] = true;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:invalid-script-delta", "script.delta.get", invalid_delta, project_id, editor_session_id, 5000, "1.4"), 10, 6, outcome) == OK);
+	CHECK(rpc_error_code(outcome) == "invalid_request");
+
+	Dictionary ack;
+	ack["protocol_version"] = "1.4";
+	ack["kind"] = "ack";
+	ack["ack_id"] = "ack:script-snapshot";
+	Dictionary ack_params;
+	ack_params["snapshot_id"] = snapshot_result["snapshot_id"];
+	ack_params["domain"] = "script_graph";
+	ack_params["through_chunk"] = 0;
+	ack["params"] = ack_params;
+	ack["context"] = make_rpc_context(project_id, editor_session_id);
+	CHECK(rpc.handle_message(ack, 11, 7, outcome) == OK);
+
+	Dictionary metrics;
+	metrics["schema_version"] = 1;
+	metrics["protocol_version"] = "1.4";
+	metrics["script_capabilities"] = script_capabilities;
+	metrics["script_methods"] = 2;
+	metrics["resource_scene_retained"] = true;
+	metrics["script_readiness"] = "unavailable";
+	print_line("[codex_s5_bridge] " + JSON::stringify(metrics));
+}
+
+TEST_CASE("[CodexS5BridgeProfile] RPC 1.3 downgrade omits every script field") {
+	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
+	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
+	BridgeRpcSession rpc(project_id, editor_session_id);
+	rpc.set_protocol_version("1.3");
+	BridgeRpcSession::Outcome outcome;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:init-script-downgrade", "bridge.initialize", make_initialize_params(), project_id, editor_session_id, 5000, "1.3"), 0, 1, outcome) == OK);
+	Dictionary revisions_override;
+	revisions_override["editor_session_id"] = editor_session_id;
+	revisions_override["event_seq"] = (int64_t)0;
+	revisions_override["project_revision"] = (int64_t)0;
+	revisions_override["operation_seq"] = (int64_t)0;
+	revisions_override["resource_revision"] = (int64_t)1;
+	revisions_override["scene_graph_revision"] = (int64_t)1;
+	revisions_override["script_graph_revision"] = (int64_t)99;
+	revisions_override["scene_revisions"] = Dictionary();
+	Dictionary initialize_override;
+	initialize_override["revisions"] = revisions_override;
+	REQUIRE(rpc.complete(1, 1, initialize_override, outcome) == OK);
+	const Dictionary initialize_result = outcome.response["result"];
+	const Dictionary revisions = initialize_result["revisions"];
+	CHECK_FALSE(revisions.has("script_graph_revision"));
+	CHECK_FALSE(Dictionary(initialize_result["limits"]).has("script_documents"));
+	const Array capabilities = initialize_result["capabilities"];
+	CHECK(capabilities.size() == 11);
+	for (int index = 0; index < capabilities.size(); index++) {
+		CHECK_FALSE(String(Dictionary(capabilities[index])["name"]).begins_with("script."));
+	}
+
+	REQUIRE(rpc.handle_message(make_rpc_request("req:no-script", "script.snapshot.get", Dictionary(), project_id, editor_session_id, 5000, "1.3"), 2, 2, outcome) == OK);
+	CHECK(rpc_error_code(outcome) == "capability_unavailable");
+}
+
 TEST_CASE("[CodexBridge] Revision clock advances selection and scene domains monotonically") {
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
 	const String scene_id = "scene:0123456789abcdef0123456789abcdef";
@@ -1081,6 +1210,9 @@ TEST_CASE("[CodexBridge] Revision clock advances selection and scene domains mon
 	CHECK(revisions.record_resource_change() == 2);
 	CHECK(revisions.record_scene_graph_change() == 2);
 	CHECK(revisions.get_scene_graph_revision() == 2);
+	CHECK(revisions.record_script_graph_change() == 2);
+	CHECK(revisions.get_script_graph_revision() == 2);
+	CHECK((int64_t)revisions.get_revision_vector()["script_graph_revision"] == 2);
 }
 
 static Dictionary make_resource_ref(const String &p_uid, const String &p_path = String()) {

@@ -1,7 +1,7 @@
 # Sprint 5 plan — GDScript symbols and program relations
 
-**Status:** In progress — `S5-01` and `S5-02` are complete and locally verified
-on macOS arm64; `S5-03` is the next gate; full Sprint 5 acceptance is not claimed
+**Status:** In progress — `S5-01`–`S5-03` are complete and locally verified on
+macOS arm64; `S5-04` is the next gate; full Sprint 5 acceptance is not claimed
 
 **Planned duration:** 10 working days
 
@@ -179,6 +179,17 @@ validators reproduce the graph without importing Bridge, sidecar, index, or
 MCP implementation code; Godot C++ independently parses the six valid
 GDScript documents and the intentionally broken document. The ten later live
 phases are named here, but no live ingestion or cross-host acceptance is claimed.
+
+`S5-03` is frozen by
+[`tests/codex/evidence/sprint-5-stage-3-bridge.json`](../../tests/codex/evidence/sprint-5-stage-3-bridge.json).
+Bridge RPC 1.4 adds a strict script schema, 18 positive/negative script-profile
+cases, two explicit resource/scene compatibility cases, four capability names,
+two methods, two notifications, and `script_graph_revision`. Rust validates all
+101 canonical bundle cases and exact snapshot/delta checksums; Godot C++ proves
+1.4 negotiation, retention of resource/scene methods, and complete script-field
+omission after a 1.3 downgrade. Until `S5-04` installs the bounded adapter and
+journal, the four script capabilities intentionally report `unavailable` and
+requests fail with `capability_unavailable`.
 
 `S5-06` adds independently content-addressed script-document, symbol, relation,
 reference, diagnostic, and lookup shards. Migration validates the active

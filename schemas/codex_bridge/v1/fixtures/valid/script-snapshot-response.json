@@ -1,0 +1,43 @@
+{
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "kind": "response",
+  "protocol_version": "1.4",
+  "request_id": "req:script-snapshot",
+  "result": {
+    "domain": "script_graph",
+    "limits_applied": {
+      "adapter_status_count": 16,
+      "diagnostic_message_bytes": 2048,
+      "diagnostics_per_document": 4096,
+      "relations_per_document": 262144,
+      "script_diagnostics": 2000000,
+      "script_documents": 250000,
+      "script_name_bytes": 1024,
+      "script_path_bytes": 1024,
+      "script_relations": 4000000,
+      "script_signature_bytes": 4096,
+      "script_symbols": 2000000,
+      "snapshot_chunk_bytes": 262144,
+      "snapshot_timeout_ms": 120000,
+      "snapshot_window_bytes": 33554432,
+      "symbols_per_document": 65536
+    },
+    "resource_revision": 7,
+    "revisions": {
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+      "event_seq": 12,
+      "operation_seq": 0,
+      "project_revision": 9,
+      "resource_revision": 7,
+      "scene_graph_revision": 5,
+      "scene_revisions": {},
+      "script_graph_revision": 11
+    },
+    "scene_graph_revision": 5,
+    "script_graph_revision": 11,
+    "snapshot_id": "snapshot:4123456789abcdef0123456789abcdef"
+  }
+}

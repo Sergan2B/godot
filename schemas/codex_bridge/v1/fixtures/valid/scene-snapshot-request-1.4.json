@@ -1,0 +1,12 @@
+{
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "deadline_ms": 30000,
+  "kind": "request",
+  "method": "scene.snapshot.get",
+  "params": {},
+  "protocol_version": "1.4",
+  "request_id": "req:scene-snapshot-1.4"
+}

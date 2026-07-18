@@ -25,7 +25,7 @@ mod script_semantics_contract {
 }
 
 const SCHEMA_BASE_URI: &str = "https://godot-codex.local/schema/v1/";
-const SCHEMA_FILES: [&str; 9] = [
+const SCHEMA_FILES: [&str; 10] = [
     "common.schema.json",
     "discovery.schema.json",
     "fixture-manifest.schema.json",
@@ -35,6 +35,7 @@ const SCHEMA_FILES: [&str; 9] = [
     "sync.schema.json",
     "resource.schema.json",
     "scene.schema.json",
+    "script.schema.json",
 ];
 
 fn bundle_root() -> PathBuf {
@@ -304,7 +305,7 @@ mod tests {
 
     #[test]
     fn canonical_schema_fixture_bundle_is_self_consistent() {
-        assert_eq!(validate_canonical_bundle().unwrap(), 81);
+        assert_eq!(validate_canonical_bundle().unwrap(), 101);
     }
 
     #[test]
@@ -338,5 +339,73 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn script_profile_binds_payloads_and_rejects_false_semantics() {
+        let root = bundle_root().join("fixtures");
+        let chunk = read_json(&root.join("valid/script-snapshot-chunk.json")).unwrap();
+        let payload_json = required_string(&chunk, "payload_json").unwrap();
+        let parsed_payload: Value = serde_json::from_str(payload_json).unwrap();
+        assert_eq!(parsed_payload, chunk["payload"]);
+        let chunk_checksum = format!("{:x}", sha2::Sha256::digest(payload_json.as_bytes()));
+        assert_eq!(chunk_checksum, required_string(&chunk, "checksum").unwrap());
+
+        let end = read_json(&root.join("valid/script-snapshot-end.json")).unwrap();
+        let snapshot_checksum = format!("{:x}", sha2::Sha256::digest(chunk_checksum.as_bytes()));
+        assert_eq!(snapshot_checksum, end["params"]["checksum"]);
+        assert_eq!(end["params"]["document_count"], 1);
+        assert_eq!(end["params"]["symbol_count"], 2);
+        assert_eq!(end["params"]["relation_count"], 2);
+
+        let delta = read_json(&root.join("valid/script-delta-batch-response.json")).unwrap();
+        let operations = &delta["result"]["batch"]["operations"];
+        let operations_json = serde_json::to_string(operations).unwrap();
+        let batch_checksum = format!("{:x}", sha2::Sha256::digest(operations_json.as_bytes()));
+        assert_eq!(batch_checksum, delta["result"]["batch"]["checksum"]);
+        assert_eq!(
+            delta["result"]["batch"]["previous_script_graph_revision"],
+            11
+        );
+        assert_eq!(delta["result"]["batch"]["script_graph_revision"], 12);
+
+        let mut dynamic_relation = chunk["payload"]["relations"][1].clone();
+        dynamic_relation["target"] = chunk["payload"]["relations"][0]["target"].clone();
+        assert!(
+            validate_instance(
+                "script.schema.json#/$defs/scriptRelation",
+                &dynamic_relation
+            )
+            .is_err()
+        );
+
+        let mut exact_relation = chunk["payload"]["relations"][0].clone();
+        exact_relation["target"] = Value::Null;
+        assert!(
+            validate_instance("script.schema.json#/$defs/scriptRelation", &exact_relation).is_err()
+        );
+
+        let mut leaked_source = chunk["payload"]["documents"][0].clone();
+        leaked_source["raw_source"] = Value::String("extends Node".to_owned());
+        assert!(
+            validate_instance("script.schema.json#/$defs/scriptDocument", &leaked_source).is_err()
+        );
+
+        for range in chunk["payload"]["symbols"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|symbol| &symbol["declaration_range"])
+            .chain(
+                chunk["payload"]["relations"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|relation| &relation["evidence_range"]),
+            )
+        {
+            assert!(range["start_byte"].as_u64().unwrap() < range["end_byte"].as_u64().unwrap());
+            assert!(range["start_line"].as_u64().unwrap() <= range["end_line"].as_u64().unwrap());
+        }
     }
 }

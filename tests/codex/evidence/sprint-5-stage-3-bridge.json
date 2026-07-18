@@ -1,0 +1,93 @@
+{
+  "artifacts": {
+    "godot_sha256": "sha256:f65ea48f87beca9ecd4ab44925ec3eda557c6db53f6eaa422d5cc6f6d5be6a90"
+  },
+  "baseline": "56b7ace945daaa821207f09327abcbf6a266b842",
+  "checks": [
+    "archived_s5_01_evidence",
+    "archived_s5_02_evidence",
+    "source_scope_hash",
+    "strict_json",
+    "draft_2020_12_schemas",
+    "canonical_bundle_101_cases",
+    "script_profile_18_cases",
+    "resource_scene_1_4_compatibility",
+    "snapshot_payload_checksum",
+    "snapshot_aggregate_checksum",
+    "delta_batch_checksum",
+    "exact_dynamic_target_separation",
+    "raw_source_and_absolute_path_rejection",
+    "bridge_rpc_1_4_negotiation_cpp",
+    "legacy_1_0_1_3_script_omission",
+    "script_capability_unavailable_until_s5_04",
+    "evidence_redaction"
+  ],
+  "godot_protocol": {
+    "build": {
+      "assertions": 58,
+      "assertions_passed": 58,
+      "passed": 3,
+      "test_cases": 3
+    },
+    "metrics": {
+      "protocol_version": "1.4",
+      "resource_scene_retained": true,
+      "schema_version": 1,
+      "script_capabilities": 4,
+      "script_methods": 2,
+      "script_readiness": "unavailable"
+    }
+  },
+  "platform": "macos-arm64",
+  "profile": {
+    "bundle_version": "1.4",
+    "capabilities": [
+      "script.gdscript_semantics",
+      "script.incremental_index",
+      "script.diagnostics",
+      "script.csharp_discovery"
+    ],
+    "compatibility_cases": 2,
+    "manifest_cases": 101,
+    "methods": [
+      "script.snapshot.get",
+      "script.delta.get"
+    ],
+    "notifications": [
+      "script_graph_changed",
+      "script_journal_gap"
+    ],
+    "readiness": "unavailable_until_s5_04",
+    "revision": "script_graph_revision",
+    "schema_files": 10,
+    "script_schema_cases": 18,
+    "snapshot_diagnostics": 1,
+    "snapshot_documents": 1,
+    "snapshot_payload_bytes": 3821,
+    "snapshot_relations": 2,
+    "snapshot_symbols": 2
+  },
+  "redaction": {
+    "complete": true
+  },
+  "remote_ci": "not_run",
+  "rust_conformance": {
+    "passed": 3,
+    "test_cases": 3
+  },
+  "schema_version": 1,
+  "source": {
+    "file_count": 122,
+    "scope_manifest": "tests/codex/sprint5_stage3_source_scopes.txt",
+    "source_scope_sha256": "sha256:39c399b38e154a848b523b513ff8cc60a411c15af634c6ce5840d1a441f96765"
+  },
+  "sprint": 5,
+  "stage": "S5-03",
+  "status": "passed",
+  "toolchain": {
+    "cargo": "cargo 1.94.1 (29ea6fb6a 2026-03-24)",
+    "godot": "4.8.dev.custom_build.56b7ace94",
+    "python": "CPython 3.14.6",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)"
+  }
+}

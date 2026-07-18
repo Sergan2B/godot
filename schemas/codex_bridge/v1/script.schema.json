@@ -1,0 +1,697 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Bridge RPC 1.4 saved-script semantic projection",
+  "oneOf": [
+    {"$ref": "#/$defs/scriptSnapshotRequest"},
+    {"$ref": "#/$defs/scriptDeltaRequest"},
+    {"$ref": "#/$defs/scriptSnapshotBegin"},
+    {"$ref": "#/$defs/scriptSnapshotChunk"},
+    {"$ref": "#/$defs/scriptSnapshotEnd"},
+    {"$ref": "#/$defs/scriptSnapshotAck"},
+    {"$ref": "#/$defs/scriptGraphChanged"},
+    {"$ref": "#/$defs/scriptJournalGap"}
+  ],
+  "$defs": {
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "scriptRevisionVector": {
+      "allOf": [
+        {"$ref": "common.schema.json#/$defs/revisionVector"},
+        {"required": ["resource_revision", "scene_graph_revision", "script_graph_revision"]}
+      ]
+    },
+    "contentGeneration": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "namedSymbolId": {
+      "type": "string",
+      "pattern": "^godot:script-symbol:named:v1:[A-Za-z0-9_-]{43}$"
+    },
+    "contentSymbolId": {
+      "type": "string",
+      "pattern": "^godot:script-symbol:content-revision:v1:[A-Za-z0-9_-]{43}$"
+    },
+    "symbolId": {
+      "oneOf": [
+        {"$ref": "#/$defs/namedSymbolId"},
+        {"$ref": "#/$defs/contentSymbolId"}
+      ]
+    },
+    "diagnosticId": {
+      "type": "string",
+      "pattern": "^godot:script-diagnostic:v1:[A-Za-z0-9_-]{43}$"
+    },
+    "language": {
+      "enum": ["gdscript", "csharp"]
+    },
+    "adapterProfile": {
+      "enum": ["gdscript_parser_analyzer_v1", "csharp_discovery_only_v1"]
+    },
+    "sourceRange": {
+      "type": "object",
+      "required": [
+        "path", "content_sha256", "start_byte", "end_byte", "start_line",
+        "start_column", "end_line", "end_column"
+      ],
+      "properties": {
+        "path": {"$ref": "resource.schema.json#/$defs/resourcePath"},
+        "content_sha256": {"$ref": "#/$defs/contentGeneration"},
+        "start_byte": {"$ref": "#/$defs/revision"},
+        "end_byte": {"$ref": "#/$defs/revision"},
+        "start_line": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+        "start_column": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+        "end_line": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+        "end_column": {"type": "integer", "minimum": 1, "maximum": 2147483647}
+      },
+      "additionalProperties": false
+    },
+    "scriptDocument": {
+      "type": "object",
+      "required": [
+        "script_ref", "path", "language", "content_sha256", "adapter_profile",
+        "completeness", "resource_revision", "script_graph_revision"
+      ],
+      "properties": {
+        "script_ref": {"$ref": "resource.schema.json#/$defs/resourceRef"},
+        "path": {"$ref": "resource.schema.json#/$defs/resourcePath"},
+        "language": {"$ref": "#/$defs/language"},
+        "content_sha256": {"$ref": "#/$defs/contentGeneration"},
+        "adapter_profile": {"$ref": "#/$defs/adapterProfile"},
+        "completeness": {"enum": ["complete", "partial", "invalid", "unavailable"]},
+        "resource_revision": {"$ref": "#/$defs/revision"},
+        "script_graph_revision": {"$ref": "#/$defs/revision"}
+      },
+      "additionalProperties": false
+    },
+    "scriptSymbol": {
+      "type": "object",
+      "required": [
+        "symbol_id", "script_ref", "language", "kind", "name", "qualified_key",
+        "owner_symbol_id", "identity_scope", "signature", "type_name", "type_state",
+        "visibility", "modifiers", "declaration_range", "documentation_present",
+        "script_graph_revision"
+      ],
+      "properties": {
+        "symbol_id": {"$ref": "#/$defs/symbolId"},
+        "script_ref": {"$ref": "resource.schema.json#/$defs/resourceRef"},
+        "language": {"$ref": "#/$defs/language"},
+        "kind": {
+          "enum": [
+            "script", "class", "method", "function", "property", "constant",
+            "enum", "enum_member", "signal", "parameter", "local", "lambda"
+          ]
+        },
+        "name": {
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 512},
+            {"type": "null"}
+          ]
+        },
+        "qualified_key": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "owner_symbol_id": {
+          "oneOf": [
+            {"$ref": "#/$defs/symbolId"},
+            {"type": "null"}
+          ]
+        },
+        "identity_scope": {"enum": ["persistent", "content_revision"]},
+        "signature": {
+          "oneOf": [
+            {"type": "string", "maxLength": 4096},
+            {"type": "null"}
+          ]
+        },
+        "type_name": {
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 1024},
+            {"type": "null"}
+          ]
+        },
+        "type_state": {"enum": ["explicit", "inferred", "dynamic", "unavailable"]},
+        "visibility": {"enum": ["public", "protected", "private", "internal"]},
+        "modifiers": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["abstract", "const", "exported", "override", "static", "tool", "virtual"]
+          }
+        },
+        "declaration_range": {"$ref": "#/$defs/sourceRange"},
+        "documentation_present": {"type": "boolean"},
+        "script_graph_revision": {"$ref": "#/$defs/revision"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"identity_scope": {"const": "persistent"}}, "required": ["identity_scope"]},
+          "then": {"properties": {"symbol_id": {"$ref": "#/$defs/namedSymbolId"}}}
+        },
+        {
+          "if": {"properties": {"identity_scope": {"const": "content_revision"}}, "required": ["identity_scope"]},
+          "then": {"properties": {"symbol_id": {"$ref": "#/$defs/contentSymbolId"}}}
+        }
+      ],
+      "additionalProperties": false
+    },
+    "symbolEndpoint": {
+      "type": "object",
+      "required": ["kind", "symbol_id"],
+      "properties": {
+        "kind": {"const": "symbol"},
+        "symbol_id": {"$ref": "#/$defs/symbolId"}
+      },
+      "additionalProperties": false
+    },
+    "resourceEndpoint": {
+      "type": "object",
+      "required": ["kind", "resource_ref"],
+      "properties": {
+        "kind": {"const": "resource"},
+        "resource_ref": {"$ref": "resource.schema.json#/$defs/resourceRef"}
+      },
+      "additionalProperties": false
+    },
+    "sceneNodeEndpoint": {
+      "type": "object",
+      "required": ["kind", "node_id"],
+      "properties": {
+        "kind": {"const": "scene_node"},
+        "node_id": {"$ref": "common.schema.json#/$defs/nodeId"}
+      },
+      "additionalProperties": false
+    },
+    "relationEndpoint": {
+      "oneOf": [
+        {"$ref": "#/$defs/symbolEndpoint"},
+        {"$ref": "#/$defs/resourceEndpoint"},
+        {"$ref": "#/$defs/sceneNodeEndpoint"}
+      ]
+    },
+    "scriptRelation": {
+      "type": "object",
+      "required": [
+        "source", "predicate", "target", "confidence", "evidence_range", "detail",
+        "authority", "script_graph_revision"
+      ],
+      "properties": {
+        "source": {"$ref": "#/$defs/relationEndpoint"},
+        "predicate": {
+          "enum": [
+            "contains", "declares_symbol", "inherits", "overrides", "references_symbol",
+            "calls", "preloads", "loads", "attaches_script"
+          ]
+        },
+        "target": {
+          "oneOf": [
+            {"$ref": "#/$defs/relationEndpoint"},
+            {"type": "null"}
+          ]
+        },
+        "confidence": {"enum": ["exact", "dynamic"]},
+        "evidence_range": {
+          "oneOf": [
+            {"$ref": "#/$defs/sourceRange"},
+            {"type": "null"}
+          ]
+        },
+        "detail": {
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-z][a-z0-9_]*$"},
+            {"type": "null"}
+          ]
+        },
+        "authority": {
+          "enum": ["gdscript_parser_analyzer", "resource_graph", "scene_state", "csharp_adapter"]
+        },
+        "script_graph_revision": {"$ref": "#/$defs/revision"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"confidence": {"const": "exact"}}, "required": ["confidence"]},
+          "then": {"properties": {"target": {"not": {"type": "null"}}}}
+        },
+        {
+          "if": {"properties": {"confidence": {"const": "dynamic"}}, "required": ["confidence"]},
+          "then": {"properties": {"target": {"type": "null"}}}
+        }
+      ],
+      "additionalProperties": false
+    },
+    "scriptDiagnostic": {
+      "type": "object",
+      "required": [
+        "diagnostic_id", "script_ref", "language", "content_sha256", "code", "severity",
+        "safe_message", "range", "authority", "script_graph_revision"
+      ],
+      "properties": {
+        "diagnostic_id": {"$ref": "#/$defs/diagnosticId"},
+        "script_ref": {"$ref": "resource.schema.json#/$defs/resourceRef"},
+        "language": {"$ref": "#/$defs/language"},
+        "content_sha256": {"$ref": "#/$defs/contentGeneration"},
+        "code": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Z][A-Z0-9_]*$"},
+        "severity": {"enum": ["error", "warning", "info", "hint"]},
+        "safe_message": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "range": {
+          "oneOf": [
+            {"$ref": "#/$defs/sourceRange"},
+            {"type": "null"}
+          ]
+        },
+        "authority": {"enum": ["gdscript_parser", "gdscript_analyzer", "csharp_adapter", "script_adapter"]},
+        "script_graph_revision": {"$ref": "#/$defs/revision"}
+      },
+      "additionalProperties": false
+    },
+    "languageAdapterStatus": {
+      "type": "object",
+      "required": ["language", "availability", "profile", "version", "diagnostic"],
+      "properties": {
+        "language": {"$ref": "#/$defs/language"},
+        "availability": {"enum": ["available", "discovery_only", "unavailable"]},
+        "profile": {
+          "oneOf": [
+            {"$ref": "#/$defs/adapterProfile"},
+            {"type": "null"}
+          ]
+        },
+        "version": {
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 64},
+            {"type": "null"}
+          ]
+        },
+        "diagnostic": {
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 512},
+            {"type": "null"}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"availability": {"const": "available"}}, "required": ["availability"]},
+          "then": {
+            "properties": {
+              "profile": {"$ref": "#/$defs/adapterProfile"},
+              "version": {"type": "string"},
+              "diagnostic": {"type": "null"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"availability": {"const": "discovery_only"}}, "required": ["availability"]},
+          "then": {
+            "properties": {
+              "language": {"const": "csharp"},
+              "profile": {"const": "csharp_discovery_only_v1"},
+              "version": {"type": "string"},
+              "diagnostic": {"type": "null"}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"availability": {"const": "unavailable"}}, "required": ["availability"]},
+          "then": {
+            "properties": {
+              "profile": {"type": "null"},
+              "version": {"type": "null"},
+              "diagnostic": {"type": "string"}
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "scriptDocumentBundle": {
+      "type": "object",
+      "required": ["document", "symbols", "relations", "diagnostics"],
+      "properties": {
+        "document": {"$ref": "#/$defs/scriptDocument"},
+        "symbols": {
+          "type": "array",
+          "maxItems": 65536,
+          "items": {"$ref": "#/$defs/scriptSymbol"}
+        },
+        "relations": {
+          "type": "array",
+          "maxItems": 262144,
+          "items": {"$ref": "#/$defs/scriptRelation"}
+        },
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {"$ref": "#/$defs/scriptDiagnostic"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "upsertDocumentOperation": {
+      "type": "object",
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": {"const": "upsert_document"},
+        "value": {"$ref": "#/$defs/scriptDocumentBundle"}
+      },
+      "additionalProperties": false
+    },
+    "removeDocumentOperation": {
+      "type": "object",
+      "required": ["kind", "script_ref", "path"],
+      "properties": {
+        "kind": {"const": "remove_document"},
+        "script_ref": {"$ref": "resource.schema.json#/$defs/resourceRef"},
+        "path": {"$ref": "resource.schema.json#/$defs/resourcePath"}
+      },
+      "additionalProperties": false
+    },
+    "adapterStatusOperation": {
+      "type": "object",
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": {"const": "adapter_status"},
+        "value": {"$ref": "#/$defs/languageAdapterStatus"}
+      },
+      "additionalProperties": false
+    },
+    "deltaOperation": {
+      "oneOf": [
+        {"$ref": "#/$defs/upsertDocumentOperation"},
+        {"$ref": "#/$defs/removeDocumentOperation"},
+        {"$ref": "#/$defs/adapterStatusOperation"}
+      ]
+    },
+    "scriptDeltaBatch": {
+      "type": "object",
+      "required": [
+        "batch_id", "previous_script_graph_revision", "script_graph_revision",
+        "resource_revision", "scene_graph_revision", "project_revision", "operations",
+        "source_complete", "checksum"
+      ],
+      "properties": {
+        "batch_id": {"type": "string", "pattern": "^script-batch:[0-9a-f]{32}$"},
+        "previous_script_graph_revision": {"$ref": "#/$defs/revision"},
+        "script_graph_revision": {"$ref": "#/$defs/revision"},
+        "resource_revision": {"$ref": "#/$defs/revision"},
+        "scene_graph_revision": {"$ref": "#/$defs/revision"},
+        "project_revision": {"$ref": "#/$defs/revision"},
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 250000,
+          "items": {"$ref": "#/$defs/deltaOperation"}
+        },
+        "source_complete": {"const": true},
+        "checksum": {"$ref": "common.schema.json#/$defs/sha256Hex"}
+      },
+      "additionalProperties": false
+    },
+    "scriptSnapshotParams": {
+      "type": "object",
+      "maxProperties": 0,
+      "additionalProperties": false
+    },
+    "scriptSnapshotAcceptedResult": {
+      "type": "object",
+      "required": [
+        "snapshot_id", "domain", "resource_revision", "scene_graph_revision",
+        "script_graph_revision", "revisions", "limits_applied"
+      ],
+      "properties": {
+        "snapshot_id": {"$ref": "common.schema.json#/$defs/snapshotId"},
+        "domain": {"const": "script_graph"},
+        "resource_revision": {"$ref": "#/$defs/revision"},
+        "scene_graph_revision": {"$ref": "#/$defs/revision"},
+        "script_graph_revision": {"$ref": "#/$defs/revision"},
+        "revisions": {"$ref": "#/$defs/scriptRevisionVector"},
+        "limits_applied": {
+          "type": "object",
+          "required": [
+            "script_documents", "script_symbols", "script_relations", "script_diagnostics",
+            "symbols_per_document", "relations_per_document", "diagnostics_per_document",
+            "script_path_bytes", "script_name_bytes", "script_signature_bytes",
+            "diagnostic_message_bytes", "snapshot_chunk_bytes", "snapshot_window_bytes",
+            "snapshot_timeout_ms", "adapter_status_count"
+          ],
+          "properties": {
+            "script_documents": {"const": 250000},
+            "script_symbols": {"const": 2000000},
+            "script_relations": {"const": 4000000},
+            "script_diagnostics": {"const": 2000000},
+            "symbols_per_document": {"const": 65536},
+            "relations_per_document": {"const": 262144},
+            "diagnostics_per_document": {"const": 4096},
+            "script_path_bytes": {"const": 1024},
+            "script_name_bytes": {"const": 1024},
+            "script_signature_bytes": {"const": 4096},
+            "diagnostic_message_bytes": {"const": 2048},
+            "adapter_status_count": {"const": 16},
+            "snapshot_chunk_bytes": {"const": 262144},
+            "snapshot_window_bytes": {"const": 33554432},
+            "snapshot_timeout_ms": {"const": 120000}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "scriptSnapshotRequest": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/request"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.4"},
+            "method": {"const": "script.snapshot.get"},
+            "params": {"$ref": "#/$defs/scriptSnapshotParams"}
+          }
+        }
+      ]
+    },
+    "scriptDeltaParams": {
+      "type": "object",
+      "required": ["after_script_graph_revision"],
+      "properties": {
+        "after_script_graph_revision": {"$ref": "#/$defs/revision"}
+      },
+      "additionalProperties": false
+    },
+    "scriptDeltaRequest": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/request"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.4"},
+            "method": {"const": "script.delta.get"},
+            "params": {"$ref": "#/$defs/scriptDeltaParams"}
+          }
+        }
+      ]
+    },
+    "scriptDeltaCurrentResult": {
+      "type": "object",
+      "required": ["status", "current_script_graph_revision"],
+      "properties": {
+        "status": {"const": "current"},
+        "current_script_graph_revision": {"$ref": "#/$defs/revision"}
+      },
+      "additionalProperties": false
+    },
+    "scriptDeltaBatchResult": {
+      "type": "object",
+      "required": ["status", "current_script_graph_revision", "batch"],
+      "properties": {
+        "status": {"const": "batch"},
+        "current_script_graph_revision": {"$ref": "#/$defs/revision"},
+        "batch": {"$ref": "#/$defs/scriptDeltaBatch"}
+      },
+      "additionalProperties": false
+    },
+    "scriptDeltaResult": {
+      "oneOf": [
+        {"$ref": "#/$defs/scriptDeltaCurrentResult"},
+        {"$ref": "#/$defs/scriptDeltaBatchResult"}
+      ]
+    },
+    "scriptSnapshotBeginParams": {
+      "type": "object",
+      "required": [
+        "snapshot_id", "domain", "resource_revision", "scene_graph_revision",
+        "script_graph_revision", "revisions"
+      ],
+      "properties": {
+        "snapshot_id": {"$ref": "common.schema.json#/$defs/snapshotId"},
+        "domain": {"const": "script_graph"},
+        "resource_revision": {"$ref": "#/$defs/revision"},
+        "scene_graph_revision": {"$ref": "#/$defs/revision"},
+        "script_graph_revision": {"$ref": "#/$defs/revision"},
+        "revisions": {"$ref": "#/$defs/scriptRevisionVector"}
+      },
+      "additionalProperties": false
+    },
+    "scriptSnapshotBegin": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/notification"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.4"},
+            "method": {"const": "snapshot.begin"},
+            "params": {"$ref": "#/$defs/scriptSnapshotBeginParams"}
+          }
+        }
+      ]
+    },
+    "scriptSnapshotPayload": {
+      "type": "object",
+      "required": ["documents", "symbols", "relations", "diagnostics", "adapter_statuses"],
+      "properties": {
+        "documents": {"type": "array", "items": {"$ref": "#/$defs/scriptDocument"}},
+        "symbols": {"type": "array", "items": {"$ref": "#/$defs/scriptSymbol"}},
+        "relations": {"type": "array", "items": {"$ref": "#/$defs/scriptRelation"}},
+        "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/scriptDiagnostic"}},
+        "adapter_statuses": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"$ref": "#/$defs/languageAdapterStatus"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "scriptSnapshotChunk": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/chunk"},
+        {
+          "required": ["domain", "payload_json"],
+          "properties": {
+            "protocol_version": {"const": "1.4"},
+            "domain": {"const": "script_graph"},
+            "payload": {"$ref": "#/$defs/scriptSnapshotPayload"},
+            "payload_json": {"type": "string", "minLength": 2, "maxLength": 262144}
+          }
+        }
+      ]
+    },
+    "scriptSnapshotEndParams": {
+      "type": "object",
+      "required": [
+        "snapshot_id", "domain", "resource_revision", "scene_graph_revision",
+        "script_graph_revision", "chunk_count", "document_count", "symbol_count",
+        "relation_count", "diagnostic_count", "adapter_status_count", "checksum", "revisions"
+      ],
+      "properties": {
+        "snapshot_id": {"$ref": "common.schema.json#/$defs/snapshotId"},
+        "domain": {"const": "script_graph"},
+        "resource_revision": {"$ref": "#/$defs/revision"},
+        "scene_graph_revision": {"$ref": "#/$defs/revision"},
+        "script_graph_revision": {"$ref": "#/$defs/revision"},
+        "chunk_count": {"type": "integer", "minimum": 1, "maximum": 65536},
+        "document_count": {"type": "integer", "minimum": 0, "maximum": 250000},
+        "symbol_count": {"type": "integer", "minimum": 0, "maximum": 2000000},
+        "relation_count": {"type": "integer", "minimum": 0, "maximum": 4000000},
+        "diagnostic_count": {"type": "integer", "minimum": 0, "maximum": 2000000},
+        "adapter_status_count": {"type": "integer", "minimum": 0, "maximum": 16},
+        "checksum": {"$ref": "common.schema.json#/$defs/sha256Hex"},
+        "revisions": {"$ref": "#/$defs/scriptRevisionVector"}
+      },
+      "additionalProperties": false
+    },
+    "scriptSnapshotEnd": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/notification"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.4"},
+            "method": {"const": "snapshot.end"},
+            "params": {"$ref": "#/$defs/scriptSnapshotEndParams"}
+          }
+        }
+      ]
+    },
+    "scriptSnapshotAckParams": {
+      "type": "object",
+      "required": ["snapshot_id", "domain", "through_chunk"],
+      "properties": {
+        "snapshot_id": {"$ref": "common.schema.json#/$defs/snapshotId"},
+        "domain": {"const": "script_graph"},
+        "through_chunk": {"type": "integer", "minimum": 0, "maximum": 65535}
+      },
+      "additionalProperties": false
+    },
+    "scriptSnapshotAck": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/ack"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.4"},
+            "params": {"$ref": "#/$defs/scriptSnapshotAckParams"}
+          }
+        }
+      ]
+    },
+    "scriptGraphChangedParams": {
+      "type": "object",
+      "required": [
+        "event_type", "script_graph_revision", "resource_revision",
+        "scene_graph_revision", "revisions"
+      ],
+      "properties": {
+        "event_type": {"const": "script_graph_changed"},
+        "script_graph_revision": {"$ref": "#/$defs/revision"},
+        "resource_revision": {"$ref": "#/$defs/revision"},
+        "scene_graph_revision": {"$ref": "#/$defs/revision"},
+        "revisions": {"$ref": "#/$defs/scriptRevisionVector"}
+      },
+      "additionalProperties": false
+    },
+    "scriptGraphChanged": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/notification"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.4"},
+            "method": {"const": "script_graph_changed"},
+            "params": {"$ref": "#/$defs/scriptGraphChangedParams"}
+          }
+        }
+      ]
+    },
+    "scriptJournalGapParams": {
+      "type": "object",
+      "required": [
+        "event_type", "last_contiguous_script_graph_revision",
+        "current_script_graph_revision", "revisions"
+      ],
+      "properties": {
+        "event_type": {"const": "script_journal_gap"},
+        "last_contiguous_script_graph_revision": {"$ref": "#/$defs/revision"},
+        "current_script_graph_revision": {"$ref": "#/$defs/revision"},
+        "revisions": {"$ref": "#/$defs/scriptRevisionVector"}
+      },
+      "additionalProperties": false
+    },
+    "scriptJournalGap": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/notification"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.4"},
+            "method": {"const": "script_journal_gap"},
+            "params": {"$ref": "#/$defs/scriptJournalGapParams"}
+          }
+        }
+      ]
+    },
+    "scriptJournalGapData": {
+      "type": "object",
+      "required": ["requested_after", "oldest_available", "current_script_graph_revision"],
+      "properties": {
+        "requested_after": {"$ref": "#/$defs/revision"},
+        "oldest_available": {"$ref": "#/$defs/revision"},
+        "current_script_graph_revision": {"$ref": "#/$defs/revision"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

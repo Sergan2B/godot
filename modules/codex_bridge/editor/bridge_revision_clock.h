@@ -40,6 +40,7 @@ class BridgeRevisionClock {
 	uint64_t operation_seq = 0;
 	uint64_t resource_revision = 0;
 	uint64_t scene_graph_revision = 0;
+	uint64_t script_graph_revision = 0;
 	HashMap<String, uint64_t> scene_revisions;
 
 public:
@@ -48,8 +49,10 @@ public:
 	uint64_t record_scene_change(const String &p_scene_id);
 	uint64_t record_resource_change();
 	uint64_t record_scene_graph_change();
+	uint64_t record_script_graph_change();
 	uint64_t get_scene_revision(const String &p_scene_id) const;
 	uint64_t get_resource_revision() const;
 	uint64_t get_scene_graph_revision() const;
+	uint64_t get_script_graph_revision() const;
 	Dictionary get_revision_vector() const;
 };

@@ -1,0 +1,171 @@
+{
+  "checksum": "4e5b35bd5d8c83b8e8156946ce915c960bb9f63cd293db8548d8e5aff35f890a",
+  "chunk_index": 0,
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "domain": "script_graph",
+  "kind": "chunk",
+  "payload": {
+    "adapter_statuses": [
+      {
+        "availability": "available",
+        "diagnostic": null,
+        "language": "gdscript",
+        "profile": "gdscript_parser_analyzer_v1",
+        "version": "4.8"
+      },
+      {
+        "availability": "discovery_only",
+        "diagnostic": null,
+        "language": "csharp",
+        "profile": "csharp_discovery_only_v1",
+        "version": "1.0"
+      }
+    ],
+    "diagnostics": [
+      {
+        "authority": "gdscript_analyzer",
+        "code": "DYNAMIC_CALL_TARGET",
+        "content_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "diagnostic_id": "godot:script-diagnostic:v1:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+        "language": "gdscript",
+        "range": {
+          "content_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "end_byte": 63,
+          "end_column": 14,
+          "end_line": 4,
+          "path": "res://scripts/player.gd",
+          "start_byte": 57,
+          "start_column": 8,
+          "start_line": 4
+        },
+        "safe_message": "Dynamic call target is not statically resolvable.",
+        "script_graph_revision": 11,
+        "script_ref": {"uid": "uid://s5player"},
+        "severity": "warning"
+      }
+    ],
+    "documents": [
+      {
+        "adapter_profile": "gdscript_parser_analyzer_v1",
+        "completeness": "complete",
+        "content_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "language": "gdscript",
+        "path": "res://scripts/player.gd",
+        "resource_revision": 7,
+        "script_graph_revision": 11,
+        "script_ref": {"uid": "uid://s5player"}
+      }
+    ],
+    "relations": [
+      {
+        "authority": "gdscript_parser_analyzer",
+        "confidence": "exact",
+        "detail": "declared_member",
+        "evidence_range": {
+          "content_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "end_byte": 48,
+          "end_column": 15,
+          "end_line": 3,
+          "path": "res://scripts/player.gd",
+          "start_byte": 40,
+          "start_column": 7,
+          "start_line": 3
+        },
+        "predicate": "contains",
+        "script_graph_revision": 11,
+        "source": {
+          "kind": "symbol",
+          "symbol_id": "godot:script-symbol:named:v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        },
+        "target": {
+          "kind": "symbol",
+          "symbol_id": "godot:script-symbol:named:v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        }
+      },
+      {
+        "authority": "gdscript_parser_analyzer",
+        "confidence": "dynamic",
+        "detail": "dynamic_method_name",
+        "evidence_range": {
+          "content_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "end_byte": 63,
+          "end_column": 14,
+          "end_line": 4,
+          "path": "res://scripts/player.gd",
+          "start_byte": 57,
+          "start_column": 8,
+          "start_line": 4
+        },
+        "predicate": "calls",
+        "script_graph_revision": 11,
+        "source": {
+          "kind": "symbol",
+          "symbol_id": "godot:script-symbol:named:v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        },
+        "target": null
+      }
+    ],
+    "symbols": [
+      {
+        "declaration_range": {
+          "content_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "end_byte": 25,
+          "end_column": 18,
+          "end_line": 2,
+          "path": "res://scripts/player.gd",
+          "start_byte": 13,
+          "start_column": 6,
+          "start_line": 2
+        },
+        "documentation_present": false,
+        "identity_scope": "persistent",
+        "kind": "class",
+        "language": "gdscript",
+        "modifiers": [],
+        "name": "Player",
+        "owner_symbol_id": null,
+        "qualified_key": "class:Player",
+        "script_graph_revision": 11,
+        "script_ref": {"uid": "uid://s5player"},
+        "signature": null,
+        "symbol_id": "godot:script-symbol:named:v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "type_name": "Player",
+        "type_state": "explicit",
+        "visibility": "public"
+      },
+      {
+        "declaration_range": {
+          "content_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "end_byte": 48,
+          "end_column": 15,
+          "end_line": 3,
+          "path": "res://scripts/player.gd",
+          "start_byte": 40,
+          "start_column": 7,
+          "start_line": 3
+        },
+        "documentation_present": true,
+        "identity_scope": "persistent",
+        "kind": "method",
+        "language": "gdscript",
+        "modifiers": ["override"],
+        "name": "attack",
+        "owner_symbol_id": "godot:script-symbol:named:v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "qualified_key": "class:Player/method:attack",
+        "script_graph_revision": 11,
+        "script_ref": {"uid": "uid://s5player"},
+        "signature": "attack(target: Node) -> void",
+        "symbol_id": "godot:script-symbol:named:v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        "type_name": "Callable",
+        "type_state": "inferred",
+        "visibility": "public"
+      }
+    ]
+  },
+  "payload_json": "{\"adapter_statuses\":[{\"availability\":\"available\",\"diagnostic\":null,\"language\":\"gdscript\",\"profile\":\"gdscript_parser_analyzer_v1\",\"version\":\"4.8\"},{\"availability\":\"discovery_only\",\"diagnostic\":null,\"language\":\"csharp\",\"profile\":\"csharp_discovery_only_v1\",\"version\":\"1.0\"}],\"diagnostics\":[{\"authority\":\"gdscript_analyzer\",\"code\":\"DYNAMIC_CALL_TARGET\",\"content_sha256\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"diagnostic_id\":\"godot:script-diagnostic:v1:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC\",\"language\":\"gdscript\",\"range\":{\"content_sha256\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"end_byte\":63,\"end_column\":14,\"end_line\":4,\"path\":\"res://scripts/player.gd\",\"start_byte\":57,\"start_column\":8,\"start_line\":4},\"safe_message\":\"Dynamic call target is not statically resolvable.\",\"script_graph_revision\":11,\"script_ref\":{\"uid\":\"uid://s5player\"},\"severity\":\"warning\"}],\"documents\":[{\"adapter_profile\":\"gdscript_parser_analyzer_v1\",\"completeness\":\"complete\",\"content_sha256\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"language\":\"gdscript\",\"path\":\"res://scripts/player.gd\",\"resource_revision\":7,\"script_graph_revision\":11,\"script_ref\":{\"uid\":\"uid://s5player\"}}],\"relations\":[{\"authority\":\"gdscript_parser_analyzer\",\"confidence\":\"exact\",\"detail\":\"declared_member\",\"evidence_range\":{\"content_sha256\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"end_byte\":48,\"end_column\":15,\"end_line\":3,\"path\":\"res://scripts/player.gd\",\"start_byte\":40,\"start_column\":7,\"start_line\":3},\"predicate\":\"contains\",\"script_graph_revision\":11,\"source\":{\"kind\":\"symbol\",\"symbol_id\":\"godot:script-symbol:named:v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"},\"target\":{\"kind\":\"symbol\",\"symbol_id\":\"godot:script-symbol:named:v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\"}},{\"authority\":\"gdscript_parser_analyzer\",\"confidence\":\"dynamic\",\"detail\":\"dynamic_method_name\",\"evidence_range\":{\"content_sha256\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"end_byte\":63,\"end_column\":14,\"end_line\":4,\"path\":\"res://scripts/player.gd\",\"start_byte\":57,\"start_column\":8,\"start_line\":4},\"predicate\":\"calls\",\"script_graph_revision\":11,\"source\":{\"kind\":\"symbol\",\"symbol_id\":\"godot:script-symbol:named:v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\"},\"target\":null}],\"symbols\":[{\"declaration_range\":{\"content_sha256\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"end_byte\":25,\"end_column\":18,\"end_line\":2,\"path\":\"res://scripts/player.gd\",\"start_byte\":13,\"start_column\":6,\"start_line\":2},\"documentation_present\":false,\"identity_scope\":\"persistent\",\"kind\":\"class\",\"language\":\"gdscript\",\"modifiers\":[],\"name\":\"Player\",\"owner_symbol_id\":null,\"qualified_key\":\"class:Player\",\"script_graph_revision\":11,\"script_ref\":{\"uid\":\"uid://s5player\"},\"signature\":null,\"symbol_id\":\"godot:script-symbol:named:v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"type_name\":\"Player\",\"type_state\":\"explicit\",\"visibility\":\"public\"},{\"declaration_range\":{\"content_sha256\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\",\"end_byte\":48,\"end_column\":15,\"end_line\":3,\"path\":\"res://scripts/player.gd\",\"start_byte\":40,\"start_column\":7,\"start_line\":3},\"documentation_present\":true,\"identity_scope\":\"persistent\",\"kind\":\"method\",\"language\":\"gdscript\",\"modifiers\":[\"override\"],\"name\":\"attack\",\"owner_symbol_id\":\"godot:script-symbol:named:v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"qualified_key\":\"class:Player/method:attack\",\"script_graph_revision\":11,\"script_ref\":{\"uid\":\"uid://s5player\"},\"signature\":\"attack(target: Node) -> void\",\"symbol_id\":\"godot:script-symbol:named:v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\",\"type_name\":\"Callable\",\"type_state\":\"inferred\",\"visibility\":\"public\"}]}",
+  "protocol_version": "1.4",
+  "snapshot_id": "snapshot:4123456789abcdef0123456789abcdef"
+}

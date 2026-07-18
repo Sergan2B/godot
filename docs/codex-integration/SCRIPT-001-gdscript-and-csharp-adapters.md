@@ -1,8 +1,8 @@
 # SCRIPT-001 — GDScript and C# semantic adapters
 
-**Status:** D-07 accepted; `S5-01` contract and independent `S5-02` oracle are
-locally verified on macOS arm64; `S5-03`–`S5-10` and two-host acceptance remain
-pending
+**Status:** D-07 accepted; `S5-01` contract, independent `S5-02` oracle, and
+Bridge RPC 1.4 `S5-03` profile are locally verified on macOS arm64; `S5-04`–
+`S5-10` and two-host acceptance remain pending
 
 **Decision:** `D-07` — use a bridge-owned saved-content cache over Godot's
 GDScript parser/analyzer; do not depend on the active LSP peer cache
@@ -14,6 +14,9 @@ GDScript parser/analyzer; do not depend on the active LSP peer cache
 
 **Independent oracle evidence:**
 [`tests/codex/evidence/sprint-5-stage-2-oracle.json`](../../tests/codex/evidence/sprint-5-stage-2-oracle.json)
+
+**Bridge RPC 1.4 evidence:**
+[`tests/codex/evidence/sprint-5-stage-3-bridge.json`](../../tests/codex/evidence/sprint-5-stage-3-bridge.json)
 
 ## 1. Authority and non-authority
 
