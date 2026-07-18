@@ -3,7 +3,7 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 
-const CURSOR_DOMAIN: &[u8] = b"godot-codex/semantic-cursor/v2\0";
+const CURSOR_DOMAIN: &[u8] = b"godot-codex/semantic-cursor/v3\0";
 const CURSOR_TTL_SECONDS: u64 = 5 * 60;
 const MAX_CURSOR_BYTES: usize = 4_096;
 type HmacSha256 = Hmac<Sha256>;
@@ -14,6 +14,8 @@ pub(crate) enum CursorTool {
     Owners,
     SceneGraph,
     InspectNode,
+    SearchSymbols,
+    InspectSymbol,
 }
 
 impl CursorTool {
@@ -23,6 +25,8 @@ impl CursorTool {
             Self::Owners => "godot_find_resource_owners",
             Self::SceneGraph => "godot_get_scene_graph",
             Self::InspectNode => "godot_inspect_node",
+            Self::SearchSymbols => "godot_search_symbols",
+            Self::InspectSymbol => "godot_inspect_symbol",
         }
     }
 }
@@ -34,7 +38,9 @@ pub(crate) struct CursorBinding<'a> {
     pub limit: usize,
     pub generation_id: &'a str,
     pub index_revision: u64,
+    pub resource_revision: u64,
     pub scene_graph_revision: Option<u64>,
+    pub script_graph_revision: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -47,7 +53,9 @@ struct CursorPayload {
     limit: usize,
     generation_id: String,
     index_revision: u64,
+    resource_revision: u64,
     scene_graph_revision: Option<u64>,
+    script_graph_revision: Option<u64>,
     offset: usize,
     issued_at: u64,
     expires_at: u64,
@@ -77,14 +85,16 @@ impl CursorCodec {
         now: u64,
     ) -> Result<String, ()> {
         let payload = CursorPayload {
-            version: 1,
+            version: 2,
             project_id: binding.project_id.to_owned(),
             tool: binding.tool.name().to_owned(),
             selector: binding.selector.to_owned(),
             limit: binding.limit,
             generation_id: binding.generation_id.to_owned(),
             index_revision: binding.index_revision,
+            resource_revision: binding.resource_revision,
             scene_graph_revision: binding.scene_graph_revision,
+            script_graph_revision: binding.script_graph_revision,
             offset,
             issued_at: now,
             expires_at: now.checked_add(CURSOR_TTL_SECONDS).ok_or(())?,
@@ -131,14 +141,16 @@ impl CursorCodec {
         mac.update(payload);
         mac.verify_slice(tag).map_err(|_| ())?;
         let payload: CursorPayload = serde_json::from_slice(payload).map_err(|_| ())?;
-        if payload.version != 1
+        if payload.version != 2
             || payload.project_id != binding.project_id
             || payload.tool != binding.tool.name()
             || payload.selector != binding.selector
             || payload.limit != binding.limit
             || payload.generation_id != binding.generation_id
             || payload.index_revision != binding.index_revision
+            || payload.resource_revision != binding.resource_revision
             || payload.scene_graph_revision != binding.scene_graph_revision
+            || payload.script_graph_revision != binding.script_graph_revision
             || payload.issued_at > now.saturating_add(5)
             || payload.expires_at < now
             || payload.expires_at.checked_sub(payload.issued_at) != Some(CURSOR_TTL_SECONDS)
@@ -161,7 +173,9 @@ mod tests {
             limit: 50,
             generation_id: "generation:test",
             index_revision: 7,
+            resource_revision: 2,
             scene_graph_revision: None,
+            script_graph_revision: None,
         }
     }
 
@@ -206,5 +220,23 @@ mod tests {
         let mut stale_scene = binding(CursorTool::SceneGraph);
         stale_scene.scene_graph_revision = Some(4);
         assert!(codec.validate(&scene_cursor, &stale_scene, 1_001).is_err());
+
+        let mut script_binding = binding(CursorTool::SearchSymbols);
+        script_binding.script_graph_revision = Some(5);
+        let script_cursor = codec.issue(&script_binding, 50, 1_000).unwrap();
+        let mut stale_script = binding(CursorTool::SearchSymbols);
+        stale_script.script_graph_revision = Some(6);
+        assert!(
+            codec
+                .validate(&script_cursor, &stale_script, 1_001)
+                .is_err()
+        );
+        let mut stale_resource = script_binding;
+        stale_resource.resource_revision = 3;
+        assert!(
+            codec
+                .validate(&script_cursor, &stale_resource, 1_001)
+                .is_err()
+        );
     }
 }

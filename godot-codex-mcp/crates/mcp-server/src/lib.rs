@@ -6,11 +6,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use cursor::{CursorBinding, CursorCodec, CursorTool};
 use godot_codex_index_store::{
     DependencyEdge, IndexRead, IndexReadSnapshot, ResourceEntity, ResourceQuery, ResourceSelector,
-    SceneEntity, SceneNode, SceneProperty, SceneRelation, StoreError,
+    SceneEntity, SceneNode, SceneProperty, SceneRelation, ScriptAdapterAvailability,
+    ScriptCompleteness, ScriptDiagnostic, ScriptDocument, ScriptEndpoint, ScriptLanguage,
+    ScriptPredicate, ScriptRelation, ScriptSourceRange, ScriptSymbol, ScriptSymbolInspectionQuery,
+    ScriptSymbolInspectionResult, ScriptSymbolKind, ScriptSymbolMatch, ScriptSymbolQuery,
+    ScriptSymbolQueryResult, ScriptSymbolSelector, StoreError,
 };
 use godot_codex_resource_indexer::{
     ResourceIndexReadError, ResourceIndexReader, SceneIndexReadError, SceneIndexReader,
-    normalize_resource_path,
+    ScriptIndexReadError, ScriptIndexReader, normalize_resource_path,
 };
 use godot_codex_semantic_model::SnapshotReplicator;
 use rmcp::{
@@ -24,6 +28,7 @@ use serde_json::{Value, json};
 const DEFAULT_RESOURCE_LIMIT: usize = 50;
 const MAX_RESOURCE_LIMIT: usize = 200;
 const MAX_TOTAL_RESULTS: usize = 250_000;
+const MAX_SCRIPT_DIAGNOSTICS: usize = 200;
 
 fn default_resource_limit() -> usize {
     DEFAULT_RESOURCE_LIMIT
@@ -68,6 +73,101 @@ struct InspectNodeInput {
     cursor: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum SymbolMatchInput {
+    Exact,
+    Prefix,
+}
+
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum ScriptLanguageInput {
+    Gdscript,
+    Csharp,
+}
+
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum ScriptSymbolKindInput {
+    Script,
+    Class,
+    Method,
+    Function,
+    Property,
+    Constant,
+    Enum,
+    EnumMember,
+    Signal,
+}
+
+impl From<SymbolMatchInput> for ScriptSymbolMatch {
+    fn from(value: SymbolMatchInput) -> Self {
+        match value {
+            SymbolMatchInput::Exact => Self::Exact,
+            SymbolMatchInput::Prefix => Self::Prefix,
+        }
+    }
+}
+
+impl From<ScriptLanguageInput> for ScriptLanguage {
+    fn from(value: ScriptLanguageInput) -> Self {
+        match value {
+            ScriptLanguageInput::Gdscript => Self::Gdscript,
+            ScriptLanguageInput::Csharp => Self::Csharp,
+        }
+    }
+}
+
+impl From<ScriptSymbolKindInput> for ScriptSymbolKind {
+    fn from(value: ScriptSymbolKindInput) -> Self {
+        match value {
+            ScriptSymbolKindInput::Script => Self::Script,
+            ScriptSymbolKindInput::Class => Self::Class,
+            ScriptSymbolKindInput::Method => Self::Method,
+            ScriptSymbolKindInput::Function => Self::Function,
+            ScriptSymbolKindInput::Property => Self::Property,
+            ScriptSymbolKindInput::Constant => Self::Constant,
+            ScriptSymbolKindInput::Enum => Self::Enum,
+            ScriptSymbolKindInput::EnumMember => Self::EnumMember,
+            ScriptSymbolKindInput::Signal => Self::Signal,
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct SearchSymbolsInput {
+    query: String,
+    #[serde(rename = "match")]
+    match_mode: SymbolMatchInput,
+    #[serde(default)]
+    language: Option<ScriptLanguageInput>,
+    #[serde(default)]
+    kind: Option<ScriptSymbolKindInput>,
+    #[serde(default)]
+    script: Option<String>,
+    #[serde(default = "default_resource_limit")]
+    limit: usize,
+    #[serde(default)]
+    cursor: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct InspectSymbolInput {
+    #[serde(default)]
+    symbol_id: Option<String>,
+    #[serde(default)]
+    script: Option<String>,
+    #[serde(default)]
+    qualified_name: Option<String>,
+    #[serde(default = "default_resource_limit")]
+    limit: usize,
+    #[serde(default)]
+    cursor: Option<String>,
+}
+
 #[derive(Clone, Copy)]
 enum Query {
     EditorState,
@@ -82,6 +182,7 @@ pub struct GodotMcpServer {
     replicator: SnapshotReplicator,
     resource_index: ResourceIndexReader,
     scene_index: SceneIndexReader,
+    script_index: ScriptIndexReader,
     cursor_codec: CursorCodec,
 }
 
@@ -92,6 +193,7 @@ impl std::fmt::Debug for GodotMcpServer {
             .field("replica_status", &self.replicator.status())
             .field("resource_index_status", &self.resource_index.status())
             .field("scene_index_status", &self.scene_index.status())
+            .field("script_index_status", &self.script_index.status())
             .finish_non_exhaustive()
     }
 }
@@ -117,11 +219,26 @@ impl GodotMcpServer {
         resource_index: ResourceIndexReader,
         scene_index: SceneIndexReader,
     ) -> Self {
+        Self::with_all_indexes(
+            replicator,
+            resource_index,
+            scene_index,
+            ScriptIndexReader::new(),
+        )
+    }
+
+    pub fn with_all_indexes(
+        replicator: SnapshotReplicator,
+        resource_index: ResourceIndexReader,
+        scene_index: SceneIndexReader,
+        script_index: ScriptIndexReader,
+    ) -> Self {
         Self {
             tool_router: Self::tool_router(),
             replicator,
             resource_index,
             scene_index,
+            script_index,
             cursor_codec: CursorCodec::new(),
         }
     }
@@ -168,7 +285,9 @@ impl GodotMcpServer {
             limit: input.limit,
             generation_id: &generation.generation_id,
             index_revision: generation.index_revision,
+            resource_revision: generation.checkpoint.resource_revision,
             scene_graph_revision: None,
+            script_graph_revision: None,
         };
         let now = unix_seconds();
         let offset = match input.cursor.as_deref() {
@@ -199,7 +318,10 @@ impl GodotMcpServer {
         let result = match tool {
             CursorTool::Dependencies => snapshot.direct_dependencies(&query),
             CursorTool::Owners => snapshot.reverse_owners(&query),
-            CursorTool::SceneGraph | CursorTool::InspectNode => unreachable!("resource tool"),
+            CursorTool::SceneGraph
+            | CursorTool::InspectNode
+            | CursorTool::SearchSymbols
+            | CursorTool::InspectSymbol => unreachable!("resource tool"),
         };
         let result = match result {
             Ok(result) => result,
@@ -268,7 +390,9 @@ impl GodotMcpServer {
             limit: input.limit,
             generation_id: &generation.generation_id,
             index_revision: generation.index_revision,
+            resource_revision: generation.scene.resource_revision,
             scene_graph_revision: Some(generation.scene.scene_graph_revision),
+            script_graph_revision: None,
         };
         let now = unix_seconds();
         let offset = match cursor_offset(input.cursor.as_deref(), &self.cursor_codec, &binding, now)
@@ -365,7 +489,9 @@ impl GodotMcpServer {
             limit: input.limit,
             generation_id: &generation.generation_id,
             index_revision: generation.index_revision,
+            resource_revision: generation.scene.resource_revision,
             scene_graph_revision: Some(generation.scene.scene_graph_revision),
+            script_graph_revision: None,
         };
         let now = unix_seconds();
         let offset = match cursor_offset(input.cursor.as_deref(), &self.cursor_codec, &binding, now)
@@ -424,6 +550,308 @@ impl GodotMcpServer {
             next_cursor,
         )
     }
+
+    fn search_symbols_query(&self, input: SearchSymbolsInput) -> CallToolResult {
+        if !(1..=MAX_RESOURCE_LIMIT).contains(&input.limit) {
+            return structured_error("invalid_limit", "limit must be between 1 and 200", false);
+        }
+        if !valid_symbol_search_query(&input.query) {
+            return structured_error(
+                "invalid_query",
+                "query must be a non-empty bounded declaration name without control characters",
+                false,
+            );
+        }
+        let snapshot = match self.script_index.pin_current() {
+            Ok(snapshot) => snapshot,
+            Err(error) => return script_index_error(error),
+        };
+        let generation = snapshot.generation();
+        let script_filter = match input.script.as_deref() {
+            Some(selector) => match resolve_script(generation, selector) {
+                Ok((document, canonical)) => Some((
+                    document.script_resource_id.clone(),
+                    canonical,
+                    document.path.clone(),
+                )),
+                Err((code, message)) => return structured_error(code, message, false),
+            },
+            None => None,
+        };
+        let language = input.language.map(ScriptLanguage::from);
+        let kind = input.kind.map(ScriptSymbolKind::from);
+        let match_mode = ScriptSymbolMatch::from(input.match_mode);
+        let selector_binding = json!({
+            "query": input.query,
+            "match": input.match_mode,
+            "language": input.language,
+            "kind": input.kind,
+            "script": script_filter.as_ref().map(|(_, canonical, _)| canonical),
+        })
+        .to_string();
+        let binding = CursorBinding {
+            project_id: &generation.project_id,
+            tool: CursorTool::SearchSymbols,
+            selector: &selector_binding,
+            limit: input.limit,
+            generation_id: &generation.generation_id,
+            index_revision: generation.index_revision,
+            resource_revision: generation.script.resource_revision,
+            scene_graph_revision: None,
+            script_graph_revision: Some(generation.script.script_graph_revision),
+        };
+        let now = unix_seconds();
+        let offset = match cursor_offset(input.cursor.as_deref(), &self.cursor_codec, &binding, now)
+        {
+            Ok(offset) => offset,
+            Err(result) => return result,
+        };
+        if offset >= MAX_TOTAL_RESULTS {
+            return structured_error(
+                "result_limit_exceeded",
+                "symbol query exceeded the bounded result window",
+                false,
+            );
+        }
+        let result = match generation.script.search_symbols(&ScriptSymbolQuery {
+            query: input.query.clone(),
+            match_mode,
+            language,
+            kind,
+            script_resource_id: script_filter
+                .as_ref()
+                .map(|(script_id, _, _)| script_id.clone()),
+            limit: input.limit,
+            offset,
+        }) {
+            Ok(result) => result,
+            Err(error) => return script_store_error(error),
+        };
+        let next_cursor = match next_cursor(
+            result.has_more,
+            offset,
+            result.symbols.len(),
+            &self.cursor_codec,
+            &binding,
+            now,
+        ) {
+            Ok(cursor) => cursor,
+            Err(result) => return result,
+        };
+        search_symbols_success(
+            generation,
+            &input,
+            script_filter.as_ref(),
+            offset,
+            result,
+            next_cursor,
+        )
+    }
+
+    fn inspect_symbol_query(&self, input: InspectSymbolInput) -> CallToolResult {
+        if !(1..=MAX_RESOURCE_LIMIT).contains(&input.limit) {
+            return structured_error("invalid_limit", "limit must be between 1 and 200", false);
+        }
+        let selector_shape_valid = match (
+            input.symbol_id.as_deref(),
+            input.script.as_deref(),
+            input.qualified_name.as_deref(),
+        ) {
+            (Some(symbol_id), None, None) => valid_opaque_symbol_id(symbol_id),
+            (None, Some(_), Some(qualified_name)) => valid_qualified_name(qualified_name),
+            _ => false,
+        };
+        if !selector_shape_valid {
+            return structured_error(
+                "invalid_query",
+                "provide exactly symbol_id, or script together with a canonical qualified_name",
+                false,
+            );
+        }
+        let snapshot = match self.script_index.pin_current() {
+            Ok(snapshot) => snapshot,
+            Err(error) => return script_index_error(error),
+        };
+        let generation = snapshot.generation();
+        let (selector, selector_binding) = match (
+            input.symbol_id.as_deref(),
+            input.script.as_deref(),
+            input.qualified_name.as_deref(),
+        ) {
+            (Some(symbol_id), None, None) => (
+                ScriptSymbolSelector::SymbolId {
+                    symbol_id: symbol_id.to_owned(),
+                },
+                format!("symbol_id:{symbol_id}"),
+            ),
+            (None, Some(script), Some(qualified_name)) => {
+                let (document, canonical_script) = match resolve_script(generation, script) {
+                    Ok(resolved) => resolved,
+                    Err((code, message)) => return structured_error(code, message, false),
+                };
+                (
+                    ScriptSymbolSelector::ScriptQualified {
+                        script_resource_id: document.script_resource_id.clone(),
+                        qualified_key: qualified_name.to_owned(),
+                    },
+                    format!("{canonical_script}\0qualified_name:{qualified_name}"),
+                )
+            }
+            _ => unreachable!("selector shape was validated"),
+        };
+        let binding = CursorBinding {
+            project_id: &generation.project_id,
+            tool: CursorTool::InspectSymbol,
+            selector: &selector_binding,
+            limit: input.limit,
+            generation_id: &generation.generation_id,
+            index_revision: generation.index_revision,
+            resource_revision: generation.script.resource_revision,
+            scene_graph_revision: Some(generation.script.scene_graph_revision),
+            script_graph_revision: Some(generation.script.script_graph_revision),
+        };
+        let now = unix_seconds();
+        let offset = match cursor_offset(input.cursor.as_deref(), &self.cursor_codec, &binding, now)
+        {
+            Ok(offset) => offset,
+            Err(result) => return result,
+        };
+        if offset >= MAX_TOTAL_RESULTS {
+            return structured_error(
+                "result_limit_exceeded",
+                "symbol inspection exceeded the bounded result window",
+                false,
+            );
+        }
+        let result = match generation
+            .script
+            .inspect_symbol(&ScriptSymbolInspectionQuery {
+                selector,
+                limit: input.limit,
+                offset,
+            }) {
+            Ok(result) => result,
+            Err(error) => return script_store_error(error),
+        };
+        let next_cursor = match next_cursor(
+            result.has_more,
+            offset,
+            result.relations.len(),
+            &self.cursor_codec,
+            &binding,
+            now,
+        ) {
+            Ok(cursor) => cursor,
+            Err(result) => return result,
+        };
+        inspect_symbol_success(
+            generation,
+            &selector_binding,
+            input.limit,
+            offset,
+            result,
+            next_cursor,
+        )
+    }
+}
+
+fn valid_symbol_search_query(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 1_024
+        && value == value.trim()
+        && !value.chars().any(char::is_control)
+}
+
+fn valid_opaque_id(value: &str, prefix: &str) -> bool {
+    value.strip_prefix(prefix).is_some_and(|suffix| {
+        suffix.len() == 43
+            && suffix
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    })
+}
+
+fn valid_opaque_script_id(value: &str) -> bool {
+    valid_opaque_id(value, "godot:resource:uid:v1:")
+        || valid_opaque_id(value, "godot:resource:path-content:v1:")
+}
+
+fn valid_opaque_symbol_id(value: &str) -> bool {
+    valid_opaque_id(value, "godot:script-symbol:named:v1:")
+        || valid_opaque_id(value, "godot:script-symbol:content-revision:v1:")
+}
+
+fn valid_qualified_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 2_048
+        && !value.chars().any(char::is_control)
+        && (value == "script" || value.starts_with("script/") || value.starts_with("class:"))
+        && value
+            .split('/')
+            .all(|component| !component.is_empty() && !matches!(component, "." | ".."))
+}
+
+fn resolve_script<'a>(
+    generation: &'a godot_codex_index_store::IndexGeneration,
+    selector: &str,
+) -> Result<(&'a ScriptDocument, String), (&'static str, &'static str)> {
+    if selector.starts_with("godot:resource:") {
+        if !valid_opaque_script_id(selector) {
+            return Err(("invalid_query", "opaque script identifier is invalid"));
+        }
+        return generation
+            .script
+            .documents
+            .iter()
+            .find(|document| document.script_resource_id == selector)
+            .map(|document| (document, format!("script_id:{selector}")))
+            .ok_or((
+                "script_not_found",
+                "script was not found in the current index",
+            ));
+    }
+    if selector.starts_with("uid://") {
+        let (resource_selector, canonical, _) = parse_selector(selector)?;
+        let ResourceSelector::Uid(uid) = resource_selector else {
+            unreachable!("uid selector parser returned another variant")
+        };
+        let script_id = generation
+            .resources
+            .iter()
+            .find(|resource| resource.uid.as_deref() == Some(uid.as_str()))
+            .map(|resource| resource.entity_id.as_str());
+        return script_id
+            .and_then(|script_id| {
+                generation
+                    .script
+                    .documents
+                    .iter()
+                    .find(|document| document.script_resource_id == script_id)
+            })
+            .map(|document| (document, canonical))
+            .ok_or((
+                "script_not_found",
+                "script was not found in the current index",
+            ));
+    }
+    if selector.starts_with("res://") {
+        let path = normalize_resource_path(selector)
+            .map_err(|_| ("invalid_path", "script path is invalid or unsafe"))?;
+        return generation
+            .script
+            .documents
+            .iter()
+            .find(|document| document.path == path.comparison)
+            .map(|document| (document, format!("path:{}", path.comparison)))
+            .ok_or((
+                "script_not_found",
+                "script was not found in the current index",
+            ));
+    }
+    Err((
+        "invalid_query",
+        "script must be an opaque resource ID, uid://, or res:// selector",
+    ))
 }
 
 fn parse_selector(
@@ -675,14 +1103,14 @@ fn next_cursor(
     let next_offset = offset.checked_add(page_len).ok_or_else(|| {
         structured_error(
             "result_limit_exceeded",
-            "scene query exceeded the bounded result window",
+            "semantic query exceeded the bounded result window",
             false,
         )
     })?;
     if next_offset >= MAX_TOTAL_RESULTS {
         return Err(structured_error(
             "result_limit_exceeded",
-            "scene query exceeded the bounded result window",
+            "semantic query exceeded the bounded result window",
             false,
         ));
     }
@@ -692,7 +1120,7 @@ fn next_cursor(
         .map_err(|()| {
             structured_error(
                 "index_not_current",
-                "the current scene index page could not be pinned",
+                "the current semantic index page could not be pinned",
                 true,
             )
         })
@@ -821,6 +1249,384 @@ fn property_view(property: &SceneProperty) -> Value {
         "authority": property.authority,
         "resource_revision": property.resource_revision,
         "scene_graph_revision": property.scene_graph_revision,
+    })
+}
+
+fn search_symbols_success(
+    generation: &godot_codex_index_store::IndexGeneration,
+    input: &SearchSymbolsInput,
+    script_filter: Option<&(String, String, String)>,
+    offset: usize,
+    result: ScriptSymbolQueryResult,
+    next_cursor: Option<String>,
+) -> CallToolResult {
+    let script_ids: BTreeSet<_> = script_filter
+        .map(|(script_id, _, _)| std::iter::once(script_id.as_str()).collect())
+        .unwrap_or_else(|| {
+            result
+                .symbols
+                .iter()
+                .map(|symbol| symbol.script_resource_id.as_str())
+                .collect()
+        });
+    let (diagnostics, diagnostics_truncated) = script_diagnostics(generation, &script_ids);
+    let mut partial_reasons = script_partial_reasons(
+        generation,
+        input.language.map(ScriptLanguage::from),
+        &script_ids,
+        script_filter.is_some(),
+    );
+    partial_reasons.extend(diagnostic_codes(&diagnostics));
+    if diagnostics_truncated {
+        partial_reasons.insert("diagnostics_truncated".to_owned());
+    }
+    let symbols = result
+        .symbols
+        .iter()
+        .map(|symbol| script_symbol_view(generation, symbol))
+        .collect::<Vec<_>>();
+    CallToolResult::structured(json!({
+        "project_id": generation.project_id,
+        "schema_version": generation.schema_version,
+        "generation_id": generation.generation_id,
+        "index_revision": generation.index_revision,
+        "resource_revision": generation.script.resource_revision,
+        "scene_graph_revision": generation.script.scene_graph_revision,
+        "script_graph_revision": generation.script.script_graph_revision,
+        "freshness": "current",
+        "status": if partial_reasons.is_empty() { "exact" } else { "partial" },
+        "query": {
+            "query": input.query,
+            "match": input.match_mode,
+            "language": input.language,
+            "kind": input.kind,
+            "script": script_filter.map(|(_, _, path)| path),
+            "limit": input.limit,
+            "offset": offset,
+        },
+        "symbols": symbols,
+        "total_matches": result.total_matches,
+        "diagnostics": diagnostics,
+        "partial_reasons": partial_reasons,
+        "truncated": result.has_more,
+        "next_cursor": next_cursor,
+        "validated_checkpoint": script_checkpoint(generation),
+        "evidence": {
+            "source": "persistent_segment_index",
+            "source_complete": generation.script.source_complete,
+            "authorities": ["gdscript_parser_analyzer", "resource_graph", "scene_state"],
+        },
+    }))
+}
+
+fn inspect_symbol_success(
+    generation: &godot_codex_index_store::IndexGeneration,
+    selector: &str,
+    limit: usize,
+    offset: usize,
+    result: ScriptSymbolInspectionResult,
+    next_cursor: Option<String>,
+) -> CallToolResult {
+    let script_ids = BTreeSet::from([result.document.script_resource_id.as_str()]);
+    let mut diagnostics = result
+        .diagnostics
+        .iter()
+        .take(MAX_SCRIPT_DIAGNOSTICS)
+        .map(script_diagnostic_view)
+        .collect::<Vec<_>>();
+    diagnostics.sort_by(|left, right| {
+        left.get("diagnostic_id")
+            .and_then(Value::as_str)
+            .cmp(&right.get("diagnostic_id").and_then(Value::as_str))
+    });
+    let diagnostics_truncated = result.diagnostics.len() > MAX_SCRIPT_DIAGNOSTICS;
+    let mut partial_reasons = script_partial_reasons(
+        generation,
+        Some(result.document.language),
+        &script_ids,
+        true,
+    );
+    partial_reasons.extend(diagnostic_codes(&diagnostics));
+    if diagnostics_truncated {
+        partial_reasons.insert("diagnostics_truncated".to_owned());
+    }
+    let (scene_attachments, outgoing_relations): (Vec<_>, Vec<_>) = result
+        .relations
+        .iter()
+        .partition(|relation| relation.predicate == ScriptPredicate::AttachesScript);
+    let scene_attachments = scene_attachments
+        .into_iter()
+        .map(|relation| script_relation_view(generation, relation))
+        .collect::<Vec<_>>();
+    let outgoing_relations = outgoing_relations
+        .into_iter()
+        .map(|relation| script_relation_view(generation, relation))
+        .collect::<Vec<_>>();
+    CallToolResult::structured(json!({
+        "project_id": generation.project_id,
+        "schema_version": generation.schema_version,
+        "generation_id": generation.generation_id,
+        "index_revision": generation.index_revision,
+        "resource_revision": generation.script.resource_revision,
+        "scene_graph_revision": generation.script.scene_graph_revision,
+        "script_graph_revision": generation.script.script_graph_revision,
+        "freshness": "current",
+        "status": if partial_reasons.is_empty() { "exact" } else { "partial" },
+        "query": {"selector": selector, "limit": limit, "offset": offset},
+        "document": script_document_view(&result.document),
+        "declaration": script_symbol_view(generation, &result.symbol),
+        "owner": result.owner.as_ref().map(|owner| script_symbol_view(generation, owner)),
+        "outgoing_relations": outgoing_relations,
+        "scene_attachments": scene_attachments,
+        "total_relations": result.total_relations,
+        "diagnostics": diagnostics,
+        "partial_reasons": partial_reasons,
+        "truncated": result.has_more,
+        "next_cursor": next_cursor,
+        "validated_checkpoint": script_checkpoint(generation),
+        "evidence": {
+            "source": "persistent_segment_index",
+            "source_complete": generation.script.source_complete,
+            "authorities": ["gdscript_parser_analyzer", "resource_graph", "scene_state"],
+        },
+    }))
+}
+
+fn script_symbol_view(
+    generation: &godot_codex_index_store::IndexGeneration,
+    symbol: &ScriptSymbol,
+) -> Value {
+    let document = generation
+        .script
+        .documents
+        .iter()
+        .find(|document| document.script_resource_id == symbol.script_resource_id);
+    json!({
+        "symbol_id": symbol.symbol_id,
+        "script_resource_id": symbol.script_resource_id,
+        "script_path": document.map(|document| document.path.as_str()),
+        "language": symbol.language,
+        "kind": symbol.kind,
+        "name": symbol.name,
+        "qualified_name": symbol.qualified_key,
+        "owner_symbol_id": symbol.owner_symbol_id,
+        "identity_scope": symbol.identity_scope,
+        "signature": symbol.signature,
+        "type": {"name": symbol.type_name, "state": symbol.type_state},
+        "visibility": symbol.visibility,
+        "modifiers": symbol.modifiers,
+        "documentation_present": symbol.documentation_present,
+        "declaration": script_range_view(&symbol.declaration_range),
+        "script_graph_revision": symbol.script_graph_revision,
+    })
+}
+
+fn script_document_view(document: &ScriptDocument) -> Value {
+    json!({
+        "script_resource_id": document.script_resource_id,
+        "path": document.path,
+        "language": document.language,
+        "content_sha256": document.content_sha256,
+        "adapter_profile": document.adapter_profile,
+        "completeness": document.completeness,
+        "resource_revision": document.resource_revision,
+        "script_graph_revision": document.script_graph_revision,
+    })
+}
+
+fn script_range_view(range: &ScriptSourceRange) -> Value {
+    json!({
+        "path": range.path,
+        "content_sha256": range.content_sha256,
+        "start_byte": range.start_byte,
+        "end_byte": range.end_byte,
+        "start": {"line": range.start_line, "column": range.start_column},
+        "end": {"line": range.end_line, "column": range.end_column},
+    })
+}
+
+fn script_relation_view(
+    generation: &godot_codex_index_store::IndexGeneration,
+    relation: &ScriptRelation,
+) -> Value {
+    json!({
+        "relation_id": relation.relation_id,
+        "predicate": relation.predicate,
+        "source": script_endpoint_view(generation, &relation.source),
+        "target": relation.target.as_ref().map(|target| script_endpoint_view(generation, target)),
+        "confidence": relation.confidence,
+        "detail": relation.detail,
+        "authority": relation.authority,
+        "evidence": relation.evidence_range.as_ref().map(script_range_view),
+        "script_graph_revision": relation.script_graph_revision,
+    })
+}
+
+fn script_endpoint_view(
+    generation: &godot_codex_index_store::IndexGeneration,
+    endpoint: &ScriptEndpoint,
+) -> Value {
+    match endpoint {
+        ScriptEndpoint::Symbol { symbol_id } => {
+            let symbol = generation
+                .script
+                .symbols
+                .iter()
+                .find(|symbol| symbol.symbol_id == *symbol_id);
+            json!({
+                "kind": "symbol",
+                "symbol_id": symbol_id,
+                "name": symbol.and_then(|symbol| symbol.name.as_deref()),
+                "qualified_name": symbol.map(|symbol| symbol.qualified_key.as_str()),
+                "script_resource_id": symbol.map(|symbol| symbol.script_resource_id.as_str()),
+            })
+        }
+        ScriptEndpoint::Resource { resource_entity_id } => {
+            let resource = generation
+                .resources
+                .iter()
+                .find(|resource| resource.entity_id == *resource_entity_id);
+            json!({
+                "kind": "resource",
+                "resource_entity_id": resource_entity_id,
+                "resource": resource.map(resource_view),
+            })
+        }
+        ScriptEndpoint::SceneNode { node_entity_id } => {
+            let node = generation
+                .scene
+                .nodes
+                .iter()
+                .find(|node| node.node_entity_id == *node_entity_id);
+            let occurrence = generation.scene.relations.iter().find(|relation| {
+                relation.relation == "occurrence" && relation.source == *node_entity_id
+            });
+            json!({
+                "kind": "scene_node",
+                "node_id": node_entity_id,
+                "scene_id": node.map(|node| node.scene_entity_id.as_str()).or_else(|| occurrence.and_then(|relation| relation.scene_entity_id.as_deref())),
+                "node_path": node.map(|node| node.node_path.as_str()).or_else(|| occurrence.map(relation_path)),
+            })
+        }
+    }
+}
+
+fn script_diagnostic_view(diagnostic: &ScriptDiagnostic) -> Value {
+    json!({
+        "diagnostic_id": diagnostic.diagnostic_id,
+        "script_resource_id": diagnostic.script_resource_id,
+        "language": diagnostic.language,
+        "content_sha256": diagnostic.content_sha256,
+        "code": diagnostic.code,
+        "severity": diagnostic.severity,
+        "message": diagnostic.safe_message,
+        "range": diagnostic.range.as_ref().map(script_range_view),
+        "authority": diagnostic.authority,
+        "script_graph_revision": diagnostic.script_graph_revision,
+    })
+}
+
+fn script_diagnostics(
+    generation: &godot_codex_index_store::IndexGeneration,
+    script_ids: &BTreeSet<&str>,
+) -> (Vec<Value>, bool) {
+    let matching = generation
+        .script
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| script_ids.contains(diagnostic.script_resource_id.as_str()))
+        .collect::<Vec<_>>();
+    let truncated = matching.len() > MAX_SCRIPT_DIAGNOSTICS;
+    let diagnostics = matching
+        .into_iter()
+        .take(MAX_SCRIPT_DIAGNOSTICS)
+        .map(script_diagnostic_view)
+        .collect();
+    (diagnostics, truncated)
+}
+
+fn script_partial_reasons(
+    generation: &godot_codex_index_store::IndexGeneration,
+    language_filter: Option<ScriptLanguage>,
+    script_ids: &BTreeSet<&str>,
+    narrow_to_scripts: bool,
+) -> BTreeSet<String> {
+    let languages: BTreeSet<_> = if let Some(language) = language_filter {
+        BTreeSet::from([language])
+    } else if narrow_to_scripts && !script_ids.is_empty() {
+        generation
+            .script
+            .documents
+            .iter()
+            .filter(|document| script_ids.contains(document.script_resource_id.as_str()))
+            .map(|document| document.language)
+            .collect()
+    } else {
+        generation
+            .script
+            .adapter_statuses
+            .iter()
+            .map(|status| status.language)
+            .collect()
+    };
+    let mut reasons = BTreeSet::new();
+    for status in &generation.script.adapter_statuses {
+        if !languages.contains(&status.language) {
+            continue;
+        }
+        match status.availability {
+            ScriptAdapterAvailability::Available => {}
+            ScriptAdapterAvailability::DiscoveryOnly => {
+                reasons.insert(format!(
+                    "{}_semantics_discovery_only",
+                    script_language_label(status.language)
+                ));
+            }
+            ScriptAdapterAvailability::Unavailable => {
+                reasons.insert(format!(
+                    "{}_semantics_unavailable",
+                    script_language_label(status.language)
+                ));
+            }
+        }
+    }
+    for document in &generation.script.documents {
+        if (narrow_to_scripts
+            && !script_ids.is_empty()
+            && !script_ids.contains(document.script_resource_id.as_str()))
+            || !languages.contains(&document.language)
+        {
+            continue;
+        }
+        let reason = match document.completeness {
+            ScriptCompleteness::Complete => None,
+            ScriptCompleteness::Partial => Some("script_document_partial"),
+            ScriptCompleteness::Invalid => Some("script_document_invalid"),
+            ScriptCompleteness::Unavailable => Some("script_document_unavailable"),
+        };
+        if let Some(reason) = reason {
+            reasons.insert(reason.to_owned());
+        }
+    }
+    reasons
+}
+
+fn script_language_label(language: ScriptLanguage) -> &'static str {
+    match language {
+        ScriptLanguage::Gdscript => "gdscript",
+        ScriptLanguage::Csharp => "csharp",
+    }
+}
+
+fn script_checkpoint(generation: &godot_codex_index_store::IndexGeneration) -> Value {
+    json!({
+        "editor_session_id": generation.script.editor_session_id,
+        "resource_revision": generation.script.resource_revision,
+        "scene_graph_revision": generation.script.scene_graph_revision,
+        "script_graph_revision": generation.script.script_graph_revision,
+        "source_complete": generation.script.source_complete,
+        "snapshot_checksum": generation.script.snapshot_checksum,
+        "semantic_digest": generation.script.semantic_digest,
     })
 }
 
@@ -1130,7 +1936,10 @@ fn resource_success(
         .map(|edge| match tool {
             CursorTool::Dependencies => dependency_view(snapshot, edge),
             CursorTool::Owners => owner_view(snapshot, edge),
-            CursorTool::SceneGraph | CursorTool::InspectNode => unreachable!("resource tool"),
+            CursorTool::SceneGraph
+            | CursorTool::InspectNode
+            | CursorTool::SearchSymbols
+            | CursorTool::InspectSymbol => unreachable!("resource tool"),
         })
         .collect();
     let mut response = json!({
@@ -1162,7 +1971,10 @@ fn resource_success(
     response[match tool {
         CursorTool::Dependencies => "dependencies",
         CursorTool::Owners => "owners",
-        CursorTool::SceneGraph | CursorTool::InspectNode => unreachable!("resource tool"),
+        CursorTool::SceneGraph
+        | CursorTool::InspectNode
+        | CursorTool::SearchSymbols
+        | CursorTool::InspectSymbol => unreachable!("resource tool"),
     }] = Value::Array(related);
     CallToolResult::structured(response)
 }
@@ -1263,6 +2075,54 @@ fn scene_index_error(error: SceneIndexReadError) -> CallToolResult {
         SceneIndexReadError::CapabilityUnavailable => structured_error(
             "capability_unavailable",
             "Bridge scene graph capability is unavailable",
+            true,
+        ),
+    }
+}
+
+fn script_index_error(error: ScriptIndexReadError) -> CallToolResult {
+    match error {
+        ScriptIndexReadError::ProjectNotBound => {
+            structured_error("project_not_bound", "Godot project is not bound", true)
+        }
+        ScriptIndexReadError::NotReady => structured_error(
+            "index_not_ready",
+            "script index has no committed generation",
+            true,
+        ),
+        ScriptIndexReadError::NotCurrent => structured_error(
+            "index_not_current",
+            "script index freshness is not confirmed",
+            true,
+        ),
+        ScriptIndexReadError::CapabilityUnavailable => structured_error(
+            "capability_unavailable",
+            "Bridge script graph capability is unavailable",
+            true,
+        ),
+    }
+}
+
+fn script_store_error(error: StoreError) -> CallToolResult {
+    match error {
+        StoreError::ScriptSymbolNotFound => structured_error(
+            "symbol_not_found",
+            "symbol selector was not found in the current script index",
+            false,
+        ),
+        StoreError::QueryOffsetOutOfRange => structured_error(
+            "stale_cursor",
+            "cursor offset is outside the current script generation",
+            false,
+        ),
+        StoreError::NotReady => structured_error(
+            "index_not_ready",
+            "script index has no committed generation",
+            true,
+        ),
+        _ => structured_error(
+            "index_not_current",
+            "script index could not provide a current immutable page",
             true,
         ),
     }
@@ -1424,6 +2284,40 @@ impl GodotMcpServer {
     ) -> CallToolResult {
         self.inspect_node_query(input)
     }
+
+    #[tool(
+        description = "Search deterministic saved-script declarations by exact name or prefix with optional language, kind, and script filters",
+        annotations(
+            title = "Godot script symbols",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn godot_search_symbols(
+        &self,
+        Parameters(input): Parameters<SearchSymbolsInput>,
+    ) -> CallToolResult {
+        self.search_symbols_query(input)
+    }
+
+    #[tool(
+        description = "Inspect one canonical saved-script declaration, its forward semantic relations, scene attachments, diagnostics, and source evidence",
+        annotations(
+            title = "Godot script symbol",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn godot_inspect_symbol(
+        &self,
+        Parameters(input): Parameters<InspectSymbolInput>,
+    ) -> CallToolResult {
+        self.inspect_symbol_query(input)
+    }
 }
 
 #[tool_handler]
@@ -1432,7 +2326,7 @@ impl ServerHandler for GodotMcpServer {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_protocol_version(ProtocolVersion::V_2025_11_25)
             .with_instructions(
-                "Read-only, project-scoped Godot editor, resource, and composed scene context. Results are returned only from checksum-verified current snapshots and immutable index generations.",
+                "Read-only, project-scoped Godot editor, resource, composed scene, and saved-script symbol context. Results are returned only from checksum-verified current snapshots and immutable index generations.",
             )
     }
 }
@@ -1448,10 +2342,12 @@ mod tests {
         DependencyEdge, DependencyResolution, Diagnostic, GenerationState, IdentityStrength,
         IndexGeneration, IngestionCheckpoint, LOGICAL_SCHEMA_V1, RecordValidity, ResourceEntity,
         SceneAnimationReference, SceneAnimationResolution, SceneConnection, SceneDomainGeneration,
-        SceneGroupMembership, SceneIdentityScope, ScenePropertyOrigin, SegmentStore,
-        SourceDocument,
+        SceneGroupMembership, SceneIdentityScope, ScenePropertyOrigin, ScriptAdapterProfile,
+        ScriptAdapterStatus, ScriptConfidence, ScriptDiagnosticAuthority, ScriptDiagnosticSeverity,
+        ScriptDomainGeneration, ScriptIdentityScope, ScriptModifier, ScriptReference,
+        ScriptRelationAuthority, ScriptTypeState, ScriptVisibility, SegmentStore, SourceDocument,
     };
-    use godot_codex_resource_indexer::{ResourceIndexReader, SceneIndexReader};
+    use godot_codex_resource_indexer::{ResourceIndexReader, SceneIndexReader, ScriptIndexReader};
     use godot_codex_semantic_model::{SnapshotChunk, SnapshotEnd, SnapshotMetadata};
     use tempfile::TempDir;
 
@@ -1511,15 +2407,19 @@ mod tests {
     }
 
     fn indexed_resource_server() -> GodotMcpServer {
-        indexed_server_fixture(false, false)
+        indexed_server_fixture(false, false, false)
     }
 
     fn indexed_resource_server_fixture(include_missing: bool) -> GodotMcpServer {
-        indexed_server_fixture(include_missing, false)
+        indexed_server_fixture(include_missing, false, false)
     }
 
     fn indexed_semantic_server() -> GodotMcpServer {
-        indexed_server_fixture(false, true)
+        indexed_server_fixture(false, true, false)
+    }
+
+    fn indexed_script_server() -> GodotMcpServer {
+        indexed_server_fixture(false, true, true)
     }
 
     fn scene_domain_fixture() -> SceneDomainGeneration {
@@ -1768,7 +2668,289 @@ mod tests {
         domain
     }
 
-    fn indexed_server_fixture(include_missing: bool, include_scene: bool) -> GodotMcpServer {
+    fn opaque_test_id(prefix: &str, marker: char) -> String {
+        format!("{prefix}{}", marker.to_string().repeat(43))
+    }
+
+    fn script_resource_id() -> String {
+        opaque_test_id("godot:resource:uid:v1:", 'S')
+    }
+
+    fn named_symbol_id(marker: char) -> String {
+        opaque_test_id("godot:script-symbol:named:v1:", marker)
+    }
+
+    fn script_domain_fixture() -> ScriptDomainGeneration {
+        const SCRIPT_PATH: &str = "res://scripts/player.gd";
+        const PLAYER_OCCURRENCE: &str = "godot:node-occurrence:v1:player";
+        let script_id = script_resource_id();
+        let script_symbol_id = named_symbol_id('R');
+        let base_class_id = named_symbol_id('B');
+        let base_method_id = named_symbol_id('M');
+        let player_class_id = named_symbol_id('P');
+        let attack_id = named_symbol_id('A');
+        let attack_special_id = named_symbol_id('T');
+        let local_id = opaque_test_id("godot:script-symbol:content-revision:v1:", 'L');
+        let content_sha256 = format!("sha256:{}", "a".repeat(64));
+        let source_range = |start_byte: u64, end_byte: u64| ScriptSourceRange {
+            path: SCRIPT_PATH.to_owned(),
+            content_sha256: content_sha256.clone(),
+            start_byte,
+            end_byte,
+            start_line: 1,
+            start_column: u32::try_from(start_byte + 1).unwrap(),
+            end_line: 1,
+            end_column: u32::try_from(end_byte + 1).unwrap(),
+        };
+        let symbol = |symbol_id: String,
+                      kind: ScriptSymbolKind,
+                      name: &str,
+                      qualified_key: &str,
+                      owner_symbol_id: Option<String>,
+                      range: ScriptSourceRange| ScriptSymbol {
+            symbol_id,
+            script_resource_id: script_id.clone(),
+            language: ScriptLanguage::Gdscript,
+            kind,
+            name: Some(name.to_owned()),
+            qualified_key: qualified_key.to_owned(),
+            owner_symbol_id,
+            identity_scope: ScriptIdentityScope::Persistent,
+            signature: None,
+            type_name: None,
+            type_state: ScriptTypeState::Dynamic,
+            visibility: ScriptVisibility::Public,
+            modifiers: Vec::new(),
+            declaration_range: range,
+            documentation_present: false,
+            script_graph_revision: 5,
+        };
+        let mut symbols = vec![
+            symbol(
+                script_symbol_id,
+                ScriptSymbolKind::Script,
+                "player",
+                "script",
+                None,
+                source_range(0, 1),
+            ),
+            symbol(
+                base_class_id.clone(),
+                ScriptSymbolKind::Class,
+                "BasePlayer",
+                "class:BasePlayer",
+                None,
+                source_range(2, 12),
+            ),
+            symbol(
+                base_method_id.clone(),
+                ScriptSymbolKind::Method,
+                "base_attack",
+                "class:BasePlayer/method:base_attack",
+                Some(base_class_id.clone()),
+                source_range(13, 19),
+            ),
+            symbol(
+                player_class_id.clone(),
+                ScriptSymbolKind::Class,
+                "Player",
+                "class:Player",
+                None,
+                source_range(20, 26),
+            ),
+            symbol(
+                attack_id.clone(),
+                ScriptSymbolKind::Method,
+                "attack",
+                "class:Player/method:attack",
+                Some(player_class_id.clone()),
+                source_range(27, 33),
+            ),
+            symbol(
+                attack_special_id.clone(),
+                ScriptSymbolKind::Method,
+                "attack_special",
+                "class:Player/method:attack_special",
+                Some(player_class_id.clone()),
+                source_range(34, 48),
+            ),
+        ];
+        let mut local = symbol(
+            local_id,
+            ScriptSymbolKind::Local,
+            "attack_local",
+            "class:Player/method:attack/local:attack_local@49",
+            Some(attack_id.clone()),
+            source_range(49, 61),
+        );
+        local.identity_scope = ScriptIdentityScope::ContentRevision;
+        symbols.push(local);
+        symbols
+            .iter_mut()
+            .find(|symbol| symbol.symbol_id == attack_id)
+            .expect("attack symbol")
+            .signature = Some("attack(target: Node) -> void".to_owned());
+        symbols
+            .iter_mut()
+            .find(|symbol| symbol.symbol_id == attack_id)
+            .expect("attack symbol")
+            .modifiers = vec![ScriptModifier::Override];
+
+        let relation = |relation_id: &str,
+                        source: ScriptEndpoint,
+                        predicate: ScriptPredicate,
+                        target: Option<ScriptEndpoint>,
+                        confidence: ScriptConfidence,
+                        evidence_range: Option<ScriptSourceRange>,
+                        authority: ScriptRelationAuthority| ScriptRelation {
+            relation_id: relation_id.to_owned(),
+            script_resource_id: script_id.clone(),
+            source,
+            predicate,
+            target,
+            confidence,
+            evidence_range,
+            detail: None,
+            authority,
+            script_graph_revision: 5,
+        };
+        let symbol_endpoint = |symbol_id: &str| ScriptEndpoint::Symbol {
+            symbol_id: symbol_id.to_owned(),
+        };
+        let relations = vec![
+            relation(
+                "relation-attach-player",
+                ScriptEndpoint::SceneNode {
+                    node_entity_id: PLAYER_OCCURRENCE.to_owned(),
+                },
+                ScriptPredicate::AttachesScript,
+                Some(symbol_endpoint(&player_class_id)),
+                ScriptConfidence::Exact,
+                None,
+                ScriptRelationAuthority::SceneState,
+            ),
+            relation(
+                "relation-call-exact",
+                symbol_endpoint(&attack_id),
+                ScriptPredicate::Calls,
+                Some(symbol_endpoint(&attack_special_id)),
+                ScriptConfidence::Exact,
+                Some(source_range(62, 68)),
+                ScriptRelationAuthority::GdscriptParserAnalyzer,
+            ),
+            relation(
+                "relation-call-dynamic",
+                symbol_endpoint(&attack_id),
+                ScriptPredicate::Calls,
+                None,
+                ScriptConfidence::Dynamic,
+                Some(source_range(69, 75)),
+                ScriptRelationAuthority::GdscriptParserAnalyzer,
+            ),
+            relation(
+                "relation-contains-attack",
+                symbol_endpoint(&player_class_id),
+                ScriptPredicate::Contains,
+                Some(symbol_endpoint(&attack_id)),
+                ScriptConfidence::Exact,
+                Some(source_range(27, 33)),
+                ScriptRelationAuthority::GdscriptParserAnalyzer,
+            ),
+            relation(
+                "relation-inherits-base",
+                symbol_endpoint(&player_class_id),
+                ScriptPredicate::Inherits,
+                Some(symbol_endpoint(&base_class_id)),
+                ScriptConfidence::Exact,
+                Some(source_range(20, 26)),
+                ScriptRelationAuthority::GdscriptParserAnalyzer,
+            ),
+            relation(
+                "relation-overrides-attack",
+                symbol_endpoint(&attack_id),
+                ScriptPredicate::Overrides,
+                Some(symbol_endpoint(&base_method_id)),
+                ScriptConfidence::Exact,
+                Some(source_range(27, 33)),
+                ScriptRelationAuthority::GdscriptParserAnalyzer,
+            ),
+        ];
+        let references = relations
+            .iter()
+            .filter_map(|relation| {
+                relation.target.as_ref().map(|target| ScriptReference {
+                    reference_id: format!("reference-{}", relation.relation_id),
+                    relation_id: relation.relation_id.clone(),
+                    script_resource_id: relation.script_resource_id.clone(),
+                    source: relation.source.clone(),
+                    predicate: relation.predicate,
+                    target: target.clone(),
+                    authority: relation.authority,
+                    script_graph_revision: 5,
+                })
+            })
+            .collect();
+        let mut domain = ScriptDomainGeneration {
+            editor_session_id: "editor:0123456789abcdef0123456789abcdef".to_owned(),
+            resource_revision: 1,
+            scene_graph_revision: 3,
+            script_graph_revision: 5,
+            source_complete: true,
+            snapshot_checksum: "b".repeat(64),
+            semantic_digest: format!("sha256:{}", "c".repeat(64)),
+            documents: vec![ScriptDocument {
+                script_resource_id: script_id.clone(),
+                path: SCRIPT_PATH.to_owned(),
+                language: ScriptLanguage::Gdscript,
+                content_sha256: content_sha256.clone(),
+                adapter_profile: ScriptAdapterProfile::GdscriptParserAnalyzerV1,
+                completeness: ScriptCompleteness::Complete,
+                resource_revision: 1,
+                script_graph_revision: 5,
+            }],
+            symbols,
+            relations,
+            references,
+            diagnostics: vec![ScriptDiagnostic {
+                diagnostic_id: "godot:script-diagnostic:v1:dynamic-call".to_owned(),
+                script_resource_id: script_id,
+                language: ScriptLanguage::Gdscript,
+                content_sha256: content_sha256.clone(),
+                code: "DYNAMIC_CALL_TARGET".to_owned(),
+                severity: ScriptDiagnosticSeverity::Warning,
+                safe_message: "Dynamic call target is not statically resolvable.".to_owned(),
+                range: Some(source_range(69, 75)),
+                authority: ScriptDiagnosticAuthority::GdscriptAnalyzer,
+                script_graph_revision: 5,
+            }],
+            adapter_statuses: vec![
+                ScriptAdapterStatus {
+                    language: ScriptLanguage::Gdscript,
+                    availability: ScriptAdapterAvailability::Available,
+                    profile: Some(ScriptAdapterProfile::GdscriptParserAnalyzerV1),
+                    version: Some("4.8".to_owned()),
+                    diagnostic: None,
+                },
+                ScriptAdapterStatus {
+                    language: ScriptLanguage::Csharp,
+                    availability: ScriptAdapterAvailability::DiscoveryOnly,
+                    profile: Some(ScriptAdapterProfile::CsharpDiscoveryOnlyV1),
+                    version: Some("1.0".to_owned()),
+                    diagnostic: None,
+                },
+            ],
+            validation_digest: String::new(),
+        };
+        domain.canonicalize();
+        domain.validation_digest = domain.compute_validation_digest();
+        domain
+    }
+
+    fn indexed_server_fixture(
+        include_missing: bool,
+        include_scene: bool,
+        include_script: bool,
+    ) -> GodotMcpServer {
         let resource = |suffix: &str| ResourceEntity {
             entity_id: format!("entity-{suffix}"),
             identity_input: format!("uid://{suffix}"),
@@ -1786,7 +2968,26 @@ mod tests {
             validity: RecordValidity::Valid,
             resource_revision: 1,
         };
-        let resources = vec![resource("a"), resource("b"), resource("c")];
+        let mut resources = vec![resource("a"), resource("b"), resource("c")];
+        if include_script {
+            resources.push(ResourceEntity {
+                entity_id: script_resource_id(),
+                identity_input: "uid://player-script".to_owned(),
+                uid: Some("uid://player-script".to_owned()),
+                display_path: "res://scripts/player.gd".to_owned(),
+                comparison_path: "res://scripts/player.gd".to_owned(),
+                identity_strength: IdentityStrength::ResourceUid,
+                resource_type: "GDScript".to_owned(),
+                source_kind: "source".to_owned(),
+                import_state: "not_imported".to_owned(),
+                authority: "editor_file_system".to_owned(),
+                content_generation: Some(format!("sha256:{}", "a".repeat(64))),
+                mtime_ns: 1,
+                byte_size: 76,
+                validity: RecordValidity::Valid,
+                resource_revision: 1,
+            });
+        }
         let source_documents = resources
             .iter()
             .map(|resource| SourceDocument {
@@ -1869,7 +3070,11 @@ mod tests {
             } else {
                 SceneDomainGeneration::default()
             },
-            script: godot_codex_index_store::ScriptDomainGeneration::default(),
+            script: if include_script {
+                script_domain_fixture()
+            } else {
+                ScriptDomainGeneration::default()
+            },
             validation_digest: String::new(),
         };
         generation.canonicalize();
@@ -1883,17 +3088,34 @@ mod tests {
             1,
         )
         .unwrap();
-        if include_scene {
-            let scene_reader = SceneIndexReader::from_validated_store(
+        let scene_reader = if include_scene {
+            SceneIndexReader::from_validated_store(
                 &store,
                 "editor:0123456789abcdef0123456789abcdef",
                 3,
             )
-            .unwrap();
-            GodotMcpServer::with_semantic_indexes(SnapshotReplicator::new(), reader, scene_reader)
+            .unwrap()
         } else {
-            GodotMcpServer::with_resource_index(SnapshotReplicator::new(), reader)
-        }
+            SceneIndexReader::new()
+        };
+        let script_reader = if include_script {
+            ScriptIndexReader::from_validated_store(
+                &store,
+                "editor:0123456789abcdef0123456789abcdef",
+                1,
+                3,
+                5,
+            )
+            .unwrap()
+        } else {
+            ScriptIndexReader::new()
+        };
+        GodotMcpServer::with_all_indexes(
+            SnapshotReplicator::new(),
+            reader,
+            scene_reader,
+            script_reader,
+        )
     }
 
     #[test]
@@ -1919,13 +3141,15 @@ mod tests {
     }
 
     #[test]
-    fn exactly_seven_tools_are_declared_read_only() {
+    fn exactly_nine_tools_are_declared_read_only_with_closed_schemas() {
         let server = GodotMcpServer::new(SnapshotReplicator::new());
         let tools = server.tool_router.list_all();
-        assert_eq!(tools.len(), 7);
+        assert_eq!(tools.len(), 9);
         let names: BTreeSet<_> = tools.iter().map(|tool| tool.name.as_ref()).collect();
         assert!(names.contains("godot_get_scene_graph"));
         assert!(names.contains("godot_inspect_node"));
+        assert!(names.contains("godot_search_symbols"));
+        assert!(names.contains("godot_inspect_symbol"));
         for tool in tools {
             let annotations = tool.annotations.as_ref().expect("annotations");
             assert_eq!(annotations.read_only_hint, Some(true));
@@ -1942,6 +3166,357 @@ mod tests {
                 Some(false)
             );
         }
+        let tools = server.tool_router.list_all();
+        let search = tools
+            .iter()
+            .find(|tool| tool.name.as_ref() == "godot_search_symbols")
+            .expect("symbol search tool");
+        let required = search.input_schema["required"]
+            .as_array()
+            .expect("required fields");
+        assert!(required.contains(&json!("query")));
+        assert!(required.contains(&json!("match")));
+        assert_eq!(
+            search.input_schema["$defs"]["SymbolMatchInput"]["enum"],
+            json!(["exact", "prefix"])
+        );
+        assert_eq!(
+            search.input_schema["$defs"]["ScriptSymbolKindInput"]["enum"],
+            json!([
+                "script",
+                "class",
+                "method",
+                "function",
+                "property",
+                "constant",
+                "enum",
+                "enum_member",
+                "signal"
+            ])
+        );
+    }
+
+    #[test]
+    fn symbol_search_filters_and_paginates_one_script_generation() {
+        let server = indexed_script_server();
+        let first = server.godot_search_symbols(Parameters(SearchSymbolsInput {
+            query: "attack".to_owned(),
+            match_mode: SymbolMatchInput::Prefix,
+            language: Some(ScriptLanguageInput::Gdscript),
+            kind: Some(ScriptSymbolKindInput::Method),
+            script: Some("res://scripts/player.gd".to_owned()),
+            limit: 1,
+            cursor: None,
+        }));
+        assert_ne!(first.is_error, Some(true));
+        let first = structured_content(&first).expect("first symbol page");
+        assert_eq!(first["generation_id"], "generation:test");
+        assert_eq!(first["resource_revision"], 1);
+        assert_eq!(first["scene_graph_revision"], 3);
+        assert_eq!(first["script_graph_revision"], 5);
+        assert_eq!(first["symbols"][0]["name"], "attack");
+        assert_eq!(first["total_matches"], 2);
+        assert_eq!(first["truncated"], true);
+        assert_eq!(first["status"], "partial");
+        assert!(
+            first["partial_reasons"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("DYNAMIC_CALL_TARGET"))
+        );
+        let cursor = first["next_cursor"].as_str().unwrap().to_owned();
+
+        let second = server.godot_search_symbols(Parameters(SearchSymbolsInput {
+            query: "attack".to_owned(),
+            match_mode: SymbolMatchInput::Prefix,
+            language: Some(ScriptLanguageInput::Gdscript),
+            kind: Some(ScriptSymbolKindInput::Method),
+            script: Some("res://scripts/player.gd".to_owned()),
+            limit: 1,
+            cursor: Some(cursor.clone()),
+        }));
+        let second = structured_content(&second).expect("second symbol page");
+        assert_eq!(second["symbols"][0]["name"], "attack_special");
+        assert_eq!(second["truncated"], false);
+        assert_eq!(second["next_cursor"], Value::Null);
+        assert!(
+            second["symbols"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|symbol| symbol["name"] != "attack_local")
+        );
+
+        let exact = server.godot_search_symbols(Parameters(SearchSymbolsInput {
+            query: "Player".to_owned(),
+            match_mode: SymbolMatchInput::Exact,
+            language: Some(ScriptLanguageInput::Gdscript),
+            kind: Some(ScriptSymbolKindInput::Class),
+            script: Some("uid://player-script".to_owned()),
+            limit: 50,
+            cursor: None,
+        }));
+        let exact = structured_content(&exact).expect("exact symbol search");
+        assert_eq!(exact["total_matches"], 1);
+        assert_eq!(exact["symbols"][0]["qualified_name"], "class:Player");
+
+        let changed_filter = server.godot_search_symbols(Parameters(SearchSymbolsInput {
+            query: "attack".to_owned(),
+            match_mode: SymbolMatchInput::Prefix,
+            language: Some(ScriptLanguageInput::Gdscript),
+            kind: None,
+            script: Some("res://scripts/player.gd".to_owned()),
+            limit: 1,
+            cursor: Some(cursor.clone()),
+        }));
+        assert_eq!(
+            structured_content(&changed_filter)
+                .and_then(|value| value.pointer("/error/code"))
+                .and_then(Value::as_str),
+            Some("stale_cursor")
+        );
+
+        let cross_tool = server.godot_inspect_symbol(Parameters(InspectSymbolInput {
+            symbol_id: Some(attack_symbol_id()),
+            script: None,
+            qualified_name: None,
+            limit: 1,
+            cursor: Some(cursor),
+        }));
+        assert_eq!(
+            structured_content(&cross_tool)
+                .and_then(|value| value.pointer("/error/code"))
+                .and_then(Value::as_str),
+            Some("stale_cursor")
+        );
+    }
+
+    fn attack_symbol_id() -> String {
+        named_symbol_id('A')
+    }
+
+    #[test]
+    fn symbol_search_reports_discovery_only_language_as_partial() {
+        let result = indexed_script_server().godot_search_symbols(Parameters(SearchSymbolsInput {
+            query: "Enemy".to_owned(),
+            match_mode: SymbolMatchInput::Prefix,
+            language: Some(ScriptLanguageInput::Csharp),
+            kind: None,
+            script: None,
+            limit: 50,
+            cursor: None,
+        }));
+        assert_ne!(result.is_error, Some(true));
+        let content = structured_content(&result).unwrap();
+        assert_eq!(content["symbols"], json!([]));
+        assert_eq!(content["status"], "partial");
+        assert!(
+            content["partial_reasons"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("csharp_semantics_discovery_only"))
+        );
+    }
+
+    #[test]
+    fn symbol_inspection_returns_forward_relations_attachments_and_safe_evidence() {
+        let server = indexed_script_server();
+        let result = server.godot_inspect_symbol(Parameters(InspectSymbolInput {
+            symbol_id: Some(attack_symbol_id()),
+            script: None,
+            qualified_name: None,
+            limit: 50,
+            cursor: None,
+        }));
+        assert_ne!(result.is_error, Some(true));
+        let content = structured_content(&result).unwrap();
+        assert_eq!(content["declaration"]["name"], "attack");
+        assert_eq!(
+            content["declaration"]["signature"],
+            "attack(target: Node) -> void"
+        );
+        assert_eq!(content["owner"]["name"], "Player");
+        assert_eq!(content["scene_attachments"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            content["scene_attachments"][0]["source"]["node_path"],
+            "Player"
+        );
+        let outgoing = content["outgoing_relations"].as_array().unwrap();
+        assert!(outgoing.iter().any(|relation| {
+            relation["predicate"] == "calls" && relation["confidence"] == "exact"
+        }));
+        assert!(outgoing.iter().any(|relation| {
+            relation["predicate"] == "calls" && relation["confidence"] == "dynamic"
+        }));
+        assert!(
+            outgoing
+                .iter()
+                .any(|relation| relation["predicate"] == "overrides")
+        );
+        assert!(
+            outgoing
+                .iter()
+                .all(|relation| { relation["relation_id"] != "relation-contains-attack" })
+        );
+        assert_eq!(content["diagnostics"][0]["code"], "DYNAMIC_CALL_TARGET");
+        assert_eq!(
+            content["declaration"]["declaration"]["path"],
+            "res://scripts/player.gd"
+        );
+        assert_eq!(content["status"], "partial");
+        let serialized = content.to_string();
+        assert!(!serialized.contains("/Users/"));
+        assert!(!serialized.contains("source_excerpt"));
+        assert!(!serialized.contains("authorization"));
+    }
+
+    #[test]
+    fn symbol_inspection_supports_qualified_selector_and_isolation() {
+        let server = indexed_script_server();
+        let first = server.godot_inspect_symbol(Parameters(InspectSymbolInput {
+            symbol_id: None,
+            script: Some("uid://player-script".to_owned()),
+            qualified_name: Some("class:Player/method:attack".to_owned()),
+            limit: 1,
+            cursor: None,
+        }));
+        let first = structured_content(&first).expect("first inspection page");
+        assert_eq!(first["declaration"]["name"], "attack");
+        assert_eq!(first["truncated"], true);
+        let cursor = first["next_cursor"].as_str().unwrap().to_owned();
+
+        let second = server.godot_inspect_symbol(Parameters(InspectSymbolInput {
+            symbol_id: None,
+            script: Some("uid://player-script".to_owned()),
+            qualified_name: Some("class:Player/method:attack".to_owned()),
+            limit: 1,
+            cursor: Some(cursor.clone()),
+        }));
+        let second = structured_content(&second).expect("second inspection page");
+        assert_eq!(second["query"]["offset"], 1);
+
+        let selector_changed = server.godot_inspect_symbol(Parameters(InspectSymbolInput {
+            symbol_id: Some(attack_symbol_id()),
+            script: None,
+            qualified_name: None,
+            limit: 1,
+            cursor: Some(cursor),
+        }));
+        assert_eq!(
+            structured_content(&selector_changed)
+                .and_then(|value| value.pointer("/error/code"))
+                .and_then(Value::as_str),
+            Some("stale_cursor")
+        );
+    }
+
+    #[test]
+    fn symbol_tools_return_stable_validation_and_availability_errors() {
+        let unavailable = GodotMcpServer::new(SnapshotReplicator::new()).godot_search_symbols(
+            Parameters(SearchSymbolsInput {
+                query: "Player".to_owned(),
+                match_mode: SymbolMatchInput::Exact,
+                language: None,
+                kind: None,
+                script: None,
+                limit: 50,
+                cursor: None,
+            }),
+        );
+        assert_eq!(
+            structured_content(&unavailable)
+                .and_then(|value| value.pointer("/error/code"))
+                .and_then(Value::as_str),
+            Some("project_not_bound")
+        );
+        let invalid_query =
+            indexed_script_server().godot_search_symbols(Parameters(SearchSymbolsInput {
+                query: String::new(),
+                match_mode: SymbolMatchInput::Exact,
+                language: None,
+                kind: None,
+                script: None,
+                limit: 50,
+                cursor: None,
+            }));
+        assert_eq!(
+            structured_content(&invalid_query)
+                .and_then(|value| value.pointer("/error/code"))
+                .and_then(Value::as_str),
+            Some("invalid_query")
+        );
+        let invalid_limit =
+            indexed_script_server().godot_search_symbols(Parameters(SearchSymbolsInput {
+                query: "Player".to_owned(),
+                match_mode: SymbolMatchInput::Exact,
+                language: None,
+                kind: None,
+                script: None,
+                limit: 201,
+                cursor: None,
+            }));
+        assert_eq!(
+            structured_content(&invalid_limit)
+                .and_then(|value| value.pointer("/error/code"))
+                .and_then(Value::as_str),
+            Some("invalid_limit")
+        );
+        let invalid_selector =
+            indexed_script_server().godot_inspect_symbol(Parameters(InspectSymbolInput {
+                symbol_id: Some(attack_symbol_id()),
+                script: Some("res://scripts/player.gd".to_owned()),
+                qualified_name: Some("class:Player/method:attack".to_owned()),
+                limit: 50,
+                cursor: None,
+            }));
+        assert_eq!(
+            structured_content(&invalid_selector)
+                .and_then(|value| value.pointer("/error/code"))
+                .and_then(Value::as_str),
+            Some("invalid_query")
+        );
+        let missing_symbol =
+            indexed_script_server().godot_inspect_symbol(Parameters(InspectSymbolInput {
+                symbol_id: Some(named_symbol_id('Z')),
+                script: None,
+                qualified_name: None,
+                limit: 50,
+                cursor: None,
+            }));
+        assert_eq!(
+            structured_content(&missing_symbol)
+                .and_then(|value| value.pointer("/error/code"))
+                .and_then(Value::as_str),
+            Some("symbol_not_found")
+        );
+        let unsafe_script =
+            indexed_script_server().godot_inspect_symbol(Parameters(InspectSymbolInput {
+                symbol_id: None,
+                script: Some("res://../player.gd".to_owned()),
+                qualified_name: Some("class:Player".to_owned()),
+                limit: 50,
+                cursor: None,
+            }));
+        assert_eq!(
+            structured_content(&unsafe_script)
+                .and_then(|value| value.pointer("/error/code"))
+                .and_then(Value::as_str),
+            Some("invalid_path")
+        );
+        let missing_script =
+            indexed_script_server().godot_inspect_symbol(Parameters(InspectSymbolInput {
+                symbol_id: None,
+                script: Some("uid://missing-script".to_owned()),
+                qualified_name: Some("class:Player".to_owned()),
+                limit: 50,
+                cursor: None,
+            }));
+        assert_eq!(
+            structured_content(&missing_script)
+                .and_then(|value| value.pointer("/error/code"))
+                .and_then(Value::as_str),
+            Some("script_not_found")
+        );
     }
 
     #[test]
