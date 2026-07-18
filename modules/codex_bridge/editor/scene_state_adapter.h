@@ -58,6 +58,10 @@ public:
 	static constexpr uint64_t SNAPSHOT_WINDOW_BYTES = 32 * 1024 * 1024;
 	static constexpr uint64_t SNAPSHOT_TIMEOUT_USEC = 120000000;
 	static constexpr uint64_t SCENE_BUDGET_USEC = 1200;
+	// Some editor APIs used by scene project-context capture are indivisible.
+	// Reserve the dispatcher lane while scene bulk is pending so any control
+	// command and the indivisible scene call run on separate frames.
+	static constexpr uint64_t FRAME_SAFETY_MARGIN_USEC = 800;
 	// ProjectSettings reads and Variant projection are indivisible within a
 	// slice. Keep these batches small enough to preserve the 2 ms frame ceiling
 	// on slower Windows hosts while still advancing the capture every frame.

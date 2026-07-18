@@ -52,6 +52,9 @@ namespace {
 // headroom for JSON escaping under the 1 MiB frame limit.
 static constexpr int SNAPSHOT_CHUNK_BYTES = 262144;
 static constexpr int SNAPSHOT_ENTITY_LIMIT = 1000;
+static_assert(
+		MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME >= SceneStateAdapter::FRAME_SAFETY_MARGIN_USEC + SceneStateAdapter::SCENE_BUDGET_USEC,
+		"Scene scheduling must leave a nonnegative dispatcher lane.");
 
 static String sha256_hex_utf8(const String &p_value) {
 	const CharString bytes = p_value.utf8();
@@ -578,19 +581,21 @@ void CodexBridgeService::_notification(int p_what) {
 				if (resource_work && scene_work) {
 					scene_bulk_turn = !scene_bulk_turn;
 				}
+				const uint64_t frame_safety_margin = run_scene_bulk ? SceneStateAdapter::FRAME_SAFETY_MARGIN_USEC : ResourceGraphAdapter::FRAME_SAFETY_MARGIN_USEC;
 				const uint64_t dispatcher_budget = MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME -
-						ResourceGraphAdapter::FRAME_SAFETY_MARGIN_USEC -
+						frame_safety_margin -
 						(run_resource_bulk ? ResourceGraphAdapter::RESOURCE_BUDGET_USEC : 0) -
 						(run_scene_bulk ? SceneStateAdapter::SCENE_BUDGET_USEC : 0);
 				const MainThreadDispatcher::ProcessStats dispatcher_stats = dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
+				const bool bulk_lane_available = dispatcher_stats.consumed == 0 || dispatcher_stats.elapsed_usec < dispatcher_budget;
 				// Control traffic retains the higher-priority lane, but a stream of
 				// short status requests must not starve either graph domain. Resource
-				// and scene bulk work alternate when both are pending, preserving one
-				// safety margin under the common 2 ms ceiling.
-				if (run_resource_bulk && dispatcher_stats.elapsed_usec < dispatcher_budget) {
+				// and scene bulk work alternate when both are pending. A scene slice
+				// with a zero dispatcher budget runs only on a command-free frame.
+				if (run_resource_bulk && bulk_lane_available) {
 					_process_resource_graph(ResourceGraphAdapter::RESOURCE_BUDGET_USEC);
 				}
-				if (run_scene_bulk && dispatcher_stats.elapsed_usec < dispatcher_budget) {
+				if (run_scene_bulk && bulk_lane_available) {
 					_process_scene_graph(SceneStateAdapter::SCENE_BUDGET_USEC);
 				}
 				const uint64_t frame_elapsed_usec = OS::get_singleton()->get_ticks_usec() - frame_started_usec;
