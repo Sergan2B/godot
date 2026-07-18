@@ -137,7 +137,7 @@ mod unix {
             || !record
                 .protocol_versions
                 .iter()
-                .any(|version| matches!(version.as_str(), "1.0" | "1.1" | "1.2"))
+                .any(|version| matches!(version.as_str(), "1.0" | "1.1" | "1.2" | "1.3"))
             || !valid_editor_session_id(&record.editor_session_id)
         {
             return Err(BridgeError::Invalid(
@@ -323,7 +323,7 @@ mod windows {
             || !record
                 .protocol_versions
                 .iter()
-                .any(|version| matches!(version.as_str(), "1.0" | "1.1" | "1.2"))
+                .any(|version| matches!(version.as_str(), "1.0" | "1.1" | "1.2" | "1.3"))
             || !valid_editor_session_id(&record.editor_session_id)
         {
             return Err(BridgeError::Invalid(

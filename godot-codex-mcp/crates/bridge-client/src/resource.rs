@@ -31,6 +31,8 @@ pub struct ResourceRevisionVector {
     pub project_revision: u64,
     pub operation_seq: u64,
     pub resource_revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene_graph_revision: Option<u64>,
     pub scene_revisions: BTreeMap<String, u64>,
 }
 
@@ -522,7 +524,7 @@ fn validate_snapshot_chunk(
     accepted: &ResourceSnapshotAccepted,
     expected_index: usize,
 ) -> Result<(), BridgeError> {
-    if chunk.protocol_version != "1.2"
+    if !matches!(chunk.protocol_version.as_str(), "1.2" | "1.3")
         || chunk.kind != "chunk"
         || chunk.domain != "resource_graph"
         || chunk.snapshot_id != accepted.snapshot_id
@@ -638,7 +640,7 @@ async fn receive_resource_snapshot<S: ResourceSnapshotSink>(
             .receive_non_sync_with_timeout(RESOURCE_SNAPSHOT_TIMEOUT)
             .await?,
     )?;
-    if begin_message.protocol_version != "1.2"
+    if !matches!(begin_message.protocol_version.as_str(), "1.2" | "1.3")
         || begin_message.kind != "notification"
         || begin_message.method != "snapshot.begin"
         || begin_message.params.snapshot_id != accepted.snapshot_id
@@ -696,7 +698,7 @@ async fn receive_resource_snapshot<S: ResourceSnapshotSink>(
         let end_message: ResourceSnapshotEndMessage = serde_json::from_value(message)?;
         break end_message;
     };
-    if end.protocol_version != "1.2"
+    if !matches!(end.protocol_version.as_str(), "1.2" | "1.3")
         || end.kind != "notification"
         || end.method != "snapshot.end"
         || end.params.snapshot_id != accepted.snapshot_id
@@ -869,7 +871,7 @@ pub(crate) async fn get_next_resource_delta(
 }
 
 fn require_resource_graph(session: &Session) -> Result<(), BridgeError> {
-    if session.protocol_version() != "1.2"
+    if !matches!(session.protocol_version(), "1.2" | "1.3")
         || !session.capabilities().contains("resource.uid_dependencies")
         || !session
             .capabilities()

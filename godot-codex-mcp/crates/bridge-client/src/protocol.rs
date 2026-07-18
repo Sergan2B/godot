@@ -174,6 +174,26 @@ fn is_sync_invalidation(value: &Value) -> Result<bool, BridgeError> {
 }
 
 #[cfg(any(unix, windows, test))]
+fn is_scene_notification(value: &Value) -> Result<bool, BridgeError> {
+    let revision_field = match value.get("method").and_then(Value::as_str) {
+        Some("scene_graph_changed") => "scene_graph_revision",
+        Some("scene_journal_gap") => "current_scene_graph_revision",
+        _ => return Ok(false),
+    };
+    if value.get("kind").and_then(Value::as_str) != Some("notification")
+        || value
+            .pointer(&format!("/params/{revision_field}"))
+            .and_then(Value::as_u64)
+            .is_none()
+    {
+        return Err(BridgeError::Invalid(
+            "scene graph notification is invalid".to_owned(),
+        ));
+    }
+    Ok(true)
+}
+
+#[cfg(any(unix, windows, test))]
 fn sync_invalidation_affects_editor(value: &Value) -> bool {
     match value.get("method").and_then(Value::as_str) {
         Some("sync.event") => {
@@ -338,7 +358,9 @@ impl Session {
     pub(crate) async fn connect(project_root: &Path) -> Result<Self, BridgeError> {
         let discovery = Discovery::load(project_root)?;
         let mut stream = FrameStream::connect(&discovery.endpoint).await?;
-        let offered_versions = vec!["1.2".to_owned()];
+        // Bridge negotiation advertises one highest supported minor per major;
+        // the server selects the best 1.x fallback it implements.
+        let offered_versions = vec!["1.3".to_owned()];
         let mut client_nonce = [0_u8; 32];
         getrandom::fill(&mut client_nonce)
             .map_err(|error| BridgeError::Invalid(format!("client nonce failed: {error}")))?;
@@ -355,7 +377,10 @@ impl Session {
         let selected_protocol_version =
             required_str(&challenge, "selected_protocol_version")?.to_owned();
         if required_str(&challenge, "kind")? != "handshake.server_challenge"
-            || !matches!(selected_protocol_version.as_str(), "1.0" | "1.1" | "1.2")
+            || !matches!(
+                selected_protocol_version.as_str(),
+                "1.0" | "1.1" | "1.2" | "1.3"
+            )
             || required_str(&challenge, "project_id")? != discovery.project_id
             || required_str(&challenge, "editor_session_id")? != discovery.editor_session_id
         {
@@ -415,9 +440,16 @@ impl Session {
                 "sync.event_stream_v1",
             ]);
         }
-        if session.selected_protocol_version == "1.2" {
+        if matches!(session.selected_protocol_version.as_str(), "1.2" | "1.3") {
             requested_capabilities
                 .extend(["resource.uid_dependencies", "resource.incremental_index"]);
+        }
+        if session.selected_protocol_version == "1.3" {
+            requested_capabilities.extend([
+                "scene.packed_state",
+                "scene.incremental_index",
+                "scene.project_context",
+            ]);
         }
         let initialize = session
             .request(
@@ -467,6 +499,9 @@ impl Session {
         loop {
             let message = self.stream.receive_with_timeout(timeout).await?;
             validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
+            if is_scene_notification(&message)? {
+                continue;
+            }
             if is_sync_invalidation(&message)? {
                 if sync_invalidation_affects_editor(&message) {
                     self.resync_requested = true;
@@ -709,6 +744,10 @@ impl Session {
             validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
             let method = message.get("method").and_then(Value::as_str);
             match method {
+                Some("scene_graph_changed" | "scene_journal_gap") => {
+                    is_scene_notification(&message)?;
+                    continue;
+                }
                 Some("sync.event") if !sync_invalidation_affects_editor(&message) => continue,
                 Some("sync.event") => {
                     let event_seq = message
@@ -850,6 +889,30 @@ mod tests {
             is_sync_invalidation(&json!({
                 "kind": "notification",
                 "method": "sync.event",
+                "params": {}
+            }))
+            .is_err()
+        );
+        assert!(
+            is_scene_notification(&json!({
+                "kind": "notification",
+                "method": "scene_graph_changed",
+                "params": {"scene_graph_revision": 2}
+            }))
+            .unwrap()
+        );
+        assert!(
+            is_scene_notification(&json!({
+                "kind": "notification",
+                "method": "scene_journal_gap",
+                "params": {"current_scene_graph_revision": 3}
+            }))
+            .unwrap()
+        );
+        assert!(
+            is_scene_notification(&json!({
+                "kind": "notification",
+                "method": "scene_graph_changed",
                 "params": {}
             }))
             .is_err()

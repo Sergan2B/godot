@@ -1,6 +1,7 @@
 mod discovery;
 mod protocol;
 mod resource;
+mod scene;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -17,12 +18,21 @@ pub use resource::{
     ResourceSnapshotSink, ResourceSnapshotTransfer, ResourceSourceKind, ResourceValidity,
     ResourceWithDependencies, RpcContext, UidResourceRef,
 };
+pub use scene::{
+    AnimationTrackObservation, AnimationTrackResolution, ConnectionObservation, NodeObservation,
+    ProjectContextObservation, ProjectedVariant, PropertyObservation, SceneDeltaBatch,
+    SceneDeltaOperation, SceneDeltaPoll, SceneDiagnostic, SceneDiagnosticCode, SceneIdentityScope,
+    SceneObservation, SceneRevisionVector, SceneSnapshot, SceneSnapshotAccepted,
+    SceneSnapshotBeginParams, SceneSnapshotChunk, SceneSnapshotEndParams, SceneSnapshotLimits,
+    SceneSnapshotPayload, SceneSnapshotSink, SceneSnapshotTransfer, SubresourceObservation,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NegotiatedBridgeProfile {
     pub protocol_version: String,
     pub capabilities: std::collections::BTreeSet<String>,
     pub resource_graph_available: bool,
+    pub scene_graph_available: bool,
 }
 
 /// Backward-compatible short name for callers that adopted the Stage 3 spike API.
@@ -45,9 +55,13 @@ impl BridgeClient {
         let capabilities = self.session.capabilities().clone();
         NegotiatedBridgeProfile {
             protocol_version: self.session.protocol_version().to_owned(),
-            resource_graph_available: self.session.protocol_version() == "1.2"
+            resource_graph_available: matches!(self.session.protocol_version(), "1.2" | "1.3")
                 && capabilities.contains("resource.uid_dependencies")
                 && capabilities.contains("resource.incremental_index"),
+            scene_graph_available: self.session.protocol_version() == "1.3"
+                && capabilities.contains("scene.packed_state")
+                && capabilities.contains("scene.incremental_index")
+                && capabilities.contains("scene.project_context"),
             capabilities,
         }
     }
@@ -80,6 +94,24 @@ impl BridgeClient {
         after_resource_revision: u64,
     ) -> Result<ResourceDeltaPoll, BridgeError> {
         resource::get_next_resource_delta(&mut self.session, after_resource_revision).await
+    }
+
+    pub async fn stream_scene_snapshot<S: SceneSnapshotSink>(
+        &mut self,
+        sink: &mut S,
+    ) -> Result<SceneSnapshotTransfer, BridgeError> {
+        scene::stream_scene_snapshot(&mut self.session, sink).await
+    }
+
+    pub async fn get_scene_snapshot(&mut self) -> Result<SceneSnapshot, BridgeError> {
+        scene::get_scene_snapshot(&mut self.session).await
+    }
+
+    pub async fn get_next_scene_delta(
+        &mut self,
+        after_scene_graph_revision: u64,
+    ) -> Result<SceneDeltaPoll, BridgeError> {
+        scene::get_next_scene_delta(&mut self.session, after_scene_graph_revision).await
     }
 }
 
