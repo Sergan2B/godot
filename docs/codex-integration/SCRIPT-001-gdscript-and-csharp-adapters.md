@@ -2,8 +2,9 @@
 
 **Status:** D-07 accepted; `S5-01` contract, independent `S5-02` oracle, Bridge
 RPC 1.4 `S5-03`, bounded editor adapter/journal `S5-04`, and strict Rust wire
-normalization `S5-05` are locally verified on macOS arm64; `S5-06`–`S5-10` and
-two-host acceptance remain pending
+normalization `S5-05`, plus logical schema 1.3/`segment-v3` persistence `S5-06`,
+are locally verified on macOS arm64; `S5-07`–`S5-10` and two-host acceptance
+remain pending
 
 **Decision:** `D-07` — use a bridge-owned saved-content cache over Godot's
 GDScript parser/analyzer; do not depend on the active LSP peer cache

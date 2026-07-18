@@ -1,10 +1,12 @@
 # INDEX-001 — semantic index contract, storage, and migrations
 
-**Status:** Resource contract frozen; local `D-05` selects the segment store
+**Status:** Resource/scene/script persistence contract implemented through logical
+schema 1.3 and `segment-v3`; local `D-05` selects the segment store
 
 **Version:** 0.1
 
-**Frozen scope:** Sprint 3 resource entities and direct/reverse file dependencies
+**Frozen scope:** Sprint 3 resources, Sprint 4 scene records, and Sprint 5 saved-script
+storage/recovery through `S5-06`
 
 **Parent:** [SPRINT-3-PLAN.md](SPRINT-3-PLAN.md)
 
@@ -423,6 +425,31 @@ cancellation, process death, validation failure, or corruption leaves the prior
 generation active. The migration is idempotent once `segment-v2` is current and a
 restart removes incomplete staging artifacts before retrying.
 
+### 11.3 `segment-v3` saved-script extension
+
+Sprint 5 advances the logical schema from 1.2 to 1.3 and the production physical
+format from `segment-v2` to `segment-v3`. Every resource and scene shard contract
+remains unchanged. `segment-v3` adds independently content-addressed maps for script
+documents, symbols, relations, materialized targetful references, diagnostics, and
+script/symbol lookup keys. Adapter availability remains bounded generation-header
+metadata rather than a separately queryable physical shard.
+
+The independently checkpointed script domain binds editor session, resource, scene,
+and script revisions, source completeness, normalized snapshot checksum, Bridge
+semantic digest, and its own storage validation digest. Document content hashes bind
+all declaration/evidence ranges. Targetful relation/reference shards have exact parity;
+dynamic relations have no target or reference entry. An invalid or unavailable current
+document cannot retain symbols or relations from an older content hash.
+
+Migration first validates the active `segment-v2` generation, advances its logical
+schema to 1.3, preserves the complete scene domain, and creates an intentionally empty
+non-current script domain. Existing resource and scene shard maps are reused byte-for-
+byte by digest. Only a durable commit marker activates the new manifest. Cancellation
+or process death leaves the v2 generation active; restart removes incomplete staging
+artifacts; retry is idempotent. Existing content-addressed segment bytes and offset
+indexes are revalidated before reuse, so a corrupt orphan cannot be named by a new
+commit. Corrupt committed script shards fail closed and are never returned as current.
+
 ## 12. Direct query contract
 
 ### 12.1 Lookup
@@ -519,6 +546,7 @@ edges remain observable; neither resolves to a similarly named file.
 | Golden fixture/oracle format | Frozen by `S3-02` | Complete |
 | `D-05` persistent backend and physical migration | Segment store selected by full local macOS matrix | Complete locally; Windows/Linux portability `not_run` |
 | `D-06` node/subresource persistent identity | Implemented and accepted by matching macOS/Windows Sprint 4 evidence | Complete |
+| `S5-06` logical schema 1.3 and `segment-v3` | Script shards, v2 migration, digest reuse, cancellation/crash/corruption recovery locally verified | Complete locally; two-host Sprint 5 evidence remains `S5-09` |
 
 ### 15.1 `S3-03` execution status
 

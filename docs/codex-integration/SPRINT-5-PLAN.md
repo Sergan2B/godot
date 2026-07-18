@@ -1,8 +1,8 @@
 # Sprint 5 plan — GDScript symbols and program relations
 
-**Status:** In progress — `S5-01`–`S5-05` are complete and locally verified on
+**Status:** In progress — `S5-01`–`S5-06` are complete and locally verified on
 macOS arm64, including the GDScript-disabled build and the strict Rust
-normalizer; `S5-06` is the next gate; full Sprint 5 acceptance is not claimed
+normalizer; `S5-07` is the next gate; full Sprint 5 acceptance is not claimed
 
 **Planned duration:** 10 working days
 
@@ -212,12 +212,17 @@ bounded and ignores hidden, `.gdignore`, and symlinked directories; final live
 telemetry records zero samples above 2 ms. This closes the local Rust
 normalization gate, not `S5-06` persistence or two-host Sprint 5 acceptance.
 
-`S5-06` adds independently content-addressed script-document, symbol, relation,
-reference, diagnostic, and lookup shards. Migration validates the active
-`segment-v2` generation, reuses its resource and scene shards, creates an empty
-non-current script domain, and activates only through the durable commit marker.
-Failure leaves the prior generation readable and cleanup removes incomplete
-staging data before an idempotent retry.
+`S5-06` installs logical schema 1.3 and `segment-v3` with independently
+content-addressed script-document, symbol, relation, materialized-reference,
+diagnostic, and lookup shards. The storage-neutral script domain validates exact
+content/range binding, identity ownership, adapter state, and relation/reference
+parity. Migration validates the active `segment-v2` generation, reuses every
+resource and scene shard binding by digest, creates an empty non-current script
+domain, and activates only through the durable commit marker. Local tests prove
+resource/scene result parity, idempotent retry, staging cleanup, and preservation
+of the prior generation across cancellation, process death, and corrupt orphan
+script segments. Committed script-shard corruption fails closed. This closes the
+local persistence gate, not `S5-07` composition or two-host Sprint 5 acceptance.
 
 ## 5. Required data flow
 

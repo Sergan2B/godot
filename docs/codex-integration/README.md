@@ -45,7 +45,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | `RELEASE-001` | Draft for review 0.1 | `TEST-001` evidence manifest |
 | `ADR-000` | Accepted | Revisit only if fork topology changes |
 | `ADR-001` | Accepted and locally verified | Production sidecar boundary starts in Sprint 2 |
-| `PROTOCOL-001` | Bridge RPC 1.0–1.4 locally verified through Sprint 5 `S5-05` | `S5-06` persistent script index integration |
+| `PROTOCOL-001` | Bridge RPC 1.0–1.4 locally verified through Sprint 5 `S5-05`; its script output is durably represented by `S5-06` | `S5-07` semantic composition |
 | Sprint 0 local baseline | Passed | Remote CI is `not_run` until publication is authorized |
 | Sprint 1 Stage 2 local evidence | Passed | Superseded by Stage 3 evidence |
 | Sprint 1 Stage 3 local evidence | Passed | Superseded by Stage 4 evidence |
@@ -59,11 +59,11 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | Sprint 3 Stage 4 | Complete and locally verified on macOS arm64 | Run `S3-09`; Windows/Linux and remote CI remain `not_run` |
 | Sprint 3 Stage 5 | Complete on freeze `a90ddd06c81a`; macOS/Windows live and storage gates pass | Superseded by final Sprint 3 evidence |
 | Sprint 3 evidence | Final; all 12 criteria pass and canonical D-05 selects segment | Begin Sprint 4 |
-| `INDEX-001` resource contract | Frozen and implemented; cross-platform `D-05` selects segment store | Extend only through a versioned Sprint 4 contract |
+| `INDEX-001` semantic index contract | Logical schema 1.3 and `segment-v3` locally verified; v2 migration preserves resource/scene shards and adds fail-closed script persistence | Integrate independent domain freshness/composition in `S5-07` |
 | Sprint 4 plan | Complete; `S4-01`–`S4-10` and all 12 acceptance criteria pass on one macOS/Windows freeze | Begin Sprint 5 script and symbol intelligence |
 | `SCENE-001` scene contract | D-06 implemented and live-verified through Bridge/MCP on macOS and Windows | Extend only through a versioned post-Sprint-4 contract |
-| `SCRIPT-001` script contract | D-07 through strict Bridge RPC 1.4 Rust normalization, live C# discovery, snapshot/delta lifecycle, and GDScript-disabled behavior locally verified on macOS arm64 | Persist canonical script records in `S5-06` |
-| Sprint 5 plan | In progress; `S5-01`–`S5-05` complete locally, `S5-06`–`S5-10` remain | Execute `S5-06`: logical schema 1.3, `segment-v3`, migration, and recovery |
+| `SCRIPT-001` script contract | D-07 through strict Bridge RPC 1.4 normalization and logical schema 1.3/`segment-v3` persistence locally verified on macOS arm64 | Compose resource/scene/script domains in `S5-07` |
+| Sprint 5 plan | In progress; `S5-01`–`S5-06` complete locally, `S5-07`–`S5-10` remain | Execute `S5-07`: semantic coordinator and cross-domain composition |
 
 ## Interim ownership
 
