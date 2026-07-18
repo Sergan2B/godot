@@ -5,10 +5,10 @@ set -euo pipefail
 readonly FREEZE_COMMIT="a90ddd06c81a6210f44552b46ff533248b93ed90"
 readonly EXPECTED_SOURCE_SHA256="sha256:73e99eec9897f8e2b4c6c210a3c56bd57a91ce347aedba030323eb01bf8438eb"
 readonly EXPECTED_ORACLE_SHA256="sha256:a41ddfc642f653ad88866aeeefe7852d7742b8701e469aec821aef5b9c046f3b"
-# These superseded hashes intentionally keep aggregation closed until both
-# macOS reports are regenerated at FREEZE_COMMIT and explicitly repinned.
-readonly EXPECTED_MACOS_LIVE_SHA256="aeabdd3bc2501c5333d3464470199f0cd5fc05e5bbf253001b6596a4004f4040"
-readonly EXPECTED_MACOS_STORAGE_SHA256="655d62f705d1678c45e61dc293bc0e5c5002df6725cbc4592832c85085841494"
+# These hashes pin the qualifying macOS reports regenerated at FREEZE_COMMIT.
+# Aggregation fails closed if either tracked input changes.
+readonly EXPECTED_MACOS_LIVE_SHA256="bb56c6e7e514a7741ae1f29de5eb1127a22757691b736cd9285e37d3f93f7ef3"
+readonly EXPECTED_MACOS_STORAGE_SHA256="7ecffdf270148712a492228de0bef83df6d688891e1b8385bf348682e0ff5311"
 export EXPECTED_SOURCE_SHA256
 
 if [[ $# -ne 2 ]]; then
