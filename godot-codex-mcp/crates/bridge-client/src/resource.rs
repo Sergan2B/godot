@@ -33,6 +33,8 @@ pub struct ResourceRevisionVector {
     pub resource_revision: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scene_graph_revision: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script_graph_revision: Option<u64>,
     pub scene_revisions: BTreeMap<String, u64>,
 }
 
@@ -524,7 +526,7 @@ fn validate_snapshot_chunk(
     accepted: &ResourceSnapshotAccepted,
     expected_index: usize,
 ) -> Result<(), BridgeError> {
-    if !matches!(chunk.protocol_version.as_str(), "1.2" | "1.3")
+    if !matches!(chunk.protocol_version.as_str(), "1.2" | "1.3" | "1.4")
         || chunk.kind != "chunk"
         || chunk.domain != "resource_graph"
         || chunk.snapshot_id != accepted.snapshot_id
@@ -626,6 +628,13 @@ async fn receive_resource_snapshot<S: ResourceSnapshotSink>(
         })?)?;
     if accepted.domain != "resource_graph"
         || accepted.revisions.resource_revision != accepted.resource_revision
+        || match session.protocol_version() {
+            "1.4" => accepted
+                .revisions
+                .script_graph_revision
+                .is_none_or(|revision| revision > MAX_SAFE_REVISION),
+            _ => accepted.revisions.script_graph_revision.is_some(),
+        }
         || accepted.resource_revision > MAX_SAFE_REVISION
         || !accepted.snapshot_id.starts_with("snapshot:")
     {
@@ -640,7 +649,7 @@ async fn receive_resource_snapshot<S: ResourceSnapshotSink>(
             .receive_non_sync_with_timeout(RESOURCE_SNAPSHOT_TIMEOUT)
             .await?,
     )?;
-    if !matches!(begin_message.protocol_version.as_str(), "1.2" | "1.3")
+    if begin_message.protocol_version != session.protocol_version()
         || begin_message.kind != "notification"
         || begin_message.method != "snapshot.begin"
         || begin_message.params.snapshot_id != accepted.snapshot_id
@@ -698,7 +707,7 @@ async fn receive_resource_snapshot<S: ResourceSnapshotSink>(
         let end_message: ResourceSnapshotEndMessage = serde_json::from_value(message)?;
         break end_message;
     };
-    if !matches!(end.protocol_version.as_str(), "1.2" | "1.3")
+    if end.protocol_version != session.protocol_version()
         || end.kind != "notification"
         || end.method != "snapshot.end"
         || end.params.snapshot_id != accepted.snapshot_id
@@ -871,7 +880,7 @@ pub(crate) async fn get_next_resource_delta(
 }
 
 fn require_resource_graph(session: &Session) -> Result<(), BridgeError> {
-    if !matches!(session.protocol_version(), "1.2" | "1.3")
+    if !matches!(session.protocol_version(), "1.2" | "1.3" | "1.4")
         || !session.capabilities().contains("resource.uid_dependencies")
         || !session
             .capabilities()

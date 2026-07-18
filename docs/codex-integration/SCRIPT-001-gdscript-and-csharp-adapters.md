@@ -1,8 +1,9 @@
 # SCRIPT-001 — GDScript and C# semantic adapters
 
 **Status:** D-07 accepted; `S5-01` contract, independent `S5-02` oracle, Bridge
-RPC 1.4 `S5-03`, and the bounded editor adapter/journal `S5-04` are locally
-verified on macOS arm64; `S5-05`–`S5-10` and two-host acceptance remain pending
+RPC 1.4 `S5-03`, bounded editor adapter/journal `S5-04`, and strict Rust wire
+normalization `S5-05` are locally verified on macOS arm64; `S5-06`–`S5-10` and
+two-host acceptance remain pending
 
 **Decision:** `D-07` — use a bridge-owned saved-content cache over Godot's
 GDScript parser/analyzer; do not depend on the active LSP peer cache

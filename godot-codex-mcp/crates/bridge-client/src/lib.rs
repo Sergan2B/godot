@@ -2,6 +2,7 @@ mod discovery;
 mod protocol;
 mod resource;
 mod scene;
+mod script;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -26,6 +27,19 @@ pub use scene::{
     SceneSnapshotBeginParams, SceneSnapshotChunk, SceneSnapshotEndParams, SceneSnapshotLimits,
     SceneSnapshotPayload, SceneSnapshotSink, SceneSnapshotTransfer, SubresourceObservation,
 };
+pub use script::{
+    LanguageAdapterStatus, NormalizedScriptGraph, ScriptAdapterAvailability, ScriptAdapterProfile,
+    ScriptCompleteness, ScriptConfidence, ScriptDeltaBatch, ScriptDeltaOperation, ScriptDeltaPoll,
+    ScriptDiagnostic, ScriptDiagnosticAuthority, ScriptDiagnosticIdentity,
+    ScriptDiagnosticSeverity, ScriptDocument, ScriptDocumentBundle, ScriptIdentityScope,
+    ScriptLanguage, ScriptModifier, ScriptRelation, ScriptRelationAuthority,
+    ScriptRelationEndpoint, ScriptRelationPredicate, ScriptRevisionVector, ScriptSnapshot,
+    ScriptSnapshotAccepted, ScriptSnapshotBeginParams, ScriptSnapshotChunk,
+    ScriptSnapshotEndParams, ScriptSnapshotLimits, ScriptSnapshotPayload, ScriptSnapshotSink,
+    ScriptSnapshotTransfer, ScriptSymbol, ScriptSymbolKind, ScriptTypeState, ScriptVisibility,
+    SourceRange, canonical_content_symbol_id, canonical_diagnostic_id, canonical_named_symbol_id,
+    canonical_script_resource_id, normalize_script_graph, normalize_script_snapshot,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NegotiatedBridgeProfile {
@@ -33,6 +47,7 @@ pub struct NegotiatedBridgeProfile {
     pub capabilities: std::collections::BTreeSet<String>,
     pub resource_graph_available: bool,
     pub scene_graph_available: bool,
+    pub script_graph_available: bool,
 }
 
 /// Backward-compatible short name for callers that adopted the Stage 3 spike API.
@@ -55,13 +70,20 @@ impl BridgeClient {
         let capabilities = self.session.capabilities().clone();
         NegotiatedBridgeProfile {
             protocol_version: self.session.protocol_version().to_owned(),
-            resource_graph_available: matches!(self.session.protocol_version(), "1.2" | "1.3")
-                && capabilities.contains("resource.uid_dependencies")
+            resource_graph_available: matches!(
+                self.session.protocol_version(),
+                "1.2" | "1.3" | "1.4"
+            ) && capabilities.contains("resource.uid_dependencies")
                 && capabilities.contains("resource.incremental_index"),
-            scene_graph_available: self.session.protocol_version() == "1.3"
+            scene_graph_available: matches!(self.session.protocol_version(), "1.3" | "1.4")
                 && capabilities.contains("scene.packed_state")
                 && capabilities.contains("scene.incremental_index")
                 && capabilities.contains("scene.project_context"),
+            script_graph_available: self.session.protocol_version() == "1.4"
+                && capabilities.contains("script.gdscript_semantics")
+                && capabilities.contains("script.incremental_index")
+                && capabilities.contains("script.diagnostics")
+                && capabilities.contains("script.csharp_discovery"),
             capabilities,
         }
     }
@@ -112,6 +134,31 @@ impl BridgeClient {
         after_scene_graph_revision: u64,
     ) -> Result<SceneDeltaPoll, BridgeError> {
         scene::get_next_scene_delta(&mut self.session, after_scene_graph_revision).await
+    }
+
+    pub async fn stream_script_snapshot<S: ScriptSnapshotSink>(
+        &mut self,
+        sink: &mut S,
+    ) -> Result<ScriptSnapshotTransfer, BridgeError> {
+        script::stream_script_snapshot(&mut self.session, sink).await
+    }
+
+    pub async fn get_script_snapshot(&mut self) -> Result<ScriptSnapshot, BridgeError> {
+        script::get_script_snapshot(&mut self.session).await
+    }
+
+    pub async fn get_normalized_script_snapshot(
+        &mut self,
+    ) -> Result<NormalizedScriptGraph, BridgeError> {
+        let snapshot = self.get_script_snapshot().await?;
+        normalize_script_snapshot(&snapshot)
+    }
+
+    pub async fn get_next_script_delta(
+        &mut self,
+        after_script_graph_revision: u64,
+    ) -> Result<ScriptDeltaPoll, BridgeError> {
+        script::get_next_script_delta(&mut self.session, after_script_graph_revision).await
     }
 }
 

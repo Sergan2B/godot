@@ -1,8 +1,8 @@
 # Sprint 5 plan — GDScript symbols and program relations
 
-**Status:** In progress — `S5-01`–`S5-04` are complete and locally verified on
-macOS arm64, including the GDScript-disabled build; `S5-05` is the next gate;
-full Sprint 5 acceptance is not claimed
+**Status:** In progress — `S5-01`–`S5-05` are complete and locally verified on
+macOS arm64, including the GDScript-disabled build and the strict Rust
+normalizer; `S5-06` is the next gate; full Sprint 5 acceptance is not claimed
 
 **Planned duration:** 10 working days
 
@@ -199,6 +199,18 @@ build and remain honestly `unavailable` in a GDScript-disabled build; both build
 profiles pass the complete local Codex test subset, and the headless fixture
 records zero Bridge main-thread samples above 2 ms. This is an editor/transport
 gate, not `S5-05` Rust normalization or full Sprint 5 acceptance evidence.
+
+`S5-05` adds the Bridge RPC 1.4 Rust script client, closed DTO validation,
+streaming snapshot/delta handling, canonical ordering, identity/range/relation/
+confidence/diagnostic checks, and a transport-revision-independent semantic
+digest. The production normalizer reproduces the independent oracle digest
+`sha256:b105ec15abc36d826f5480dea4db8350a1ea926be507cf2cedf876f1189018e8`.
+A live macOS fixture session validates eight documents including discovery-only
+C#, 48 symbols, 33 producer relations, seven diagnostics, and unchanged
+resource/scene snapshots under protocol 1.4. The fallback C# filesystem scan is
+bounded and ignores hidden, `.gdignore`, and symlinked directories; final live
+telemetry records zero samples above 2 ms. This closes the local Rust
+normalization gate, not `S5-06` persistence or two-host Sprint 5 acceptance.
 
 `S5-06` adds independently content-addressed script-document, symbol, relation,
 reference, diagnostic, and lookup shards. Migration validates the active

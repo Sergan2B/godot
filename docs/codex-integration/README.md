@@ -45,7 +45,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | `RELEASE-001` | Draft for review 0.1 | `TEST-001` evidence manifest |
 | `ADR-000` | Accepted | Revisit only if fork topology changes |
 | `ADR-001` | Accepted and locally verified | Production sidecar boundary starts in Sprint 2 |
-| `PROTOCOL-001` | Bridge RPC 1.0–1.4 locally verified through Sprint 5 `S5-04` | `S5-05` Rust script client and independent review |
+| `PROTOCOL-001` | Bridge RPC 1.0–1.4 locally verified through Sprint 5 `S5-05` | `S5-06` persistent script index integration |
 | Sprint 0 local baseline | Passed | Remote CI is `not_run` until publication is authorized |
 | Sprint 1 Stage 2 local evidence | Passed | Superseded by Stage 3 evidence |
 | Sprint 1 Stage 3 local evidence | Passed | Superseded by Stage 4 evidence |
@@ -62,8 +62,8 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | `INDEX-001` resource contract | Frozen and implemented; cross-platform `D-05` selects segment store | Extend only through a versioned Sprint 4 contract |
 | Sprint 4 plan | Complete; `S4-01`–`S4-10` and all 12 acceptance criteria pass on one macOS/Windows freeze | Begin Sprint 5 script and symbol intelligence |
 | `SCENE-001` scene contract | D-06 implemented and live-verified through Bridge/MCP on macOS and Windows | Extend only through a versioned post-Sprint-4 contract |
-| `SCRIPT-001` script contract | D-07 through bounded `ScriptSemanticAdapter`, snapshot/delta lifecycle, and GDScript-disabled behavior locally verified on macOS arm64 | Implement the `S5-05` Rust wire client and normalizer |
-| Sprint 5 plan | In progress; `S5-01`–`S5-04` complete locally, `S5-05`–`S5-10` remain | Execute `S5-05`: strict Rust DTO validation, normalization, and semantic digest |
+| `SCRIPT-001` script contract | D-07 through strict Bridge RPC 1.4 Rust normalization, live C# discovery, snapshot/delta lifecycle, and GDScript-disabled behavior locally verified on macOS arm64 | Persist canonical script records in `S5-06` |
+| Sprint 5 plan | In progress; `S5-01`–`S5-05` complete locally, `S5-06`–`S5-10` remain | Execute `S5-06`: logical schema 1.3, `segment-v3`, migration, and recovery |
 
 ## Interim ownership
 

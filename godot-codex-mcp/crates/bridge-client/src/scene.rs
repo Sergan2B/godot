@@ -28,6 +28,8 @@ pub struct SceneRevisionVector {
     pub operation_seq: u64,
     pub resource_revision: u64,
     pub scene_graph_revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub script_graph_revision: Option<u64>,
     pub scene_revisions: BTreeMap<String, u64>,
 }
 
@@ -781,7 +783,7 @@ fn validate_snapshot_chunk(
 ) -> Result<(), BridgeError> {
     let canonical_payload = canonical_serialized(&chunk.payload)?;
     let checksum_input = chunk.payload_json.as_deref().unwrap_or(&canonical_payload);
-    if chunk.protocol_version != "1.3"
+    if !matches!(chunk.protocol_version.as_str(), "1.3" | "1.4")
         || chunk.kind != "chunk"
         || chunk.domain != "scene_graph"
         || chunk.snapshot_id != accepted.snapshot_id
@@ -879,6 +881,13 @@ async fn receive_scene_snapshot<S: SceneSnapshotSink>(
     if accepted.domain != "scene_graph"
         || accepted.revisions.resource_revision != accepted.resource_revision
         || accepted.revisions.scene_graph_revision != accepted.scene_graph_revision
+        || match session.protocol_version() {
+            "1.4" => accepted
+                .revisions
+                .script_graph_revision
+                .is_none_or(|revision| revision > MAX_SAFE_REVISION),
+            _ => accepted.revisions.script_graph_revision.is_some(),
+        }
         || accepted.resource_revision > MAX_SAFE_REVISION
         || accepted.scene_graph_revision > MAX_SAFE_REVISION
         || !accepted.snapshot_id.starts_with("snapshot:")
@@ -895,7 +904,7 @@ async fn receive_scene_snapshot<S: SceneSnapshotSink>(
             .await?,
     )
     .map_err(|error| BridgeError::Invalid(format!("scene snapshot begin is invalid: {error}")))?;
-    if begin_message.protocol_version != "1.3"
+    if begin_message.protocol_version != session.protocol_version()
         || begin_message.kind != "notification"
         || begin_message.method != "snapshot.begin"
         || begin_message.params.snapshot_id != accepted.snapshot_id
@@ -973,7 +982,7 @@ async fn receive_scene_snapshot<S: SceneSnapshotSink>(
             })?;
         break end_message;
     };
-    if end.protocol_version != "1.3"
+    if end.protocol_version != session.protocol_version()
         || end.kind != "notification"
         || end.method != "snapshot.end"
         || end.params.snapshot_id != accepted.snapshot_id
@@ -1049,6 +1058,7 @@ fn validate_delta_batch(
             operation_seq: 0,
             resource_revision: batch.resource_revision,
             scene_graph_revision: batch.scene_graph_revision,
+            script_graph_revision: None,
             scene_revisions: BTreeMap::new(),
         },
         limits_applied: SceneSnapshotLimits {
@@ -1161,7 +1171,7 @@ pub(crate) async fn get_next_scene_delta(
 }
 
 fn require_scene_graph(session: &Session) -> Result<(), BridgeError> {
-    if session.protocol_version() != "1.3"
+    if !matches!(session.protocol_version(), "1.3" | "1.4")
         || !session.capabilities().contains("scene.packed_state")
         || !session.capabilities().contains("scene.incremental_index")
         || !session.capabilities().contains("scene.project_context")

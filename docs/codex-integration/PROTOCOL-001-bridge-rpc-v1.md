@@ -1,6 +1,6 @@
 # PROTOCOL-001 — Bridge RPC 1.x
 
-**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.4 extensions implemented through Sprint 5 `S5-03` protocol freeze
+**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.4 extensions implemented and locally verified through Sprint 5 `S5-05`
 
 **Date:** 2026-07-18
 
@@ -682,6 +682,12 @@ exists. Therefore the four 1.4 script capabilities are present with readiness
 and journal are installed; a GDScript-disabled build continues to report
 unavailability. Sessions negotiated at 1.0–1.3 omit every script capability,
 limit, revision, method, notification, and payload field.
+
+`S5-05` installs the strict Rust 1.4 script client and normalizer. It validates
+closed DTOs, snapshot/delta continuity and checksums, canonical identities and
+ranges, relation confidence, diagnostics, limits, and a semantic digest that is
+independent of transport revisions and chunk order. Live 1.4 verification also
+confirms that resource and scene methods retain their 1.4 revision-vector shape.
 
 The canonical bundle contains 101 cases: 18 script-profile cases, including
 strict negatives for downgrade, unknown fields, absolute paths, raw source, and

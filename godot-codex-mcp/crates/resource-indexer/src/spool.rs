@@ -203,6 +203,7 @@ mod tests {
             operation_seq: 1,
             resource_revision: 1,
             scene_graph_revision: None,
+            script_graph_revision: None,
             scene_revisions: BTreeMap::new(),
         }
     }

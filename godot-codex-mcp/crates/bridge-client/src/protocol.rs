@@ -194,6 +194,26 @@ fn is_scene_notification(value: &Value) -> Result<bool, BridgeError> {
 }
 
 #[cfg(any(unix, windows, test))]
+fn is_script_notification(value: &Value) -> Result<bool, BridgeError> {
+    let revision_field = match value.get("method").and_then(Value::as_str) {
+        Some("script_graph_changed") => "script_graph_revision",
+        Some("script_journal_gap") => "current_script_graph_revision",
+        _ => return Ok(false),
+    };
+    if value.get("kind").and_then(Value::as_str) != Some("notification")
+        || value
+            .pointer(&format!("/params/{revision_field}"))
+            .and_then(Value::as_u64)
+            .is_none()
+    {
+        return Err(BridgeError::Invalid(
+            "script graph notification is invalid".to_owned(),
+        ));
+    }
+    Ok(true)
+}
+
+#[cfg(any(unix, windows, test))]
 fn sync_invalidation_affects_editor(value: &Value) -> bool {
     match value.get("method").and_then(Value::as_str) {
         Some("sync.event") => {
@@ -360,7 +380,7 @@ impl Session {
         let mut stream = FrameStream::connect(&discovery.endpoint).await?;
         // Bridge negotiation advertises one highest supported minor per major;
         // the server selects the best 1.x fallback it implements.
-        let offered_versions = vec!["1.3".to_owned()];
+        let offered_versions = vec!["1.4".to_owned()];
         let mut client_nonce = [0_u8; 32];
         getrandom::fill(&mut client_nonce)
             .map_err(|error| BridgeError::Invalid(format!("client nonce failed: {error}")))?;
@@ -379,7 +399,7 @@ impl Session {
         if required_str(&challenge, "kind")? != "handshake.server_challenge"
             || !matches!(
                 selected_protocol_version.as_str(),
-                "1.0" | "1.1" | "1.2" | "1.3"
+                "1.0" | "1.1" | "1.2" | "1.3" | "1.4"
             )
             || required_str(&challenge, "project_id")? != discovery.project_id
             || required_str(&challenge, "editor_session_id")? != discovery.editor_session_id
@@ -440,11 +460,14 @@ impl Session {
                 "sync.event_stream_v1",
             ]);
         }
-        if matches!(session.selected_protocol_version.as_str(), "1.2" | "1.3") {
+        if matches!(
+            session.selected_protocol_version.as_str(),
+            "1.2" | "1.3" | "1.4"
+        ) {
             requested_capabilities
                 .extend(["resource.uid_dependencies", "resource.incremental_index"]);
         }
-        if session.selected_protocol_version == "1.3" {
+        if matches!(session.selected_protocol_version.as_str(), "1.3" | "1.4") {
             requested_capabilities.extend([
                 "scene.packed_state",
                 "scene.incremental_index",
@@ -499,6 +522,9 @@ impl Session {
         loop {
             let message = self.stream.receive_with_timeout(timeout).await?;
             validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
+            if is_script_notification(&message)? {
+                continue;
+            }
             if is_scene_notification(&message)? {
                 continue;
             }
@@ -744,6 +770,10 @@ impl Session {
             validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
             let method = message.get("method").and_then(Value::as_str);
             match method {
+                Some("script_graph_changed" | "script_journal_gap") => {
+                    is_script_notification(&message)?;
+                    continue;
+                }
                 Some("scene_graph_changed" | "scene_journal_gap") => {
                     is_scene_notification(&message)?;
                     continue;
@@ -913,6 +943,30 @@ mod tests {
             is_scene_notification(&json!({
                 "kind": "notification",
                 "method": "scene_graph_changed",
+                "params": {}
+            }))
+            .is_err()
+        );
+        assert!(
+            is_script_notification(&json!({
+                "kind": "notification",
+                "method": "script_graph_changed",
+                "params": {"script_graph_revision": 4}
+            }))
+            .unwrap()
+        );
+        assert!(
+            is_script_notification(&json!({
+                "kind": "notification",
+                "method": "script_journal_gap",
+                "params": {"current_script_graph_revision": 5}
+            }))
+            .unwrap()
+        );
+        assert!(
+            is_script_notification(&json!({
+                "kind": "notification",
+                "method": "script_graph_changed",
                 "params": {}
             }))
             .is_err()
