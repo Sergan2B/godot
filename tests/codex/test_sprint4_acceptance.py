@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import shutil
 import sys
 import tempfile
 import unittest
@@ -22,6 +23,7 @@ from sprint4_acceptance import (  # noqa: E402
     merge,
     validate_platform_report,
 )
+from sprint4_scene_graph_live import PROJECT_SOURCE, apply_mutation  # noqa: E402
 
 
 def digest(value: str) -> str:
@@ -137,6 +139,15 @@ def report(platform_tag: str) -> dict[str, Any]:
 
 
 class Sprint4AcceptanceTests(unittest.TestCase):
+    def test_live_mutations_preserve_cross_platform_lf_content_generations(self) -> None:
+        for phase in PHASES[1:]:
+            with self.subTest(phase=phase), tempfile.TemporaryDirectory() as temporary:
+                project = Path(temporary) / "project"
+                shutil.copytree(PROJECT_SOURCE, project)
+                apply_mutation(project, phase)
+                for scene in project.rglob("*.tscn"):
+                    self.assertNotIn(b"\r", scene.read_bytes())
+
     def test_platform_report_recomputes_raw_slos(self) -> None:
         value = report("macos-arm64")
         self.assertIs(validate_platform_report(value, "macos-arm64", check_checkout=False), value)

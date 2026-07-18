@@ -526,11 +526,23 @@ def normalized_semantics(graph: dict[str, Any], actor: dict[str, Any], animation
     )
 
 
+def write_text_lf(path: Path, text: str) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as target:
+        target.write(text)
+
+
 def replace_once(path: Path, before: str, after: str) -> None:
     text = path.read_text(encoding="utf-8")
     if text.count(before) != 1:
         raise SceneGateError(f"mutation anchor is not unique: {path.name}")
-    path.write_text(text.replace(before, after), encoding="utf-8")
+    write_text_lf(path, text.replace(before, after))
+
+
+def require_lf_scene_sources(project: Path) -> None:
+    """Keep fixture content generations identical on macOS and Windows."""
+    for path in sorted(project.rglob("*.tscn")):
+        if b"\r" in path.read_bytes():
+            raise SceneGateError(f"scene mutation introduced non-LF newlines: {path.name}")
 
 
 def apply_mutation(project: Path, phase: str) -> None:
@@ -557,7 +569,7 @@ def apply_mutation(project: Path, phase: str) -> None:
     elif phase == "property_override":
         replace_once(main, "speed = 30", "speed = 45")
     elif phase == "instance_mutation":
-        with child.open("a", encoding="utf-8") as target:
+        with child.open("a", encoding="utf-8", newline="\n") as target:
             target.write('\n[node name="NestedActor2" parent="." unique_id=4004 instance=ExtResource("1_base")]\n')
     elif phase == "signal_group":
         replace_once(base, 'groups=["actors"]', 'groups=["actors_mutated"]')
@@ -565,12 +577,13 @@ def apply_mutation(project: Path, phase: str) -> None:
     elif phase == "animation_fix":
         replace_once(main, 'NodePath("MissingNode:position")', 'NodePath("Actor/Player:position")')
     elif phase == "journal_gap":
-        (project / "scenes" / "gap_scene.tscn").write_text(
+        write_text_lf(
+            project / "scenes" / "gap_scene.tscn",
             '[gd_scene format=3]\n\n[node name="GapScene" type="Node" unique_id=9001]\n',
-            encoding="utf-8",
         )
     else:
         raise SceneGateError(f"unsupported mutation phase: {phase}")
+    require_lf_scene_sources(project)
     marker = project / ".godot" / "codex-resource-live-mutate"
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.touch()
