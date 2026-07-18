@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godotengine.org/codex/scene-graph/golden-scene-graph.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "fixture_version",
+    "source",
+    "scenes",
+    "nodes",
+    "occurrences",
+    "properties",
+    "resource_references",
+    "instances",
+    "subresources",
+    "connections",
+    "groups",
+    "animation_tracks",
+    "project_context",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "fixture_version": {"const": 1},
+    "source": {
+      "type": "object",
+      "required": ["resource_revision", "scene_graph_revision", "project_revision"],
+      "properties": {
+        "resource_revision": {"const": 1},
+        "scene_graph_revision": {"const": 1},
+        "project_revision": {"const": 1}
+      },
+      "additionalProperties": false
+    },
+    "scenes": {"type": "array", "minItems": 4, "items": {"$ref": "#/$defs/record"}},
+    "nodes": {"type": "array", "minItems": 10, "items": {"$ref": "#/$defs/record"}},
+    "occurrences": {"type": "array", "minItems": 7, "items": {"$ref": "#/$defs/record"}},
+    "properties": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/record"}},
+    "resource_references": {"type": "array", "minItems": 5, "items": {"$ref": "#/$defs/record"}},
+    "instances": {"type": "array", "minItems": 3, "items": {"$ref": "#/$defs/record"}},
+    "subresources": {"type": "array", "minItems": 4, "items": {"$ref": "#/$defs/record"}},
+    "connections": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/record"}},
+    "groups": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/record"}},
+    "animation_tracks": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/record"}},
+    "project_context": {"type": "array", "minItems": 8, "items": {"$ref": "#/$defs/record"}},
+    "diagnostics": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/record"}}
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "required": ["oracle_id"],
+      "properties": {"oracle_id": {"type": "string", "minLength": 1}},
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

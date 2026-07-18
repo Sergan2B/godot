@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godotengine.org/codex/scene-graph/fixture-manifest.schema.json",
+  "type": "object",
+  "required": ["schema_version", "fixture_version", "required_godot", "files", "phases", "order_equivalence"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "fixture_version": {"const": 1},
+    "required_godot": {"const": "4.8"},
+    "files": {
+      "type": "array",
+      "minItems": 12,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1, "pattern": "^(project\\.godot|resources/|scenes/|scripts/)"},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["name", "expected_transition"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "expected_transition": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "order_equivalence": {
+      "type": "object",
+      "required": ["left", "right", "ignore_identity"],
+      "properties": {
+        "left": {"const": "scenes/order_a.tscn"},
+        "right": {"const": "scenes/order_b.tscn"},
+        "ignore_identity": {"const": true}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

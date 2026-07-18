@@ -1,0 +1,41 @@
+{
+  "baseline": "cf310fbdab0aafa920f9cf6ea605f25c5c55a5f2",
+  "checks": [
+    "strict_json",
+    "draft_2020_12_schemas",
+    "d06_identity_vectors_python",
+    "d06_identity_vectors_rust",
+    "manifest_hash_closure",
+    "golden_reference_closure",
+    "scene_node_subresource_identity_closure",
+    "inheritance_and_nested_instance_truth",
+    "property_origin_truth",
+    "resource_reference_truth",
+    "signal_group_animation_truth",
+    "project_context_allowlist",
+    "subresource_order_equivalence",
+    "path_redaction",
+    "godot_scene_load_matrix"
+  ],
+  "fixture_manifest_sha256": "b040a9bcce609a1fcfab132e67a410d62563979705e9e44a01b1005188ab32bd",
+  "fixture_version": 1,
+  "godot_version": "4.8.dev.custom_build.75364c2cc",
+  "golden_scene_graph_sha256": "29beda93afcdf0395152b8bee293e9c4788de8e92c3f83f00461697c00aa2c2e",
+  "identity_vectors_sha256": "d36c658b9d23fb11e49aded55a5d4ccf3d80367954418b32366c080c061e539d",
+  "identity_vectors": 11,
+  "nodes": 11,
+  "occurrences": 9,
+  "phases": 8,
+  "platform": "macos-arm64",
+  "remote_ci": "not_run",
+  "scene_loads": [
+    "res://scenes/base_actor.tscn",
+    "res://scenes/inherited_actor.tscn",
+    "res://scenes/child_scene.tscn",
+    "res://scenes/main.tscn",
+    "res://scenes/order_a.tscn",
+    "res://scenes/order_b.tscn"
+  ],
+  "schema_version": 1,
+  "status": "passed"
+}

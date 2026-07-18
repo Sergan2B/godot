@@ -29,6 +29,8 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 23. [SPRINT-3-STAGE-5-PLAN.md](SPRINT-3-STAGE-5-PLAN.md) — completed Windows/macOS live gates, two-host storage matrix, SLOs, and final evidence aggregation.
 24. [SPRINT-3-EVIDENCE.md](SPRINT-3-EVIDENCE.md) — final cross-platform evidence and requirement-by-requirement Sprint 3 acceptance.
 25. [Sprint 3 host and aggregation runbook](../../tests/codex/runners/README.md) — fail-closed Windows reproduction and deterministic aggregation procedure.
+26. [SPRINT-4-PLAN.md](SPRINT-4-PLAN.md) — implementation-ready scene semantics, Bridge RPC 1.3, persistent scene index, MCP, and local two-host gates.
+27. [SCENE-001-scene-node-resource-model.md](SCENE-001-scene-node-resource-model.md) — frozen D-06 scene/node/subresource identity and composition contract.
 
 ## Document status
 
@@ -55,6 +57,8 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | Sprint 3 Stage 5 | Complete on freeze `a90ddd06c81a`; macOS/Windows live and storage gates pass | Superseded by final Sprint 3 evidence |
 | Sprint 3 evidence | Final; all 12 criteria pass and canonical D-05 selects segment | Begin Sprint 4 |
 | `INDEX-001` resource contract | Frozen and implemented; cross-platform `D-05` selects segment store | Extend only through a versioned Sprint 4 contract |
+| Sprint 4 plan | In progress; `S4-01/S4-02` contract and oracle complete locally | Implement Bridge RPC 1.3 and `SceneStateAdapter` |
+| `SCENE-001` scene contract | D-06 frozen; Python/Rust vectors and Godot fixture load matrix pass locally | Prove the same identities through live Bridge/MCP gates |
 
 ## Interim ownership
 

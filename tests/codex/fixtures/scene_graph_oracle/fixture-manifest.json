@@ -1,0 +1,34 @@
+{
+  "files": [
+    {"path": "project.godot", "sha256": "7cf12fbb091e5be42168f1ac5f2d9492815337ec6d1bbf81633a43fd2f9d9ba9"},
+    {"path": "resources/shared_style.tres", "sha256": "96452d3b8254a811e2739f3c9d0f7dc0eefc17802b2a29256e7afb4d35683730"},
+    {"path": "scenes/base_actor.tscn", "sha256": "ea5d1801a7b8094736dcf09f5a36ffb3485993ed45975a8126460a53ba44ad26"},
+    {"path": "scenes/child_scene.tscn", "sha256": "ec7b39a36c79017c8663d953762f9d2b98ef3a3fd469e0b1f2fbe1543edbe06c"},
+    {"path": "scenes/inherited_actor.tscn", "sha256": "09b521fe003a5134492ab6a2d03e8f05aad452b105de62c8bfc43db8d08ad6f8"},
+    {"path": "scenes/main.tscn", "sha256": "5cf566d2a971b537d56e0456c564459e5ea437ff4a4d5e3d05d193358a081f30"},
+    {"path": "scenes/order_a.tscn", "sha256": "5e0d4ad2ccce96fae02d1b3d52ac974929dd55f9d9ef9c852660ae8b78a02e45"},
+    {"path": "scenes/order_b.tscn", "sha256": "828bf8891a3de55bb47ecf17f359062c151eb63a6292dc224c67f57b1edf545b"},
+    {"path": "scripts/player.gd", "sha256": "abd51322d584d7a3fb0544e678f7e357915beed29b175c0a5bfce95998429714"},
+    {"path": "scripts/player.gd.uid", "sha256": "8f687c7035e710a533bf714d77a66b1fdff2f68b9684cfe469b5b4801506df66"},
+    {"path": "scripts/scene_service.gd", "sha256": "604107610745582f0c2c255ddd7abaf30517b1d5765123cd06903489ac3b0fcc"},
+    {"path": "scripts/scene_service.gd.uid", "sha256": "8dffe4fba6f1dd53cbad5ef8e0724ab6df5f047ad33b5ebf2d415d46124a5ea4"}
+  ],
+  "fixture_version": 1,
+  "order_equivalence": {
+    "ignore_identity": true,
+    "left": "scenes/order_a.tscn",
+    "right": "scenes/order_b.tscn"
+  },
+  "phases": [
+    {"expected_transition": "full scene snapshot", "name": "base"},
+    {"expected_transition": "node ID stable and path changes", "name": "node_rename"},
+    {"expected_transition": "node ID stable and parent changes", "name": "node_reparent"},
+    {"expected_transition": "effective value and override provenance advance", "name": "property_override"},
+    {"expected_transition": "instance occurrence closure changes", "name": "instance_mutation"},
+    {"expected_transition": "connection and group facts change atomically", "name": "signal_group"},
+    {"expected_transition": "broken animation path becomes resolved", "name": "animation_fix"},
+    {"expected_transition": "gap invalidates and full snapshot restores current", "name": "journal_gap"}
+  ],
+  "required_godot": "4.8",
+  "schema_version": 1
+}

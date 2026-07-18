@@ -495,7 +495,7 @@ edges remain observable; neither resolves to a similarly named file.
 | Logical graph/revision/generation/query contract | Frozen by `S3-01` | Complete |
 | Golden fixture/oracle format | Frozen by `S3-02` | Complete |
 | `D-05` persistent backend and physical migration | Segment store selected by full local macOS matrix | Complete locally; Windows/Linux portability `not_run` |
-| `D-06` node/subresource persistent identity | Deferred to `SCENE-001` | Sprint 4 |
+| `D-06` node/subresource persistent identity | Frozen by `SCENE-001`; implementation/evidence in progress | Sprint 4 |
 
 ### 15.1 `S3-03` execution status
 

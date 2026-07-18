@@ -1,0 +1,38 @@
+; Engine configuration file.
+; Generated fixture settings are intentionally small and deterministic.
+
+config_version=5
+
+[application]
+
+config/name="Codex Scene Graph Fixture"
+run/main_scene="uid://s4main"
+
+[autoload]
+
+SceneService="*res://scripts/scene_service.gd"
+
+[display]
+
+window/size/viewport_width=640
+window/size/viewport_height=360
+
+[input]
+
+jump={
+"deadzone": 0.35,
+"events": [Object(InputEventKey,"physical_keycode":32,"unicode":32)]
+}
+
+[layer_names]
+
+2d_physics/layer_1="actors"
+2d_render/layer_1="world"
+3d_physics/layer_1="geometry"
+3d_render/layer_1="visible"
+navigation/layer_1="walkable"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

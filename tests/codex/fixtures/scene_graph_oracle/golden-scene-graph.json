@@ -1,0 +1,488 @@
+{
+  "animation_tracks": [
+    {
+      "animation": "move_actor",
+      "mixer": "main_animation",
+      "node_path": "Actor/Player:position",
+      "oracle_id": "move_actor_track",
+      "resolution": "resolved",
+      "target": "actor_player_occ"
+    },
+    {
+      "animation": "move_actor",
+      "diagnostic": "broken_animation_node_path",
+      "mixer": "main_animation",
+      "node_path": "MissingNode:position",
+      "oracle_id": "broken_move_track",
+      "resolution": "broken",
+      "target": null
+    }
+  ],
+  "connections": [
+    {
+      "declaration_scope": "base",
+      "emitter": "base_player",
+      "flags": 1,
+      "method": "_on_player_ready",
+      "oracle_id": "player_tree_entered",
+      "receiver": "base_root",
+      "signal": "tree_entered"
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "broken_animation_node_path",
+      "oracle_id": "broken_animation_diagnostic",
+      "subject": "broken_move_track"
+    }
+  ],
+  "fixture_version": 1,
+  "groups": [
+    {
+      "declaration_scope": "base",
+      "group": "actors",
+      "member": "base_player",
+      "oracle_id": "base_actor_group"
+    },
+    {
+      "declaration_scope": "derived",
+      "group": "helpers",
+      "member": "derived_extra",
+      "oracle_id": "derived_helper_group"
+    }
+  ],
+  "instances": [
+    {
+      "declaration_scope": "child",
+      "editable": false,
+      "instance_root": "child_nested_actor",
+      "oracle_id": "child_nested_instance",
+      "target_scene": "base"
+    },
+    {
+      "declaration_scope": "main",
+      "editable": true,
+      "instance_root": "main_actor_instance",
+      "oracle_id": "main_actor_instance_relation",
+      "target_scene": "derived"
+    },
+    {
+      "declaration_scope": "main",
+      "editable": false,
+      "instance_root": "main_child_instance",
+      "oracle_id": "main_child_instance_relation",
+      "target_scene": "child"
+    }
+  ],
+  "nodes": [
+    {
+      "entity_id": "godot:node:scene-id:v1:SywCX4GFA8EaNhnpSvJeTcROs2gRN3_S4rycTCcC614",
+      "godot_type": "Node2D",
+      "identity_scope": "persistent",
+      "internal": false,
+      "node_path": ".",
+      "oracle_id": "base_root",
+      "owned": true,
+      "owner": null,
+      "parent": null,
+      "scene": "base",
+      "unique_scene_id": 1001
+    },
+    {
+      "attached_script": "uid://s4playerscript",
+      "entity_id": "godot:node:scene-id:v1:wJGT0C9v3tbpP4ApyGQmzFxFzroRh1DSrdIBfPUmvoY",
+      "godot_type": "Node2D",
+      "identity_scope": "persistent",
+      "internal": false,
+      "node_path": "Player",
+      "oracle_id": "base_player",
+      "owned": true,
+      "owner": "base_root",
+      "parent": "base_root",
+      "scene": "base",
+      "unique_scene_id": 1002
+    },
+    {
+      "entity_id": "godot:node:scene-id:v1:jltiHPzKqt2-fx55KKrNBhiTV9NOkzz_YeP4RBTGBv0",
+      "godot_type": "Marker2D",
+      "identity_scope": "persistent",
+      "internal": false,
+      "node_path": "Marker",
+      "oracle_id": "base_marker",
+      "owned": true,
+      "owner": "base_root",
+      "parent": "base_root",
+      "scene": "base",
+      "unique_scene_id": 1003
+    },
+    {
+      "entity_id": "godot:node:scene-id:v1:xhp1jHUGIjf9mgY65o2m72wtUZHPchxmd5PgCVpw5Q4",
+      "godot_type": "Node2D",
+      "identity_scope": "persistent",
+      "internal": false,
+      "node_path": "DerivedExtra",
+      "oracle_id": "derived_extra",
+      "owned": true,
+      "owner": "base_root",
+      "parent": "base_root",
+      "scene": "derived",
+      "unique_scene_id": 3001
+    },
+    {
+      "entity_id": "godot:node:scene-id:v1:YlKRlKeKpeb2vy_UlqK0AHb31E4GgiYL78wYw0QEb3w",
+      "godot_type": "Node2D",
+      "identity_scope": "persistent",
+      "internal": false,
+      "node_path": ".",
+      "oracle_id": "child_root",
+      "owned": true,
+      "owner": null,
+      "parent": null,
+      "scene": "child",
+      "unique_scene_id": 4001
+    },
+    {
+      "entity_id": "godot:node:scene-id:v1:m0x8QZlDQyQKg_Dy0AqvqmTfZBNQB2o-bjvhUWqYNfw",
+      "godot_type": "Node2D",
+      "identity_scope": "persistent",
+      "internal": false,
+      "node_path": "Leaf",
+      "oracle_id": "child_leaf",
+      "owned": true,
+      "owner": "child_root",
+      "parent": "child_root",
+      "scene": "child",
+      "unique_scene_id": 4002
+    },
+    {
+      "entity_id": "godot:node:scene-id:v1:XtsbzWBy0u-33s9SPDkMdhulHBjkBgr4r9I5G99G520",
+      "godot_type": "",
+      "identity_scope": "persistent",
+      "internal": false,
+      "node_path": "NestedActor",
+      "oracle_id": "child_nested_actor",
+      "owned": true,
+      "owner": "child_root",
+      "parent": "child_root",
+      "scene": "child",
+      "unique_scene_id": 4003
+    },
+    {
+      "entity_id": "godot:node:scene-id:v1:A682RKdFTmQaCnhrOU3ZviBZ50PV1ax9lOhmE3zdMYo",
+      "godot_type": "Node",
+      "identity_scope": "persistent",
+      "internal": false,
+      "node_path": ".",
+      "oracle_id": "main_root",
+      "owned": true,
+      "owner": null,
+      "parent": null,
+      "scene": "main",
+      "unique_scene_id": 5001
+    },
+    {
+      "entity_id": "godot:node:scene-id:v1:sGFnBzhrP5Vga0zpVR7Ez1yORfrHm9IthGUuF9Q29Oc",
+      "godot_type": "",
+      "identity_scope": "persistent",
+      "internal": false,
+      "node_path": "Actor",
+      "oracle_id": "main_actor_instance",
+      "owned": true,
+      "owner": "main_root",
+      "parent": "main_root",
+      "scene": "main",
+      "unique_scene_id": 5002
+    },
+    {
+      "entity_id": "godot:node:scene-id:v1:HIY3p9rhQoYBcgcJwE09xXI1p6eUvbIIm1anTSfdq6Y",
+      "godot_type": "",
+      "identity_scope": "persistent",
+      "internal": false,
+      "node_path": "Child",
+      "oracle_id": "main_child_instance",
+      "owned": true,
+      "owner": "main_root",
+      "parent": "main_root",
+      "scene": "main",
+      "unique_scene_id": 5003
+    },
+    {
+      "entity_id": "godot:node:scene-id:v1:s3YkN6mpJ7QwjGYOJx2rEUB7nVhjcqUU6cyTUyhSLNc",
+      "godot_type": "AnimationPlayer",
+      "identity_scope": "persistent",
+      "internal": false,
+      "node_path": "AnimationPlayer",
+      "oracle_id": "main_animation",
+      "owned": true,
+      "owner": "main_root",
+      "parent": "main_root",
+      "scene": "main",
+      "unique_scene_id": 5004
+    }
+  ],
+  "occurrences": [
+    {
+      "definition": "main_root",
+      "editable_in_query_scene": true,
+      "effective_path": ".",
+      "entity_id": "godot:node-occurrence:v1:b4k52htbaPuJef71bhrXwG-MYnYdnzNMESnTcxxNwQo",
+      "instance_chain": [],
+      "internal_to_query_scene": false,
+      "oracle_id": "main_root_occ",
+      "root_scene": "main"
+    },
+    {
+      "definition": "base_root",
+      "editable_in_query_scene": true,
+      "effective_path": "Actor",
+      "entity_id": "godot:node-occurrence:v1:Lf79Q2nl2w_CXaiRr6sMR1ZBtKW7saPf8U8aAjWhlLI",
+      "instance_chain": ["main_actor_instance"],
+      "internal_to_query_scene": false,
+      "oracle_id": "actor_root_occ",
+      "root_scene": "main"
+    },
+    {
+      "definition": "base_player",
+      "editable_in_query_scene": true,
+      "effective_path": "Actor/Player",
+      "entity_id": "godot:node-occurrence:v1:A8ieCyAegf4sfxP0fh-310DRoSWvLN8ahaOmbo6F9Aw",
+      "instance_chain": ["main_actor_instance"],
+      "internal_to_query_scene": false,
+      "oracle_id": "actor_player_occ",
+      "root_scene": "main"
+    },
+    {
+      "definition": "base_marker",
+      "editable_in_query_scene": true,
+      "effective_path": "Actor/Marker",
+      "entity_id": "godot:node-occurrence:v1:1V63S7DmjgTuLltIzqxP4GVVuk3CnyYKQrChbo5TR-w",
+      "instance_chain": ["main_actor_instance"],
+      "internal_to_query_scene": false,
+      "oracle_id": "actor_marker_occ",
+      "root_scene": "main"
+    },
+    {
+      "definition": "child_root",
+      "editable_in_query_scene": false,
+      "effective_path": "Child",
+      "entity_id": "godot:node-occurrence:v1:3XxzLcEDABTX46BoHmlmHLuFjAXHGMwhMlrkMiZrr6w",
+      "instance_chain": ["main_child_instance"],
+      "internal_to_query_scene": false,
+      "oracle_id": "child_root_occ",
+      "root_scene": "main"
+    },
+    {
+      "definition": "child_leaf",
+      "editable_in_query_scene": false,
+      "effective_path": "Child/Leaf",
+      "entity_id": "godot:node-occurrence:v1:bm-dR04VTBY8b2mrozyeD8WtWAranJbZDEa8oF5diIo",
+      "instance_chain": ["main_child_instance"],
+      "internal_to_query_scene": true,
+      "oracle_id": "child_leaf_occ",
+      "root_scene": "main"
+    },
+    {
+      "definition": "base_root",
+      "editable_in_query_scene": false,
+      "effective_path": "Child/NestedActor",
+      "entity_id": "godot:node-occurrence:v1:LHaKQFINv8BiqnRJ3Xgdp6BGvp0NdS6S7UIqPr0sat4",
+      "instance_chain": ["main_child_instance", "child_nested_actor"],
+      "internal_to_query_scene": true,
+      "oracle_id": "nested_actor_root_occ",
+      "root_scene": "main"
+    },
+    {
+      "definition": "base_player",
+      "editable_in_query_scene": false,
+      "effective_path": "Child/NestedActor/Player",
+      "entity_id": "godot:node-occurrence:v1:ae5FQhhSiFDaRzXGOUPC1KuG56_OnkNrhxqPIEQ1Bi8",
+      "instance_chain": ["main_child_instance", "child_nested_actor"],
+      "internal_to_query_scene": true,
+      "oracle_id": "nested_actor_player_occ",
+      "root_scene": "main"
+    },
+    {
+      "definition": "main_animation",
+      "editable_in_query_scene": true,
+      "effective_path": "AnimationPlayer",
+      "entity_id": "godot:node-occurrence:v1:bNRO6gbCNYyDKaVVr2Q-K0WvRmW7RxLMuytewblzGGg",
+      "instance_chain": [],
+      "internal_to_query_scene": false,
+      "oracle_id": "animation_occ",
+      "root_scene": "main"
+    }
+  ],
+  "project_context": [
+    {"key": "application/run/main_scene", "oracle_id": "main_scene_setting", "value": "uid://s4main"},
+    {"key": "autoload/SceneService", "oracle_id": "scene_service_autoload", "singleton": true, "value": "res://scripts/scene_service.gd"},
+    {"deadzone": 0.35, "events": 1, "key": "input/jump", "oracle_id": "jump_action"},
+    {"key": "layer_names/2d_physics/1", "oracle_id": "layer_2d_physics", "value": "actors"},
+    {"key": "layer_names/2d_render/1", "oracle_id": "layer_2d_render", "value": "world"},
+    {"key": "layer_names/3d_physics/1", "oracle_id": "layer_3d_physics", "value": "geometry"},
+    {"key": "layer_names/3d_render/1", "oracle_id": "layer_3d_render", "value": "visible"},
+    {"key": "layer_names/navigation/1", "oracle_id": "layer_navigation", "value": "walkable"}
+  ],
+  "properties": [
+    {
+      "declaring_node": "base_player",
+      "declaring_scene": "base",
+      "name": "target",
+      "oracle_id": "derived_player_target_inherited",
+      "origin": "inherited",
+      "subject": "base_player",
+      "value": {"type": "node_path", "value": "../Marker"}
+    },
+    {
+      "declaring_node": "base_player",
+      "declaring_scene": "base",
+      "name": "speed",
+      "oracle_id": "base_player_speed",
+      "origin": "local",
+      "subject": "base_player",
+      "value": {"type": "int", "value": 10}
+    },
+    {
+      "declaring_node": "base_player",
+      "declaring_scene": "derived",
+      "name": "speed",
+      "oracle_id": "derived_player_speed",
+      "origin": "local",
+      "overrides": "base_player_speed",
+      "subject": "base_player",
+      "value": {"type": "int", "value": 20}
+    },
+    {
+      "declaring_node": "main_actor_instance",
+      "declaring_scene": "main",
+      "name": "speed",
+      "oracle_id": "main_player_speed_override",
+      "origin": "instance_override",
+      "overrides": "derived_player_speed",
+      "subject": "actor_player_occ",
+      "value": {"type": "int", "value": 30}
+    }
+  ],
+  "resource_references": [
+    {
+      "kind": "attached_script",
+      "oracle_id": "base_player_script",
+      "owner": "base_player",
+      "path": "res://scripts/player.gd",
+      "uid": "uid://s4playerscript"
+    },
+    {
+      "kind": "external_resource",
+      "oracle_id": "base_player_external_texture",
+      "owner": "base_player",
+      "path": "res://resources/shared_style.tres",
+      "property": "metadata/external_texture",
+      "uid": "uid://s4style"
+    },
+    {
+      "kind": "subresource",
+      "oracle_id": "base_player_local_texture",
+      "owner": "base_player",
+      "property": "metadata/local_texture",
+      "target": "base_gradient_texture"
+    },
+    {
+      "kind": "subresource",
+      "oracle_id": "gradient_texture_gradient",
+      "owner": "base_gradient_texture",
+      "property": "gradient",
+      "target": "base_gradient"
+    },
+    {
+      "kind": "subresource",
+      "oracle_id": "animation_player_library",
+      "owner": "main_animation",
+      "property": "libraries",
+      "target": "main_animation_library"
+    },
+    {
+      "kind": "subresource",
+      "oracle_id": "animation_library_animation",
+      "owner": "main_animation_library",
+      "property": "move_actor",
+      "target": "main_animation_resource"
+    }
+  ],
+  "schema_version": 1,
+  "scenes": [
+    {
+      "base_scene": null,
+      "content_generation": "sha256:ea5d1801a7b8094736dcf09f5a36ffb3485993ed45975a8126460a53ba44ad26",
+      "entity_id": "godot:scene:uid:v1:rQv-XVepZaIDKeQgWGddBRHDcjumUfCuUs_P0MtSnuo",
+      "identity_scope": "persistent",
+      "oracle_id": "base",
+      "path": "res://scenes/base_actor.tscn",
+      "uid": "uid://s4base"
+    },
+    {
+      "base_scene": "base",
+      "content_generation": "sha256:09b521fe003a5134492ab6a2d03e8f05aad452b105de62c8bfc43db8d08ad6f8",
+      "entity_id": "godot:scene:uid:v1:5S73RgurWUCAp6_B0qIq8JC1yonxwUtkVXm_88FpjFA",
+      "identity_scope": "persistent",
+      "oracle_id": "derived",
+      "path": "res://scenes/inherited_actor.tscn",
+      "uid": "uid://s4derived"
+    },
+    {
+      "base_scene": null,
+      "content_generation": "sha256:ec7b39a36c79017c8663d953762f9d2b98ef3a3fd469e0b1f2fbe1543edbe06c",
+      "entity_id": "godot:scene:uid:v1:v1gX1ag6at0zu36h6ZqDA91Om2RYztIecOjodmE0pSw",
+      "identity_scope": "persistent",
+      "oracle_id": "child",
+      "path": "res://scenes/child_scene.tscn",
+      "uid": "uid://s4child"
+    },
+    {
+      "base_scene": null,
+      "content_generation": "sha256:5cf566d2a971b537d56e0456c564459e5ea437ff4a4d5e3d05d193358a081f30",
+      "entity_id": "godot:scene:uid:v1:s5Ngx3pCpJjx_-q93u4r-f_IDib1t8GJ5bi5TUS6wP4",
+      "identity_scope": "persistent",
+      "oracle_id": "main",
+      "path": "res://scenes/main.tscn",
+      "uid": "uid://s4main"
+    }
+  ],
+  "source": {
+    "project_revision": 1,
+    "resource_revision": 1,
+    "scene_graph_revision": 1
+  },
+  "subresources": [
+    {
+      "entity_id": "godot:subresource:scene-id:v1:z7fkkBOJ8N70PRrgPznosP7_j3sdWnGsjIbNNF5ZoiQ",
+      "identity_scope": "persistent",
+      "oracle_id": "base_gradient",
+      "owner": "base",
+      "resource_type": "Gradient",
+      "scene_unique_id": "Gradient_a1b2c3"
+    },
+    {
+      "entity_id": "godot:subresource:scene-id:v1:kX-vLoZW6oCuA4-cAyiqvd7k8_MViAKjLByfH6MH9Tw",
+      "identity_scope": "persistent",
+      "oracle_id": "base_gradient_texture",
+      "owner": "base",
+      "resource_type": "GradientTexture1D",
+      "scene_unique_id": "GradientTexture_local"
+    },
+    {
+      "entity_id": "godot:subresource:scene-id:v1:VlfJSGfDJ1jG0EOL_enoLnAKXhlKVpoH5H2tKhqph-o",
+      "identity_scope": "persistent",
+      "oracle_id": "main_animation_resource",
+      "owner": "main",
+      "resource_type": "Animation",
+      "scene_unique_id": "Animation_valid"
+    },
+    {
+      "entity_id": "godot:subresource:scene-id:v1:5d5ihCgpUbwbKVbruDaeyKseFxqincF5iE2EyfGN7Jg",
+      "identity_scope": "persistent",
+      "oracle_id": "main_animation_library",
+      "owner": "main",
+      "resource_type": "AnimationLibrary",
+      "scene_unique_id": "AnimationLibrary_main"
+    }
+  ]
+}

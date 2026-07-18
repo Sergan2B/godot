@@ -1,0 +1,13 @@
+[gd_scene load_steps=3 format=3 uid="uid://s4orderb"]
+
+[sub_resource type="Gradient" id="Gradient_second"]
+offsets = PackedFloat32Array(0, 0.5, 1)
+colors = PackedColorArray(1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1)
+
+[sub_resource type="Gradient" id="Gradient_first"]
+offsets = PackedFloat32Array(0, 1)
+colors = PackedColorArray(0, 0, 0, 1, 1, 1, 1, 1)
+
+[node name="OrderFixture" type="Node" unique_id=6001]
+metadata/first = SubResource("Gradient_first")
+metadata/second = SubResource("Gradient_second")

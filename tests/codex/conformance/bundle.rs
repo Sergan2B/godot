@@ -14,6 +14,11 @@ mod resource_graph_contract {
     include!("resource_graph_contract.rs");
 }
 
+#[cfg(test)]
+mod scene_graph_contract {
+    include!("scene_graph_contract.rs");
+}
+
 const SCHEMA_BASE_URI: &str = "https://godot-codex.local/schema/v1/";
 const SCHEMA_FILES: [&str; 8] = [
     "common.schema.json",

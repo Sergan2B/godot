@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godotengine.org/codex/scene-graph/identity-vectors.schema.json",
+  "type": "object",
+  "required": ["schema_version", "algorithms", "vectors"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "algorithms": {
+      "type": "object",
+      "required": [
+        "encoding",
+        "scene_uid_domain",
+        "scene_path_content_domain",
+        "node_scene_unique_domain",
+        "node_path_content_domain",
+        "node_occurrence_domain",
+        "subresource_scene_unique_domain",
+        "subresource_content_revision_domain"
+      ],
+      "properties": {
+        "encoding": {"const": "sha256-base64url-unpadded"},
+        "scene_uid_domain": {"const": "godot-codex/scene-entity/uid/v1"},
+        "scene_path_content_domain": {"const": "godot-codex/scene-entity/path-content/v1"},
+        "node_scene_unique_domain": {"const": "godot-codex/node-definition/scene-unique-id/v1"},
+        "node_path_content_domain": {"const": "godot-codex/node-definition/path-content/v1"},
+        "node_occurrence_domain": {"const": "godot-codex/node-occurrence/instance-chain/v1"},
+        "subresource_scene_unique_domain": {"const": "godot-codex/subresource/scene-unique-id/v1"},
+        "subresource_content_revision_domain": {"const": "godot-codex/subresource/content-revision/v1"}
+      },
+      "additionalProperties": false
+    },
+    "vectors": {
+      "type": "array",
+      "minItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["name", "kind", "identity_scope", "expected_id"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "kind": {
+            "enum": [
+              "scene_uid",
+              "scene_path_content",
+              "node_scene_unique",
+              "node_path_content",
+              "node_occurrence",
+              "subresource_scene_unique",
+              "subresource_content_revision"
+            ]
+          },
+          "identity_scope": {"enum": ["persistent", "content_revision"]},
+          "uid": {"type": "string", "pattern": "^uid://[A-Za-z0-9_-]+$"},
+          "path": {"type": "string", "pattern": "^res://"},
+          "content_generation": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "scene_id": {"type": "string", "pattern": "^godot:scene:"},
+          "unique_scene_id": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+          "node_path": {"type": "string", "minLength": 1},
+          "root_scene_id": {"type": "string", "pattern": "^godot:scene:"},
+          "instance_chain": {
+            "type": "array",
+            "items": {"type": "string", "pattern": "^godot:node:"}
+          },
+          "node_definition_id": {"type": "string", "pattern": "^godot:node:"},
+          "owner_entity_id": {"type": "string", "pattern": "^godot:(resource|scene):"},
+          "owner_content_generation": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "scene_unique_id": {"type": "string", "pattern": "^[A-Za-z0-9_]+$"},
+          "ownership_paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "resource_type": {"type": "string", "minLength": 1},
+          "ordinal": {"type": "integer", "minimum": 0},
+          "diagnostic": {
+            "enum": ["weak_scene_identity", "weak_node_identity", "weak_subresource_identity"]
+          },
+          "same_identity_as": {"type": "string", "minLength": 1},
+          "different_identity_from": {"type": "string", "minLength": 1},
+          "expected_id": {
+            "type": "string",
+            "pattern": "^godot:(scene|node|node-occurrence|subresource):[A-Za-z0-9:_-]+$"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

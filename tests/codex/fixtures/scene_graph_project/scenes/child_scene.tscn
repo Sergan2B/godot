@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3 uid="uid://s4child"]
+
+[ext_resource type="PackedScene" uid="uid://s4base" path="res://scenes/base_actor.tscn" id="1_base"]
+
+[node name="ChildScene" type="Node2D" unique_id=4001]
+
+[node name="Leaf" type="Node2D" parent="." unique_id=4002 groups=["helpers"]]
+position = Vector2(4, 8)
+
+[node name="NestedActor" parent="." unique_id=4003 instance=ExtResource("1_base")]

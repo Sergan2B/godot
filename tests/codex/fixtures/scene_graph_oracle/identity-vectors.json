@@ -1,0 +1,113 @@
+{
+  "algorithms": {
+    "encoding": "sha256-base64url-unpadded",
+    "node_occurrence_domain": "godot-codex/node-occurrence/instance-chain/v1",
+    "node_path_content_domain": "godot-codex/node-definition/path-content/v1",
+    "node_scene_unique_domain": "godot-codex/node-definition/scene-unique-id/v1",
+    "scene_path_content_domain": "godot-codex/scene-entity/path-content/v1",
+    "scene_uid_domain": "godot-codex/scene-entity/uid/v1",
+    "subresource_content_revision_domain": "godot-codex/subresource/content-revision/v1",
+    "subresource_scene_unique_domain": "godot-codex/subresource/scene-unique-id/v1"
+  },
+  "schema_version": 1,
+  "vectors": [
+    {
+      "expected_id": "godot:scene:uid:v1:rQv-XVepZaIDKeQgWGddBRHDcjumUfCuUs_P0MtSnuo",
+      "identity_scope": "persistent",
+      "kind": "scene_uid",
+      "name": "base_scene_uid",
+      "uid": "uid://s4base"
+    },
+    {
+      "expected_id": "godot:scene:uid:v1:s5Ngx3pCpJjx_-q93u4r-f_IDib1t8GJ5bi5TUS6wP4",
+      "identity_scope": "persistent",
+      "kind": "scene_uid",
+      "name": "main_scene_uid",
+      "uid": "uid://s4main"
+    },
+    {
+      "content_generation": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "diagnostic": "weak_scene_identity",
+      "expected_id": "godot:scene:path-content:v1:o5ERKt5ZH2vbBgjKDPotxo4Mn_pzvQJgAuIGiHJ1um8",
+      "identity_scope": "content_revision",
+      "kind": "scene_path_content",
+      "name": "uidless_scene",
+      "path": "res://scenes/uidless.tscn"
+    },
+    {
+      "expected_id": "godot:node:scene-id:v1:SywCX4GFA8EaNhnpSvJeTcROs2gRN3_S4rycTCcC614",
+      "identity_scope": "persistent",
+      "kind": "node_scene_unique",
+      "name": "base_root",
+      "scene_id": "godot:scene:uid:v1:rQv-XVepZaIDKeQgWGddBRHDcjumUfCuUs_P0MtSnuo",
+      "unique_scene_id": 1001
+    },
+    {
+      "expected_id": "godot:node:scene-id:v1:wJGT0C9v3tbpP4ApyGQmzFxFzroRh1DSrdIBfPUmvoY",
+      "identity_scope": "persistent",
+      "kind": "node_scene_unique",
+      "name": "base_player",
+      "scene_id": "godot:scene:uid:v1:rQv-XVepZaIDKeQgWGddBRHDcjumUfCuUs_P0MtSnuo",
+      "unique_scene_id": 1002
+    },
+    {
+      "expected_id": "godot:node:scene-id:v1:wJGT0C9v3tbpP4ApyGQmzFxFzroRh1DSrdIBfPUmvoY",
+      "identity_scope": "persistent",
+      "kind": "node_scene_unique",
+      "name": "base_player_after_rename_reparent",
+      "same_identity_as": "base_player",
+      "scene_id": "godot:scene:uid:v1:rQv-XVepZaIDKeQgWGddBRHDcjumUfCuUs_P0MtSnuo",
+      "unique_scene_id": 1002
+    },
+    {
+      "different_identity_from": "base_player",
+      "expected_id": "godot:node:scene-id:v1:mGUtiNdesMJK4x-X-CsBOTkrlcHVJsoESh5FOicW0Gw",
+      "identity_scope": "persistent",
+      "kind": "node_scene_unique",
+      "name": "duplicated_player",
+      "scene_id": "godot:scene:uid:v1:s5Ngx3pCpJjx_-q93u4r-f_IDib1t8GJ5bi5TUS6wP4",
+      "unique_scene_id": 2001
+    },
+    {
+      "content_generation": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "diagnostic": "weak_node_identity",
+      "expected_id": "godot:node:path-content:v1:R6qzLYwvs-A4v10DGIjBIgLc0R8OP2G6rxN5n2sy8RE",
+      "identity_scope": "content_revision",
+      "kind": "node_path_content",
+      "name": "uidless_node",
+      "node_path": "Root/WeakNode",
+      "scene_id": "godot:scene:uid:v1:rQv-XVepZaIDKeQgWGddBRHDcjumUfCuUs_P0MtSnuo"
+    },
+    {
+      "expected_id": "godot:node-occurrence:v1:C5-xhT14pMXTeFhop47Qatmarkb4jferldZ9qeZ4kbs",
+      "identity_scope": "persistent",
+      "instance_chain": [
+        "godot:node:scene-id:v1:mGUtiNdesMJK4x-X-CsBOTkrlcHVJsoESh5FOicW0Gw"
+      ],
+      "kind": "node_occurrence",
+      "name": "instanced_player_occurrence",
+      "node_definition_id": "godot:node:scene-id:v1:wJGT0C9v3tbpP4ApyGQmzFxFzroRh1DSrdIBfPUmvoY",
+      "root_scene_id": "godot:scene:uid:v1:s5Ngx3pCpJjx_-q93u4r-f_IDib1t8GJ5bi5TUS6wP4"
+    },
+    {
+      "expected_id": "godot:subresource:scene-id:v1:z7fkkBOJ8N70PRrgPznosP7_j3sdWnGsjIbNNF5ZoiQ",
+      "identity_scope": "persistent",
+      "kind": "subresource_scene_unique",
+      "name": "gradient_subresource",
+      "owner_entity_id": "godot:scene:uid:v1:rQv-XVepZaIDKeQgWGddBRHDcjumUfCuUs_P0MtSnuo",
+      "scene_unique_id": "Gradient_a1b2c3"
+    },
+    {
+      "diagnostic": "weak_subresource_identity",
+      "expected_id": "godot:subresource:content-revision:v1:jJOcBefBUhv9Z3jAEWBayDOEabhgQX_xWUXWJEVcLEY",
+      "identity_scope": "content_revision",
+      "kind": "subresource_content_revision",
+      "name": "uidless_material_subresource",
+      "ordinal": 0,
+      "owner_content_generation": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "owner_entity_id": "godot:scene:uid:v1:rQv-XVepZaIDKeQgWGddBRHDcjumUfCuUs_P0MtSnuo",
+      "ownership_paths": ["Root/WeakNode:material"],
+      "resource_type": "StandardMaterial3D"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3 uid="uid://s4derived"]
+
+[ext_resource type="PackedScene" uid="uid://s4base" path="res://scenes/base_actor.tscn" id="1_base"]
+
+[node name="InheritedActor" instance=ExtResource("1_base")]
+
+[node name="Player" parent="." index="0"]
+speed = 20
+
+[node name="DerivedExtra" type="Node2D" parent="." unique_id=3001 groups=["helpers"]]
+position = Vector2(0, 16)

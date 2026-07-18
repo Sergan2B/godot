@@ -1,0 +1,25 @@
+[gd_scene load_steps=4 format=3 uid="uid://s4base"]
+
+[ext_resource type="Script" uid="uid://s4playerscript" path="res://scripts/player.gd" id="1_player"]
+[ext_resource type="Texture2D" uid="uid://s4style" path="res://resources/shared_style.tres" id="2_style"]
+
+[sub_resource type="Gradient" id="Gradient_a1b2c3"]
+offsets = PackedFloat32Array(0, 1)
+colors = PackedColorArray(0.2, 0.7, 1, 1, 1, 0.8, 0.2, 1)
+
+[sub_resource type="GradientTexture1D" id="GradientTexture_local"]
+gradient = SubResource("Gradient_a1b2c3")
+
+[node name="BaseActor" type="Node2D" unique_id=1001]
+
+[node name="Player" type="Node2D" parent="." unique_id=1002 groups=["actors"]]
+script = ExtResource("1_player")
+speed = 10
+target = NodePath("../Marker")
+metadata/local_texture = SubResource("GradientTexture_local")
+metadata/external_texture = ExtResource("2_style")
+
+[node name="Marker" type="Marker2D" parent="." unique_id=1003]
+position = Vector2(32, 0)
+
+[connection signal="tree_entered" from="Player" to="." method="_on_player_ready"]
