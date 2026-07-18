@@ -1,0 +1,23 @@
+{
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "kind": "notification",
+  "method": "scene_graph_changed",
+  "params": {
+    "event_type": "scene_graph_changed",
+    "resource_revision": 2,
+    "revisions": {
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+      "event_seq": 2,
+      "operation_seq": 0,
+      "project_revision": 2,
+      "resource_revision": 2,
+      "scene_graph_revision": 2,
+      "scene_revisions": {}
+    },
+    "scene_graph_revision": 2
+  },
+  "protocol_version": "1.3"
+}

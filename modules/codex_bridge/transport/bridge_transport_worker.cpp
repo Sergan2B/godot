@@ -138,6 +138,10 @@ static String sha256_hex_utf8(const String &p_value) {
 	return BridgeCrypto::bytes_to_lower_hex(digest);
 }
 
+static bool is_resource_protocol(const String &p_protocol_version) {
+	return p_protocol_version == "1.2" || p_protocol_version == "1.3";
+}
+
 static bool open_resource_snapshot_spool(SnapshotPreparation &r_preparation) {
 	Error error = OK;
 	r_preparation.spool = FileAccess::create_temp(
@@ -181,7 +185,7 @@ static SnapshotPreparationResult prepare_resource_snapshot_dictionary(SnapshotPr
 	const String kind = message.get("kind", String());
 	if (kind == "chunk") {
 		if (p_final_message || r_preparation.next_message == 0 || r_preparation.spool.is_null() || r_preparation.checksum_context.is_null() ||
-				String(message.get("protocol_version", String())) != "1.2" || String(message.get("domain", String())) != "resource_graph" ||
+				!is_resource_protocol(String(message.get("protocol_version", String()))) || String(message.get("domain", String())) != "resource_graph" ||
 				String(message.get("snapshot_id", String())) != r_preparation.snapshot_id ||
 				!message.has("chunk_index") || message["chunk_index"].get_type() != Variant::INT ||
 				(int64_t)message["chunk_index"] != r_preparation.next_chunk ||
@@ -206,7 +210,7 @@ static SnapshotPreparationResult prepare_resource_snapshot_dictionary(SnapshotPr
 		r_preparation.next_chunk++;
 	} else if (String(message.get("method", String())) == "snapshot.end") {
 		if (!p_final_message || r_preparation.next_message < 2 || r_preparation.checksum_context.is_null() ||
-				String(message.get("protocol_version", String())) != "1.2" || !message.has("params") || message["params"].get_type() != Variant::DICTIONARY) {
+				!is_resource_protocol(String(message.get("protocol_version", String()))) || !message.has("params") || message["params"].get_type() != Variant::DICTIONARY) {
 			return SNAPSHOT_PREPARATION_FAILED;
 		}
 		Dictionary params = message["params"];
@@ -222,7 +226,7 @@ static SnapshotPreparationResult prepare_resource_snapshot_dictionary(SnapshotPr
 		params["checksum"] = BridgeCrypto::bytes_to_lower_hex(checksum_digest);
 		message["params"] = params;
 	} else {
-		if (p_final_message || r_preparation.next_message != 0 || String(message.get("protocol_version", String())) != "1.2" ||
+		if (p_final_message || r_preparation.next_message != 0 || !is_resource_protocol(String(message.get("protocol_version", String()))) ||
 				String(message.get("method", String())) != "snapshot.begin" || !message.has("params") || message["params"].get_type() != Variant::DICTIONARY) {
 			return SNAPSHOT_PREPARATION_FAILED;
 		}
@@ -251,19 +255,26 @@ static SnapshotPreparationResult prepare_resource_snapshot_dictionary(SnapshotPr
 }
 
 static void sanitize_revision_vector_for_protocol(Dictionary &r_message, const String &p_protocol_version) {
-	if (p_protocol_version == "1.2") {
-		return;
-	}
 	if (r_message.has("revisions") && r_message["revisions"].get_type() == Variant::DICTIONARY) {
 		Dictionary revisions = r_message["revisions"];
-		revisions.erase("resource_revision");
+		if (p_protocol_version != "1.2" && p_protocol_version != "1.3") {
+			revisions.erase("resource_revision");
+		}
+		if (p_protocol_version != "1.3") {
+			revisions.erase("scene_graph_revision");
+		}
 		r_message["revisions"] = revisions;
 	}
 	if (r_message.has("params") && r_message["params"].get_type() == Variant::DICTIONARY) {
 		Dictionary params = r_message["params"];
 		if (params.has("revisions") && params["revisions"].get_type() == Variant::DICTIONARY) {
 			Dictionary revisions = params["revisions"];
-			revisions.erase("resource_revision");
+			if (p_protocol_version != "1.2" && p_protocol_version != "1.3") {
+				revisions.erase("resource_revision");
+			}
+			if (p_protocol_version != "1.3") {
+				revisions.erase("scene_graph_revision");
+			}
 			params["revisions"] = revisions;
 			r_message["params"] = params;
 		}
@@ -381,7 +392,7 @@ static bool start_snapshot_stream(TransportClient &r_client, uint64_t p_internal
 }
 
 static bool start_spooled_snapshot_stream(TransportClient &r_client, uint64_t p_internal_request_id, const String &p_request_id, const String &p_snapshot_id, const Ref<FileAccess> &p_spool, int p_chunk_count, uint64_t p_now_usec) {
-	if (r_client.snapshot_stream.active || r_client.rpc.get_protocol_version() != "1.2" || p_request_id.is_empty() || p_snapshot_id.is_empty() ||
+	if (r_client.snapshot_stream.active || !is_resource_protocol(r_client.rpc.get_protocol_version()) || p_request_id.is_empty() || p_snapshot_id.is_empty() ||
 			p_spool.is_null() || p_chunk_count <= 0 || p_chunk_count > MAX_RESOURCE_SNAPSHOT_CHUNKS || p_spool->get_position() != 0 || p_spool->get_length() == 0) {
 		return false;
 	}
@@ -429,6 +440,10 @@ static MainThreadDispatcher::CommandType command_type_for_method(BridgeRpcSessio
 			return MainThreadDispatcher::COMMAND_RESOURCE_SNAPSHOT;
 		case BridgeRpcSession::METHOD_RESOURCE_DELTA:
 			return MainThreadDispatcher::COMMAND_RESOURCE_DELTA;
+		case BridgeRpcSession::METHOD_SCENE_SNAPSHOT:
+			return MainThreadDispatcher::COMMAND_SCENE_SNAPSHOT;
+		case BridgeRpcSession::METHOD_SCENE_DELTA:
+			return MainThreadDispatcher::COMMAND_SCENE_DELTA;
 		case BridgeRpcSession::METHOD_SHUTDOWN:
 			return MainThreadDispatcher::COMMAND_SHUTDOWN;
 	}
@@ -668,9 +683,11 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 			const BridgeTransportWorker::Completion event = snapshot_events.front()->get();
 			snapshot_events.pop_front();
 			bool pending_client = false;
+			String pending_protocol_version;
 			for (const TransportClient &client : clients) {
 				if (client.rpc.has_pending_request(event.request_id)) {
 					pending_client = true;
+					pending_protocol_version = client.rpc.get_protocol_version();
 					break;
 				}
 			}
@@ -694,6 +711,7 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 				}
 				SnapshotPreparationResult preparation_result = SNAPSHOT_PREPARATION_FAILED;
 				Dictionary message = event.snapshot_message;
+				message["protocol_version"] = pending_protocol_version;
 				if (preparation_index >= 0) {
 					SnapshotPreparation &preparation = snapshot_preparations.write[preparation_index];
 					preparation_result = prepare_resource_snapshot_dictionary(
@@ -760,7 +778,7 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 							cancel_dispatched_request(p_context, completion.request_id);
 							client.force_close = true;
 						}
-					} else if (!completion.server_messages.is_empty() && (client.rpc.get_protocol_version() == "1.1" || client.rpc.get_protocol_version() == "1.2")) {
+					} else if (!completion.server_messages.is_empty() && (client.rpc.get_protocol_version() == "1.1" || client.rpc.get_protocol_version() == "1.2" || client.rpc.get_protocol_version() == "1.3")) {
 						const String request_id = outcome.response.get("request_id", String());
 						if (request_id.is_empty() || !start_snapshot_stream(client, completion.request_id, request_id, completion.server_messages, completion_now_usec)) {
 							cancel_dispatched_request(p_context, completion.request_id);
@@ -777,12 +795,13 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 		Vector<Dictionary> notifications;
 		drain_notifications(p_context, notifications);
 		for (TransportClient &client : clients) {
-			if (client.handshake.get_state() != BridgeHandshakeSession::STATE_AUTHENTICATED || !client.rpc.is_initialized() || (client.rpc.get_protocol_version() != "1.1" && client.rpc.get_protocol_version() != "1.2")) {
+			if (client.handshake.get_state() != BridgeHandshakeSession::STATE_AUTHENTICATED || !client.rpc.is_initialized() || (client.rpc.get_protocol_version() != "1.1" && client.rpc.get_protocol_version() != "1.2" && client.rpc.get_protocol_version() != "1.3")) {
 				continue;
 			}
 			for (const Dictionary &notification : notifications) {
 				const String notification_version = notification.get("protocol_version", "1.1");
-				if (notification_version == "1.2" && client.rpc.get_protocol_version() != "1.2") {
+				if ((notification_version == "1.2" && client.rpc.get_protocol_version() == "1.1") ||
+						(notification_version == "1.3" && client.rpc.get_protocol_version() != "1.3")) {
 					continue;
 				}
 				Dictionary client_notification = notification;

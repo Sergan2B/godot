@@ -1,6 +1,106 @@
 {
-  "bundle_version": "1.2",
+  "bundle_version": "1.3",
   "cases": [
+    {
+      "expect": "valid",
+      "fixture": "valid/scene-snapshot-request.json",
+      "id": "schema.scene.snapshot-request",
+      "kind": "schema",
+      "schema_ref": "scene.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/scene-snapshot-response.json",
+      "id": "schema.scene.snapshot-response-envelope",
+      "kind": "schema",
+      "schema_ref": "rpc.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/scene-snapshot-response.json",
+      "id": "schema.scene.snapshot-accepted-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "scene.schema.json#/$defs/sceneSnapshotAcceptedResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/scene-snapshot-begin.json",
+      "id": "schema.scene.snapshot-begin",
+      "kind": "schema",
+      "schema_ref": "scene.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/scene-snapshot-chunk.json",
+      "id": "schema.scene.snapshot-chunk",
+      "kind": "schema",
+      "schema_ref": "scene.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/scene-snapshot-end.json",
+      "id": "schema.scene.snapshot-end",
+      "kind": "schema",
+      "schema_ref": "scene.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/scene-snapshot-ack.json",
+      "id": "schema.scene.snapshot-ack",
+      "kind": "schema",
+      "schema_ref": "scene.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/scene-delta-request.json",
+      "id": "schema.scene.delta-request",
+      "kind": "schema",
+      "schema_ref": "scene.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/scene-delta-current-response.json",
+      "id": "schema.scene.delta-current-envelope",
+      "kind": "schema",
+      "schema_ref": "rpc.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/scene-delta-current-response.json",
+      "id": "schema.scene.delta-current-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "scene.schema.json#/$defs/sceneDeltaResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/scene-graph-changed.json",
+      "id": "schema.scene.graph-changed",
+      "kind": "schema",
+      "schema_ref": "scene.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/scene-journal-gap.json",
+      "id": "schema.scene.journal-gap",
+      "kind": "schema",
+      "schema_ref": "scene.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/scene-delta-unknown-field.json",
+      "id": "schema.scene.delta-unknown-field",
+      "kind": "schema",
+      "schema_ref": "scene.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/scene-snapshot-absolute-node-path.json",
+      "id": "schema.scene.absolute-node-path",
+      "kind": "schema",
+      "schema_ref": "scene.schema.json"
+    },
     {
       "expect": "valid",
       "fixture": "valid/resource-snapshot-request.json",

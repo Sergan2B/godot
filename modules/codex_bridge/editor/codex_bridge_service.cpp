@@ -105,6 +105,10 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 		case MainThreadDispatcher::COMMAND_RESOURCE_DELTA:
 			service->_complete_resource_delta(p_command.request_id, (uint64_t)(int64_t)p_command.params["after_resource_revision"]);
 			break;
+		case MainThreadDispatcher::COMMAND_SCENE_SNAPSHOT:
+		case MainThreadDispatcher::COMMAND_SCENE_DELTA:
+			service->transport_worker.complete_request_error(p_command.request_id, "scene_catalog_building", "The editor scene catalog is still building.", true);
+			break;
 		case MainThreadDispatcher::COMMAND_CANCEL: {
 			const Array abandoned = service->resource_graph_adapter.cancel_snapshot(p_command.request_id);
 			if (!abandoned.is_empty()) {

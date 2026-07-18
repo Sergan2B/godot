@@ -198,7 +198,7 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 	transport["version"] = "1.0";
 	transport["readiness"] = "ready";
 	capabilities.push_back(transport);
-	if (protocol_version == "1.1" || protocol_version == "1.2") {
+	if (protocol_version == "1.1" || protocol_version == "1.2" || protocol_version == "1.3") {
 		const char *names[] = {
 			"editor.context",
 			"editor.inspector",
@@ -213,10 +213,24 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 			capabilities.push_back(capability);
 		}
 	}
-	if (protocol_version == "1.2") {
+	if (protocol_version == "1.2" || protocol_version == "1.3") {
 		const char *names[] = {
 			"resource.uid_dependencies",
 			"resource.incremental_index",
+		};
+		for (const char *name : names) {
+			Dictionary capability;
+			capability["name"] = name;
+			capability["version"] = "1.0";
+			capability["readiness"] = "ready";
+			capabilities.push_back(capability);
+		}
+	}
+	if (protocol_version == "1.3") {
+		const char *names[] = {
+			"scene.packed_state",
+			"scene.incremental_index",
+			"scene.project_context",
 		};
 		for (const char *name : names) {
 			Dictionary capability;
@@ -240,7 +254,7 @@ Dictionary BridgeRpcSession::_make_limits() const {
 	limits["main_thread_commands_per_frame"] = (int64_t)MainThreadDispatcher::MAX_COMMANDS_PER_FRAME;
 	limits["main_thread_budget_us"] = (int64_t)MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME;
 	limits["ping_echo_bytes"] = (int64_t)MAX_PING_ECHO_BYTES;
-	if (protocol_version == "1.1" || protocol_version == "1.2") {
+	if (protocol_version == "1.1" || protocol_version == "1.2" || protocol_version == "1.3") {
 		limits["hard_message_bytes"] = (int64_t)8388608;
 		limits["snapshot_chunk_bytes"] = (int64_t)524288;
 		limits["event_journal_entries"] = (int64_t)4096;
@@ -249,7 +263,7 @@ Dictionary BridgeRpcSession::_make_limits() const {
 		limits["variant_depth"] = (int64_t)8;
 		limits["container_items"] = (int64_t)1000;
 	}
-	if (protocol_version == "1.2") {
+	if (protocol_version == "1.2" || protocol_version == "1.3") {
 		limits["resource_records"] = (int64_t)250000;
 		limits["resource_dependencies"] = (int64_t)2000000;
 		limits["resource_dependencies_per_record"] = (int64_t)4096;
@@ -261,6 +275,19 @@ Dictionary BridgeRpcSession::_make_limits() const {
 		limits["resource_snapshot_timeout_ms"] = (int64_t)120000;
 		limits["resource_snapshot_concurrency"] = (int64_t)1;
 	}
+	if (protocol_version == "1.3") {
+		limits["scene_records"] = (int64_t)100000;
+		limits["scene_nodes"] = (int64_t)1000000;
+		limits["scene_properties"] = (int64_t)4000000;
+		limits["scene_relations"] = (int64_t)4000000;
+		limits["scene_instance_depth"] = (int64_t)64;
+		limits["scene_snapshot_chunk_bytes"] = (int64_t)524288;
+		limits["scene_delta_batch_bytes"] = (int64_t)524288;
+		limits["scene_journal_entries"] = (int64_t)4096;
+		limits["scene_journal_bytes"] = (int64_t)16777216;
+		limits["scene_snapshot_timeout_ms"] = (int64_t)120000;
+		limits["scene_snapshot_concurrency"] = (int64_t)1;
+	}
 	return limits;
 }
 
@@ -270,8 +297,11 @@ Dictionary BridgeRpcSession::_make_revisions() const {
 	revisions["event_seq"] = (int64_t)0;
 	revisions["project_revision"] = (int64_t)0;
 	revisions["operation_seq"] = (int64_t)0;
-	if (protocol_version == "1.2") {
+	if (protocol_version == "1.2" || protocol_version == "1.3") {
 		revisions["resource_revision"] = (int64_t)1;
+	}
+	if (protocol_version == "1.3") {
+		revisions["scene_graph_revision"] = (int64_t)1;
 	}
 	revisions["scene_revisions"] = Dictionary();
 	return revisions;
@@ -364,6 +394,15 @@ bool BridgeRpcSession::_validate_resource_delta_params(const Dictionary &p_param
 	return p_params.size() == 1 && get_bounded_integer(p_params, "after_resource_revision", 0, 9007199254740991LL, after_resource_revision);
 }
 
+bool BridgeRpcSession::_validate_scene_snapshot_params(const Dictionary &p_params) const {
+	return p_params.is_empty();
+}
+
+bool BridgeRpcSession::_validate_scene_delta_params(const Dictionary &p_params) const {
+	int64_t after_scene_graph_revision = 0;
+	return p_params.size() == 1 && get_bounded_integer(p_params, "after_scene_graph_revision", 0, 9007199254740991LL, after_scene_graph_revision);
+}
+
 bool BridgeRpcSession::_validate_shutdown_params(const Dictionary &p_params) const {
 	if (!p_params.has("reason")) {
 		return true;
@@ -451,14 +490,14 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 			method = METHOD_PING;
 		} else if (method_name == "bridge.capabilities") {
 			method = METHOD_CAPABILITIES;
-		} else if (method_name == "editor.snapshot.get" && (protocol_version == "1.1" || protocol_version == "1.2")) {
+		} else if (method_name == "editor.snapshot.get" && (protocol_version == "1.1" || protocol_version == "1.2" || protocol_version == "1.3")) {
 			if (!_validate_snapshot_params(params)) {
 				_set_error_outcome(request_id, "invalid_request", "The snapshot parameters are invalid.", false, r_outcome);
 				return OK;
 			}
 			method = METHOD_EDITOR_SNAPSHOT;
 		} else if (method_name == "resource.snapshot.get") {
-			if (protocol_version != "1.2") {
+			if (protocol_version != "1.2" && protocol_version != "1.3") {
 				_set_error_outcome(request_id, "capability_unavailable", "Resource graph snapshots require Bridge RPC 1.2.", false, r_outcome);
 				return OK;
 			}
@@ -468,7 +507,7 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 			}
 			method = METHOD_RESOURCE_SNAPSHOT;
 		} else if (method_name == "resource.delta.get") {
-			if (protocol_version != "1.2") {
+			if (protocol_version != "1.2" && protocol_version != "1.3") {
 				_set_error_outcome(request_id, "capability_unavailable", "Resource graph deltas require Bridge RPC 1.2.", false, r_outcome);
 				return OK;
 			}
@@ -477,6 +516,26 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 				return OK;
 			}
 			method = METHOD_RESOURCE_DELTA;
+		} else if (method_name == "scene.snapshot.get") {
+			if (protocol_version != "1.3") {
+				_set_error_outcome(request_id, "capability_unavailable", "Scene graph snapshots require Bridge RPC 1.3.", false, r_outcome);
+				return OK;
+			}
+			if (!_validate_scene_snapshot_params(params)) {
+				_set_error_outcome(request_id, "invalid_request", "The scene snapshot parameters are invalid.", false, r_outcome);
+				return OK;
+			}
+			method = METHOD_SCENE_SNAPSHOT;
+		} else if (method_name == "scene.delta.get") {
+			if (protocol_version != "1.3") {
+				_set_error_outcome(request_id, "capability_unavailable", "Scene graph deltas require Bridge RPC 1.3.", false, r_outcome);
+				return OK;
+			}
+			if (!_validate_scene_delta_params(params)) {
+				_set_error_outcome(request_id, "invalid_request", "The scene delta parameters are invalid.", false, r_outcome);
+				return OK;
+			}
+			method = METHOD_SCENE_DELTA;
 		} else if (method_name == "bridge.shutdown") {
 			if (!_validate_shutdown_params(params)) {
 				_set_error_outcome(request_id, "invalid_request", "The shutdown parameters are invalid.", false, r_outcome);
@@ -493,7 +552,7 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 		_set_error_outcome(request_id, "overloaded", "The RPC connection has too many requests in flight.", true, r_outcome);
 		return OK;
 	}
-	if (method == METHOD_RESOURCE_SNAPSHOT) {
+	if (method == METHOD_RESOURCE_SNAPSHOT || method == METHOD_SCENE_SNAPSHOT) {
 		deadline_ms = 120000;
 	}
 
@@ -543,7 +602,7 @@ Error BridgeRpcSession::_handle_cancel(const Dictionary &p_message, Outcome &r_o
 }
 
 Error BridgeRpcSession::_handle_ack(const Dictionary &p_message, Outcome &r_outcome) {
-	if ((protocol_version != "1.1" && protocol_version != "1.2") || !initialized || !_validate_common_envelope(p_message)) {
+	if ((protocol_version != "1.1" && protocol_version != "1.2" && protocol_version != "1.3") || !initialized || !_validate_common_envelope(p_message)) {
 		return ERR_INVALID_DATA;
 	}
 	String ack_id;
@@ -558,7 +617,12 @@ Error BridgeRpcSession::_handle_ack(const Dictionary &p_message, Outcome &r_outc
 	}
 	if (params.has("domain")) {
 		String domain;
-		if (protocol_version != "1.2" || params.size() != 3 || !get_string(params, "domain", domain) || domain != "resource_graph") {
+		if (params.size() != 3 || !get_string(params, "domain", domain)) {
+			return ERR_INVALID_DATA;
+		}
+		const bool valid_resource_domain = (protocol_version == "1.2" || protocol_version == "1.3") && domain == "resource_graph";
+		const bool valid_scene_domain = protocol_version == "1.3" && domain == "scene_graph";
+		if (!valid_resource_domain && !valid_scene_domain) {
 			return ERR_INVALID_DATA;
 		}
 	} else if (params.size() != 2) {
@@ -636,7 +700,9 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 			result = p_result_override;
 		} break;
 		case METHOD_RESOURCE_SNAPSHOT:
-		case METHOD_RESOURCE_DELTA: {
+		case METHOD_RESOURCE_DELTA:
+		case METHOD_SCENE_SNAPSHOT:
+		case METHOD_SCENE_DELTA: {
 			if (p_result_override.is_empty()) {
 				_set_error_outcome(pending.request_id, "internal_error", "The resource graph response was not produced.", true, r_outcome);
 				_remove_pending(p_internal_request_id);
@@ -650,15 +716,20 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 			r_outcome.close_after_response = true;
 		} break;
 	}
-	if (pending.method != METHOD_EDITOR_SNAPSHOT && pending.method != METHOD_RESOURCE_SNAPSHOT && pending.method != METHOD_RESOURCE_DELTA && !p_result_override.is_empty()) {
+	if (pending.method != METHOD_EDITOR_SNAPSHOT && pending.method != METHOD_RESOURCE_SNAPSHOT && pending.method != METHOD_RESOURCE_DELTA && pending.method != METHOD_SCENE_SNAPSHOT && pending.method != METHOD_SCENE_DELTA && !p_result_override.is_empty()) {
 		const Array keys = p_result_override.keys();
 		for (int index = 0; index < keys.size(); index++) {
 			result[keys[index]] = p_result_override[keys[index]];
 		}
 	}
-	if (protocol_version != "1.2" && result.has("revisions") && result["revisions"].get_type() == Variant::DICTIONARY) {
+	if ((protocol_version == "1.0" || protocol_version == "1.1") && result.has("revisions") && result["revisions"].get_type() == Variant::DICTIONARY) {
 		Dictionary revisions = result["revisions"];
 		revisions.erase("resource_revision");
+		result["revisions"] = revisions;
+	}
+	if (protocol_version != "1.3" && result.has("revisions") && result["revisions"].get_type() == Variant::DICTIONARY) {
+		Dictionary revisions = result["revisions"];
+		revisions.erase("scene_graph_revision");
 		result["revisions"] = revisions;
 	}
 	r_outcome.has_response = true;
@@ -727,7 +798,7 @@ bool BridgeRpcSession::is_initialized() const {
 
 void BridgeRpcSession::set_protocol_version(const String &p_protocol_version) {
 	ERR_FAIL_COND_MSG(initialized, "The negotiated protocol version cannot change after initialization.");
-	ERR_FAIL_COND_MSG(p_protocol_version != "1.0" && p_protocol_version != "1.1" && p_protocol_version != "1.2", "Unsupported Bridge RPC protocol version.");
+	ERR_FAIL_COND_MSG(p_protocol_version != "1.0" && p_protocol_version != "1.1" && p_protocol_version != "1.2" && p_protocol_version != "1.3", "Unsupported Bridge RPC protocol version.");
 	protocol_version = p_protocol_version;
 }
 

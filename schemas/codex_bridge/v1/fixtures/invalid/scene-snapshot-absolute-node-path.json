@@ -1,0 +1,52 @@
+{
+  "checksum": "7228ff9a9431dfc9a2cffc9fde2ee71832d75359d02509426c0c9cb782b09e0c",
+  "chunk_index": 0,
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "domain": "scene_graph",
+  "kind": "chunk",
+  "payload": {
+    "diagnostics": [],
+    "project_context": [],
+    "scenes": [
+      {
+        "animation_tracks": [],
+        "authority": "packed_scene_state",
+        "base_scene_ref": null,
+        "connections": [],
+        "content_generation": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "editable_instances": [],
+        "identity_scope": "persistent",
+        "nodes": [
+          {
+            "attached_script": null,
+            "godot_type": "Node",
+            "groups": [],
+            "identity_scope": "persistent",
+            "instance": null,
+            "instance_placeholder": null,
+            "internal": false,
+            "name": "Root",
+            "node_index": -1,
+            "node_path": "/root/unsafe",
+            "owner_path": null,
+            "owned": true,
+            "parent_path": null,
+            "properties": [],
+            "unique_scene_id": 1001
+          }
+        ],
+        "path": "res://scenes/base_actor.tscn",
+        "resource_revision": 1,
+        "scene_graph_revision": 1,
+        "scene_ref": {"uid": "uid://s4base"},
+        "source_complete": true,
+        "subresources": []
+      }
+    ]
+  },
+  "protocol_version": "1.3",
+  "snapshot_id": "snapshot:2123456789abcdef0123456789abcdef"
+}

@@ -20,7 +20,7 @@ mod scene_graph_contract {
 }
 
 const SCHEMA_BASE_URI: &str = "https://godot-codex.local/schema/v1/";
-const SCHEMA_FILES: [&str; 8] = [
+const SCHEMA_FILES: [&str; 9] = [
     "common.schema.json",
     "discovery.schema.json",
     "fixture-manifest.schema.json",
@@ -29,6 +29,7 @@ const SCHEMA_FILES: [&str; 8] = [
     "lifecycle.schema.json",
     "sync.schema.json",
     "resource.schema.json",
+    "scene.schema.json",
 ];
 
 fn bundle_root() -> PathBuf {
@@ -298,7 +299,7 @@ mod tests {
 
     #[test]
     fn canonical_schema_fixture_bundle_is_self_consistent() {
-        assert_eq!(validate_canonical_bundle().unwrap(), 67);
+        assert_eq!(validate_canonical_bundle().unwrap(), 81);
     }
 
     #[test]

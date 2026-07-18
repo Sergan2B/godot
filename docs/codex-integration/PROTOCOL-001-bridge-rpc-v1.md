@@ -1,10 +1,10 @@
 # PROTOCOL-001 — Bridge RPC 1.x
 
-**Status:** Bridge RPC 1.0 accepted for Sprint 1; compatible 1.1 extension implemented for Sprint 2
+**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.3 extensions implemented through Sprint 4 protocol freeze
 
-**Date:** 2026-07-14
+**Date:** 2026-07-18
 
-**Protocol versions:** `1.0` baseline; `1.1` current
+**Protocol versions:** `1.0` baseline; `1.1`, `1.2` fallback; `1.3` current
 
 **Decision owner:** `Sergan2B` (interim Sidecar/Protocol and Security owner)
 
@@ -30,8 +30,11 @@ This specification defines:
 - canonical JSON Schemas and conformance fixtures.
 
 Bridge RPC 1.1 adds capability-gated editor snapshots, event notifications,
-chunks, and acknowledgments on the same authenticated session. MCP, indexing,
-runtime observation, and transactions remain outside the bridge wire surface.
+chunks, and acknowledgments on the same authenticated session. Bridge RPC 1.2
+adds the ResourceUID/dependency graph. Bridge RPC 1.3 adds authoritative
+`PackedScene`/`SceneState` observations and project context. MCP, persistent
+indexing, runtime observation, and transactions remain outside the bridge wire
+surface.
 
 ## 2. Normative conventions
 
@@ -504,6 +507,8 @@ The authoritative bundle is [`schemas/codex_bridge/v1`](../../schemas/codex_brid
 - `rpc.schema.json` — request/response/cancel/notification/ack/chunk envelopes;
 - `lifecycle.schema.json` — Sprint 1 lifecycle params/results;
 - `sync.schema.json` — Bridge RPC 1.1 full snapshots and ordered invalidation events;
+- `resource.schema.json` — Bridge RPC 1.2 resource snapshot/delta projection;
+- `scene.schema.json` — Bridge RPC 1.3 scene snapshot/delta and project-context projection;
 - `fixture-manifest.schema.json` — conformance case manifest;
 - `fixtures/` — positive, negative, fragmentation, compatibility, project-ID, and proof vectors.
 
@@ -613,3 +618,35 @@ Negotiated 1.1 limits add `hard_message_bytes = 8388608`,
 limit remains 1 MiB. Because a chunk carries both its structured payload and
 the exact canonical JSON checksum input, Sprint 2 targets 256 KiB of entity
 payload within the negotiated 512 KiB chunk ceiling.
+
+## 18. Bridge RPC 1.2 resource graph
+
+Bridge RPC 1.2 retains 1.0/1.1 and advertises `resource.uid_dependencies` and
+`resource.incremental_index`. `resource.snapshot.get` transfers the complete
+resource graph in the authenticated snapshot sequence; `resource.delta.get`
+replays one exact batch after `after_resource_revision` or returns current/gap.
+`resource_graph_changed` and `resource_invalidated` drive incremental recovery.
+The canonical strict DTO and limits are in `resource.schema.json` and
+`INDEX-001`.
+
+## 19. Bridge RPC 1.3 scene graph
+
+Bridge RPC 1.3 retains every lower-minor capability and additionally advertises
+`scene.packed_state`, `scene.incremental_index`, and `scene.project_context`.
+The new methods are `scene.snapshot.get` and `scene.delta.get`; both use domain
+`scene_graph` and `scene_graph_revision`. Notifications are
+`scene_graph_changed` and `scene_journal_gap`.
+
+The source projection is produced only through Godot `PackedScene`,
+`SceneState`, `Resource`, `Animation`, `ProjectSettings`, and `InputMap` APIs.
+It contains bounded scene, node, serialized property, instance, connection,
+group, subresource, animation-path, diagnostic, and allowlisted project-context
+observations. The sidecar MUST NOT raw-parse `.tscn` as a second semantic
+authority. Exact DTOs, limits, allowed settings, NodePath grammar, and negative
+cases are frozen in `scene.schema.json` and `SCENE-001`.
+
+Negotiation selects the highest supported minor no greater than 1.3. A 1.3
+server accepts 1.0–1.2 clients without advertising or sending scene-domain
+messages; resource-domain messages remain available to both 1.2 and 1.3
+clients. Revision vectors omit `scene_graph_revision` below 1.3 and omit
+`resource_revision` below 1.2.

@@ -1,0 +1,548 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Bridge RPC 1.3 PackedScene and SceneState source projection",
+  "oneOf": [
+    {"$ref": "#/$defs/sceneSnapshotRequest"},
+    {"$ref": "#/$defs/sceneDeltaRequest"},
+    {"$ref": "#/$defs/sceneSnapshotBegin"},
+    {"$ref": "#/$defs/sceneSnapshotChunk"},
+    {"$ref": "#/$defs/sceneSnapshotEnd"},
+    {"$ref": "#/$defs/sceneSnapshotAck"},
+    {"$ref": "#/$defs/sceneGraphChanged"},
+    {"$ref": "#/$defs/sceneJournalGap"}
+  ],
+  "$defs": {
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "sceneRevisionVector": {
+      "allOf": [
+        {"$ref": "common.schema.json#/$defs/revisionVector"},
+        {"required": ["resource_revision", "scene_graph_revision"]}
+      ]
+    },
+    "contentGeneration": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "nodePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^(\\.|[^/\\\\:\\u0000-\\u001f]+(?:/[^/\\\\:\\u0000-\\u001f]+)*)$"
+    },
+    "nullableNodePath": {
+      "oneOf": [
+        {"$ref": "#/$defs/nodePath"},
+        {"type": "null"}
+      ]
+    },
+    "projectedVariant": {
+      "type": "object",
+      "required": ["type", "value", "truncated"],
+      "properties": {
+        "type": {
+          "enum": [
+            "nil", "bool", "int", "float", "string", "string_name", "node_path",
+            "vector2", "vector2i", "vector3", "vector3i", "vector4", "vector4i",
+            "rect2", "rect2i", "transform2d", "plane", "quaternion", "aabb",
+            "basis", "transform3d", "projection", "color", "rid", "callable",
+            "signal", "dictionary", "array", "packed_array", "resource", "unsupported"
+          ]
+        },
+        "value": {},
+        "truncated": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "propertyObservation": {
+      "type": "object",
+      "required": ["name", "value", "deferred_node_path"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 512},
+        "value": {"$ref": "#/$defs/projectedVariant"},
+        "deferred_node_path": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "nodeObservation": {
+      "type": "object",
+      "required": [
+        "node_path", "parent_path", "owner_path", "name", "godot_type", "node_index",
+        "unique_scene_id", "identity_scope", "owned", "internal", "instance",
+        "instance_placeholder", "groups", "properties", "attached_script"
+      ],
+      "properties": {
+        "node_path": {"$ref": "#/$defs/nodePath"},
+        "parent_path": {"$ref": "#/$defs/nullableNodePath"},
+        "owner_path": {"$ref": "#/$defs/nullableNodePath"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 512},
+        "godot_type": {"type": "string", "maxLength": 256},
+        "node_index": {"type": "integer", "minimum": -1, "maximum": 2147483647},
+        "unique_scene_id": {
+          "oneOf": [
+            {"type": "integer", "minimum": 1, "maximum": 2147483647},
+            {"type": "null"}
+          ]
+        },
+        "identity_scope": {"enum": ["persistent", "content_revision"]},
+        "owned": {"type": "boolean"},
+        "internal": {"type": "boolean"},
+        "instance": {
+          "oneOf": [
+            {"$ref": "resource.schema.json#/$defs/resourceRef"},
+            {"type": "null"}
+          ]
+        },
+        "instance_placeholder": {
+          "oneOf": [
+            {"$ref": "resource.schema.json#/$defs/resourcePath"},
+            {"type": "null"}
+          ]
+        },
+        "groups": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {"type": "string", "minLength": 1, "maxLength": 512},
+          "uniqueItems": true
+        },
+        "properties": {
+          "type": "array",
+          "maxItems": 16384,
+          "items": {"$ref": "#/$defs/propertyObservation"}
+        },
+        "attached_script": {
+          "oneOf": [
+            {"$ref": "resource.schema.json#/$defs/resourceRef"},
+            {"type": "null"}
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "connectionObservation": {
+      "type": "object",
+      "required": ["emitter", "signal", "receiver", "method", "flags", "unbinds", "binds"],
+      "properties": {
+        "emitter": {"$ref": "#/$defs/nodePath"},
+        "signal": {"type": "string", "minLength": 1, "maxLength": 512},
+        "receiver": {"$ref": "#/$defs/nodePath"},
+        "method": {"type": "string", "minLength": 1, "maxLength": 512},
+        "flags": {"type": "integer", "minimum": 0, "maximum": 2147483647},
+        "unbinds": {"type": "integer", "minimum": 0, "maximum": 1024},
+        "binds": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {"$ref": "#/$defs/projectedVariant"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "subresourceObservation": {
+      "type": "object",
+      "required": ["scene_unique_id", "godot_type", "identity_scope", "ownership_paths"],
+      "properties": {
+        "scene_unique_id": {"type": ["string", "null"], "maxLength": 256},
+        "godot_type": {"type": "string", "minLength": 1, "maxLength": 256},
+        "identity_scope": {"enum": ["persistent", "content_revision"]},
+        "ownership_paths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "items": {"type": "string", "minLength": 1, "maxLength": 2048},
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "animationTrackObservation": {
+      "type": "object",
+      "required": ["mixer", "library", "animation", "track_index", "node_path", "resolution"],
+      "properties": {
+        "mixer": {"$ref": "#/$defs/nodePath"},
+        "library": {"type": "string", "maxLength": 512},
+        "animation": {"type": "string", "minLength": 1, "maxLength": 512},
+        "track_index": {"type": "integer", "minimum": 0, "maximum": 1000000},
+        "node_path": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "resolution": {"enum": ["resolved", "broken", "unresolved"]}
+      },
+      "additionalProperties": false
+    },
+    "sceneObservation": {
+      "type": "object",
+      "required": [
+        "scene_ref", "path", "content_generation", "identity_scope", "base_scene_ref",
+        "nodes", "connections", "editable_instances", "subresources", "animation_tracks",
+        "authority", "resource_revision", "scene_graph_revision", "source_complete"
+      ],
+      "properties": {
+        "scene_ref": {"$ref": "resource.schema.json#/$defs/resourceRef"},
+        "path": {"$ref": "resource.schema.json#/$defs/resourcePath"},
+        "content_generation": {"$ref": "#/$defs/contentGeneration"},
+        "identity_scope": {"enum": ["persistent", "content_revision"]},
+        "base_scene_ref": {
+          "oneOf": [
+            {"$ref": "resource.schema.json#/$defs/resourceRef"},
+            {"type": "null"}
+          ]
+        },
+        "nodes": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": {"$ref": "#/$defs/nodeObservation"}
+        },
+        "connections": {
+          "type": "array",
+          "maxItems": 4000000,
+          "items": {"$ref": "#/$defs/connectionObservation"}
+        },
+        "editable_instances": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": {"$ref": "#/$defs/nodePath"},
+          "uniqueItems": true
+        },
+        "subresources": {
+          "type": "array",
+          "maxItems": 4000000,
+          "items": {"$ref": "#/$defs/subresourceObservation"}
+        },
+        "animation_tracks": {
+          "type": "array",
+          "maxItems": 4000000,
+          "items": {"$ref": "#/$defs/animationTrackObservation"}
+        },
+        "authority": {"const": "packed_scene_state"},
+        "resource_revision": {"$ref": "#/$defs/revision"},
+        "scene_graph_revision": {"$ref": "#/$defs/revision"},
+        "source_complete": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "projectContextObservation": {
+      "type": "object",
+      "required": ["key", "value", "authority", "scene_graph_revision"],
+      "properties": {
+        "key": {
+          "type": "string",
+          "pattern": "^(application/run/main_scene|autoload/[^/]+|input/[^/]+|layer_names/(2d_physics|2d_render|3d_physics|3d_render|navigation)/[1-9][0-9]*)$",
+          "maxLength": 512
+        },
+        "value": {"$ref": "#/$defs/projectedVariant"},
+        "authority": {"enum": ["project_settings", "input_map"]},
+        "scene_graph_revision": {"$ref": "#/$defs/revision"}
+      },
+      "additionalProperties": false
+    },
+    "sceneDiagnostic": {
+      "type": "object",
+      "required": ["code", "subject", "scene_graph_revision"],
+      "properties": {
+        "code": {
+          "enum": [
+            "weak_scene_identity", "weak_node_identity", "weak_subresource_identity",
+            "duplicate_scene_node_id", "duplicate_subresource_id", "broken_override_target",
+            "broken_node_path", "broken_animation_node_path", "scene_composition_cycle",
+            "scene_limit_exceeded", "scene_load_failed"
+          ]
+        },
+        "subject": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "detail": {"type": "string", "maxLength": 2048},
+        "scene_graph_revision": {"$ref": "#/$defs/revision"}
+      },
+      "additionalProperties": false
+    },
+    "sceneSnapshotPayload": {
+      "type": "object",
+      "required": ["scenes", "project_context", "diagnostics"],
+      "properties": {
+        "scenes": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {"$ref": "#/$defs/sceneObservation"}
+        },
+        "project_context": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {"$ref": "#/$defs/projectContextObservation"}
+        },
+        "diagnostics": {
+          "type": "array",
+          "maxItems": 100000,
+          "items": {"$ref": "#/$defs/sceneDiagnostic"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "sceneSnapshotParams": {
+      "type": "object",
+      "maxProperties": 0,
+      "additionalProperties": false
+    },
+    "sceneSnapshotAcceptedResult": {
+      "type": "object",
+      "required": ["snapshot_id", "domain", "resource_revision", "scene_graph_revision", "revisions", "limits_applied"],
+      "properties": {
+        "snapshot_id": {"$ref": "common.schema.json#/$defs/snapshotId"},
+        "domain": {"const": "scene_graph"},
+        "resource_revision": {"$ref": "#/$defs/revision"},
+        "scene_graph_revision": {"$ref": "#/$defs/revision"},
+        "revisions": {"$ref": "#/$defs/sceneRevisionVector"},
+        "limits_applied": {
+          "type": "object",
+          "required": ["scene_records", "scene_nodes", "scene_properties", "scene_relations", "instance_depth", "snapshot_chunk_bytes", "snapshot_window_bytes", "snapshot_timeout_ms"],
+          "properties": {
+            "scene_records": {"const": 100000},
+            "scene_nodes": {"const": 1000000},
+            "scene_properties": {"const": 4000000},
+            "scene_relations": {"const": 4000000},
+            "instance_depth": {"const": 64},
+            "snapshot_chunk_bytes": {"const": 262144},
+            "snapshot_window_bytes": {"const": 33554432},
+            "snapshot_timeout_ms": {"const": 120000}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "sceneSnapshotRequest": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/request"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.3"},
+            "method": {"const": "scene.snapshot.get"},
+            "params": {"$ref": "#/$defs/sceneSnapshotParams"}
+          }
+        }
+      ]
+    },
+    "sceneSnapshotBegin": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/notification"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.3"},
+            "method": {"const": "snapshot.begin"},
+            "params": {
+              "type": "object",
+              "required": ["snapshot_id", "domain", "resource_revision", "scene_graph_revision", "revisions"],
+              "properties": {
+                "snapshot_id": {"$ref": "common.schema.json#/$defs/snapshotId"},
+                "domain": {"const": "scene_graph"},
+                "resource_revision": {"$ref": "#/$defs/revision"},
+                "scene_graph_revision": {"$ref": "#/$defs/revision"},
+                "revisions": {"$ref": "#/$defs/sceneRevisionVector"}
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "sceneSnapshotChunk": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/chunk"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.3"},
+            "domain": {"const": "scene_graph"},
+            "payload": {"$ref": "#/$defs/sceneSnapshotPayload"}
+          },
+          "required": ["domain"]
+        }
+      ]
+    },
+    "sceneSnapshotEnd": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/notification"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.3"},
+            "method": {"const": "snapshot.end"},
+            "params": {
+              "type": "object",
+              "required": ["snapshot_id", "domain", "resource_revision", "scene_graph_revision", "revisions", "chunk_count", "checksum"],
+              "properties": {
+                "snapshot_id": {"$ref": "common.schema.json#/$defs/snapshotId"},
+                "domain": {"const": "scene_graph"},
+                "resource_revision": {"$ref": "#/$defs/revision"},
+                "scene_graph_revision": {"$ref": "#/$defs/revision"},
+                "revisions": {"$ref": "#/$defs/sceneRevisionVector"},
+                "chunk_count": {"type": "integer", "minimum": 1, "maximum": 65536},
+                "checksum": {"$ref": "common.schema.json#/$defs/sha256Hex"}
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "sceneSnapshotAck": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/ack"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.3"},
+            "params": {
+              "type": "object",
+              "required": ["snapshot_id", "domain", "through_chunk"],
+              "properties": {
+                "snapshot_id": {"$ref": "common.schema.json#/$defs/snapshotId"},
+                "domain": {"const": "scene_graph"},
+                "through_chunk": {"type": "integer", "minimum": 0, "maximum": 65535}
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "sceneDeltaParams": {
+      "type": "object",
+      "required": ["after_scene_graph_revision"],
+      "properties": {
+        "after_scene_graph_revision": {"$ref": "#/$defs/revision"}
+      },
+      "additionalProperties": false
+    },
+    "sceneDeltaRequest": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/request"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.3"},
+            "method": {"const": "scene.delta.get"},
+            "params": {"$ref": "#/$defs/sceneDeltaParams"}
+          }
+        }
+      ]
+    },
+    "sceneDeltaOperation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": {"const": "upsert"},
+            "value": {"$ref": "#/$defs/sceneObservation"}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "scene_ref", "path"],
+          "properties": {
+            "kind": {"const": "remove"},
+            "scene_ref": {"$ref": "resource.schema.json#/$defs/resourceRef"},
+            "path": {"$ref": "resource.schema.json#/$defs/resourcePath"}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "values"],
+          "properties": {
+            "kind": {"const": "project_context"},
+            "values": {
+              "type": "array",
+              "maxItems": 100000,
+              "items": {"$ref": "#/$defs/projectContextObservation"}
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "sceneDeltaBatch": {
+      "type": "object",
+      "required": ["batch_id", "previous_scene_graph_revision", "scene_graph_revision", "resource_revision", "project_revision", "operations", "source_complete", "checksum"],
+      "properties": {
+        "batch_id": {"type": "string", "pattern": "^scene-batch:[0-9a-f]{32}$"},
+        "previous_scene_graph_revision": {"$ref": "#/$defs/revision"},
+        "scene_graph_revision": {"$ref": "#/$defs/revision"},
+        "resource_revision": {"$ref": "#/$defs/revision"},
+        "project_revision": {"$ref": "#/$defs/revision"},
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100000,
+          "items": {"$ref": "#/$defs/sceneDeltaOperation"}
+        },
+        "source_complete": {"const": true},
+        "checksum": {"$ref": "common.schema.json#/$defs/sha256Hex"}
+      },
+      "additionalProperties": false
+    },
+    "sceneDeltaResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["status", "current_scene_graph_revision"],
+          "properties": {
+            "status": {"const": "current"},
+            "current_scene_graph_revision": {"$ref": "#/$defs/revision"}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["status", "current_scene_graph_revision", "batch"],
+          "properties": {
+            "status": {"const": "batch"},
+            "current_scene_graph_revision": {"$ref": "#/$defs/revision"},
+            "batch": {"$ref": "#/$defs/sceneDeltaBatch"}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "sceneGraphChanged": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/notification"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.3"},
+            "method": {"const": "scene_graph_changed"},
+            "params": {
+              "type": "object",
+              "required": ["event_type", "scene_graph_revision", "resource_revision", "revisions"],
+              "properties": {
+                "event_type": {"const": "scene_graph_changed"},
+                "scene_graph_revision": {"$ref": "#/$defs/revision"},
+                "resource_revision": {"$ref": "#/$defs/revision"},
+                "revisions": {"$ref": "#/$defs/sceneRevisionVector"}
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "sceneJournalGap": {
+      "allOf": [
+        {"$ref": "rpc.schema.json#/$defs/notification"},
+        {
+          "properties": {
+            "protocol_version": {"const": "1.3"},
+            "method": {"const": "scene_journal_gap"},
+            "params": {
+              "type": "object",
+              "required": ["event_type", "last_contiguous_scene_graph_revision", "current_scene_graph_revision", "revisions"],
+              "properties": {
+                "event_type": {"const": "scene_journal_gap"},
+                "last_contiguous_scene_graph_revision": {"$ref": "#/$defs/revision"},
+                "current_scene_graph_revision": {"$ref": "#/$defs/revision"},
+                "revisions": {"$ref": "#/$defs/sceneRevisionVector"}
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    }
+  }
+}

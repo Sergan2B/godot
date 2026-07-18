@@ -1,0 +1,26 @@
+{
+  "context": {
+    "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+    "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+  },
+  "kind": "notification",
+  "method": "snapshot.end",
+  "params": {
+    "checksum": "76ce25c59a88732dd7339dc61d05d17071d3ab6f3bbf984d29eb63af0af09b48",
+    "chunk_count": 1,
+    "domain": "scene_graph",
+    "resource_revision": 1,
+    "revisions": {
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+      "event_seq": 1,
+      "operation_seq": 0,
+      "project_revision": 1,
+      "resource_revision": 1,
+      "scene_graph_revision": 1,
+      "scene_revisions": {}
+    },
+    "scene_graph_revision": 1,
+    "snapshot_id": "snapshot:2123456789abcdef0123456789abcdef"
+  },
+  "protocol_version": "1.3"
+}
