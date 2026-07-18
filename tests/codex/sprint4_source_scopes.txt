@@ -8,6 +8,7 @@ godot-codex-mcp/rust-toolchain.toml
 modules/codex_bridge
 tests/codex/Cargo.lock
 tests/codex/Cargo.toml
+tests/codex/conformance
 tests/codex/fixtures/scene_graph_oracle
 tests/codex/fixtures/scene_graph_project
 tests/codex/resource_graph_live_driver.gd

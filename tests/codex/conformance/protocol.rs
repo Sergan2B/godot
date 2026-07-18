@@ -1,19 +1,32 @@
+#[cfg(unix)]
 use std::io::{self, Read, Write};
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
+#[cfg(unix)]
 use std::path::Path;
+#[cfg(unix)]
 use std::time::Duration;
 
+#[cfg(unix)]
 use base64::Engine;
 use hmac::{Hmac, Mac};
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(any(unix, test))]
+use serde_json::json;
 use sha2::{Digest, Sha256};
 
+#[cfg(unix)]
 use crate::bundle::validate_instance;
+#[cfg(unix)]
 use crate::discovery::Discovery;
-use crate::error::{ConformanceError, Result, fail, require};
+#[cfg(unix)]
+use crate::error::fail;
+use crate::error::{ConformanceError, Result, require};
+#[cfg(unix)]
 use crate::json::parse_strict_object;
 
 pub const MAX_PAYLOAD_BYTES: usize = 1_048_576;
+#[cfg(unix)]
 const IO_TIMEOUT: Duration = Duration::from_secs(3);
 type HmacSha256 = Hmac<Sha256>;
 
@@ -73,6 +86,7 @@ pub fn handshake_proof(server: bool, token: &[u8; 32], transcript: &[u8]) -> Res
     Ok(hmac.finalize().into_bytes().into())
 }
 
+#[cfg(unix)]
 fn decode_base64url_32(value: &str, field: &str) -> Result<[u8; 32]> {
     require(
         value.len() == 43
@@ -106,10 +120,12 @@ pub fn encode_frame(value: &Value) -> Result<Vec<u8>> {
     Ok(frame)
 }
 
+#[cfg(unix)]
 pub struct FramedStream {
     stream: UnixStream,
 }
 
+#[cfg(unix)]
 impl FramedStream {
     pub fn connect(endpoint: &Path) -> Result<Self> {
         let stream = UnixStream::connect(endpoint)
@@ -180,6 +196,7 @@ impl FramedStream {
     }
 }
 
+#[cfg(unix)]
 fn random_nonce() -> Result<[u8; 32]> {
     let mut nonce = [0_u8; 32];
     getrandom::fill(&mut nonce)
@@ -187,6 +204,7 @@ fn random_nonce() -> Result<[u8; 32]> {
     Ok(nonce)
 }
 
+#[cfg(unix)]
 pub fn make_client_hello(
     discovery: &Discovery,
     project_id: &str,
@@ -206,6 +224,7 @@ pub fn make_client_hello(
     ))
 }
 
+#[cfg(unix)]
 pub fn make_client_authenticate(
     discovery: &Discovery,
     offered_versions: &[String],
@@ -279,11 +298,13 @@ pub fn make_client_authenticate(
     }))
 }
 
+#[cfg(unix)]
 pub struct AuthenticatedConnection {
     pub stream: FramedStream,
     pub messages: Vec<(&'static str, Value)>,
 }
 
+#[cfg(unix)]
 pub fn connect_authenticated(
     discovery: &Discovery,
     fragment_size: Option<usize>,
@@ -329,6 +350,7 @@ pub fn connect_authenticated(
     })
 }
 
+#[cfg(unix)]
 pub fn rpc_context(discovery: &Discovery) -> Value {
     json!({
         "project_id": discovery.project_id,
@@ -336,6 +358,7 @@ pub fn rpc_context(discovery: &Discovery) -> Value {
     })
 }
 
+#[cfg(unix)]
 pub fn rpc_request(
     discovery: &Discovery,
     request_id: &str,
@@ -357,6 +380,7 @@ pub fn rpc_request(
     request
 }
 
+#[cfg(unix)]
 pub fn rpc_cancel(discovery: &Discovery, request_id: &str) -> Value {
     json!({
         "protocol_version": "1.0",
@@ -367,6 +391,7 @@ pub fn rpc_cancel(discovery: &Discovery, request_id: &str) -> Value {
     })
 }
 
+#[cfg(unix)]
 pub fn validate_rpc_response(
     discovery: &Discovery,
     response: &Value,
@@ -387,6 +412,7 @@ pub fn validate_rpc_response(
     )
 }
 
+#[cfg(unix)]
 pub fn expect_error_code(
     discovery: &Discovery,
     response: &Value,
@@ -400,6 +426,7 @@ pub fn expect_error_code(
     )
 }
 
+#[cfg(unix)]
 pub fn expect_handshake_error(response: &Value, code: &str) -> Result<()> {
     validate_instance("handshake.schema.json", response)?;
     require(

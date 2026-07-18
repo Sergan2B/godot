@@ -26,10 +26,12 @@ impl From<serde_json::Error> for ConformanceError {
 
 pub type Result<T> = std::result::Result<T, ConformanceError>;
 
+#[cfg(any(unix, test))]
 pub fn fail<T>(message: impl Into<String>) -> Result<T> {
     Err(ConformanceError(message.into()))
 }
 
+#[cfg(any(unix, test))]
 pub fn require(condition: bool, message: impl Into<String>) -> Result<()> {
     if condition { Ok(()) } else { fail(message) }
 }

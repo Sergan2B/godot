@@ -1,9 +1,14 @@
+#[cfg(unix)]
 use std::env;
+#[cfg(unix)]
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::process::ExitCode;
 
+#[cfg(unix)]
 use codex_bridge_conformance::{RunOptions, run};
 
+#[cfg(unix)]
 fn parse_options() -> Result<RunOptions, String> {
     let mut project_root = None;
     let mut trace_path = None;
@@ -36,6 +41,7 @@ fn parse_options() -> Result<RunOptions, String> {
     })
 }
 
+#[cfg(unix)]
 fn main() -> ExitCode {
     let options = match parse_options() {
         Ok(options) => options,
@@ -59,4 +65,12 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+#[cfg(not(unix))]
+fn main() -> std::process::ExitCode {
+    eprintln!(
+        "live bridge conformance requires Unix domain sockets; run `cargo test` for the portable schema gates"
+    );
+    std::process::ExitCode::from(2)
 }
