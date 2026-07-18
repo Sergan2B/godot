@@ -1,8 +1,9 @@
 # Sprint 5 plan — GDScript symbols and program relations
 
-**Status:** In progress — `S5-01`–`S5-06` are complete and locally verified on
-macOS arm64, including the GDScript-disabled build and the strict Rust
-normalizer; `S5-07` is the next gate; full Sprint 5 acceptance is not claimed
+**Status:** In progress — `S5-01`–`S5-07` are complete and locally verified on
+macOS arm64, including the GDScript-disabled build, strict Rust normalization,
+`segment-v3`, and atomic resource/scene/script composition; `S5-08` is the next
+gate; full Sprint 5 acceptance is not claimed
 
 **Planned duration:** 10 working days
 
@@ -223,6 +224,25 @@ resource/scene result parity, idempotent retry, staging cleanup, and preservatio
 of the prior generation across cancellation, process death, and corrupt orphan
 script segments. Committed script-shard corruption fails closed. This closes the
 local persistence gate, not `S5-07` composition or two-host Sprint 5 acceptance.
+
+`S5-07` extends the single-writer semantic coordinator with independently gated
+resource, scene, and script readers. Complete Bridge RPC 1.4 script snapshots
+stream through a bounded disk spool; full and contiguous delta ingestion bind
+the exact editor session plus resource, scene, and script revisions before one
+immutable generation activates. The composition step retains analyzer-owned
+inheritance/call/override facts, resolves literal load/preload UIDs and paths
+through the resource graph, and derives saved-scene attachments from SceneState.
+Scene attachment replacement/removal recomposes without changing the producer's
+script revision, while resource changes, gaps, reconnects, invalid joins, and
+failed activation leave script facts non-current rather than publishing a mixed
+generation. Discovery-only C# documents remain representable without Mono or an
+EditorFileSystem resource record, but receive no invented semantic symbols.
+Local unit tests cover full/delta ingestion, dependency invalidation, UID
+canonicalization, unavailable adapters, attachment recomposition, and atomic
+failure. A real macOS Bridge session pinned all three readers to one generation
+containing three scenes and eight script documents; its 114 busy-frame telemetry
+samples had a 1.204 ms maximum and zero samples above 2 ms. This closes the local
+composition gate, not the `S5-08` MCP tools or qualifying `S5-09` two-host gate.
 
 ## 5. Required data flow
 

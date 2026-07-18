@@ -3,8 +3,8 @@
 **Status:** D-07 accepted; `S5-01` contract, independent `S5-02` oracle, Bridge
 RPC 1.4 `S5-03`, bounded editor adapter/journal `S5-04`, and strict Rust wire
 normalization `S5-05`, plus logical schema 1.3/`segment-v3` persistence `S5-06`,
-are locally verified on macOS arm64; `S5-07`–`S5-10` and two-host acceptance
-remain pending
+and atomic cross-domain composition `S5-07` are locally verified on macOS arm64;
+`S5-08`–`S5-10` and two-host acceptance remain pending
 
 **Decision:** `D-07` — use a bridge-owned saved-content cache over Godot's
 GDScript parser/analyzer; do not depend on the active LSP peer cache
@@ -268,6 +268,17 @@ Cancellation, crash, corruption, invalid normalization, or migration failure
 cannot replace the previous valid generation. Journal overflow, a delta gap, or
 an incompatible analyzer profile forces a full script snapshot. Retained older
 facts are never relabeled current.
+
+The `S5-07` coordinator validates each script checkpoint against one immutable
+resource/scene generation before activation. Literal UID spellings are reduced
+to the canonical Godot `ResourceUID` representation for exact resource joins;
+an absent exact load/preload target fails composition. SceneState attachments
+are recomputed in the same generation as a scene change. Resource, scene, and
+script readers expose independent `NotReady`, `NotCurrent`, `Current`, and
+capability states, and no reader can pin a different generation than the status
+it observed. A path-scoped C# discovery document may exist without an
+EditorFileSystem resource record in a non-Mono build, but that exception does
+not relax resource targets or scene attachment joins.
 
 ## 9. Query contract
 
