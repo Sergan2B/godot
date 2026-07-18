@@ -50,9 +50,12 @@ TEST_FORCE_LINK(test_codex_bridge)
 
 #include "modules/codex_bridge/editor/bridge_frame_telemetry.h"
 #include "modules/codex_bridge/editor/bridge_revision_clock.h"
+#include "modules/codex_bridge/editor/bounded_variant_projector.h"
 #include "modules/codex_bridge/editor/main_thread_dispatcher.h"
 #include "modules/codex_bridge/editor/resource_delta_journal.h"
 #include "modules/codex_bridge/editor/resource_graph_adapter.h"
+#include "modules/codex_bridge/editor/scene_delta_journal.h"
+#include "modules/codex_bridge/editor/scene_state_adapter.h"
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
 #include "modules/codex_bridge/protocol/bridge_frame_codec.h"
 #include "modules/codex_bridge/protocol/bridge_handshake.h"
@@ -111,6 +114,12 @@ struct ResourceDeltaJournalTestAccess {
 
 	static void wait_for_cleanup(ResourceDeltaJournal &r_journal) {
 		r_journal._wait_for_cleanup();
+	}
+};
+
+struct SceneStateAdapterTestAccess {
+	static bool safe_node_path(const String &p_value, bool p_allow_empty = false) {
+		return SceneStateAdapter::_is_safe_node_path(p_value, p_allow_empty);
 	}
 };
 
@@ -219,6 +228,97 @@ TEST_CASE("[CodexBridge] Evidence telemetry is opt-in, bounded, and records budg
 	CHECK((int64_t)result["busy_frame_count"] == (int64_t)BridgeFrameTelemetry::MAX_SAMPLES + 1);
 	CHECK(Array(result["samples_usec"]).size() == (int)BridgeFrameTelemetry::MAX_SAMPLES);
 	CHECK((bool)result["overflow"]);
+}
+
+TEST_CASE("[CodexBridge] Bounded variant projection preserves type and fails closed at limits") {
+	Dictionary integer = BoundedVariantProjector::project_typed(42);
+	CHECK(integer["type"] == "int");
+	CHECK((int64_t)integer["value"] == 42);
+	CHECK_FALSE((bool)integer["truncated"]);
+
+	Dictionary node_path = BoundedVariantProjector::project_typed(NodePath("Root/Child:position"));
+	CHECK(node_path["type"] == "node_path");
+	CHECK(node_path["value"] == "Root/Child:position");
+	CHECK_FALSE((bool)node_path["truncated"]);
+
+	Dictionary vector = BoundedVariantProjector::project_typed(Vector3(1.0, 2.0, 3.0));
+	CHECK(vector["type"] == "vector3");
+	Dictionary vector_value = vector["value"];
+	CHECK((double)vector_value["x"] == doctest::Approx(1.0));
+	CHECK((double)vector_value["y"] == doctest::Approx(2.0));
+	CHECK((double)vector_value["z"] == doctest::Approx(3.0));
+
+	Dictionary long_string = BoundedVariantProjector::project_typed(String("x").repeat(BoundedVariantProjector::MAX_STRING_CHARACTERS + 1));
+	CHECK(long_string["type"] == "string");
+	CHECK((bool)long_string["truncated"]);
+	CHECK(String(long_string["value"]).length() == BoundedVariantProjector::MAX_STRING_CHARACTERS);
+
+	Array nested;
+	for (int depth = 0; depth <= BoundedVariantProjector::MAX_DEPTH + 1; depth++) {
+		Array parent;
+		parent.push_back(nested);
+		nested = parent;
+	}
+	Dictionary deep_array = BoundedVariantProjector::project_typed(nested);
+	CHECK(deep_array["type"] == "array");
+	CHECK((bool)deep_array["truncated"]);
+
+	Ref<Resource> resource;
+	resource.instantiate();
+	resource->set_path("user://private-resource.tres");
+	Dictionary projected_resource = BoundedVariantProjector::project_typed(resource);
+	CHECK(projected_resource["type"] == "resource");
+	CHECK_FALSE(Dictionary(projected_resource["value"]).has("path"));
+}
+
+TEST_CASE("[CodexBridge] Scene paths and delta journal fail closed") {
+	CHECK(SceneStateAdapterTestAccess::safe_node_path("."));
+	CHECK(SceneStateAdapterTestAccess::safe_node_path("Root/Child"));
+	CHECK(SceneStateAdapterTestAccess::safe_node_path(String(), true));
+	CHECK_FALSE(SceneStateAdapterTestAccess::safe_node_path(String()));
+	CHECK_FALSE(SceneStateAdapterTestAccess::safe_node_path("/root/Child"));
+	CHECK_FALSE(SceneStateAdapterTestAccess::safe_node_path("Root\\Child"));
+	CHECK_FALSE(SceneStateAdapterTestAccess::safe_node_path("Root/../Child"));
+	CHECK_FALSE(SceneStateAdapterTestAccess::safe_node_path("Root:property"));
+
+	SceneDeltaJournal journal;
+	journal.initialize(1);
+	Array operations;
+	Dictionary operation;
+	operation["kind"] = "project_context";
+	operation["values"] = Array();
+	operations.push_back(operation);
+	Dictionary batch;
+	bool invalidated = false;
+	REQUIRE(journal.commit(2, 4, 7, operations, batch, invalidated) == OK);
+	CHECK_FALSE(invalidated);
+	CHECK((int64_t)batch["previous_scene_graph_revision"] == 1);
+	CHECK((int64_t)batch["scene_graph_revision"] == 2);
+	CHECK((int64_t)batch["resource_revision"] == 4);
+	CHECK((int64_t)batch["project_revision"] == 7);
+	CHECK(String(batch["batch_id"]).begins_with("scene-batch:"));
+	CHECK(String(batch["checksum"]).length() == 64);
+	CHECK(journal.query_after(2).status == SceneDeltaJournal::QUERY_CURRENT);
+	CHECK(journal.query_after(1).status == SceneDeltaJournal::QUERY_BATCH);
+	CHECK(journal.query_after(0).status == SceneDeltaJournal::QUERY_GAP);
+	CHECK(journal.query_after(3).status == SceneDeltaJournal::QUERY_FUTURE);
+
+	journal.invalidate_to(3);
+	CHECK_FALSE(journal.is_invalidating());
+	CHECK(journal.query_after(2).status == SceneDeltaJournal::QUERY_GAP);
+	CHECK(journal.query_after(3).status == SceneDeltaJournal::QUERY_CURRENT);
+
+	Array oversized_operations;
+	Dictionary oversized_operation;
+	oversized_operation["kind"] = "project_context";
+	Array oversized_values;
+	oversized_values.push_back(String("x").repeat(SceneDeltaJournal::MAX_BATCH_BYTES));
+	oversized_operation["values"] = oversized_values;
+	oversized_operations.push_back(oversized_operation);
+	CHECK(journal.commit(4, 4, 4, oversized_operations, batch, invalidated) == ERR_OUT_OF_MEMORY);
+	CHECK(invalidated);
+	CHECK(journal.get_current_revision() == 4);
+	CHECK(journal.query_after(3).status == SceneDeltaJournal::QUERY_GAP);
 }
 
 static PackedByteArray bytes_from_range(uint8_t p_start, int p_count) {

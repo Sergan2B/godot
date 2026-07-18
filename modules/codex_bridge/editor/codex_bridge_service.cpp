@@ -105,15 +105,24 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 		case MainThreadDispatcher::COMMAND_RESOURCE_DELTA:
 			service->_complete_resource_delta(p_command.request_id, (uint64_t)(int64_t)p_command.params["after_resource_revision"]);
 			break;
-		case MainThreadDispatcher::COMMAND_SCENE_SNAPSHOT:
+		case MainThreadDispatcher::COMMAND_SCENE_SNAPSHOT: {
+			Dictionary error_data;
+			const Error error = service->scene_state_adapter.begin_snapshot(p_command.request_id, OS::get_singleton()->get_ticks_usec(), service->_make_context(), error_data);
+			if (error == ERR_BUSY) {
+				service->transport_worker.complete_request_error(p_command.request_id, "scene_snapshot_in_progress", "A scene graph snapshot is already in progress.", true, error_data);
+			} else if (error != OK) {
+				service->transport_worker.complete_request_error(p_command.request_id, "scene_catalog_building", "The editor scene catalog is still building.", true);
+			}
+		} break;
 		case MainThreadDispatcher::COMMAND_SCENE_DELTA:
-			service->transport_worker.complete_request_error(p_command.request_id, "scene_catalog_building", "The editor scene catalog is still building.", true);
+			service->_complete_scene_delta(p_command.request_id, (uint64_t)(int64_t)p_command.params["after_scene_graph_revision"]);
 			break;
 		case MainThreadDispatcher::COMMAND_CANCEL: {
 			const Array abandoned = service->resource_graph_adapter.cancel_snapshot(p_command.request_id);
 			if (!abandoned.is_empty()) {
 				service->transport_worker.abort_resource_snapshot(p_command.request_id, abandoned);
 			}
+			service->scene_state_adapter.cancel_snapshot(p_command.request_id);
 		} break;
 		case MainThreadDispatcher::COMMAND_PING:
 		case MainThreadDispatcher::COMMAND_SHUTDOWN:
@@ -253,10 +262,12 @@ void CodexBridgeService::_on_undo_redo_version_changed() {
 
 void CodexBridgeService::_on_filesystem_changed() {
 	resource_graph_adapter.request_refresh();
+	scene_state_adapter.request_refresh();
 }
 
 void CodexBridgeService::_on_resources_reimported(const Vector<String> &p_paths) {
 	resource_graph_adapter.mark_reimported(p_paths);
+	scene_state_adapter.request_refresh();
 }
 
 void CodexBridgeService::_on_resources_reload(const PackedStringArray &p_paths) {
@@ -264,6 +275,7 @@ void CodexBridgeService::_on_resources_reload(const PackedStringArray &p_paths) 
 	// the correctness fallback for moves, removals, and dependency fan-out.
 	if (!p_paths.is_empty()) {
 		resource_graph_adapter.request_refresh();
+		scene_state_adapter.request_refresh();
 	}
 }
 
@@ -406,6 +418,34 @@ void CodexBridgeService::_complete_resource_delta(uint64_t p_request_id, uint64_
 	transport_worker.complete_request(p_request_id, result);
 }
 
+void CodexBridgeService::_complete_scene_delta(uint64_t p_request_id, uint64_t p_after_scene_graph_revision) {
+	const SceneDeltaJournal::QueryResult query = scene_state_adapter.query_delta(p_after_scene_graph_revision);
+	if (query.status == SceneDeltaJournal::QUERY_FUTURE) {
+		Dictionary data;
+		data["requested_after"] = (int64_t)p_after_scene_graph_revision;
+		data["current_scene_graph_revision"] = (int64_t)query.current_scene_graph_revision;
+		transport_worker.complete_request_error(p_request_id, "invalid_revision", "The requested scene graph revision is in the future.", false, data);
+		return;
+	}
+	if (query.status == SceneDeltaJournal::QUERY_GAP) {
+		Dictionary data;
+		data["requested_after"] = (int64_t)p_after_scene_graph_revision;
+		data["oldest_available"] = (int64_t)query.oldest_available_scene_graph_revision;
+		data["current_scene_graph_revision"] = (int64_t)query.current_scene_graph_revision;
+		transport_worker.complete_request_error(p_request_id, "scene_journal_gap", "The requested scene graph delta is no longer available.", true, data);
+		return;
+	}
+	Dictionary result;
+	result["current_scene_graph_revision"] = (int64_t)query.current_scene_graph_revision;
+	if (query.status == SceneDeltaJournal::QUERY_CURRENT) {
+		result["status"] = "current";
+	} else {
+		result["status"] = "batch";
+		result["batch"] = query.batch;
+	}
+	transport_worker.complete_request(p_request_id, result);
+}
+
 void CodexBridgeService::_process_resource_graph(uint64_t p_budget_usec) {
 	if (resource_graph_adapter.is_snapshot_active()) {
 		ResourceGraphAdapter::SnapshotCompletion snapshot;
@@ -458,6 +498,53 @@ void CodexBridgeService::_process_resource_graph(uint64_t p_budget_usec) {
 	}
 }
 
+void CodexBridgeService::_process_scene_graph(uint64_t p_budget_usec) {
+	if (scene_state_adapter.is_snapshot_active()) {
+		SceneStateAdapter::SnapshotCompletion snapshot;
+		if (scene_state_adapter.process_snapshot(OS::get_singleton()->get_ticks_usec(), p_budget_usec, snapshot) && snapshot.ready) {
+			if (snapshot.is_error) {
+				transport_worker.complete_request_error(snapshot.request_id, snapshot.error_code, snapshot.error_message, snapshot.error_retryable, snapshot.error_data);
+			} else {
+				transport_worker.complete_request(snapshot.request_id, snapshot.result, snapshot.server_messages);
+			}
+		}
+		return;
+	}
+
+	SceneStateAdapter::RefreshOutcome refresh;
+	if (!scene_state_adapter.process_refresh(p_budget_usec, refresh)) {
+		return;
+	}
+	if (refresh.changed) {
+		Dictionary params;
+		params["event_type"] = "scene_graph_changed";
+		params["scene_graph_revision"] = (int64_t)refresh.current_scene_graph_revision;
+		params["resource_revision"] = revision_clock.get_resource_revision();
+		params["revisions"] = refresh.revisions;
+		Dictionary notification;
+		notification["protocol_version"] = "1.3";
+		notification["kind"] = "notification";
+		notification["method"] = "scene_graph_changed";
+		notification["params"] = params;
+		notification["context"] = _make_context();
+		transport_worker.publish_notification(notification);
+	}
+	if (refresh.invalidated) {
+		Dictionary params;
+		params["event_type"] = "scene_journal_gap";
+		params["last_contiguous_scene_graph_revision"] = (int64_t)refresh.last_contiguous_scene_graph_revision;
+		params["current_scene_graph_revision"] = (int64_t)refresh.current_scene_graph_revision;
+		params["revisions"] = refresh.revisions;
+		Dictionary notification;
+		notification["protocol_version"] = "1.3";
+		notification["kind"] = "notification";
+		notification["method"] = "scene_journal_gap";
+		notification["params"] = params;
+		notification["context"] = _make_context();
+		transport_worker.publish_notification(notification);
+	}
+}
+
 void CodexBridgeService::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
@@ -467,9 +554,11 @@ void CodexBridgeService::_notification(int p_what) {
 			if (state == STATE_RUNNING) {
 				const uint64_t frame_started_usec = OS::get_singleton()->get_ticks_usec();
 				const bool resource_work = resource_graph_adapter.has_pending_work();
+				const bool scene_work = scene_state_adapter.has_pending_work();
 				const uint64_t dispatcher_budget = MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME -
 						ResourceGraphAdapter::FRAME_SAFETY_MARGIN_USEC -
-						(resource_work ? ResourceGraphAdapter::RESOURCE_BUDGET_USEC : 0);
+						(resource_work ? ResourceGraphAdapter::RESOURCE_BUDGET_USEC : 0) -
+						(scene_work ? SceneStateAdapter::SCENE_BUDGET_USEC : 0);
 				const MainThreadDispatcher::ProcessStats dispatcher_stats = dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
 				// Control traffic retains the higher-priority lane, but a stream of
 				// short status requests must not starve an active resource refresh.
@@ -478,7 +567,10 @@ void CodexBridgeService::_notification(int p_what) {
 				if (resource_work && dispatcher_stats.elapsed_usec < dispatcher_budget) {
 					_process_resource_graph(ResourceGraphAdapter::RESOURCE_BUDGET_USEC);
 				}
-				frame_telemetry.record(OS::get_singleton()->get_ticks_usec() - frame_started_usec, resource_work || dispatcher_stats.consumed > 0);
+				if (scene_work && dispatcher_stats.elapsed_usec < dispatcher_budget) {
+					_process_scene_graph(SceneStateAdapter::SCENE_BUDGET_USEC);
+				}
+				frame_telemetry.record(OS::get_singleton()->get_ticks_usec() - frame_started_usec, resource_work || scene_work || dispatcher_stats.consumed > 0);
 			}
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
@@ -513,6 +605,7 @@ Error CodexBridgeService::start() {
 
 	revision_clock.initialize(transport_worker.get_editor_session_id());
 	resource_graph_adapter.initialize(&revision_clock);
+	scene_state_adapter.initialize(&revision_clock);
 	frame_telemetry.reset(OS::get_singleton()->get_environment("GODOT_CODEX_EVIDENCE_TELEMETRY") == "1");
 	_connect_editor_signals();
 	state = STATE_RUNNING;
@@ -528,6 +621,7 @@ void CodexBridgeService::stop() {
 	state = STATE_STOPPING;
 	_disconnect_editor_signals();
 	resource_graph_adapter.shutdown();
+	scene_state_adapter.shutdown();
 	scene_change_pending = false;
 	pending_property.clear();
 	dispatcher.begin_shutdown();

@@ -30,6 +30,8 @@
 
 #include "editor_context_adapter.h"
 
+#include "bounded_variant_projector.h"
+
 #include "core/crypto/crypto_core.h"
 #include "core/io/json.h"
 #include "core/object/property_info.h"
@@ -73,127 +75,7 @@ String EditorContextAdapter::_bounded_identity(const String &p_value, bool &r_tr
 }
 
 Variant EditorContextAdapter::_project_variant(const Variant &p_value, int p_depth, bool &r_truncated) {
-	if (p_depth > MAX_VARIANT_DEPTH) {
-		r_truncated = true;
-		Dictionary truncated;
-		truncated["type"] = Variant::get_type_name(p_value.get_type());
-		truncated["truncated"] = true;
-		return truncated;
-	}
-
-	switch (p_value.get_type()) {
-		case Variant::NIL:
-		case Variant::BOOL:
-		case Variant::INT:
-		case Variant::FLOAT:
-			return p_value;
-		case Variant::STRING: {
-			const String value = p_value;
-			if (value.length() > MAX_STRING_CHARACTERS) {
-				r_truncated = true;
-				return value.left(MAX_STRING_CHARACTERS);
-			}
-			return value;
-		}
-		case Variant::STRING_NAME: {
-			const StringName value = p_value;
-			const String projected = String(value);
-			if (projected.length() > MAX_STRING_CHARACTERS) {
-				r_truncated = true;
-				return projected.left(MAX_STRING_CHARACTERS);
-			}
-			return projected;
-		}
-		case Variant::NODE_PATH: {
-			const NodePath value = p_value;
-			const String projected = String(value);
-			if (projected.length() > MAX_STRING_CHARACTERS) {
-				r_truncated = true;
-				return projected.left(MAX_STRING_CHARACTERS);
-			}
-			return projected;
-		}
-		case Variant::VECTOR2: {
-			const Vector2 value = p_value;
-			Dictionary result;
-			result["type"] = "Vector2";
-			result["x"] = value.x;
-			result["y"] = value.y;
-			return result;
-		}
-		case Variant::VECTOR2I: {
-			const Vector2i value = p_value;
-			Dictionary result;
-			result["type"] = "Vector2i";
-			result["x"] = value.x;
-			result["y"] = value.y;
-			return result;
-		}
-		case Variant::VECTOR3: {
-			const Vector3 value = p_value;
-			Dictionary result;
-			result["type"] = "Vector3";
-			result["x"] = value.x;
-			result["y"] = value.y;
-			result["z"] = value.z;
-			return result;
-		}
-		case Variant::VECTOR3I: {
-			const Vector3i value = p_value;
-			Dictionary result;
-			result["type"] = "Vector3i";
-			result["x"] = value.x;
-			result["y"] = value.y;
-			result["z"] = value.z;
-			return result;
-		}
-		case Variant::COLOR: {
-			const Color value = p_value;
-			Dictionary result;
-			result["type"] = "Color";
-			result["r"] = value.r;
-			result["g"] = value.g;
-			result["b"] = value.b;
-			result["a"] = value.a;
-			return result;
-		}
-		case Variant::ARRAY: {
-			const Array source = p_value;
-			Array result;
-			const int count = MIN(source.size(), MAX_CONTAINER_ITEMS);
-			for (int index = 0; index < count; index++) {
-				result.push_back(_project_variant(source[index], p_depth + 1, r_truncated));
-			}
-			if (source.size() > count) {
-				r_truncated = true;
-			}
-			return result;
-		}
-		case Variant::DICTIONARY: {
-			const Dictionary source = p_value;
-			Dictionary result;
-			const Array keys = source.keys();
-			const int count = MIN(keys.size(), MAX_CONTAINER_ITEMS);
-			for (int index = 0; index < count; index++) {
-				String key = keys[index].stringify();
-				if (key.length() > MAX_STRING_CHARACTERS) {
-					key = key.left(MAX_STRING_CHARACTERS);
-					r_truncated = true;
-				}
-				result[key] = _project_variant(source[keys[index]], p_depth + 1, r_truncated);
-			}
-			if (keys.size() > count) {
-				r_truncated = true;
-			}
-			return result;
-		}
-		default: {
-			Dictionary opaque;
-			opaque["type"] = Variant::get_type_name(p_value.get_type());
-			opaque["opaque"] = true;
-			return opaque;
-		}
-	}
+	return BoundedVariantProjector::project_raw(p_value, r_truncated, p_depth);
 }
 
 Error EditorContextAdapter::capture(const String &p_project_id, const String &p_editor_session_id, const Dictionary &p_revisions, Dictionary &r_snapshot) {
