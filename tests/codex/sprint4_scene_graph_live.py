@@ -252,7 +252,7 @@ def parse_telemetry(path: Path) -> dict[str, Any]:
         if line.startswith(TELEMETRY_PREFIX)
     ]
     if len(records) != 1:
-        raise SceneGateError("Godot did not emit exactly one Bridge telemetry record")
+        raise SceneGateError(f"Godot emitted {len(records)} Bridge telemetry records")
     record = records[0]
     samples = record.get("samples_usec")
     if (
@@ -463,8 +463,29 @@ def normalized_context(values: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(output, key=lambda item: item["key"])
 
 
+def without_runtime_coordinates(value: Any) -> Any:
+    """Keep semantic payloads comparable across isolated host runs."""
+    if isinstance(value, list):
+        return [without_runtime_coordinates(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: without_runtime_coordinates(item)
+            for key, item in value.items()
+            if not key.endswith("_revision")
+            and key
+            not in {
+                "editor_session_id",
+                "generation_id",
+                "project_id",
+                "snapshot_checksum",
+                "validated_checkpoint",
+            }
+        }
+    return value
+
+
 def normalized_inspection(value: dict[str, Any]) -> dict[str, Any]:
-    return {
+    return without_runtime_coordinates({
         "node": value["node"],
         "properties": value["properties"],
         "attached_script_resource_id": value["attached_script_resource_id"],
@@ -475,11 +496,11 @@ def normalized_inspection(value: dict[str, Any]) -> dict[str, Any]:
         "diagnostic_codes": sorted(
             diagnostic.get("code") for diagnostic in value["diagnostics"] if diagnostic.get("code")
         ),
-    }
+    })
 
 
 def normalized_semantics(graph: dict[str, Any], actor: dict[str, Any], animation: dict[str, Any]) -> dict[str, Any]:
-    return {
+    return without_runtime_coordinates({
         "scene": graph["scene"],
         "nodes": graph["nodes"],
         "project_context": normalized_context(graph["project_context"]),
@@ -488,7 +509,7 @@ def normalized_semantics(graph: dict[str, Any], actor: dict[str, Any], animation
         ),
         "actor_player": normalized_inspection(actor),
         "animation_player": normalized_inspection(animation),
-    }
+    })
 
 
 def replace_once(path: Path, before: str, after: str) -> None:
@@ -769,7 +790,7 @@ def run_phase(
     contract: dict[str, bool],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     phase_root = run_root / f"p{PHASES.index(phase)}"
-    project = phase_root / "project"
+    project = phase_root / "p"
     phase_root.mkdir(parents=True)
     shutil.copytree(PROJECT_SOURCE, project, ignore=shutil.ignore_patterns(".godot"))
     logs: list[Path] = []
@@ -896,9 +917,15 @@ def run_phase(
             stop_editor(editor, project)
         if editor_log is not None:
             editor_log.close()
+        active_error = sys.exc_info()[0] is not None
         for log_path in logs:
-            if log_path.exists():
+            if not log_path.exists():
+                continue
+            try:
                 telemetry.append(parse_telemetry(log_path))
+            except SceneGateError:
+                if not active_error:
+                    raise
         runtime = project / ".godot" / "codex"
         runtime_leaks = []
         if runtime.exists():
@@ -932,7 +959,8 @@ def main() -> int:
         source = source_coordinates()
         fixture_before = fixture_digest()
         run_local_test_gates()
-        run_root = Path(tempfile.mkdtemp(prefix="godot-codex-s4."))
+        temporary_parent = "/tmp" if sys.platform == "darwin" else None
+        run_root = Path(tempfile.mkdtemp(prefix="s4.", dir=temporary_parent))
         ids = expected_ids()
         contract: dict[str, bool] = {"stale_generation_cursor_rejected": False}
         phases = []

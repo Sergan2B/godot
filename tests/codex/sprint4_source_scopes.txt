@@ -17,5 +17,6 @@ tests/codex/scene_graph_fixture.py
 tests/codex/sprint4_acceptance.py
 tests/codex/sprint4_scene_graph_live.py
 tests/codex/sprint4_source_scopes.txt
+tests/codex/test_codex_bridge.cpp
 tests/codex/test_scene_graph_contract.py
 tests/codex/test_sprint4_acceptance.py
