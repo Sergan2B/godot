@@ -30,7 +30,8 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 24. [SPRINT-3-EVIDENCE.md](SPRINT-3-EVIDENCE.md) — final cross-platform evidence and requirement-by-requirement Sprint 3 acceptance.
 25. [Sprint 3 host and aggregation runbook](../../tests/codex/runners/README.md) — fail-closed Windows reproduction and deterministic aggregation procedure.
 26. [SPRINT-4-PLAN.md](SPRINT-4-PLAN.md) — implementation-ready scene semantics, Bridge RPC 1.3, persistent scene index, MCP, and local two-host gates.
-27. [SCENE-001-scene-node-resource-model.md](SCENE-001-scene-node-resource-model.md) — frozen D-06 scene/node/subresource identity and composition contract.
+27. [SPRINT-4-EVIDENCE.md](SPRINT-4-EVIDENCE.md) — local macOS/Windows scene gate, SLO policy, raw reports, and deterministic aggregate.
+28. [SCENE-001-scene-node-resource-model.md](SCENE-001-scene-node-resource-model.md) — frozen D-06 scene/node/subresource identity and composition contract.
 
 ## Document status
 
