@@ -1,6 +1,6 @@
 # Sprint 4 evidence — scene semantics and node graph
 
-**Status:** In progress — Windows x86_64 PASS at the new freeze; matching macOS arm64 rerun and final aggregate pending
+**Status:** In progress — macOS arm64 PASS at the LF-stable freeze; matching Windows x86_64 rerun and final aggregate pending
 
 **Acceptance hosts:** macOS arm64 and Windows x86_64, local execution only
 
@@ -24,33 +24,37 @@ The aggregate is accepted only when macOS and Windows reports use the same sourc
 freeze and every phase semantic digest matches exactly. Linux and remote CI are not
 Sprint 4 acceptance coordinates.
 
-## macOS arm64 result (stale)
+## macOS arm64 result
 
-The tracked report passed all eight phases at source freeze
-`dc1a60c1df3262970fa55f43de5f3bd3fbb0333b`, but it is stale after the
-Windows portability and main-thread scheduling fixes. macOS must rerun at
-`e53f547de742010e94704fb500536915c8e804dd` before the aggregate can be created.
+The qualifying local run passed all eight phases at source freeze
+`f2f616bcf7122a51fafc0b1c053a8baf03cf8a2b`.
 
 | Gate | Result |
 |---|---:|
-| Cached scene query p95 | 0.868 ms |
-| Ordinary change visibility p95 | 1,141.624 ms |
-| Bulk status ping p95 | 0.667 ms |
-| Bridge main-thread p95 | 1,206 µs |
+| Cached scene query p95 | 1.097 ms |
+| Ordinary change visibility p95 | 1,230.303 ms |
+| Bulk status ping p95 | 0.643 ms |
+| Bridge main-thread p95 | 1,203 µs |
+| Bridge main-thread max | 1,419 µs |
 | Bridge frames over 2,000 µs | 0 |
 
 Source and artifact coordinates:
 
-- relevant source: `sha256:6c3ac8d86b204e04ae4fec795f87a4afc8cd532b91c3f41517ecd625530a105e`;
+- relevant source: `sha256:a9998ffbd3341cc41cb872d3f1624e3d35107eb8a2d6f61c65256cc09d2963fe`;
 - fixture: `sha256:f29a11a979dea215fb83a013f2b1d7cb0169dccae918765374c9de6db86ce675`;
-- Godot editor: `sha256:2878057039dee32f4124e495d377e7772359d23d987dbcd0295a997ce7d8a106`;
+- Godot editor: `sha256:ee308ad592af813a54c164b73e5d80fb879c47f29fb42f9e2e7bd2fd4fd1b8e0`;
 - release sidecar: `sha256:de43df85322c15471d0b68bf3695159166b265f05a5a6c61fe82a43c782d9104`;
 - raw report: `tests/codex/evidence/sprint-4-scene-graph-macos.json`.
 
-## Windows x86_64 result
+## Windows x86_64 result (stale)
 
-The qualifying local run passed all eight phases at source freeze
-`e53f547de742010e94704fb500536915c8e804dd`.
+The tracked run passed its platform-local gates at source freeze
+`e53f547de742010e94704fb500536915c8e804dd`, but it cannot qualify the final
+aggregate. The first matching macOS rerun exposed CRLF-dependent
+`content_generation` values in the temporary Windows mutations for
+`property_override` and `animation_fix`. The mutation writer now forces LF and
+fails closed on any carriage return; Windows must rerun at
+`f2f616bcf7122a51fafc0b1c053a8baf03cf8a2b`.
 
 | Gate | Result |
 |---|---:|
@@ -75,7 +79,7 @@ macOS arm64:
 
 ```sh
 git fetch origin
-git checkout e53f547de742010e94704fb500536915c8e804dd
+git checkout f2f616bcf7122a51fafc0b1c053a8baf03cf8a2b
 tests/codex/runners/sprint4_macos_arm64.sh
 ```
 
@@ -83,15 +87,18 @@ Windows x86_64 PowerShell:
 
 ```powershell
 git fetch origin
-git checkout e53f547de742010e94704fb500536915c8e804dd
+git checkout f2f616bcf7122a51fafc0b1c053a8baf03cf8a2b
+Remove-Item tests\codex\evidence\sprint-4-scene-graph-windows.json -Force
 tests\codex\runners\sprint4_windows_x86_64.ps1
 ```
 
-The exact checkout is mandatory because the aggregate compares the full source-freeze
-commit as well as the scoped source and fixture digests. The Windows run is local; no
-Git CI or Linux host is required.
+Removing the tracked stale report is mandatory because the fail-closed Windows runner
+will not overwrite existing evidence. The evidence path is outside the source scope,
+so this does not dirty the source coordinates. The exact checkout is mandatory because
+the aggregate compares the full source-freeze commit as well as the scoped source and
+fixture digests. The Windows run is local; no Git CI or Linux host is required.
 
-After replacing the stale macOS report with the matching new-freeze report:
+After replacing the stale Windows report with the matching new-freeze report:
 
 ```sh
 python3 tests/codex/sprint4_acceptance.py merge \
