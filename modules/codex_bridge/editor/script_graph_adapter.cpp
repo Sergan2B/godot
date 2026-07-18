@@ -61,6 +61,19 @@ Dictionary ScriptGraphAdapter::_make_script_ref(const String &p_path, int64_t p_
 	return script_ref;
 }
 
+Dictionary ScriptGraphAdapter::_make_raw_script_ref(const String &p_path) {
+	ResourceUID *registry = ResourceUID::get_singleton();
+	ResourceUID::ID uid = registry ? registry->get_path_id(p_path) : ResourceUID::INVALID_ID;
+	if (uid == ResourceUID::INVALID_ID && registry) {
+		const String uid_text = FileAccess::get_file_as_string(p_path + ".uid").strip_edges();
+		const ResourceUID::ID sidecar_uid = registry->text_to_id(uid_text);
+		if (sidecar_uid != ResourceUID::INVALID_ID && registry->id_to_text(sidecar_uid) == uid_text) {
+			uid = sidecar_uid;
+		}
+	}
+	return _make_script_ref(p_path, uid);
+}
+
 String ScriptGraphAdapter::_script_ref_key(const Dictionary &p_script_ref) {
 	if (p_script_ref.has("uid") && p_script_ref["uid"].get_type() == Variant::STRING) {
 		return "uid:" + String(p_script_ref["uid"]);
@@ -100,10 +113,13 @@ bool ScriptGraphAdapter::_account_bundle(const Dictionary &p_bundle) {
 
 void ScriptGraphAdapter::_reset_refresh() {
 	ERR_FAIL_COND(!refresh_files.is_empty());
+	ERR_FAIL_COND(!refresh_paths.is_empty());
 	ERR_FAIL_COND(!observed_catalog.is_empty());
 	ERR_FAIL_COND(!retiring_catalog.is_empty() || !pending_retiring_catalog.is_empty() || !retiring_bundles.is_empty());
 	ERR_FAIL_COND(projection_preparing || projection_task >= 0 || !projection_result.bundle.is_empty());
 	directory_stack.clear();
+	raw_directory_stack.clear();
+	raw_scan_started = false;
 	refresh_file = nullptr;
 	projection_file = RefreshFile();
 	projection_resource_revision = 1;
@@ -164,6 +180,7 @@ bool ScriptGraphAdapter::_drain_retired_catalog_step() {
 
 void ScriptGraphAdapter::_begin_refresh_drain(RefreshPhase p_resume_phase) {
 	directory_stack.clear();
+	raw_directory_stack.clear();
 	refresh_file = nullptr;
 	drain_resume_phase = p_resume_phase;
 	if (!refresh_files.is_empty()) {
@@ -177,6 +194,7 @@ void ScriptGraphAdapter::_begin_refresh_drain(RefreshPhase p_resume_phase) {
 
 void ScriptGraphAdapter::_finish_refresh_drain() {
 	ERR_FAIL_COND(!refresh_files.is_empty());
+	ERR_FAIL_COND(!refresh_paths.is_empty());
 	ERR_FAIL_COND(!observed_catalog.is_empty());
 	ERR_FAIL_COND(!retiring_catalog.is_empty() || !pending_retiring_catalog.is_empty() || !retiring_bundles.is_empty());
 	refresh_file = nullptr;
@@ -206,6 +224,103 @@ bool ScriptGraphAdapter::_begin_refresh() {
 	return true;
 }
 
+bool ScriptGraphAdapter::_begin_raw_scan() {
+	raw_scan_started = true;
+	Error open_error = OK;
+	Ref<DirAccess> root = DirAccess::open("res://", &open_error);
+	if (open_error != OK || root.is_null()) {
+		refresh_projection_failed = true;
+		refresh_phase = REFRESH_RECONCILE_BEGIN;
+		return false;
+	}
+	root->set_include_hidden(false);
+	root->set_include_navigational(false);
+	root->list_dir_begin();
+	RawDirectoryCursor cursor;
+	cursor.directory = root;
+	cursor.path = "res://";
+	raw_directory_stack.push_back(cursor);
+	return true;
+}
+
+bool ScriptGraphAdapter::_collect_one_raw_path() {
+	while (!raw_directory_stack.is_empty()) {
+		RawDirectoryCursor &cursor = raw_directory_stack.write[raw_directory_stack.size() - 1];
+		if (cursor.directory.is_null()) {
+			refresh_projection_failed = true;
+			refresh_phase = REFRESH_RECONCILE_BEGIN;
+			return false;
+		}
+		const String entry = cursor.directory->get_next();
+		if (entry.is_empty()) {
+			cursor.directory->list_dir_end();
+			raw_directory_stack.resize(raw_directory_stack.size() - 1);
+			return true;
+		}
+		if (entry.begins_with(".") || cursor.directory->is_link(entry)) {
+			return true;
+		}
+		const String path = cursor.path.path_join(entry);
+		if (cursor.directory->current_is_dir()) {
+			Error open_error = OK;
+			Ref<DirAccess> child = DirAccess::open(path, &open_error);
+			if (open_error != OK || child.is_null()) {
+				refresh_projection_failed = true;
+				refresh_phase = REFRESH_RECONCILE_BEGIN;
+				return false;
+			}
+			if (child->file_exists(".gdignore")) {
+				return true;
+			}
+			child->set_include_hidden(false);
+			child->set_include_navigational(false);
+			child->list_dir_begin();
+			RawDirectoryCursor child_cursor;
+			child_cursor.directory = child;
+			child_cursor.path = path;
+			raw_directory_stack.push_back(child_cursor);
+			return true;
+		}
+		if (!path.ends_with(".cs")) {
+			return true;
+		}
+		if (refresh_paths.has(path)) {
+			return true;
+		}
+		if (refresh_files.size() >= (int)ScriptSemanticAdapter::MAX_DOCUMENTS) {
+			refresh_limit_exceeded = true;
+			refresh_phase = REFRESH_RECONCILE_BEGIN;
+			return false;
+		}
+		const Dictionary script_ref = _make_raw_script_ref(path);
+		const String key = _script_ref_key(script_ref);
+		if (key.is_empty()) {
+			refresh_projection_failed = true;
+			refresh_phase = REFRESH_RECONCILE_BEGIN;
+			return false;
+		}
+		if (refresh_files.has(key)) {
+			const RefreshFile &existing = refresh_files[key];
+			if (existing.path != path) {
+				refresh_limit_exceeded = true;
+				refresh_phase = REFRESH_RECONCILE_BEGIN;
+				return false;
+			}
+			return true;
+		}
+		RefreshFile file;
+		file.key = key;
+		file.path = path;
+		file.script_ref = script_ref;
+		refresh_files.insert(key, file);
+		refresh_paths.insert(path);
+		return true;
+	}
+	refresh_file = refresh_files.front();
+	refresh_phase = REFRESH_PROJECT;
+	return false;
+}
+
 bool ScriptGraphAdapter::_collect_one_path() {
 	while (!directory_stack.is_empty()) {
 		DirectoryCursor &cursor = directory_stack.write[directory_stack.size() - 1];
@@ -227,7 +342,7 @@ bool ScriptGraphAdapter::_collect_one_path() {
 			}
 			const Dictionary script_ref = _make_script_ref(path, cursor.directory->get_file_uid(file_index));
 			const String key = _script_ref_key(script_ref);
-			if (key.is_empty() || refresh_files.has(key)) {
+			if (key.is_empty() || refresh_files.has(key) || refresh_paths.has(path)) {
 				refresh_limit_exceeded = true;
 				refresh_phase = REFRESH_RECONCILE_BEGIN;
 				return false;
@@ -237,6 +352,7 @@ bool ScriptGraphAdapter::_collect_one_path() {
 			file.path = path;
 			file.script_ref = script_ref;
 			refresh_files.insert(key, file);
+			refresh_paths.insert(path);
 			return true;
 		}
 		if (cursor.subdirectory_index < cursor.directory->get_subdir_count()) {
@@ -247,9 +363,10 @@ bool ScriptGraphAdapter::_collect_one_path() {
 		}
 		directory_stack.resize(directory_stack.size() - 1);
 	}
-	refresh_file = refresh_files.front();
-	refresh_phase = REFRESH_PROJECT;
-	return false;
+	if (!raw_scan_started && !_begin_raw_scan()) {
+		return false;
+	}
+	return _collect_one_raw_path();
 }
 
 void ScriptGraphAdapter::_project_document_thread(void *p_userdata) {
@@ -309,6 +426,7 @@ bool ScriptGraphAdapter::_project_one_document() {
 	projection_result = ScriptSemanticAdapter::DocumentProjection();
 	RBMap<String, RefreshFile>::Element *active_file = refresh_files.find(file.key);
 	if (!active_file || active_file != refresh_file) {
+		refresh_paths.erase(file.path);
 		if (!projection.bundle.is_empty()) {
 			journal._retire_dictionary(projection.bundle);
 		}
@@ -354,6 +472,7 @@ bool ScriptGraphAdapter::_project_one_document() {
 		return false;
 	}
 	observed_catalog.insert(file.key, record);
+	refresh_paths.erase(file.path);
 	refresh_files.erase(active_file);
 	refresh_file = next_file;
 	return true;
@@ -531,6 +650,7 @@ bool ScriptGraphAdapter::_process_refresh_step(RefreshOutcome &r_outcome) {
 		case REFRESH_DRAIN_FILES: {
 			RBMap<String, RefreshFile>::Element *file = refresh_files.front();
 			if (file) {
+				refresh_paths.erase(file->value().path);
 				refresh_files.erase(file);
 				return true;
 			}
@@ -581,9 +701,12 @@ void ScriptGraphAdapter::shutdown() {
 	_reset_reconcile();
 	_reset_snapshot();
 	directory_stack.clear();
+	raw_directory_stack.clear();
 	refresh_file = nullptr;
 	while (!refresh_files.is_empty()) {
-		refresh_files.erase(refresh_files.front());
+		RBMap<String, RefreshFile>::Element *file = refresh_files.front();
+		refresh_paths.erase(file->value().path);
+		refresh_files.erase(file);
 	}
 	while (_drain_retired_catalog_step()) {
 	}

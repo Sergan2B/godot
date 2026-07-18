@@ -146,6 +146,10 @@ struct ScriptDeltaJournalTestAccess {
 };
 
 struct ScriptGraphAdapterTestAccess {
+	static Dictionary make_raw_script_ref(const String &p_path) {
+		return ScriptGraphAdapter::_make_raw_script_ref(p_path);
+	}
+
 	static ScriptGraphAdapter::CatalogRecord make_record(const Dictionary &p_bundle, const String &p_facts_checksum, uint64_t p_source_bytes = 1) {
 		ScriptGraphAdapter::CatalogRecord record;
 		record.bundle = p_bundle;
@@ -1630,6 +1634,34 @@ static String script_test_sha256_hex(const String &p_value) {
 	digest.resize(32);
 	REQUIRE(CryptoCore::sha256(reinterpret_cast<const uint8_t *>(bytes.get_data()), bytes.length(), digest.ptrw()) == OK);
 	return BridgeCrypto::bytes_to_lower_hex(digest);
+}
+
+TEST_CASE("[CodexS5ScriptGraph] Raw C sharp discovery preserves the sidecar resource UID") {
+	Error script_error = OK;
+	Ref<FileAccess> script = FileAccess::create_temp(FileAccess::WRITE_READ, "codex-raw-csharp", "cs", false, &script_error);
+	REQUIRE(script_error == OK);
+	REQUIRE(script.is_valid());
+	const String script_path = script->get_path_absolute();
+	script->store_string("public partial class RawDiscovery {}\n");
+	script->close();
+
+	ResourceUID *registry = ResourceUID::get_singleton();
+	REQUIRE(registry != nullptr);
+	const String uid = registry->id_to_text(registry->create_id());
+	Error sidecar_error = OK;
+	Ref<FileAccess> sidecar = FileAccess::open(script_path + ".uid", FileAccess::WRITE, &sidecar_error);
+	REQUIRE(sidecar_error == OK);
+	REQUIRE(sidecar.is_valid());
+	sidecar->store_line(uid);
+	sidecar->close();
+
+	const Dictionary script_ref = ScriptGraphAdapterTestAccess::make_raw_script_ref(script_path);
+	CHECK(script_ref["uid"] == uid);
+	CHECK_FALSE(script_ref.has("uid_missing"));
+	CHECK_FALSE(script_ref.has("path"));
+
+	CHECK(DirAccess::remove_absolute(script_path + ".uid") == OK);
+	CHECK(DirAccess::remove_absolute(script_path) == OK);
 }
 
 TEST_CASE("[CodexS5ScriptGraph] Script snapshot freezes one bounded revision and streams every record family") {

@@ -33,7 +33,9 @@
 #include "script_delta_journal.h"
 #include "script_semantic_adapter.h"
 
+#include "core/io/dir_access.h"
 #include "core/templates/rb_map.h"
+#include "core/templates/rb_set.h"
 #include "core/templates/vector.h"
 #include "core/variant/variant.h"
 
@@ -90,6 +92,11 @@ private:
 		int subdirectory_index = 0;
 	};
 
+	struct RawDirectoryCursor {
+		Ref<DirAccess> directory;
+		String path;
+	};
+
 	struct RefreshFile {
 		String key;
 		String path;
@@ -126,7 +133,10 @@ private:
 	bool refresh_projection_failed = false;
 	RefreshPhase refresh_phase = REFRESH_IDLE;
 	Vector<DirectoryCursor> directory_stack;
+	Vector<RawDirectoryCursor> raw_directory_stack;
+	bool raw_scan_started = false;
 	RBMap<String, RefreshFile> refresh_files;
+	RBSet<String> refresh_paths;
 	RBMap<String, RefreshFile>::Element *refresh_file = nullptr;
 	bool projection_preparing = false;
 	int64_t projection_task = -1;
@@ -184,6 +194,7 @@ private:
 
 	static String _make_snapshot_id();
 	static Dictionary _make_script_ref(const String &p_path, int64_t p_uid);
+	static Dictionary _make_raw_script_ref(const String &p_path);
 	static String _script_ref_key(const Dictionary &p_script_ref);
 	static bool _is_script_path(const String &p_path);
 	static uint64_t _bundle_count(const Dictionary &p_bundle, const String &p_key);
@@ -196,6 +207,8 @@ private:
 	void _begin_refresh_drain(RefreshPhase p_resume_phase);
 	void _finish_refresh_drain();
 	bool _begin_refresh();
+	bool _begin_raw_scan();
+	bool _collect_one_raw_path();
 	bool _collect_one_path();
 	static void _project_document_thread(void *p_userdata);
 	void _wait_for_projection();
