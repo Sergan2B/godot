@@ -1,6 +1,6 @@
 # MCP-001 — Project-scoped Godot read tools
 
-**Status:** Implemented and live-verified on Windows x86_64 and macOS arm64 for Sprint 2
+**Status:** Sprint 2/3 live-verified; Sprint 4 scene tools implemented locally
 
 **MCP protocol:** `2025-11-25`
 
@@ -8,8 +8,9 @@
 
 ## Purpose
 
-This contract exposes the first model-facing projection of a live Godot editor.
-The server is a project-scoped stdio MCP process and is read-only in Sprint 2.
+This contract exposes model-facing projections of the live Godot editor and its
+persistent resource/scene semantic index. The server is a project-scoped stdio MCP
+process and remains read-only through Sprint 4.
 It does not contain OpenAI credentials, call a model, mutate the project, or
 return cached editor state as current after the bridge becomes unavailable.
 
@@ -43,6 +44,11 @@ Every successful tool result returns an object with:
 - normalized `entities`, `facts`, and `evidence`;
 - `limits_applied`.
 
+Persistent-index tools use the equivalent immutable-generation envelope:
+`project_id`, logical `schema_version`, `generation_id`, `index_revision`, relevant
+resource/scene revisions, `freshness`, `status`, diagnostics, checkpoint, pagination,
+and evidence. They never combine records from different generations.
+
 The same object is returned as MCP `structuredContent` and as canonical JSON in
 a text content block. When an output schema is advertised, the structured
 content must validate against it.
@@ -69,10 +75,29 @@ projected from the live object.
 Every property fact carries `source: "live_editor_property"`,
 `freshness: "current"`, and the applicable `scene_revision`.
 
+### `godot_get_resource_dependencies` / `godot_find_resource_owners`
+
+Accept one canonical `uid://` or normalized `res://` selector and return direct
+forward/reverse edges from one current persistent resource generation.
+
+### `godot_get_scene_graph`
+
+Accepts one opaque scene ID, `uid://`, or normalized `res://` selector and returns a
+deterministically paginated composed node-occurrence graph with canonical definitions,
+origin scene, parent/owner, instance chain, groups, connections, and diagnostics.
+
+### `godot_inspect_node`
+
+Accepts exactly one opaque node ID, or `scene` plus a safe relative node-only
+`node_path`. It returns effective property values and declaration provenance,
+attached scripts/resources, groups, connections, and animation references.
+
 ## Security and limits
 
-All three tools are annotated read-only. Tool input is an empty object with
-additional properties rejected. The MCP process writes protocol messages only
+All seven tools are annotated read-only and reject additional input properties.
+Index query limits default to 50 and accept 1–200. Signed cursors expire after five
+minutes and bind project, tool, selector, limit, generation, index revision, and the
+applicable scene revision. The MCP process writes protocol messages only
 to stdout and diagnostics only to stderr. Ordinary logs must not include the
 session token, proof, absolute project root, source text, prompts, or property
 values.

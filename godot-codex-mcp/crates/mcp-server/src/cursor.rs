@@ -3,33 +3,38 @@ use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 
-const CURSOR_DOMAIN: &[u8] = b"godot-codex/resource-cursor/v1\0";
+const CURSOR_DOMAIN: &[u8] = b"godot-codex/semantic-cursor/v2\0";
 const CURSOR_TTL_SECONDS: u64 = 5 * 60;
 const MAX_CURSOR_BYTES: usize = 4_096;
 type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ResourceTool {
+pub(crate) enum CursorTool {
     Dependencies,
     Owners,
+    SceneGraph,
+    InspectNode,
 }
 
-impl ResourceTool {
+impl CursorTool {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Dependencies => "godot_get_resource_dependencies",
             Self::Owners => "godot_find_resource_owners",
+            Self::SceneGraph => "godot_get_scene_graph",
+            Self::InspectNode => "godot_inspect_node",
         }
     }
 }
 
 pub(crate) struct CursorBinding<'a> {
     pub project_id: &'a str,
-    pub tool: ResourceTool,
+    pub tool: CursorTool,
     pub selector: &'a str,
     pub limit: usize,
     pub generation_id: &'a str,
     pub index_revision: u64,
+    pub scene_graph_revision: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -42,6 +47,7 @@ struct CursorPayload {
     limit: usize,
     generation_id: String,
     index_revision: u64,
+    scene_graph_revision: Option<u64>,
     offset: usize,
     issued_at: u64,
     expires_at: u64,
@@ -78,6 +84,7 @@ impl CursorCodec {
             limit: binding.limit,
             generation_id: binding.generation_id.to_owned(),
             index_revision: binding.index_revision,
+            scene_graph_revision: binding.scene_graph_revision,
             offset,
             issued_at: now,
             expires_at: now.checked_add(CURSOR_TTL_SECONDS).ok_or(())?,
@@ -131,6 +138,7 @@ impl CursorCodec {
             || payload.limit != binding.limit
             || payload.generation_id != binding.generation_id
             || payload.index_revision != binding.index_revision
+            || payload.scene_graph_revision != binding.scene_graph_revision
             || payload.issued_at > now.saturating_add(5)
             || payload.expires_at < now
             || payload.expires_at.checked_sub(payload.issued_at) != Some(CURSOR_TTL_SECONDS)
@@ -145,7 +153,7 @@ impl CursorCodec {
 mod tests {
     use super::*;
 
-    fn binding(tool: ResourceTool) -> CursorBinding<'static> {
+    fn binding(tool: CursorTool) -> CursorBinding<'static> {
         CursorBinding {
             project_id: "project:test",
             tool,
@@ -153,6 +161,7 @@ mod tests {
             limit: 50,
             generation_id: "generation:test",
             index_revision: 7,
+            scene_graph_revision: None,
         }
     }
 
@@ -160,23 +169,23 @@ mod tests {
     fn cursor_rejects_tampering_expiry_and_cross_tool_reuse() {
         let codec = CursorCodec::from_secret([7; 32]);
         let cursor = codec
-            .issue(&binding(ResourceTool::Dependencies), 50, 1_000)
+            .issue(&binding(CursorTool::Dependencies), 50, 1_000)
             .unwrap();
         assert_eq!(
-            codec.validate(&cursor, &binding(ResourceTool::Dependencies), 1_001),
+            codec.validate(&cursor, &binding(CursorTool::Dependencies), 1_001),
             Ok(50)
         );
         assert!(
             codec
-                .validate(&cursor, &binding(ResourceTool::Owners), 1_001)
+                .validate(&cursor, &binding(CursorTool::Owners), 1_001)
                 .is_err()
         );
-        let mut other_project = binding(ResourceTool::Dependencies);
+        let mut other_project = binding(CursorTool::Dependencies);
         other_project.project_id = "project:other";
         assert!(codec.validate(&cursor, &other_project, 1_001).is_err());
         assert!(
             codec
-                .validate(&cursor, &binding(ResourceTool::Dependencies), 1_301)
+                .validate(&cursor, &binding(CursorTool::Dependencies), 1_301)
                 .is_err()
         );
         let mut tampered = cursor.into_bytes();
@@ -186,10 +195,16 @@ mod tests {
             codec
                 .validate(
                     std::str::from_utf8(&tampered).unwrap(),
-                    &binding(ResourceTool::Dependencies),
+                    &binding(CursorTool::Dependencies),
                     1_001
                 )
                 .is_err()
         );
+        let mut scene_binding = binding(CursorTool::SceneGraph);
+        scene_binding.scene_graph_revision = Some(3);
+        let scene_cursor = codec.issue(&scene_binding, 50, 1_000).unwrap();
+        let mut stale_scene = binding(CursorTool::SceneGraph);
+        stale_scene.scene_graph_revision = Some(4);
+        assert!(codec.validate(&scene_cursor, &stale_scene, 1_001).is_err());
     }
 }

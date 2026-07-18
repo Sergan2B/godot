@@ -1,6 +1,6 @@
 # Sprint 4 plan — scene semantics and node graph
 
-**Status:** In progress — `S4-01`–`S4-07` complete locally; scene MCP tools next
+**Status:** In progress — `S4-01`–`S4-08` complete locally; two-host evidence next
 
 **Planned duration:** 10 working days
 
@@ -88,6 +88,13 @@ The contract/oracle boundary is locally frozen by
 `tests/codex/evidence/sprint-4-stage-1-contracts.json`. It validates strict Draft
 2020-12 bundles and D-06 vectors in Python/Rust, verifies fixture hashes and reference
 closure, and loads every text-scene coordinate through the local Godot 4.8 editor.
+
+`S4-08` adds the two scene tools to the same process as the three live-editor and
+two resource tools. Both pin one current immutable semantic generation, use signed
+five-minute cursors bound to scene revision and selector, reject cross-tool reuse,
+and expose property provenance plus bounded partial diagnostics. Unit tests cover
+strict schemas, selector safety, deterministic paging, currentness errors, and
+redaction before the live evidence gate.
 
 ## 4. Required data flow
 
