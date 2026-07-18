@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use godot_codex_resource_indexer::{
-    ResourceIndexCoordinator, ResourceIndexStatus, SceneIndexStatus,
+    ResourceIndexCoordinator, ResourceIndexStatus, SceneIndexStatus, ScriptIndexStatus,
 };
 use serde_json::json;
 
@@ -13,7 +13,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .nth(1)
             .ok_or("usage: semantic_coordinator_live <project-root>")?,
     );
-    let (coordinator, resource_reader, scene_reader) =
+    let (coordinator, resource_reader, scene_reader, script_reader) =
         ResourceIndexCoordinator::new_semantic(project_root)?;
     let (shutdown_sender, shutdown_receiver) = tokio::sync::watch::channel(false);
     let task = tokio::spawn(coordinator.run(shutdown_receiver));
@@ -23,6 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             resource_reader.status(),
             ResourceIndexStatus::Current { .. }
         ) && matches!(scene_reader.status(), SceneIndexStatus::Current { .. })
+            && matches!(script_reader.status(), ScriptIndexStatus::Current { .. })
         {
             break;
         }
@@ -30,9 +31,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let _ = shutdown_sender.send(true);
             let _ = task.await;
             return Err(format!(
-                "coordinator timeout: resource={:?}, scene={:?}",
+                "coordinator timeout: resource={:?}, scene={:?}, script={:?}",
                 resource_reader.status(),
-                scene_reader.status()
+                scene_reader.status(),
+                script_reader.status()
             )
             .into());
         }
@@ -40,25 +42,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let resource = resource_reader.pin_current()?;
     let scene = scene_reader.pin_current()?;
+    let script = script_reader.pin_current()?;
     let same_generation = resource.generation().generation_id == scene.generation().generation_id
-        && resource.generation().index_revision == scene.generation().index_revision;
+        && resource.generation().generation_id == script.generation().generation_id
+        && resource.generation().index_revision == scene.generation().index_revision
+        && resource.generation().index_revision == script.generation().index_revision;
     println!(
         "{}",
         serde_json::to_string_pretty(&json!({
             "resource_status": format!("{:?}", resource_reader.status()),
             "scene_status": format!("{:?}", scene_reader.status()),
+            "script_status": format!("{:?}", script_reader.status()),
             "same_generation": same_generation,
             "generation_id": scene.generation().generation_id,
             "index_revision": scene.generation().index_revision,
             "resource_revision": scene.generation().checkpoint.resource_revision,
             "scene_graph_revision": scene.generation().scene.scene_graph_revision,
             "scene_count": scene.generation().scene.scenes.len(),
+            "script_graph_revision": script.generation().script.script_graph_revision,
+            "script_document_count": script.generation().script.documents.len(),
         }))?
     );
     let _ = shutdown_sender.send(true);
     task.await?;
     if !same_generation {
-        return Err("resource and scene readers pinned different generations".into());
+        return Err("resource, scene, and script readers pinned different generations".into());
     }
     Ok(())
 }

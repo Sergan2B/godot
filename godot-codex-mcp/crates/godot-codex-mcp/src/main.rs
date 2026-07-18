@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let replicator = SnapshotReplicator::new();
     let bridge_task = tokio::spawn(run_bridge_sync(project_root.clone(), replicator.clone()));
-    let (resource_coordinator, resource_index_reader, scene_index_reader) =
+    let (resource_coordinator, resource_index_reader, scene_index_reader, _script_index_reader) =
         ResourceIndexCoordinator::new_semantic(&project_root)?;
     let (shutdown_sender, shutdown_receiver) = tokio::sync::watch::channel(false);
     let resource_task = tokio::spawn(resource_coordinator.run(shutdown_receiver));

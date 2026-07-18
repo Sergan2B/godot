@@ -2,6 +2,8 @@
 
 mod coordinator;
 mod scene;
+mod script;
+mod script_spool;
 mod spool;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -33,9 +35,12 @@ use unicode_normalization::UnicodeNormalization;
 pub use coordinator::{
     CoordinatorError, ResourceIndexCoordinator, ResourceIndexReadError, ResourceIndexReader,
     ResourceIndexStaleReason, ResourceIndexStatus, SceneIndexReadError, SceneIndexReader,
-    SceneIndexStaleReason, SceneIndexStatus,
+    SceneIndexStaleReason, SceneIndexStatus, ScriptIndexReadError, ScriptIndexReader,
+    ScriptIndexStaleReason, ScriptIndexStatus,
 };
 pub use scene::SceneNormalizer;
+pub use script::ScriptNormalizer;
+pub use script_spool::ScriptSnapshotSpool;
 pub use spool::ResourceSnapshotSpool;
 
 const UID_DOMAIN: &[u8] = b"godot-codex/resource-entity/uid/v1\0";
@@ -67,6 +72,8 @@ pub enum IndexerError {
     Spool(&'static str),
     #[error("scene_observation_conflict: {0}")]
     Scene(&'static str),
+    #[error("script_observation_conflict: {0}")]
+    Script(&'static str),
     #[error(transparent)]
     Store(#[from] StoreError),
 }
