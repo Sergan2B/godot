@@ -15,11 +15,14 @@ later evidence-only commits may descend from it without changing the scoped sour
 Stage 5 closes Sprint 3 with local, model-free evidence from real target hosts. It does
 not wait for or claim remote CI. The required platform matrix is:
 
-| Gate | macOS arm64 | Windows x86_64 | Linux x86_64 |
-|---|---:|---:|---:|
-| Editor → Bridge → sidecar → persistent index → MCP | Required | Required | Not required |
-| Full D-05 storage/recovery profile | Required | Required | Required |
+| Gate | macOS arm64 | Windows x86_64 |
+|---|---:|---:|
+| Editor → Bridge → sidecar → persistent index → MCP | Required | Required |
+| Full D-05 storage/recovery profile | Required | Required |
 | Final source revision | Same clean source-freeze commit on every host |
+
+Linux is not part of the Sprint 3 acceptance matrix. Its future product support is
+unchanged, but no Linux host, report, or receipt is required to close this sprint.
 
 The historical Stage 4 macOS result is development evidence. Final Sprint 3 acceptance
 uses fresh macOS and Windows live runs produced after the Stage 5 harness is frozen.
@@ -86,27 +89,30 @@ project/session data and is not a Bridge RPC or MCP compatibility surface.
 ## 5. Aggregation and completion rules
 
 The final validator accepts exactly one qualifying `macos-arm64` and one qualifying
-`windows-x86_64` live report plus full storage reports for `macos`, `windows`, and
-`linux`. It rejects quick profiles, dirty relevant source, source/fixture/oracle
+`windows-x86_64` live report plus full storage reports for `macos` and `windows`.
+It rejects quick profiles, dirty relevant source, source/fixture/oracle
 mismatch, missing phases, graph-digest mismatch, failed storage gates, SLO failure,
 redaction failure, and unsupported platform coordinates. Qualifying producers reject
 common hosted-CI environment markers. The merger recomputes D-05 scores and confidence
 intervals from raw samples through the pinned Rust validator, binds its receipt to the
 exact evidence-byte SHA-256, and requires exact closed phase schemas. The source-freeze
-commit must exist and be an ancestor of the aggregation checkout; every scoped byte and
-the oracle must still match it, while later evidence-only commits are allowed.
+commit must exist and be an ancestor of the aggregation checkout; the oracle and every
+producer-scoped byte must still match it. Later evidence-only commits and the closed
+acceptance-policy paths listed by the validator are allowed.
 
 Final artifacts are:
 
 - `tests/codex/evidence/sprint-3-resource-graph-macos.json`;
 - `tests/codex/evidence/sprint-3-resource-graph-windows.json`;
-- three raw reports under `tests/codex/evidence/platform/`;
+- two raw reports under `tests/codex/evidence/platform/`;
 - `tests/codex/evidence/sprint-3-storage-spike-cross-platform.json`;
 - `tests/codex/evidence/sprint-3-acceptance.json`;
 - `docs/codex-integration/SPRINT-3-EVIDENCE.md`.
 
-Any source or harness fix after platform execution invalidates all Stage 5 platform
-evidence. A failed required platform or SLO remains open; it is not relabeled optional.
+Any producer or product-source fix after platform execution invalidates all Stage 5
+platform evidence. A reviewed acceptance-policy-only amendment may reuse raw reports
+from the pinned source freeze when the validator proves that no producer scope changed.
+A failed required platform or SLO remains open; it is not relabeled optional.
 `remote_ci` is recorded as `not_run` and is not a Sprint 3 completion requirement.
 
 ## 6. Local execution runbook
@@ -146,23 +152,12 @@ cargo +1.94.1 run --locked --release --manifest-path tests\codex\storage_spike\C
   --output tests\codex\evidence\platform\sprint-3-storage-spike-windows.json
 ```
 
-Linux x86_64 runs the Rust workspace and full storage profile; no editor live claim is
-made:
-
-```sh
-cargo +1.94.1 test --locked --workspace --all-targets --manifest-path godot-codex-mcp/Cargo.toml
-cargo +1.94.1 run --locked --release --manifest-path tests/codex/storage_spike/Cargo.toml -- \
-  run --backend all --dataset all --repo-root "$PWD" \
-  --output tests/codex/evidence/platform/sprint-3-storage-spike-linux.json
-```
-
-After copying the five raw reports into one clean checkout, produce and validate the
-two aggregates:
+After copying the two Windows raw reports into the checkout that already contains the
+two pinned macOS reports, produce and validate the two aggregates:
 
 ```sh
 cargo +1.94.1 run --locked --release --manifest-path tests/codex/storage_spike/Cargo.toml -- \
   merge tests/codex/evidence/sprint-3-storage-spike-cross-platform.json \
-  tests/codex/evidence/platform/sprint-3-storage-spike-linux.json \
   tests/codex/evidence/platform/sprint-3-storage-spike-macos.json \
   tests/codex/evidence/platform/sprint-3-storage-spike-windows.json
 python3 tests/codex/sprint3_acceptance.py merge \

@@ -128,7 +128,7 @@ pub struct CombinedStorageSpikeEvidence {
     pub platform_runs: Vec<StorageSpikeEvidence>,
     /// Cross-platform median score and bootstrap interval per candidate.
     pub backend_summaries: Vec<CombinedBackendEvidence>,
-    /// True only when Linux, macOS, and Windows all supplied qualified candidates.
+    /// True only when macOS and Windows both supplied qualified candidates.
     pub cross_platform_complete: bool,
     /// Cross-platform selected backend or `blocked`.
     pub chosen_backend: String,
@@ -136,7 +136,7 @@ pub struct CombinedStorageSpikeEvidence {
     pub decision_reason: String,
 }
 
-/// One backend's three-OS decision summary.
+/// One backend's two-OS decision summary.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CombinedBackendEvidence {
@@ -144,7 +144,7 @@ pub struct CombinedBackendEvidence {
     pub backend: BackendKind,
     /// Whether every disqualifying gate passed on every required OS.
     pub qualified_all_platforms: bool,
-    /// Median of the same-host normalized scores across three operating systems.
+    /// Median of the same-host normalized scores across the required operating systems.
     pub median_weighted_score: f64,
     /// Deterministic cross-platform bootstrap lower bound.
     pub weighted_score_ci95_low: f64,

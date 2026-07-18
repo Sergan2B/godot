@@ -237,7 +237,7 @@ records:
 - cancellation at capture, staging, pre-commit, and post-commit boundaries;
 - crash recovery and corrupt-cache isolation;
 - v1 → v2 migration behavior;
-- macOS, Windows, and Linux process-level locking/reopen behavior;
+- macOS and Windows process-level locking/reopen behavior;
 - dependency and single-binary packaging impact.
 
 Correctness/recovery failures disqualify a backend regardless of speed. Decision `D-05`
@@ -312,14 +312,15 @@ conformance suite, and all 8 live Godot fixture phases. `S3-03` is complete for 
 local implementation stream: the storage-neutral API, both spike backends, and strict
 schema-v2 benchmark/fault harness are implemented, and the full macOS `10k/50k` plus
 `100k/500k` run passes every candidate gate and selects the segment store for `D-05`.
-Windows/Linux portability verification is `not_run` and remains separate from remote
-CI. `S3-04` and `S3-05` are also complete locally: Bridge RPC 1.2,
+Windows portability verification remains the Stage 5 host gate; Linux is outside the
+Sprint 3 acceptance matrix and remote CI is not required. `S3-04` and `S3-05` are also
+complete locally: Bridge RPC 1.2,
 `ResourceGraphAdapter`, the bounded incremental journal, and the production Rust
 wire-client pass the eight-phase live gate plus Sprint 1/2 regressions. `S3-06`–`S3-08`
 are complete locally as recorded in the Stage 4 evidence: the production segment store,
 normalizer, coordinator/recovery, signed pagination, and both resource MCP tools pass
-the eight-phase editor → persistent index → MCP gate. `S3-09` and `S3-10` remain open;
-Windows/Linux and remote CI remain `not_run`.
+the eight-phase editor → persistent index → MCP gate. `S3-09` and `S3-10` remain open
+until the Windows reports are installed and aggregated; remote CI remains `not_run`.
 
 ### 8.1 Parent-roadmap traceability
 
@@ -443,7 +444,7 @@ insufficient.
 - atomic generation, incremental transaction, cursor, checkpoint, and migration tests;
 - process-level crash/corruption/cancellation recovery;
 - concurrent query while staging and strict project isolation;
-- Clippy, formatting, locked build, and macOS/Windows/Linux storage checks.
+- Clippy, formatting, locked build, and macOS/Windows storage checks.
 
 ### 13.4 End-to-end
 

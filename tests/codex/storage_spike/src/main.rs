@@ -104,7 +104,7 @@ fn canonical_validation_receipt(
         "decision": "D-05",
         "evidence_sha256": evidence_sha256,
         "platform_runs": platform_runs,
-        "schema_version": 2,
+        "schema_version": 3,
     })
 }
 
@@ -157,14 +157,14 @@ mod tests {
     #[test]
     fn validation_receipt_is_bound_to_the_validated_byte_snapshot() {
         assert_eq!(
-            canonical_validation_receipt("segment", 3, "sha256:fixture"),
+            canonical_validation_receipt("segment", 2, "sha256:fixture"),
             serde_json::json!({
                 "canonical": true,
                 "chosen_backend": "segment",
                 "decision": "D-05",
                 "evidence_sha256": "sha256:fixture",
-                "platform_runs": 3,
-                "schema_version": 2,
+                "platform_runs": 2,
+                "schema_version": 3,
             })
         );
     }

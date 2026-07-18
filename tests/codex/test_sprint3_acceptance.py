@@ -231,7 +231,7 @@ def backend_evidence(name: str) -> dict[str, Any]:
 
 def storage_evidence() -> dict[str, Any]:
     runs = []
-    for os_name, architecture in (("linux", "x86_64"), ("macos", "aarch64"), ("windows", "x86_64")):
+    for os_name, architecture in (("macos", "aarch64"), ("windows", "x86_64")):
         runs.append({
             "schema_version": 2,
             "decision": "D-05",
@@ -261,7 +261,7 @@ def storage_evidence() -> dict[str, Any]:
             "decision_reason": ("Both backends qualified; segment had the higher weighted score (1.0000)."),
         })
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "decision": "D-05",
         "platform_runs": runs,
         "backend_summaries": [
@@ -512,10 +512,12 @@ class Sprint3AcceptanceTests(unittest.TestCase):
             git("config", "user.name", "Sprint 3 Test")
             scope_path = root / "scope.txt"
             oracle_path = root / "oracle.json"
+            policy_path = root / "policy.txt"
             source_path = root / "source.txt"
-            scopes = ("oracle.json", "scope.txt", "source.txt")
+            scopes = ("oracle.json", "policy.txt", "scope.txt", "source.txt")
             scope_path.write_text("\n".join(scopes) + "\n", encoding="utf-8")
             oracle_path.write_text('{"oracle":true}\n', encoding="utf-8")
+            policy_path.write_text("three-platform policy\n", encoding="utf-8")
             source_path.write_text("source freeze\n", encoding="utf-8")
             git("add", *scopes)
             git("commit", "--quiet", "-m", "source freeze")
@@ -527,6 +529,7 @@ class Sprint3AcceptanceTests(unittest.TestCase):
                 SOURCE_SCOPE_PATH=scope_path,
                 SOURCE_SCOPE_MANIFEST="scope.txt",
                 SOURCE_SCOPES=scopes,
+                ACCEPTANCE_POLICY_SCOPES=frozenset({"policy.txt"}),
                 GOLDEN_ORACLE_PATH=oracle_path,
             ):
                 source_coordinates = acceptance.checkout_source_coordinates(source_commit)
@@ -545,8 +548,22 @@ class Sprint3AcceptanceTests(unittest.TestCase):
                 )
                 self.assertEqual(anchored["oracle_sha256"], source_coordinates["oracle_sha256"])
 
+                policy_path.write_text("two-platform policy\n", encoding="utf-8")
+                git("add", "policy.txt")
+                git("commit", "--quiet", "-m", "amend acceptance policy")
+                amended = acceptance.checkout_source_coordinates(source_commit)
+                self.assertEqual(
+                    amended["source_tree_sha256"],
+                    source_coordinates["source_tree_sha256"],
+                )
+                self.assertEqual(amended["oracle_sha256"], source_coordinates["oracle_sha256"])
+
                 source_path.write_text("drifted source\n", encoding="utf-8")
-                with self.assertRaisesRegex(AcceptanceError, "source differs from the evidence source commit"):
+                with self.assertRaisesRegex(AcceptanceError, "source scope is dirty"):
+                    acceptance.checkout_source_coordinates(source_commit)
+                git("add", "source.txt")
+                git("commit", "--quiet", "-m", "drift producer source")
+                with self.assertRaisesRegex(AcceptanceError, "producer source differs"):
                     acceptance.checkout_source_coordinates(source_commit)
 
     def write(self, root: Path, name: str, value: object) -> Path:
@@ -704,7 +721,10 @@ class Sprint3AcceptanceTests(unittest.TestCase):
         mutations = (
             (
                 "raw-score",
-                lambda value: value["platform_runs"][0]["backends"][0].__setitem__("weighted_score", 0.75),
+                lambda value: (
+                    value["platform_runs"][0]["backends"][0].__setitem__("weighted_score", 0.75),
+                    value["backend_summaries"][0].__setitem__("median_weighted_score", 0.625),
+                ),
             ),
             (
                 "aggregate-interval",

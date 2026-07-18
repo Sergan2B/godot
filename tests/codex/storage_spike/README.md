@@ -25,15 +25,14 @@ parent terminates that process and proves writer-lock release plus idempotent re
 The full local report is the canonical D-05 evidence and selects a backend using the
 correctness-first same-host scoring rule. Publication and remote CI are not required.
 
-The optional `merge` command can later combine full reports produced locally on Linux,
-macOS, and Windows. It accepts only clean source-identical decision profiles and does
-not imply that such platform runs have already happened.
+The `merge` command combines full reports produced locally on macOS and Windows, the
+two required Sprint 3 target hosts. It accepts only clean source-identical decision
+profiles. Linux remains outside the Sprint 3 acceptance matrix.
 
 ```bash
 cargo +1.94.1 run --locked --release \
   --manifest-path tests/codex/storage_spike/Cargo.toml -- \
-  merge tests/codex/evidence/sprint-3-storage-spike.json \
-  tests/codex/evidence/platform/sprint-3-storage-spike-linux.json \
+  merge tests/codex/evidence/sprint-3-storage-spike-cross-platform.json \
   tests/codex/evidence/platform/sprint-3-storage-spike-macos.json \
   tests/codex/evidence/platform/sprint-3-storage-spike-windows.json
 ```
@@ -44,10 +43,10 @@ implementation that produced its scores and confidence intervals:
 ```bash
 cargo +1.94.1 run --quiet --locked --release \
   --manifest-path tests/codex/storage_spike/Cargo.toml -- \
-  validate tests/codex/evidence/sprint-3-storage-spike.json
+  validate tests/codex/evidence/sprint-3-storage-spike-cross-platform.json
 ```
 
-The validator emits a closed schema-v2 JSON receipt. Its `evidence_sha256` is calculated
+The validator emits a closed schema-v3 JSON receipt. Its `evidence_sha256` is calculated
 from the exact byte snapshot parsed and validated by Rust; consumers must compare it with
 the digest of their own immutable input snapshot before trusting the receipt.
 

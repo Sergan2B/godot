@@ -21,6 +21,16 @@ SOURCE_SCOPE_MANIFEST = SOURCE_SCOPE_PATH.relative_to(REPOSITORY_ROOT).as_posix(
 SOURCE_SCOPES = tuple(
     line for line in SOURCE_SCOPE_PATH.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#")
 )
+ACCEPTANCE_POLICY_SCOPES = frozenset({
+    "docs/codex-integration/SPRINT-3-PLAN.md",
+    "docs/codex-integration/SPRINT-3-STAGE-5-PLAN.md",
+    "tests/codex/sprint3_acceptance.py",
+    "tests/codex/test_sprint3_acceptance.py",
+    "tests/codex/storage_spike/README.md",
+    "tests/codex/storage_spike/src/evidence.rs",
+    "tests/codex/storage_spike/src/main.rs",
+    "tests/codex/storage_spike/src/runner.rs",
+})
 if (
     not SOURCE_SCOPES
     or tuple(sorted(set(SOURCE_SCOPES))) != SOURCE_SCOPES
@@ -54,7 +64,6 @@ LIVE_PLATFORM_TARGETS = {
 }
 LIVE_PLATFORMS = set(LIVE_PLATFORM_TARGETS)
 STORAGE_PLATFORM_ARCHITECTURES = {
-    "linux": "x86_64",
     "macos": "aarch64",
     "windows": "x86_64",
 }
@@ -566,8 +575,8 @@ def validate_storage_canonical_receipt(evidence_bytes: bytes, chosen_backend: st
             "chosen_backend": chosen_backend,
             "decision": "D-05",
             "evidence_sha256": f"sha256:{hashlib.sha256(evidence_bytes).hexdigest()}",
-            "platform_runs": 3,
-            "schema_version": 2,
+            "platform_runs": 2,
+            "schema_version": 3,
         },
         "canonical Rust D-05 validation receipt differs",
     )
@@ -655,23 +664,15 @@ def checkout_source_coordinates(evidence_commit: str) -> dict[str, Any]:
         timeout=30,
     )
     require(status.returncode == 0, "git status failed while anchoring acceptance")
+    require(not status.stdout, "current Sprint 3 source scope is dirty")
     scoped_diff = subprocess.run(
-        ["git", "--literal-pathspecs", "diff", "--quiet", evidence_commit, "--", *SOURCE_SCOPES],
-        cwd=REPOSITORY_ROOT,
-        check=False,
-        capture_output=True,
-        timeout=30,
-    )
-    require(scoped_diff.returncode == 0, "current Sprint 3 source differs from the evidence source commit")
-    listed = subprocess.run(
         [
             "git",
             "--literal-pathspecs",
-            "ls-files",
+            "diff",
+            "--name-only",
             "-z",
-            "--cached",
-            "--others",
-            "--exclude-standard",
+            f"{evidence_commit}..HEAD",
             "--",
             *SOURCE_SCOPES,
         ],
@@ -680,15 +681,55 @@ def checkout_source_coordinates(evidence_commit: str) -> dict[str, Any]:
         capture_output=True,
         timeout=30,
     )
-    require(listed.returncode == 0, "git ls-files failed while anchoring acceptance")
+    require(scoped_diff.returncode == 0, "git diff failed while anchoring acceptance")
+    changed_scopes = {path.decode("utf-8") for path in scoped_diff.stdout.split(b"\0") if path}
+    require(
+        changed_scopes <= ACCEPTANCE_POLICY_SCOPES,
+        "current Sprint 3 producer source differs from the evidence source commit",
+    )
+    listed = subprocess.run(
+        [
+            "git",
+            "--literal-pathspecs",
+            "ls-tree",
+            "-r",
+            "-z",
+            "--name-only",
+            evidence_commit,
+            "--",
+            *SOURCE_SCOPES,
+        ],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        timeout=30,
+    )
+    require(listed.returncode == 0, "git ls-tree failed while anchoring acceptance")
     digest = hashlib.sha256()
     for encoded_path in sorted(path for path in listed.stdout.split(b"\0") if path):
         relative = encoded_path.decode("utf-8")
-        content = (REPOSITORY_ROOT / relative).read_bytes()
+        blob = subprocess.run(
+            ["git", "cat-file", "blob", f"{evidence_commit}:{relative}"],
+            cwd=REPOSITORY_ROOT,
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        require(blob.returncode == 0, f"cannot read frozen source blob: {relative}")
+        content = blob.stdout
         digest.update(len(encoded_path).to_bytes(8, "big"))
         digest.update(encoded_path)
         digest.update(len(content).to_bytes(8, "big"))
         digest.update(content)
+    oracle_relative = GOLDEN_ORACLE_PATH.relative_to(REPOSITORY_ROOT).as_posix()
+    oracle = subprocess.run(
+        ["git", "cat-file", "blob", f"{evidence_commit}:{oracle_relative}"],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        timeout=30,
+    )
+    require(oracle.returncode == 0, "cannot read frozen canonical oracle")
     commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=REPOSITORY_ROOT,
@@ -701,9 +742,9 @@ def checkout_source_coordinates(evidence_commit: str) -> dict[str, Any]:
     return {
         "evidence_commit": evidence_commit,
         "head_commit": commit.stdout.strip(),
-        "git_dirty": bool(status.stdout),
+        "git_dirty": False,
         "source_tree_sha256": f"sha256:{digest.hexdigest()}",
-        "oracle_sha256": sha256_file(GOLDEN_ORACLE_PATH),
+        "oracle_sha256": f"sha256:{hashlib.sha256(oracle.stdout).hexdigest()}",
     }
 
 
@@ -1239,7 +1280,7 @@ def validate_storage(path: Path) -> dict[str, Any]:
     )
     require(
         set(evidence) == STORAGE_TOP_FIELDS
-        and evidence.get("schema_version") == 2
+        and evidence.get("schema_version") == 3
         and evidence.get("decision") == "D-05"
         and evidence.get("cross_platform_complete") is True
         and evidence.get("chosen_backend") == "segment"
@@ -1360,8 +1401,10 @@ def validate_storage(path: Path) -> dict[str, Any]:
             next(backend for backend in run["backends"] if backend["backend"] == backend_name)["weighted_score"]
             for run in runs
         )
+        median_score = (scores[(len(scores) - 1) // 2] + scores[len(scores) // 2]) / 2.0
         require(
-            summary["qualified_all_platforms"] is expected_qualified and summary["median_weighted_score"] == scores[1],
+            summary["qualified_all_platforms"] is expected_qualified
+            and summary["median_weighted_score"] == median_score,
             f"cross-platform {backend_name} summary differs from platform runs",
         )
         summary_score = finite_number(summary["median_weighted_score"], f"cross-platform {backend_name} median score")

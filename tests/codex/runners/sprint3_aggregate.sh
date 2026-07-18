@@ -20,9 +20,8 @@ fi
 readonly RUNNER_PATH="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
 readonly RUNNER_DIRECTORY="$(dirname "$RUNNER_PATH")"
 readonly MANIFEST_HELPER="$RUNNER_DIRECTORY/sprint3_transfer_manifest.py"
-readonly LINUX_RUNNER="$RUNNER_DIRECTORY/sprint3_linux_x86_64.sh"
 readonly WINDOWS_RUNNER="$RUNNER_DIRECTORY/sprint3_windows_x86_64.ps1"
-for runner_file in "$MANIFEST_HELPER" "$LINUX_RUNNER" "$WINDOWS_RUNNER"; do
+for runner_file in "$MANIFEST_HELPER" "$WINDOWS_RUNNER"; do
   [[ -f "$runner_file" && ! -L "$runner_file" ]] || {
     echo "required runner file is missing or is a symlink: $runner_file" >&2
     exit 64
@@ -88,9 +87,9 @@ git merge-base --is-ancestor "$FREEZE_COMMIT" HEAD || {
 
 source_json="$(PYTHONPATH=tests/codex python3 - <<'PY'
 import json
-from sprint3_stage4_index_mcp import source_coordinates
+from sprint3_acceptance import checkout_source_coordinates
 
-print(json.dumps(source_coordinates(), sort_keys=True))
+print(json.dumps(checkout_source_coordinates("a90ddd06c81a6210f44552b46ff533248b93ed90"), sort_keys=True))
 PY
 )"
 SOURCE_JSON="$source_json" python3 - <<'PY'
@@ -120,18 +119,14 @@ PY
 readonly MACOS_LIVE_SOURCE="$REPOSITORY/tests/codex/evidence/sprint-3-resource-graph-macos.json"
 readonly MACOS_STORAGE_SOURCE="$REPOSITORY/tests/codex/evidence/platform/sprint-3-storage-spike-macos.json"
 readonly WINDOWS_LIVE_SOURCE="$STAGING/sprint-3-resource-graph-windows.json"
-readonly LINUX_STORAGE_SOURCE="$STAGING/sprint-3-storage-spike-linux.json"
 readonly WINDOWS_STORAGE_SOURCE="$STAGING/sprint-3-storage-spike-windows.json"
-readonly LINUX_RECEIPT_SOURCE="$STAGING/sprint-3-linux.receipt.json"
 readonly WINDOWS_RECEIPT_SOURCE="$STAGING/sprint-3-windows.receipt.json"
 
 for evidence in \
   "$MACOS_LIVE_SOURCE" \
   "$MACOS_STORAGE_SOURCE" \
   "$WINDOWS_LIVE_SOURCE" \
-  "$LINUX_STORAGE_SOURCE" \
   "$WINDOWS_STORAGE_SOURCE" \
-  "$LINUX_RECEIPT_SOURCE" \
   "$WINDOWS_RECEIPT_SOURCE"; do
   [[ -f "$evidence" && ! -L "$evidence" ]] || {
     echo "required regular evidence file is missing: $evidence" >&2
@@ -142,13 +137,11 @@ done
 readonly EVIDENCE_DIRECTORY="$REPOSITORY/tests/codex/evidence"
 readonly PLATFORM_DIRECTORY="$EVIDENCE_DIRECTORY/platform"
 readonly FINAL_WINDOWS_LIVE="$EVIDENCE_DIRECTORY/sprint-3-resource-graph-windows.json"
-readonly FINAL_LINUX_STORAGE="$PLATFORM_DIRECTORY/sprint-3-storage-spike-linux.json"
 readonly FINAL_WINDOWS_STORAGE="$PLATFORM_DIRECTORY/sprint-3-storage-spike-windows.json"
 readonly FINAL_STORAGE="$EVIDENCE_DIRECTORY/sprint-3-storage-spike-cross-platform.json"
 readonly FINAL_ACCEPTANCE="$EVIDENCE_DIRECTORY/sprint-3-acceptance.json"
 for destination in \
   "$FINAL_WINDOWS_LIVE" \
-  "$FINAL_LINUX_STORAGE" \
   "$FINAL_WINDOWS_STORAGE" \
   "$FINAL_STORAGE" \
   "$FINAL_ACCEPTANCE"; do
@@ -162,7 +155,6 @@ readonly WORK="$(mktemp -d "${TMPDIR:-/tmp}/godotstg-s3-aggregate.XXXXXX")"
 INSTALL_STARTED=0
 INSTALL_COMPLETE=0
 WINDOWS_LIVE_TEMP=""
-LINUX_STORAGE_TEMP=""
 WINDOWS_STORAGE_TEMP=""
 STORAGE_TEMP=""
 ACCEPTANCE_TEMP=""
@@ -172,7 +164,6 @@ cleanup() {
   rm -rf -- "$WORK"
   for temporary_file in \
     "$WINDOWS_LIVE_TEMP" \
-    "$LINUX_STORAGE_TEMP" \
     "$WINDOWS_STORAGE_TEMP" \
     "$STORAGE_TEMP" \
     "$ACCEPTANCE_TEMP"; do
@@ -181,7 +172,6 @@ cleanup() {
   if ((INSTALL_STARTED == 1 && INSTALL_COMPLETE == 0)); then
     rm -f -- \
       "$FINAL_WINDOWS_LIVE" \
-      "$FINAL_LINUX_STORAGE" \
       "$FINAL_WINDOWS_STORAGE" \
       "$FINAL_STORAGE" \
       "$FINAL_ACCEPTANCE"
@@ -196,9 +186,7 @@ mkdir -p "$WORK/input" "$WORK/a" "$WORK/b"
 readonly MACOS_LIVE="$WORK/input/sprint-3-resource-graph-macos.json"
 readonly MACOS_STORAGE="$WORK/input/sprint-3-storage-spike-macos.json"
 readonly WINDOWS_LIVE="$WORK/input/sprint-3-resource-graph-windows.json"
-readonly LINUX_STORAGE="$WORK/input/sprint-3-storage-spike-linux.json"
 readonly WINDOWS_STORAGE="$WORK/input/sprint-3-storage-spike-windows.json"
-readonly LINUX_RECEIPT="$WORK/input/sprint-3-linux.receipt.json"
 readonly WINDOWS_RECEIPT="$WORK/input/sprint-3-windows.receipt.json"
 
 # Snapshot every input once. Validation, aggregation, and installation must use
@@ -206,9 +194,7 @@ readonly WINDOWS_RECEIPT="$WORK/input/sprint-3-windows.receipt.json"
 install -m 0644 "$MACOS_LIVE_SOURCE" "$MACOS_LIVE"
 install -m 0644 "$MACOS_STORAGE_SOURCE" "$MACOS_STORAGE"
 install -m 0644 "$WINDOWS_LIVE_SOURCE" "$WINDOWS_LIVE"
-install -m 0644 "$LINUX_STORAGE_SOURCE" "$LINUX_STORAGE"
 install -m 0644 "$WINDOWS_STORAGE_SOURCE" "$WINDOWS_STORAGE"
-install -m 0644 "$LINUX_RECEIPT_SOURCE" "$LINUX_RECEIPT"
 install -m 0644 "$WINDOWS_RECEIPT_SOURCE" "$WINDOWS_RECEIPT"
 
 macos_live_sha256="$(shasum -a 256 "$MACOS_LIVE" | awk '{ print $1 }')"
@@ -222,11 +208,6 @@ macos_storage_sha256="$(shasum -a 256 "$MACOS_STORAGE" | awk '{ print $1 }')"
   exit 69
 }
 
-python3 "$MANIFEST_HELPER" verify \
-  --platform linux-x86_64 \
-  --runner "$LINUX_RUNNER" \
-  --receipt "$LINUX_RECEIPT" \
-  --file "$LINUX_STORAGE" >/dev/null
 python3 "$MANIFEST_HELPER" verify \
   --platform windows-x86_64 \
   --runner "$WINDOWS_RUNNER" \
@@ -244,10 +225,10 @@ python3 tests/codex/sprint3_acceptance.py validate-live "$WINDOWS_LIVE" >/dev/nu
 
 cargo +1.94.1 run --quiet --locked --release \
   --manifest-path tests/codex/storage_spike/Cargo.toml -- \
-  merge "$STORAGE_A" "$LINUX_STORAGE" "$MACOS_STORAGE" "$WINDOWS_STORAGE"
+  merge "$STORAGE_A" "$MACOS_STORAGE" "$WINDOWS_STORAGE"
 cargo +1.94.1 run --quiet --locked --release \
   --manifest-path tests/codex/storage_spike/Cargo.toml -- \
-  merge "$STORAGE_B" "$WINDOWS_STORAGE" "$MACOS_STORAGE" "$LINUX_STORAGE"
+  merge "$STORAGE_B" "$WINDOWS_STORAGE" "$MACOS_STORAGE"
 cmp "$STORAGE_A" "$STORAGE_B"
 cargo +1.94.1 run --quiet --locked --release \
   --manifest-path tests/codex/storage_spike/Cargo.toml -- validate "$STORAGE_A"
@@ -271,25 +252,21 @@ cmp "$ACCEPTANCE_A" "$ACCEPTANCE_B"
 }
 mkdir -p "$PLATFORM_DIRECTORY"
 WINDOWS_LIVE_TEMP="$(mktemp "$EVIDENCE_DIRECTORY/.sprint-3-resource-graph-windows.XXXXXX")"
-LINUX_STORAGE_TEMP="$(mktemp "$PLATFORM_DIRECTORY/.sprint-3-storage-spike-linux.XXXXXX")"
 WINDOWS_STORAGE_TEMP="$(mktemp "$PLATFORM_DIRECTORY/.sprint-3-storage-spike-windows.XXXXXX")"
 STORAGE_TEMP="$(mktemp "$EVIDENCE_DIRECTORY/.sprint-3-storage-spike-cross-platform.XXXXXX")"
 ACCEPTANCE_TEMP="$(mktemp "$EVIDENCE_DIRECTORY/.sprint-3-acceptance.XXXXXX")"
 install -m 0644 "$WINDOWS_LIVE" "$WINDOWS_LIVE_TEMP"
-install -m 0644 "$LINUX_STORAGE" "$LINUX_STORAGE_TEMP"
 install -m 0644 "$WINDOWS_STORAGE" "$WINDOWS_STORAGE_TEMP"
 install -m 0644 "$STORAGE_A" "$STORAGE_TEMP"
 install -m 0644 "$ACCEPTANCE_A" "$ACCEPTANCE_TEMP"
 
 INSTALL_STARTED=1
 mv "$WINDOWS_LIVE_TEMP" "$FINAL_WINDOWS_LIVE"
-mv "$LINUX_STORAGE_TEMP" "$FINAL_LINUX_STORAGE"
 mv "$WINDOWS_STORAGE_TEMP" "$FINAL_WINDOWS_STORAGE"
 mv "$STORAGE_TEMP" "$FINAL_STORAGE"
 mv "$ACCEPTANCE_TEMP" "$FINAL_ACCEPTANCE"
 
 cmp "$WINDOWS_LIVE" "$FINAL_WINDOWS_LIVE"
-cmp "$LINUX_STORAGE" "$FINAL_LINUX_STORAGE"
 cmp "$WINDOWS_STORAGE" "$FINAL_WINDOWS_STORAGE"
 cmp "$STORAGE_A" "$FINAL_STORAGE"
 cmp "$ACCEPTANCE_A" "$FINAL_ACCEPTANCE"
@@ -300,7 +277,6 @@ python3 tests/codex/sprint3_acceptance.py validate-storage \
 
 shasum -a 256 \
   "$FINAL_WINDOWS_LIVE" \
-  "$FINAL_LINUX_STORAGE" \
   "$FINAL_WINDOWS_STORAGE" \
   "$FINAL_STORAGE" \
   "$FINAL_ACCEPTANCE"

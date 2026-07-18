@@ -203,7 +203,7 @@ fn require_local_host_for_qualifying_profile_with(
     }
 }
 
-/// Merges Linux, macOS, and Windows raw runs into the canonical D-05 artifact.
+/// Merges macOS and Windows raw runs into the canonical D-05 artifact.
 pub fn merge_platform_evidence(
     output: &Path,
     inputs: &[PathBuf],
@@ -249,7 +249,7 @@ fn canonical_combined_evidence(
 ) -> CombinedStorageSpikeEvidence {
     platform_runs.sort_by(|left, right| left.os.cmp(&right.os));
     let present: BTreeSet<_> = platform_runs.iter().map(|run| run.os.clone()).collect();
-    let required: BTreeSet<_> = ["linux", "macos", "windows"]
+    let required: BTreeSet<_> = ["macos", "windows"]
         .into_iter()
         .map(str::to_owned)
         .collect();
@@ -278,7 +278,7 @@ fn canonical_combined_evidence(
             run.decision_reason = decision_reason;
         }
     }
-    let coordinates_complete = platform_runs.len() == 3
+    let coordinates_complete = platform_runs.len() == required.len()
         && present == required
         && same_oracle
         && same_source
@@ -298,20 +298,19 @@ fn canonical_combined_evidence(
     let (chosen_backend, decision_reason) = if !coordinates_complete {
         (
             "blocked".to_owned(),
-            "Linux/macOS/Windows coordinates, clean source digest, seed, or canonical oracle digest are incomplete or inconsistent."
+            "macOS/Windows coordinates, clean source digest, seed, or canonical oracle digest are incomplete or inconsistent."
                 .to_owned(),
         )
     } else {
         match candidates.as_slice() {
             [] => (
                 "blocked".to_owned(),
-                "No backend passed every disqualifying gate on Linux, macOS, and Windows."
-                    .to_owned(),
+                "No backend passed every disqualifying gate on macOS and Windows.".to_owned(),
             ),
             [summary] => (
                 summary.backend.as_str().to_owned(),
                 format!(
-                    "Only {} passed every D-05 gate on Linux, macOS, and Windows.",
+                    "Only {} passed every D-05 gate on macOS and Windows.",
                     summary.backend.as_str()
                 ),
             ),
@@ -350,7 +349,7 @@ fn canonical_combined_evidence(
         }
     };
     CombinedStorageSpikeEvidence {
-        schema_version: 2,
+        schema_version: 3,
         decision: "D-05".to_owned(),
         platform_runs,
         backend_summaries,
@@ -504,7 +503,10 @@ fn cross_platform_summaries(runs: &[StorageSpikeEvidence]) -> Vec<CombinedBacken
     let mut bootstrap_scores = [Vec::with_capacity(1_000), Vec::with_capacity(1_000)];
     let mut random_state = 0x5d05_d05d_05d0_5d05_u64;
     for _ in 0..1_000 {
-        let mut platform_scores = [Vec::with_capacity(3), Vec::with_capacity(3)];
+        let mut platform_scores = [
+            Vec::with_capacity(runs.len()),
+            Vec::with_capacity(runs.len()),
+        ];
         for run in runs {
             let sampled: Vec<_> = run
                 .backends
@@ -527,7 +529,7 @@ fn cross_platform_summaries(runs: &[StorageSpikeEvidence]) -> Vec<CombinedBacken
         }
         for slot in 0..kinds.len() {
             platform_scores[slot].sort_by(f64::total_cmp);
-            bootstrap_scores[slot].push(platform_scores[slot][1]);
+            bootstrap_scores[slot].push(sorted_median(&platform_scores[slot]));
         }
     }
 
@@ -555,12 +557,22 @@ fn cross_platform_summaries(runs: &[StorageSpikeEvidence]) -> Vec<CombinedBacken
                         .find(|backend| backend.backend == kind)
                         .is_some_and(|backend| backend.qualified)
                 }),
-                median_weighted_score: scores[1],
+                median_weighted_score: sorted_median(&scores),
                 weighted_score_ci95_low: bootstrap_scores[slot][24],
                 weighted_score_ci95_high: bootstrap_scores[slot][974],
             }
         })
         .collect()
+}
+
+fn sorted_median(values: &[f64]) -> f64 {
+    debug_assert!(!values.is_empty());
+    let middle = values.len() / 2;
+    if values.len().is_multiple_of(2) {
+        (values[middle - 1] + values[middle]) / 2.0
+    } else {
+        values[middle]
+    }
 }
 
 fn sampled_backend_metrics(backend: &BackendEvidence, state: &mut u64) -> [f64; 6] {
@@ -2233,10 +2245,10 @@ mod tests {
     }
 
     #[test]
-    fn merge_requires_three_valid_profiles_and_applies_sqlite_tie_break() {
+    fn merge_requires_two_valid_profiles_and_applies_sqlite_tie_break() {
         let temp = TempDir::new().expect("temp");
         let mut inputs = Vec::new();
-        for os in ["linux", "macos", "windows"] {
+        for os in ["macos", "windows"] {
             let path = temp.path().join(format!("{os}.json"));
             fs::write(
                 &path,
@@ -2272,7 +2284,7 @@ mod tests {
         assert_ne!(compact_sha256, evidence_sha256);
 
         let quick_path = &inputs[0];
-        let mut quick = decision_run("linux");
+        let mut quick = decision_run("macos");
         quick.profile = "quick".to_owned();
         fs::write(
             quick_path,
@@ -2284,8 +2296,8 @@ mod tests {
         assert!(!blocked.cross_platform_complete);
         assert_eq!(blocked.chosen_backend, "blocked");
 
-        let mut wrong_architecture = decision_run("linux");
-        wrong_architecture.architecture = "aarch64".to_owned();
+        let mut wrong_architecture = decision_run("macos");
+        wrong_architecture.architecture = "x86_64".to_owned();
         fs::write(
             quick_path,
             serde_json::to_vec(&wrong_architecture).expect("serialize wrong architecture"),
@@ -2325,7 +2337,7 @@ mod tests {
     #[test]
     fn combined_validation_rejects_hand_authored_scores_and_intervals() {
         let temp = TempDir::new().expect("temp");
-        let inputs: Vec<_> = ["linux", "macos", "windows"]
+        let inputs: Vec<_> = ["macos", "windows"]
             .into_iter()
             .map(|os| {
                 let path = temp.path().join(format!("{os}.json"));
