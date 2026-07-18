@@ -32,7 +32,8 @@ use unicode_normalization::UnicodeNormalization;
 
 pub use coordinator::{
     CoordinatorError, ResourceIndexCoordinator, ResourceIndexReadError, ResourceIndexReader,
-    ResourceIndexStaleReason, ResourceIndexStatus,
+    ResourceIndexStaleReason, ResourceIndexStatus, SceneIndexReadError, SceneIndexReader,
+    SceneIndexStaleReason, SceneIndexStatus,
 };
 pub use scene::SceneNormalizer;
 pub use spool::ResourceSnapshotSpool;

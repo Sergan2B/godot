@@ -1,6 +1,6 @@
 # Sprint 4 plan — scene semantics and node graph
 
-**Status:** In progress — `S4-01`–`S4-04` and `S4-06` complete locally; Rust normalization/composition next
+**Status:** In progress — `S4-01`–`S4-07` complete locally; scene MCP tools next
 
 **Planned duration:** 10 working days
 
@@ -75,6 +75,14 @@ content-addressed resource shards, activates an empty scene domain, and leaves t
 previous generation readable until normal retention removes it. Local tests cover
 resource-query parity plus cancellation, process death before commit, and scene-shard
 corruption without publishing a partial generation.
+
+`S4-05/S4-07` normalize the verified scene wire catalog against one pinned resource
+generation, reproduce D-06 identities, and materialize inheritance, nested instances,
+node occurrences, property provenance/overrides, resources, groups, connections, and
+animation targets. The semantic coordinator owns the only writer lease and exposes
+independent resource/scene freshness gates over the same immutable generation. A live
+macOS coordinator smoke proves that both gates pin the same activated generation while
+retaining separate resource and scene-graph revision coordinates.
 
 The contract/oracle boundary is locally frozen by
 `tests/codex/evidence/sprint-4-stage-1-contracts.json`. It validates strict Draft
