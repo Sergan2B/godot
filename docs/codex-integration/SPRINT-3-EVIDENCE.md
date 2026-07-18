@@ -6,26 +6,25 @@
 
 **Scope:** Stage 5 (`S3-09`, `S3-10`)
 
-**Current result:** real Windows x86_64 attempts exposed non-portable physical
-generation filenames in the production segment store and locale-dependent Godot
-log decoding in the live fixture. Both source fixes are frozen at the coordinates
-below. The macOS arm64 live and storage reports have now been regenerated at that
-freeze and pass. Windows must be rerun after both fixes, and Linux storage remains
-deferred; the canonical aggregates therefore remain open.
+**Current result:** macOS arm64 live and storage reports are tracked and pass at the
+frozen coordinates below. The Windows x86_64 run is reported complete by the operator,
+but its two raw reports and transfer receipt are not present in this checkout or the
+remote branch yet, so they cannot be independently validated or aggregated. Linux was
+removed from the Sprint 3 acceptance matrix by an explicit scope decision; no Linux
+artifact is required.
 
 ## Decision summary
 
-| Gate | macOS arm64 | Windows x86_64 | Linux x86_64 | Overall |
-|---|---|---|---|---|
-| Editor → Bridge → sidecar → persistent index → MCP | **PASS** — current freeze | **IN PROGRESS** — rerun required | Not required | Open |
-| Full D-05 storage and recovery profile | **PASS** — current freeze | **IN PROGRESS** — rerun required | **DEFERRED** — no artifact | Open |
-| Cross-platform storage aggregate | Input ready | Input missing | Input missing | Not generated |
-| Final Sprint 3 acceptance | Input ready | Input missing | Input missing | Not generated |
-| Remote CI | `not_run` | `not_run` | `not_run` | Not required |
+| Gate | macOS arm64 | Windows x86_64 | Overall |
+|---|---|---|---|
+| Editor → Bridge → sidecar → persistent index → MCP | **PASS** — tracked | **AWAITING IMPORT** — operator run complete | Open |
+| Full D-05 storage and recovery profile | **PASS** — tracked | **AWAITING IMPORT** — operator run complete | Open |
+| Cross-platform storage aggregate | Input ready | Input awaiting import | Not generated |
+| Final Sprint 3 acceptance | Input ready | Input awaiting import | Not generated |
+| Remote CI | `not_run` | `not_run` | Not required |
 
-Docker `linux/amd64` was exercised only as a development preflight. It is not a
-real target host, no Docker report is committed, and it must not be represented
-as Linux acceptance evidence.
+The earlier Docker `linux/amd64` development preflight remains historical only. Linux
+is outside this sprint's acceptance claim rather than represented by synthetic evidence.
 
 ## Frozen source coordinates
 
@@ -37,10 +36,11 @@ as Linux acceptance evidence.
 | Previous macOS live evidence commit | `d7339412f0e88475faab7d5f4264629671853888` |
 | Previous macOS storage evidence commit | `7d53adb993c463e4062a6cbfa4be17dd0319a163` |
 
-Every macOS, Linux, or Windows raw report must record the exact freeze commit and
-both exact digests above. The tracked macOS reports now match those coordinates.
-A further source-scoped or validator change requires another freeze and
-regeneration of every Stage 5 platform report.
+Every macOS or Windows raw report must record the exact freeze commit and both exact
+digests above. The tracked macOS reports match those coordinates. Product or producer
+source changes require another freeze and regeneration. The schema-3 two-platform
+aggregate is an acceptance-policy-only amendment and explicitly validates raw reports
+against their original frozen tree, so it does not invalidate those platform runs.
 
 ## Tracked current macOS artifacts
 
@@ -142,7 +142,7 @@ error lists are empty.
 
 The raw macOS decision selected `segment`: both backends qualified and segment
 had the higher weighted score (`0.8126`). This is one platform result, not the
-missing canonical three-platform D-05 aggregate or validation receipt.
+missing canonical two-platform D-05 aggregate or validation receipt.
 
 ## Current freeze local repository verification
 
@@ -160,25 +160,24 @@ The current freeze and regenerated macOS evidence were checked locally with:
 
 Remote CI was intentionally not run and is not awaited for Sprint 3 acceptance.
 
-## Deferred host matrix
+## Remaining Windows artifact handoff
 
-The deferred procedures are executable and documented in
-[`tests/codex/runners/README.md`](../../tests/codex/runners/README.md). They use
+The Windows procedure is executable and documented in
+[`tests/codex/runners/README.md`](../../tests/codex/runners/README.md). It uses
 a separate clean worktree at the exact freeze and fail closed on wrong
 architecture, dirty source, digest mismatch, CI markers, containers, incomplete
-SLOs, or failed segment gates/fault cases. The wrapper set is pinned to
-`0961c5f7fe1bd36e8d62b4966f39c4dbf174b149`.
+SLOs, or failed segment gates/fault cases. The Windows producer and receipt helper
+remain pinned to `0961c5f7fe1bd36e8d62b4966f39c4dbf174b149`; only the downstream
+two-platform aggregation policy changed.
 
-Required reports to return from the other devices:
+Required reports to return from the Windows device:
 
 ```text
 tests/codex/evidence/sprint-3-resource-graph-windows.json
-tests/codex/evidence/platform/sprint-3-storage-spike-linux.json
 tests/codex/evidence/platform/sprint-3-storage-spike-windows.json
 ```
 
-The devices must also return `sprint-3-linux.receipt.json` and
-`sprint-3-windows.receipt.json`. These deterministic receipts bind the exact
+The device must also return `sprint-3-windows.receipt.json`. This deterministic receipt binds the exact
 raw bytes, freeze coordinates, runner, and transfer helper. They are required
 for aggregation but are transport controls, not final evidence, and are never
 installed or committed.
@@ -196,7 +195,7 @@ No synthetic or re-labeled platform evidence is permitted.
 
 | Item | Status | Closure evidence |
 |---|---|---|
-| `S3-09` cross-platform smoke | **OPEN** | Real Windows live report plus real Windows/Linux storage reports |
+| `S3-09` cross-platform smoke | **OPEN** | Import and validate the real Windows live and storage reports |
 | `S3-10` final audit | **OPEN** | Canonical storage and acceptance aggregates plus final document update |
 | `S3-AC-01`–`S3-AC-11` | Current macOS claims pass; cross-platform closure pending | Final acceptance aggregate |
 | `S3-AC-12` normalized Windows/macOS graph equality | **DEFERRED** | Strict Windows report and per-phase digest equality |
@@ -222,13 +221,14 @@ No synthetic or re-labeled platform evidence is permitted.
   load profile.
 - A full Docker `linux/amd64` storage preflight passed both backends and selected
   segment, and the aggregation workflow was rehearsed on explicitly synthetic
-  temporary inputs. Neither result is committed or used as acceptance evidence.
+  temporary inputs. Neither result is committed or used as acceptance evidence;
+  Linux is no longer a Sprint 3 acceptance coordinate.
 - The deferred runners have cheap fail-closed preflight modes, no-overwrite and
   failed-run cleanup, transfer receipts, pinned macOS inputs, and rollback-safe
-  five-file installation. Five receipt unit tests and injected success,
-  rollback, and input-mutation rehearsals pass outside the evidence tree.
+  four-file installation. Receipt unit tests and injected success, rollback, and
+  input-mutation rehearsals pass outside the evidence tree.
 
-The tracked macOS evidence now proves the current freeze. Linux storage
-portability, Windows production-chain parity, cross-platform D-05 completion,
-`S3-AC-12`, and Sprint 3 Definition of Done remain open until the remaining
-real-host artifacts and canonical aggregates exist and validate.
+The tracked macOS evidence proves the current freeze. Windows production-chain parity,
+cross-platform D-05 completion, `S3-AC-12`, and Sprint 3 Definition of Done remain open
+until the two Windows reports and receipt are imported and the canonical aggregates
+exist and validate.
