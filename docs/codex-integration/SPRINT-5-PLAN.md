@@ -1,8 +1,9 @@
 # Sprint 5 plan — GDScript symbols and program relations
 
-**Status:** In progress — `S5-01`–`S5-07` are complete and locally verified on
+**Status:** In progress — `S5-01`–`S5-08` are complete and locally verified on
 macOS arm64, including the GDScript-disabled build, strict Rust normalization,
-`segment-v3`, and atomic resource/scene/script composition; `S5-08` is the next
+`segment-v3`, atomic resource/scene/script composition, and both bounded symbol
+MCP tools; `S5-09` is the next
 gate; full Sprint 5 acceptance is not claimed
 
 **Planned duration:** 10 working days
@@ -243,6 +244,24 @@ failure. A real macOS Bridge session pinned all three readers to one generation
 containing three scenes and eight script documents; its 114 busy-frame telemetry
 samples had a 1.204 ms maximum and zero samples above 2 ms. This closes the local
 composition gate, not the `S5-08` MCP tools or qualifying `S5-09` two-host gate.
+
+`S5-08` adds storage-neutral exact/prefix declaration search and forward-only
+symbol inspection over one immutable script generation. The public MCP registry
+now contains exactly nine read-only tools: the previous seven plus
+`godot_search_symbols` and `godot_inspect_symbol`. Their closed input schemas
+cover language/kind/script filters and the two exclusive inspection selectors;
+parameters, locals, and lambdas remain outside default search. The production
+server consumes the current `ScriptIndexReader`, returns resource/scene/script
+revision and checkpoint evidence, distinguishes discovery-only or incomplete
+facts as partial, caps diagnostics, and exposes ranges without source text or
+absolute paths. HMAC cursor profile v3 expires after five minutes and binds the
+project, tool, normalized selector/filters, page size, generation, index,
+resource, applicable scene, and script revisions plus offset. Local contract
+tests cover deterministic pagination, cross-tool/filter/selector isolation,
+limits, errors, partial results, discovery-only C#, and redaction. The complete
+locked Rust workspace passes 73 tests and strict clippy with warnings denied.
+This closes the local MCP gate, not the qualifying `S5-09` macOS/Windows live,
+accuracy, and SLO gate.
 
 ## 5. Required data flow
 

@@ -1,6 +1,7 @@
 # MCP-001 — Project-scoped Godot read tools
 
-**Status:** Sprint 2/3/4 tools live-verified on macOS arm64 and Windows x86_64
+**Status:** Sprint 2/3/4 tools live-verified on macOS arm64 and Windows x86_64;
+Sprint 5 symbol tools locally verified through `S5-08`
 
 **MCP protocol:** `2025-11-25`
 
@@ -9,8 +10,8 @@
 ## Purpose
 
 This contract exposes model-facing projections of the live Godot editor and its
-persistent resource/scene semantic index. The server is a project-scoped stdio MCP
-process and remains read-only through Sprint 4.
+persistent resource/scene/script semantic index. The server is a project-scoped
+stdio MCP process and remains read-only through Sprint 5.
 It does not contain OpenAI credentials, call a model, mutate the project, or
 return cached editor state as current after the bridge becomes unavailable.
 
@@ -92,12 +93,28 @@ Accepts exactly one opaque node ID, or `scene` plus a safe relative node-only
 `node_path`. It returns effective property values and declaration provenance,
 attached scripts/resources, groups, connections, and animation references.
 
+### `godot_search_symbols`
+
+Accepts a non-empty declaration name, `match` (`exact` or `prefix`), optional
+language/kind/script filters, limit, and cursor. It returns only named persistent
+declarations in deterministic order; parameters, locals, and lambdas are not in
+the public search surface.
+
+### `godot_inspect_symbol`
+
+Accepts exactly one opaque `symbol_id`, or a script selector together with a
+canonical qualified name. It returns declaration, signature/type/visibility,
+owner, outgoing exact/dynamic relations, scene attachments, diagnostics, and
+content-hash-bound source ranges. It deliberately omits general reverse usages,
+which remain Sprint 6 scope.
+
 ## Security and limits
 
-All seven tools are annotated read-only and reject additional input properties.
+All nine tools are annotated read-only and reject additional input properties.
 Index query limits default to 50 and accept 1–200. Signed cursors expire after five
-minutes and bind project, tool, selector, limit, generation, index revision, and the
-applicable scene revision. The MCP process writes protocol messages only
+minutes and bind project, tool, normalized selector/filters, limit, generation,
+index revision, resource revision, and the applicable scene/script revisions.
+The MCP process writes protocol messages only
 to stdout and diagnostics only to stderr. Ordinary logs must not include the
 session token, proof, absolute project root, source text, prompts, or property
 values.

@@ -3,8 +3,9 @@
 **Status:** D-07 accepted; `S5-01` contract, independent `S5-02` oracle, Bridge
 RPC 1.4 `S5-03`, bounded editor adapter/journal `S5-04`, and strict Rust wire
 normalization `S5-05`, plus logical schema 1.3/`segment-v3` persistence `S5-06`,
-and atomic cross-domain composition `S5-07` are locally verified on macOS arm64;
-`S5-08`–`S5-10` and two-host acceptance remain pending
+atomic cross-domain composition `S5-07`, and both bounded symbol MCP tools
+`S5-08` are locally verified on macOS arm64; `S5-09`–`S5-10` and two-host
+acceptance remain pending
 
 **Decision:** `D-07` — use a bridge-owned saved-content cache over Godot's
 GDScript parser/analyzer; do not depend on the active LSP peer cache
@@ -331,6 +332,9 @@ without an LSP client and records cold/warm/incremental timing plus bounded
 memory; and committed evidence binds the exact source, vectors, toolchain, and
 decision.
 
-Full Sprint 5 acceptance additionally requires the independent `S5-02` oracle,
-Bridge/index/MCP implementation, same-freeze macOS/Windows graph digest parity,
-and every `S5-AC-01`–`S5-AC-12` criterion from the parent plan.
+`S5-08` locally proves the exact nine-tool registry, closed symbol-tool schemas,
+deterministic exact/prefix search and inspection pagination, revision-bound HMAC
+cursors, partial-result/error/limit behavior, and redacted source evidence.
+
+Full Sprint 5 acceptance additionally requires same-freeze macOS/Windows graph
+digest parity and every `S5-AC-01`–`S5-AC-12` criterion from the parent plan.

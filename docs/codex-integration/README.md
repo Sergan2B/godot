@@ -45,7 +45,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | `RELEASE-001` | Draft for review 0.1 | `TEST-001` evidence manifest |
 | `ADR-000` | Accepted | Revisit only if fork topology changes |
 | `ADR-001` | Accepted and locally verified | Production sidecar boundary starts in Sprint 2 |
-| `PROTOCOL-001` | Bridge RPC 1.0–1.4 locally verified through Sprint 5 `S5-05`; script output is persisted by `S5-06` and composed by `S5-07` | Consume the current script generation in `S5-08` |
+| `PROTOCOL-001` | Bridge RPC 1.0–1.4 locally verified through Sprint 5 `S5-05`; script output is persisted by `S5-06`, composed by `S5-07`, and queried by `S5-08` | Exercise the same profile in the `S5-09` two-host gate |
 | Sprint 0 local baseline | Passed | Remote CI is `not_run` until publication is authorized |
 | Sprint 1 Stage 2 local evidence | Passed | Superseded by Stage 3 evidence |
 | Sprint 1 Stage 3 local evidence | Passed | Superseded by Stage 4 evidence |
@@ -59,11 +59,11 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | Sprint 3 Stage 4 | Complete and locally verified on macOS arm64 | Run `S3-09`; Windows/Linux and remote CI remain `not_run` |
 | Sprint 3 Stage 5 | Complete on freeze `a90ddd06c81a`; macOS/Windows live and storage gates pass | Superseded by final Sprint 3 evidence |
 | Sprint 3 evidence | Final; all 12 criteria pass and canonical D-05 selects segment | Begin Sprint 4 |
-| `INDEX-001` semantic index contract | Logical schema 1.3/`segment-v3` plus independent resource/scene/script freshness and atomic composition locally verified | Add bounded symbol queries in `S5-08` |
+| `INDEX-001` semantic index contract | Logical schema 1.3/`segment-v3`, independent resource/scene/script freshness, atomic composition, and bounded symbol queries locally verified | Exercise the frozen implementation in `S5-09` |
 | Sprint 4 plan | Complete; `S4-01`–`S4-10` and all 12 acceptance criteria pass on one macOS/Windows freeze | Begin Sprint 5 script and symbol intelligence |
 | `SCENE-001` scene contract | D-06 implemented and live-verified through Bridge/MCP on macOS and Windows | Extend only through a versioned post-Sprint-4 contract |
-| `SCRIPT-001` script contract | D-07 through strict Bridge RPC 1.4 normalization, `segment-v3`, and atomic cross-domain composition locally verified on macOS arm64 | Expose current facts through the two `S5-08` tools |
-| Sprint 5 plan | In progress; `S5-01`–`S5-07` complete locally, `S5-08`–`S5-10` remain | Execute `S5-08`: symbol search and inspection MCP tools |
+| `SCRIPT-001` script contract | D-07 through strict Bridge RPC 1.4 normalization, `segment-v3`, atomic cross-domain composition, and the two bounded symbol tools locally verified on macOS arm64 | Run the shared `S5-09` macOS/Windows gate |
+| Sprint 5 plan | In progress; `S5-01`–`S5-08` complete locally, `S5-09`–`S5-10` remain | Execute `S5-09`: macOS/Windows live, accuracy, and SLO gates |
 
 ## Interim ownership
 
