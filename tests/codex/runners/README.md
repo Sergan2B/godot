@@ -14,16 +14,15 @@ replacement for either required host. `remote_ci` stays `not_run`.
 
 ## Pinned handoff revision
 
-The qualifying wrappers are pinned to runner commit
-`a8dd7a73a756cc9b636dee4fe0552f94dc322593`. Linux and Windows receipts bind
+The qualifying wrappers and current macOS aggregation pins are frozen at runner
+commit `0961c5f7fe1bd36e8d62b4966f39c4dbf174b149`. Linux and Windows receipts bind
 the exact runner and `sprint3_transfer_manifest.py` bytes; aggregation rejects
 reports produced by a different wrapper set.
 
-Before using another device, the commit must be reachable there. At the time
-this runbook was written the local branch had not yet been pushed, so an
-ordinary clone is insufficient until `codex/integration` is published or the
-repository is transferred by another Git-safe mechanism. Do not start a host
-run if either `cat-file` check below fails.
+Before using another device, the pinned commit must be reachable there. After
+it is published, fetch `codex/integration`; otherwise transfer the repository by
+another Git-safe mechanism. Do not start a host run if either `cat-file` check
+below fails.
 
 Bootstrap after the branch is available:
 
@@ -33,11 +32,11 @@ git clone --filter=blob:none --branch codex/integration \
 CONTROL=/absolute/path/GodotSTG
 git -C "$CONTROL" fetch origin codex/integration
 git -C "$CONTROL" cat-file -e \
-  a8dd7a73a756cc9b636dee4fe0552f94dc322593^{commit}
+  0961c5f7fe1bd36e8d62b4966f39c4dbf174b149^{commit}
 git -C "$CONTROL" cat-file -e \
   a90ddd06c81a6210f44552b46ff533248b93ed90^{commit}
 git -C "$CONTROL" merge-base --is-ancestor \
-  a8dd7a73a756cc9b636dee4fe0552f94dc322593 HEAD
+  0961c5f7fe1bd36e8d62b4966f39c4dbf174b149 HEAD
 if command -v shasum >/dev/null 2>&1; then
   (cd "$CONTROL/tests/codex/runners" && shasum -a 256 -c MANIFEST.sha256)
 else
@@ -239,11 +238,10 @@ sprint-3-linux.receipt.json
 sprint-3-windows.receipt.json
 ```
 
-The tracked macOS reports belong to the superseded freeze. Regenerate both at
-`a90ddd06c81a6210f44552b46ff533248b93ed90`, replace them in a dedicated
-evidence commit, and update the approved macOS hashes in `sprint3_aggregate.sh`
-before aggregation. Never mix either old macOS report with current-freeze
-Windows or Linux reports.
+The tracked macOS reports were regenerated at
+`a90ddd06c81a6210f44552b46ff533248b93ed90` and their exact hashes are pinned
+in `sprint3_aggregate.sh`. Do not modify or resave them. Never mix reports from
+another freeze with the pinned macOS inputs.
 The two receipts are transfer-integrity/completion controls. They bind exact
 report bytes, sizes, freeze/source/oracle coordinates, runner bytes, and helper
 bytes. They are consumed by aggregation but are not Sprint evidence and are not
