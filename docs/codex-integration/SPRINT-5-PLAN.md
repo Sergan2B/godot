@@ -1,7 +1,8 @@
 # Sprint 5 plan — GDScript symbols and program relations
 
-**Status:** In progress — `S5-01`–`S5-03` are complete and locally verified on
-macOS arm64; `S5-04` is the next gate; full Sprint 5 acceptance is not claimed
+**Status:** In progress — `S5-01`–`S5-04` are complete and locally verified on
+macOS arm64, including the GDScript-disabled build; `S5-05` is the next gate;
+full Sprint 5 acceptance is not claimed
 
 **Planned duration:** 10 working days
 
@@ -187,9 +188,17 @@ cases, two explicit resource/scene compatibility cases, four capability names,
 two methods, two notifications, and `script_graph_revision`. Rust validates all
 101 canonical bundle cases and exact snapshot/delta checksums; Godot C++ proves
 1.4 negotiation, retention of resource/scene methods, and complete script-field
-omission after a 1.3 downgrade. Until `S5-04` installs the bounded adapter and
-journal, the four script capabilities intentionally report `unavailable` and
-requests fail with `capability_unavailable`.
+omission after a 1.3 downgrade.
+
+`S5-04` installs the bounded `ScriptSemanticAdapter`, `ScriptGraphAdapter`, and
+script delta journal. The editor now publishes saved-document snapshots, exact
+upsert/remove deltas, diagnostics, invalidation/gap notifications, cancellation,
+worker-thread exact-content projection, and deterministic off-main DTO retirement
+through Bridge RPC 1.4. The four script capabilities report `ready` in the normal
+build and remain honestly `unavailable` in a GDScript-disabled build; both build
+profiles pass the complete local Codex test subset, and the headless fixture
+records zero Bridge main-thread samples above 2 ms. This is an editor/transport
+gate, not `S5-05` Rust normalization or full Sprint 5 acceptance evidence.
 
 `S5-06` adds independently content-addressed script-document, symbol, relation,
 reference, diagnostic, and lookup shards. Migration validates the active

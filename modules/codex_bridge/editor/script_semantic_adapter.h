@@ -32,6 +32,8 @@
 
 #include "core/variant/variant.h"
 
+class ScriptGraphAdapter;
+
 class ScriptSemanticAdapter {
 public:
 	static constexpr uint32_t MAX_DOCUMENTS = 250000;
@@ -56,6 +58,7 @@ public:
 	};
 
 private:
+	friend class ScriptGraphAdapter;
 	friend struct ScriptSemanticAdapterTestAccess;
 
 	static bool _is_valid_script_path(const String &p_path);

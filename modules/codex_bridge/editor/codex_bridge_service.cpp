@@ -55,6 +55,9 @@ static constexpr int SNAPSHOT_ENTITY_LIMIT = 1000;
 static_assert(
 		MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME >= SceneStateAdapter::FRAME_SAFETY_MARGIN_USEC + SceneStateAdapter::SCENE_BUDGET_USEC,
 		"Scene scheduling must leave a nonnegative dispatcher lane.");
+static_assert(
+		MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME >= ScriptGraphAdapter::FRAME_SAFETY_MARGIN_USEC + ScriptGraphAdapter::SCRIPT_BUDGET_USEC,
+		"Script scheduling must leave a nonnegative dispatcher lane.");
 
 static String sha256_hex_utf8(const String &p_value) {
 	const CharString bytes = p_value.utf8();
@@ -120,9 +123,27 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 		case MainThreadDispatcher::COMMAND_SCENE_DELTA:
 			service->_complete_scene_delta(p_command.request_id, (uint64_t)(int64_t)p_command.params["after_scene_graph_revision"]);
 			break;
-		case MainThreadDispatcher::COMMAND_SCRIPT_SNAPSHOT:
+		case MainThreadDispatcher::COMMAND_SCRIPT_SNAPSHOT: {
+			if (!ScriptSemanticAdapter::is_gdscript_available()) {
+				service->transport_worker.complete_request_error(p_command.request_id, "capability_unavailable", "The saved-script semantic adapter is not available in this build.", false);
+				break;
+			}
+			Dictionary error_data;
+			const Error error = service->script_graph_adapter.begin_snapshot(p_command.request_id, OS::get_singleton()->get_ticks_usec(), service->_make_context(), error_data);
+			if (error == ERR_BUSY) {
+				service->transport_worker.complete_request_error(p_command.request_id, "script_snapshot_in_progress", "A script graph snapshot is already in progress.", true, error_data);
+			} else if (error == ERR_OUT_OF_MEMORY) {
+				service->transport_worker.complete_request_error(p_command.request_id, "script_limit_exceeded", "The editor script catalog exceeds a negotiated hard limit.", false);
+			} else if (error != OK) {
+				service->transport_worker.complete_request_error(p_command.request_id, "script_catalog_building", "The editor script catalog is still building.", true);
+			}
+		} break;
 		case MainThreadDispatcher::COMMAND_SCRIPT_DELTA:
-			service->transport_worker.complete_request_error(p_command.request_id, "capability_unavailable", "The saved-script semantic adapter is not available in this build.", false);
+			if (!ScriptSemanticAdapter::is_gdscript_available()) {
+				service->transport_worker.complete_request_error(p_command.request_id, "capability_unavailable", "The saved-script semantic adapter is not available in this build.", false);
+			} else {
+				service->_complete_script_delta(p_command.request_id, (uint64_t)(int64_t)p_command.params["after_script_graph_revision"]);
+			}
 			break;
 		case MainThreadDispatcher::COMMAND_CANCEL: {
 			const Array abandoned = service->resource_graph_adapter.cancel_snapshot(p_command.request_id);
@@ -132,6 +153,10 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 			const Array abandoned_scene = service->scene_state_adapter.cancel_snapshot(p_command.request_id);
 			if (!abandoned_scene.is_empty()) {
 				service->transport_worker.abort_resource_snapshot(p_command.request_id, abandoned_scene);
+			}
+			const Array abandoned_script = service->script_graph_adapter.cancel_snapshot(p_command.request_id);
+			if (!abandoned_script.is_empty()) {
+				service->transport_worker.abort_resource_snapshot(p_command.request_id, abandoned_script);
 			}
 		} break;
 		case MainThreadDispatcher::COMMAND_PING:
@@ -279,11 +304,13 @@ void CodexBridgeService::_on_undo_redo_version_changed() {
 void CodexBridgeService::_on_filesystem_changed() {
 	resource_graph_adapter.request_refresh();
 	scene_state_adapter.request_refresh();
+	script_graph_adapter.request_refresh();
 }
 
 void CodexBridgeService::_on_resources_reimported(const Vector<String> &p_paths) {
 	resource_graph_adapter.mark_reimported(p_paths);
 	scene_state_adapter.request_refresh();
+	script_graph_adapter.request_refresh();
 }
 
 void CodexBridgeService::_on_resources_reload(const PackedStringArray &p_paths) {
@@ -292,6 +319,7 @@ void CodexBridgeService::_on_resources_reload(const PackedStringArray &p_paths) 
 	if (!p_paths.is_empty()) {
 		resource_graph_adapter.request_refresh();
 		scene_state_adapter.request_refresh();
+		script_graph_adapter.request_refresh();
 	}
 }
 
@@ -466,6 +494,42 @@ void CodexBridgeService::_complete_scene_delta(uint64_t p_request_id, uint64_t p
 	transport_worker.complete_request(p_request_id, result);
 }
 
+void CodexBridgeService::_complete_script_delta(uint64_t p_request_id, uint64_t p_after_script_graph_revision) {
+	const ScriptDeltaJournal::QueryResult query = script_graph_adapter.query_delta(p_after_script_graph_revision);
+	if (query.status == ScriptDeltaJournal::QUERY_FUTURE) {
+		Dictionary data;
+		data["requested_after"] = (int64_t)p_after_script_graph_revision;
+		data["current_script_graph_revision"] = (int64_t)query.current_script_graph_revision;
+		transport_worker.complete_request_error(p_request_id, "invalid_revision", "The requested script graph revision is in the future.", false, data);
+		return;
+	}
+	if (query.status == ScriptDeltaJournal::QUERY_GAP) {
+		Dictionary data;
+		data["requested_after"] = (int64_t)p_after_script_graph_revision;
+		data["oldest_available"] = (int64_t)query.oldest_available_script_graph_revision;
+		data["current_script_graph_revision"] = (int64_t)query.current_script_graph_revision;
+		transport_worker.complete_request_error(p_request_id, "script_journal_gap", "The requested script graph delta is no longer available.", true, data);
+		return;
+	}
+	if (script_graph_adapter.has_catalog_limit_failure()) {
+		transport_worker.complete_request_error(p_request_id, "script_limit_exceeded", "The editor script catalog exceeds a negotiated hard limit.", false);
+		return;
+	}
+	if (!script_graph_adapter.is_catalog_ready()) {
+		transport_worker.complete_request_error(p_request_id, "script_catalog_building", "The editor script catalog is still building.", true);
+		return;
+	}
+	Dictionary result;
+	result["current_script_graph_revision"] = (int64_t)query.current_script_graph_revision;
+	if (query.status == ScriptDeltaJournal::QUERY_CURRENT) {
+		result["status"] = "current";
+	} else {
+		result["status"] = "batch";
+		result["batch"] = query.batch;
+	}
+	transport_worker.complete_request(p_request_id, result);
+}
+
 void CodexBridgeService::_process_resource_graph(uint64_t p_budget_usec) {
 	if (resource_graph_adapter.is_snapshot_active()) {
 		ResourceGraphAdapter::SnapshotCompletion snapshot;
@@ -570,6 +634,59 @@ void CodexBridgeService::_process_scene_graph(uint64_t p_budget_usec) {
 	}
 }
 
+void CodexBridgeService::_process_script_graph(uint64_t p_budget_usec) {
+	if (script_graph_adapter.is_snapshot_active()) {
+		ScriptGraphAdapter::SnapshotCompletion snapshot;
+		if (script_graph_adapter.process_snapshot(OS::get_singleton()->get_ticks_usec(), p_budget_usec, snapshot) && snapshot.ready) {
+			if (snapshot.is_error) {
+				if (!snapshot.abandoned_messages.is_empty()) {
+					transport_worker.abort_resource_snapshot(snapshot.request_id, snapshot.abandoned_messages);
+				}
+				transport_worker.complete_request_error(snapshot.request_id, snapshot.error_code, snapshot.error_message, snapshot.error_retryable, snapshot.error_data);
+			} else if (snapshot.terminal) {
+				transport_worker.complete_resource_snapshot(snapshot.request_id, snapshot.result, snapshot.server_message);
+			} else {
+				transport_worker.stage_resource_snapshot_message(snapshot.request_id, snapshot.server_message);
+			}
+		}
+		return;
+	}
+
+	ScriptGraphAdapter::RefreshOutcome refresh;
+	if (!script_graph_adapter.process_refresh(p_budget_usec, refresh)) {
+		return;
+	}
+	if (refresh.changed) {
+		Dictionary params;
+		params["event_type"] = "script_graph_changed";
+		params["script_graph_revision"] = (int64_t)refresh.current_script_graph_revision;
+		params["resource_revision"] = revision_clock.get_resource_revision();
+		params["scene_graph_revision"] = revision_clock.get_scene_graph_revision();
+		params["revisions"] = refresh.revisions;
+		Dictionary notification;
+		notification["protocol_version"] = "1.4";
+		notification["kind"] = "notification";
+		notification["method"] = "script_graph_changed";
+		notification["params"] = params;
+		notification["context"] = _make_context();
+		transport_worker.publish_notification(notification);
+	}
+	if (refresh.invalidated) {
+		Dictionary params;
+		params["event_type"] = "script_journal_gap";
+		params["last_contiguous_script_graph_revision"] = (int64_t)refresh.last_contiguous_script_graph_revision;
+		params["current_script_graph_revision"] = (int64_t)refresh.current_script_graph_revision;
+		params["revisions"] = refresh.revisions;
+		Dictionary notification;
+		notification["protocol_version"] = "1.4";
+		notification["kind"] = "notification";
+		notification["method"] = "script_journal_gap";
+		notification["params"] = params;
+		notification["context"] = _make_context();
+		transport_worker.publish_notification(notification);
+	}
+}
+
 void CodexBridgeService::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
@@ -580,30 +697,46 @@ void CodexBridgeService::_notification(int p_what) {
 				const uint64_t frame_started_usec = OS::get_singleton()->get_ticks_usec();
 				const bool resource_work = resource_graph_adapter.has_pending_work();
 				const bool scene_work = scene_state_adapter.has_pending_work();
-				const bool run_scene_bulk = scene_work && (!resource_work || scene_bulk_turn);
-				const bool run_resource_bulk = resource_work && (!scene_work || !scene_bulk_turn);
-				if (resource_work && scene_work) {
-					scene_bulk_turn = !scene_bulk_turn;
+				const bool script_work = script_graph_adapter.has_pending_work();
+				const bool control_work = dispatcher.get_queue_size() > 0;
+				bool run_resource_bulk = false;
+				bool run_scene_bulk = false;
+				bool run_script_bulk = false;
+				for (int offset = 0; offset < 4; offset++) {
+					const int candidate = (work_lane_turn + offset) % 4;
+					if ((candidate == 0 && resource_work) || (candidate == 1 && scene_work) || (candidate == 2 && script_work) || (candidate == 3 && control_work)) {
+						run_resource_bulk = candidate == 0;
+						run_scene_bulk = candidate == 1;
+						run_script_bulk = candidate == 2;
+						work_lane_turn = (candidate + 1) % 4;
+						break;
+					}
 				}
-				const uint64_t frame_safety_margin = run_scene_bulk ? SceneStateAdapter::FRAME_SAFETY_MARGIN_USEC : ResourceGraphAdapter::FRAME_SAFETY_MARGIN_USEC;
+				const uint64_t frame_safety_margin = run_script_bulk ? ScriptGraphAdapter::FRAME_SAFETY_MARGIN_USEC : (run_scene_bulk ? SceneStateAdapter::FRAME_SAFETY_MARGIN_USEC : ResourceGraphAdapter::FRAME_SAFETY_MARGIN_USEC);
 				const uint64_t dispatcher_budget = MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME -
 						frame_safety_margin -
 						(run_resource_bulk ? ResourceGraphAdapter::RESOURCE_BUDGET_USEC : 0) -
-						(run_scene_bulk ? SceneStateAdapter::SCENE_BUDGET_USEC : 0);
-				const MainThreadDispatcher::ProcessStats dispatcher_stats = dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
+						(run_scene_bulk ? SceneStateAdapter::SCENE_BUDGET_USEC : 0) -
+						(run_script_bulk ? ScriptGraphAdapter::SCRIPT_BUDGET_USEC : 0);
+				MainThreadDispatcher::ProcessStats dispatcher_stats;
+				if (dispatcher_budget > 0) {
+					dispatcher_stats = dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
+				}
 				const bool bulk_lane_available = dispatcher_stats.consumed == 0 || dispatcher_stats.elapsed_usec < dispatcher_budget;
-				// Control traffic retains the higher-priority lane, but a stream of
-				// short status requests must not starve either graph domain. Resource
-				// and scene bulk work alternate when both are pending. A scene slice
-				// with a zero dispatcher budget runs only on a command-free frame.
+				// Resource, scene, script, and queued control work rotate as four
+				// bounded lanes. Scene and script own the complete 2 ms slice on their
+				// turn; the explicit control lane prevents either side from starving.
 				if (run_resource_bulk && bulk_lane_available) {
 					_process_resource_graph(ResourceGraphAdapter::RESOURCE_BUDGET_USEC);
 				}
 				if (run_scene_bulk && bulk_lane_available) {
 					_process_scene_graph(SceneStateAdapter::SCENE_BUDGET_USEC);
 				}
+				if (run_script_bulk && bulk_lane_available) {
+					_process_script_graph(ScriptGraphAdapter::SCRIPT_BUDGET_USEC);
+				}
 				const uint64_t frame_elapsed_usec = OS::get_singleton()->get_ticks_usec() - frame_started_usec;
-				frame_telemetry.record(frame_elapsed_usec, resource_work || scene_work || dispatcher_stats.consumed > 0);
+				frame_telemetry.record(frame_elapsed_usec, resource_work || scene_work || script_work || control_work || dispatcher_stats.consumed > 0);
 			}
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
@@ -639,7 +772,8 @@ Error CodexBridgeService::start() {
 	revision_clock.initialize(transport_worker.get_editor_session_id());
 	resource_graph_adapter.initialize(&revision_clock);
 	scene_state_adapter.initialize(&revision_clock);
-	scene_bulk_turn = false;
+	script_graph_adapter.initialize(&revision_clock);
+	work_lane_turn = 0;
 	frame_telemetry.reset(OS::get_singleton()->get_environment("GODOT_CODEX_EVIDENCE_TELEMETRY") == "1");
 	_connect_editor_signals();
 	state = STATE_RUNNING;
@@ -656,7 +790,8 @@ void CodexBridgeService::stop() {
 	_disconnect_editor_signals();
 	resource_graph_adapter.shutdown();
 	scene_state_adapter.shutdown();
-	scene_bulk_turn = false;
+	script_graph_adapter.shutdown();
+	work_lane_turn = 0;
 	scene_change_pending = false;
 	pending_property.clear();
 	dispatcher.begin_shutdown();

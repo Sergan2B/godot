@@ -35,6 +35,7 @@
 #include "main_thread_dispatcher.h"
 #include "resource_graph_adapter.h"
 #include "scene_state_adapter.h"
+#include "script_graph_adapter.h"
 
 #include "editor/plugins/editor_plugin.h"
 
@@ -60,9 +61,10 @@ private:
 	BridgeRevisionClock revision_clock;
 	ResourceGraphAdapter resource_graph_adapter;
 	SceneStateAdapter scene_state_adapter;
+	ScriptGraphAdapter script_graph_adapter;
 	BridgeFrameTelemetry frame_telemetry;
 	bool editor_signals_connected = false;
-	bool scene_bulk_turn = false;
+	int work_lane_turn = 0;
 	bool scene_change_pending = false;
 	String pending_property;
 
@@ -84,8 +86,10 @@ private:
 	void _complete_snapshot(uint64_t p_request_id);
 	void _complete_resource_delta(uint64_t p_request_id, uint64_t p_after_resource_revision);
 	void _complete_scene_delta(uint64_t p_request_id, uint64_t p_after_scene_graph_revision);
+	void _complete_script_delta(uint64_t p_request_id, uint64_t p_after_script_graph_revision);
 	void _process_resource_graph(uint64_t p_budget_usec);
 	void _process_scene_graph(uint64_t p_budget_usec);
+	void _process_script_graph(uint64_t p_budget_usec);
 
 protected:
 	void _notification(int p_what);

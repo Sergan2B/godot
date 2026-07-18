@@ -57,6 +57,7 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "modules/codex_bridge/editor/scene_delta_journal.h"
 #include "modules/codex_bridge/editor/scene_state_adapter.h"
 #include "modules/codex_bridge/editor/script_delta_journal.h"
+#include "modules/codex_bridge/editor/script_graph_adapter.h"
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
 #include "modules/codex_bridge/protocol/bridge_frame_codec.h"
 #include "modules/codex_bridge/protocol/bridge_handshake.h"
@@ -141,6 +142,55 @@ struct ScriptDeltaJournalTestAccess {
 
 	static void wait_for_cleanup(ScriptDeltaJournal &r_journal) {
 		r_journal._wait_for_cleanup();
+	}
+};
+
+struct ScriptGraphAdapterTestAccess {
+	static ScriptGraphAdapter::CatalogRecord make_record(const Dictionary &p_bundle, const String &p_facts_checksum, uint64_t p_source_bytes = 1) {
+		ScriptGraphAdapter::CatalogRecord record;
+		record.bundle = p_bundle;
+		record.facts_checksum = p_facts_checksum;
+		record.source_bytes = p_source_bytes;
+		return record;
+	}
+
+	static void install_catalog_bundle(ScriptGraphAdapter &r_adapter, const String &p_key, const Dictionary &p_bundle, const String &p_facts_checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") {
+		r_adapter.catalog.insert(p_key, make_record(p_bundle, p_facts_checksum));
+		r_adapter.catalog_ready = true;
+		r_adapter.catalog_limit_exceeded = false;
+		r_adapter.refresh_requested = false;
+		r_adapter.refresh_phase = ScriptGraphAdapter::REFRESH_IDLE;
+	}
+
+	static void stage_observed_bundle(ScriptGraphAdapter &r_adapter, const String &p_key, const Dictionary &p_bundle, const String &p_facts_checksum) {
+		r_adapter.observed_catalog.insert(p_key, make_record(p_bundle, p_facts_checksum));
+		r_adapter.refresh_requested = false;
+		r_adapter.refresh_phase = ScriptGraphAdapter::REFRESH_RECONCILE_BEGIN;
+	}
+
+	static void stage_empty_observation(ScriptGraphAdapter &r_adapter) {
+		r_adapter.refresh_requested = false;
+		r_adapter.refresh_phase = ScriptGraphAdapter::REFRESH_RECONCILE_BEGIN;
+	}
+
+	static void force_limit_failure(ScriptGraphAdapter &r_adapter) {
+		r_adapter.refresh_limit_exceeded = true;
+		r_adapter.refresh_requested = false;
+		r_adapter.refresh_phase = ScriptGraphAdapter::REFRESH_RECONCILE_BEGIN;
+	}
+
+	static void force_projection_failure(ScriptGraphAdapter &r_adapter) {
+		r_adapter.refresh_projection_failed = true;
+		r_adapter.refresh_requested = false;
+		r_adapter.refresh_phase = ScriptGraphAdapter::REFRESH_RECONCILE_BEGIN;
+	}
+
+	static void wait_for_preparation(ScriptGraphAdapter &r_adapter) {
+		r_adapter._wait_for_journal_preparation();
+	}
+
+	static void wait_for_cleanup(ScriptGraphAdapter &r_adapter) {
+		ScriptDeltaJournalTestAccess::wait_for_cleanup(r_adapter.journal);
 	}
 };
 
@@ -1088,7 +1138,7 @@ TEST_CASE("[CodexBridge] Scene methods fail explicitly after a 1.2 downgrade") {
 	CHECK(rpc_error_code(outcome) == "capability_unavailable");
 }
 
-TEST_CASE("[CodexS5BridgeProfile] RPC 1.4 negotiates a strict unavailable script profile") {
+TEST_CASE("[CodexS5BridgeProfile] RPC 1.4 negotiates script readiness from the compiled adapter") {
 	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
 	BridgeRpcSession rpc(project_id, editor_session_id);
@@ -1106,7 +1156,11 @@ TEST_CASE("[CodexS5BridgeProfile] RPC 1.4 negotiates a strict unavailable script
 		const Dictionary capability = capabilities[index];
 		if (String(capability["name"]).begins_with("script.")) {
 			script_capabilities++;
+#ifdef MODULE_GDSCRIPT_ENABLED
+			CHECK(capability["readiness"] == "ready");
+#else
 			CHECK(capability["readiness"] == "unavailable");
+#endif
 		}
 	}
 	CHECK(script_capabilities == 4);
@@ -1175,7 +1229,11 @@ TEST_CASE("[CodexS5BridgeProfile] RPC 1.4 negotiates a strict unavailable script
 	metrics["script_capabilities"] = script_capabilities;
 	metrics["script_methods"] = 2;
 	metrics["resource_scene_retained"] = true;
+#ifdef MODULE_GDSCRIPT_ENABLED
+	metrics["script_readiness"] = "ready";
+#else
 	metrics["script_readiness"] = "unavailable";
+#endif
 	print_line("[codex_s5_bridge] " + JSON::stringify(metrics));
 }
 
@@ -1572,6 +1630,183 @@ static String script_test_sha256_hex(const String &p_value) {
 	digest.resize(32);
 	REQUIRE(CryptoCore::sha256(reinterpret_cast<const uint8_t *>(bytes.get_data()), bytes.length(), digest.ptrw()) == OK);
 	return BridgeCrypto::bytes_to_lower_hex(digest);
+}
+
+TEST_CASE("[CodexS5ScriptGraph] Script snapshot freezes one bounded revision and streams every record family") {
+	BridgeRevisionClock revisions;
+	revisions.initialize("editor:0123456789abcdef0123456789abcdef");
+	ScriptGraphAdapter adapter;
+	adapter.initialize(&revisions);
+
+#ifdef MODULE_GDSCRIPT_ENABLED
+	const Dictionary script_ref = make_resource_ref("uid://script-snapshot");
+	const Dictionary operation = make_script_upsert(script_ref, "res://scripts/snapshot.gd", 1);
+	ScriptGraphAdapterTestAccess::install_catalog_bundle(adapter, "uid:uid://script-snapshot", operation["value"]);
+	Dictionary context;
+	context["project_id"] = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
+	context["editor_session_id"] = "editor:0123456789abcdef0123456789abcdef";
+	Dictionary error_data;
+	REQUIRE(adapter.begin_snapshot(41, 100, context, error_data) == OK);
+
+	Array messages;
+	Dictionary result;
+	for (int iteration = 0; iteration < 16 && result.is_empty(); iteration++) {
+		ScriptGraphAdapter::SnapshotCompletion completion;
+		REQUIRE(adapter.process_snapshot(101 + iteration, ScriptGraphAdapter::SCRIPT_BUDGET_USEC, completion));
+		if (!completion.ready) {
+			continue;
+		}
+		CHECK_FALSE(completion.is_error);
+		messages.push_back(completion.server_message);
+		if (completion.terminal) {
+			result = completion.result;
+		}
+	}
+	REQUIRE_FALSE(result.is_empty());
+	REQUIRE(messages.size() == 3);
+	CHECK(Dictionary(messages[0])["method"] == "snapshot.begin");
+	const Dictionary chunk = messages[1];
+	CHECK(chunk["kind"] == "chunk");
+	CHECK(chunk["domain"] == "script_graph");
+	const Dictionary payload = chunk["payload"];
+	CHECK(Array(payload["documents"]).size() == 1);
+	CHECK(Array(payload["symbols"]).is_empty());
+	CHECK(Array(payload["relations"]).is_empty());
+	CHECK(Array(payload["diagnostics"]).is_empty());
+	CHECK(Array(payload["adapter_statuses"]).size() == 2);
+	const Dictionary end = messages[2];
+	CHECK(end["method"] == "snapshot.end");
+	const Dictionary end_params = end["params"];
+	CHECK((int64_t)end_params["document_count"] == 1);
+	CHECK((int64_t)end_params["adapter_status_count"] == 2);
+	CHECK((int64_t)result["script_graph_revision"] == 1);
+	CHECK((int64_t)Dictionary(result["limits_applied"])["snapshot_chunk_bytes"] == (int64_t)ScriptGraphAdapter::SNAPSHOT_CHUNK_BYTES);
+	adapter.cancel_snapshot(41);
+	CHECK_FALSE(adapter.is_snapshot_active());
+#else
+	Dictionary error_data;
+	CHECK(adapter.begin_snapshot(41, 100, Dictionary(), error_data) == ERR_UNAVAILABLE);
+	CHECK_FALSE(adapter.is_catalog_ready());
+#endif
+
+	adapter.shutdown();
+}
+
+#ifdef MODULE_GDSCRIPT_ENABLED
+static ScriptGraphAdapter::RefreshOutcome finish_script_refresh(ScriptGraphAdapter &r_adapter) {
+	for (int iteration = 0; iteration < 64; iteration++) {
+		ScriptGraphAdapter::RefreshOutcome outcome;
+		if (r_adapter.process_refresh(ScriptGraphAdapter::SCRIPT_BUDGET_USEC, outcome) && (outcome.changed || outcome.invalidated)) {
+			return outcome;
+		}
+		ScriptGraphAdapterTestAccess::wait_for_preparation(r_adapter);
+	}
+	FAIL_CHECK("Script graph refresh did not produce a terminal outcome.");
+	return ScriptGraphAdapter::RefreshOutcome();
+}
+
+static void drain_script_refresh(ScriptGraphAdapter &r_adapter) {
+	for (int iteration = 0; iteration < 4096 && r_adapter.has_pending_work(); iteration++) {
+		ScriptGraphAdapter::RefreshOutcome ignored;
+		r_adapter.process_refresh(ScriptGraphAdapter::SCRIPT_BUDGET_USEC, ignored);
+		ScriptGraphAdapterTestAccess::wait_for_preparation(r_adapter);
+	}
+	CHECK_FALSE(r_adapter.has_pending_work());
+}
+#endif
+
+TEST_CASE("[CodexS5ScriptGraph] Script refresh publishes exact upsert and remove deltas before retiring old DTOs") {
+#ifdef MODULE_GDSCRIPT_ENABLED
+	BridgeRevisionClock revisions;
+	revisions.initialize("editor:0123456789abcdef0123456789abcdef");
+	ScriptGraphAdapter adapter;
+	adapter.initialize(&revisions);
+	const Dictionary script_ref = make_resource_ref("uid://script-delta");
+	const Dictionary initial_operation = make_script_upsert(script_ref, "res://scripts/delta.gd", 1);
+	ScriptGraphAdapterTestAccess::install_catalog_bundle(adapter, "uid:uid://script-delta", initial_operation["value"], "facts-v1");
+
+	const Dictionary changed_operation = make_script_upsert(script_ref, "res://scripts/delta.gd", 2);
+	ScriptGraphAdapterTestAccess::stage_observed_bundle(adapter, "uid:uid://script-delta", changed_operation["value"], "facts-v2");
+	const ScriptGraphAdapter::RefreshOutcome changed = finish_script_refresh(adapter);
+	CHECK(changed.changed);
+	CHECK_FALSE(changed.invalidated);
+	CHECK(changed.last_contiguous_script_graph_revision == 1);
+	CHECK(changed.current_script_graph_revision == 2);
+	const ScriptDeltaJournal::QueryResult changed_query = adapter.query_delta(1);
+	REQUIRE(changed_query.status == ScriptDeltaJournal::QUERY_BATCH);
+	const Array changed_operations = Dictionary(changed_query.batch)["operations"];
+	REQUIRE(changed_operations.size() == 1);
+	CHECK(Dictionary(changed_operations[0])["kind"] == "upsert_document");
+	drain_script_refresh(adapter);
+
+	ScriptGraphAdapterTestAccess::stage_empty_observation(adapter);
+	const ScriptGraphAdapter::RefreshOutcome removed = finish_script_refresh(adapter);
+	CHECK(removed.changed);
+	CHECK_FALSE(removed.invalidated);
+	CHECK(removed.last_contiguous_script_graph_revision == 2);
+	CHECK(removed.current_script_graph_revision == 3);
+	const ScriptDeltaJournal::QueryResult removed_query = adapter.query_delta(2);
+	REQUIRE(removed_query.status == ScriptDeltaJournal::QUERY_BATCH);
+	const Array removed_operations = Dictionary(removed_query.batch)["operations"];
+	REQUIRE(removed_operations.size() == 1);
+	CHECK(Dictionary(removed_operations[0])["kind"] == "remove_document");
+	CHECK(Dictionary(removed_operations[0])["path"] == "res://scripts/delta.gd");
+	drain_script_refresh(adapter);
+	adapter.shutdown();
+#endif
+}
+
+TEST_CASE("[CodexS5ScriptGraph] Limit failure invalidates the script catalog and retires detached DTOs off main") {
+#ifdef MODULE_GDSCRIPT_ENABLED
+	BridgeRevisionClock revisions;
+	revisions.initialize("editor:0123456789abcdef0123456789abcdef");
+	ScriptGraphAdapter adapter;
+	adapter.initialize(&revisions);
+
+	SafeNumeric<uint32_t> destroyed;
+	SafeFlag destroyed_off_main;
+	Ref<ResourceDtoCleanupProbe> probe;
+	probe.instantiate(&destroyed, &destroyed_off_main);
+	Dictionary bundle = make_script_upsert(make_resource_ref("uid://script-retired"), "res://scripts/retired.gd", 1)["value"];
+	bundle["cleanup_probe"] = probe;
+	ScriptGraphAdapterTestAccess::install_catalog_bundle(adapter, "uid:uid://script-retired", bundle, "facts-retired");
+	bundle = Dictionary();
+	probe.unref();
+
+	ScriptGraphAdapterTestAccess::force_limit_failure(adapter);
+	const ScriptGraphAdapter::RefreshOutcome invalidated = finish_script_refresh(adapter);
+	CHECK_FALSE(invalidated.changed);
+	CHECK(invalidated.invalidated);
+	CHECK(invalidated.last_contiguous_script_graph_revision == 1);
+	CHECK(invalidated.current_script_graph_revision == 2);
+	CHECK(adapter.query_delta(1).status == ScriptDeltaJournal::QUERY_GAP);
+	Dictionary error_data;
+	CHECK(adapter.begin_snapshot(52, 100, Dictionary(), error_data) == ERR_OUT_OF_MEMORY);
+	drain_script_refresh(adapter);
+	ScriptGraphAdapterTestAccess::wait_for_cleanup(adapter);
+	CHECK(destroyed.get() == 1);
+	CHECK(destroyed_off_main.is_set());
+	adapter.shutdown();
+#endif
+}
+
+TEST_CASE("[CodexS5ScriptGraph] Projection failure creates a gap without misreporting a hard limit") {
+#ifdef MODULE_GDSCRIPT_ENABLED
+	BridgeRevisionClock revisions;
+	revisions.initialize("editor:0123456789abcdef0123456789abcdef");
+	ScriptGraphAdapter adapter;
+	adapter.initialize(&revisions);
+	const Dictionary operation = make_script_upsert(make_resource_ref("uid://script-failed"), "res://scripts/failed.gd", 1);
+	ScriptGraphAdapterTestAccess::install_catalog_bundle(adapter, "uid:uid://script-failed", operation["value"], "facts-failed");
+	ScriptGraphAdapterTestAccess::force_projection_failure(adapter);
+	const ScriptGraphAdapter::RefreshOutcome invalidated = finish_script_refresh(adapter);
+	CHECK(invalidated.invalidated);
+	CHECK(adapter.query_delta(1).status == ScriptDeltaJournal::QUERY_GAP);
+	Dictionary error_data;
+	CHECK(adapter.begin_snapshot(53, 100, Dictionary(), error_data) == ERR_UNAVAILABLE);
+	drain_script_refresh(adapter);
+	adapter.shutdown();
+#endif
 }
 
 TEST_CASE("[CodexS5ScriptJournal] Script delta journal binds exact operations and distinguishes current gap and future") {
@@ -2128,6 +2363,58 @@ static ResourceSnapshotDraftContext make_resource_snapshot_draft(BridgeTransport
 	return context;
 }
 
+#ifdef MODULE_GDSCRIPT_ENABLED
+static ResourceSnapshotDraftContext make_script_snapshot_draft(BridgeTransportWorker &p_worker, const Dictionary &p_discovery) {
+	ResourceSnapshotDraftContext context;
+	context.worker = &p_worker;
+	const String snapshot_id = "snapshot:1123456789abcdef0123456789abcdef";
+	const Dictionary rpc_context = make_rpc_context(p_discovery["project_id"], p_discovery["editor_session_id"]);
+	context.result["snapshot_id"] = snapshot_id;
+	context.result["domain"] = "script_graph";
+
+	Dictionary begin_params;
+	begin_params["snapshot_id"] = snapshot_id;
+	begin_params["domain"] = "script_graph";
+	Dictionary begin;
+	begin["protocol_version"] = "1.4";
+	begin["kind"] = "notification";
+	begin["method"] = "snapshot.begin";
+	begin["params"] = begin_params;
+	begin["context"] = rpc_context;
+	context.messages.push_back(begin);
+
+	Dictionary payload;
+	payload["documents"] = Array();
+	payload["symbols"] = Array();
+	payload["relations"] = Array();
+	payload["diagnostics"] = Array();
+	payload["adapter_statuses"] = Array();
+	Dictionary chunk;
+	chunk["protocol_version"] = "1.4";
+	chunk["kind"] = "chunk";
+	chunk["snapshot_id"] = snapshot_id;
+	chunk["domain"] = "script_graph";
+	chunk["chunk_index"] = 0;
+	chunk["payload"] = payload;
+	chunk["context"] = rpc_context;
+	context.messages.push_back(chunk);
+
+	Dictionary end_params;
+	end_params["snapshot_id"] = snapshot_id;
+	end_params["domain"] = "script_graph";
+	end_params["chunk_count"] = 1;
+	end_params["checksum"] = "";
+	Dictionary end;
+	end["protocol_version"] = "1.4";
+	end["kind"] = "notification";
+	end["method"] = "snapshot.end";
+	end["params"] = end_params;
+	end["context"] = rpc_context;
+	context.messages.push_back(end);
+	return context;
+}
+#endif
+
 static bool wait_for_disconnect(const Ref<BridgeStreamPeer> &p_peer) {
 	if (p_peer.is_null()) {
 		return false;
@@ -2613,6 +2900,73 @@ TEST_CASE("[CodexBridge] Resource snapshot spool preserves response order and re
 	client->disconnect_from_host();
 	CHECK(worker.stop() == BridgeTransportWorker::STOPPED);
 	dispatcher.begin_shutdown();
+}
+
+TEST_CASE("[CodexS5ScriptGraph] Script snapshot spool canonicalizes payloads and releases the frozen generation on ACK") {
+#ifdef MODULE_GDSCRIPT_ENABLED
+	TemporaryBridgeProject project;
+	REQUIRE(project.error == OK);
+	MainThreadDispatcher dispatcher;
+	dispatcher.start_accepting();
+	BridgeTransportWorker worker;
+	REQUIRE(worker.start(project.root, &dispatcher) == OK);
+	Dictionary discovery;
+	REQUIRE(BridgeJson::parse_strict_object(read_file_bytes(project.root.path_join(".godot/codex/bridge.json")), discovery) == OK);
+	Ref<BridgeStreamPeer> client = connect_authenticated_test_client(project.root, discovery, "1.4");
+	REQUIRE(client.is_valid());
+
+	Dictionary message;
+	REQUIRE(send_test_object(client, make_rpc_request("req:script-spool-init", "bridge.initialize", make_initialize_params(), discovery["project_id"], discovery["editor_session_id"], 5000, "1.4")));
+	REQUIRE(dispatch_worker_request(dispatcher, worker));
+	REQUIRE(receive_test_object(client, message));
+	REQUIRE(message.has("result"));
+
+	REQUIRE(send_test_object(client, make_rpc_request("req:script-spooled", "script.snapshot.get", Dictionary(), discovery["project_id"], discovery["editor_session_id"], 30000, "1.4")));
+	REQUIRE(wait_for_dispatcher_size(dispatcher, 1));
+	ResourceSnapshotDraftContext draft = make_script_snapshot_draft(worker, discovery);
+	const MainThreadDispatcher::ProcessStats completion_stats = dispatcher.process(stage_resource_snapshot_draft, &draft, 1);
+	REQUIRE(completion_stats.processed == 1);
+
+	REQUIRE(receive_test_object(client, message));
+	REQUIRE(message.has("result"));
+	const String snapshot_id = Dictionary(message["result"])["snapshot_id"];
+	REQUIRE(receive_test_object(client, message));
+	CHECK(message["method"] == "snapshot.begin");
+	REQUIRE(receive_test_object(client, message));
+	CHECK(message["kind"] == "chunk");
+	CHECK(message["domain"] == "script_graph");
+	CHECK(message["snapshot_id"] == snapshot_id);
+	CHECK((int64_t)message["chunk_index"] == 0);
+	const String payload_json = message["payload_json"];
+	const String chunk_checksum = message["checksum"];
+	CHECK_FALSE(payload_json.is_empty());
+	CHECK(chunk_checksum == script_test_sha256_hex(payload_json));
+	REQUIRE(receive_test_object(client, message));
+	CHECK(message["method"] == "snapshot.end");
+	CHECK(Dictionary(message["params"])["checksum"] == script_test_sha256_hex(chunk_checksum));
+
+	Dictionary ack_params;
+	ack_params["snapshot_id"] = snapshot_id;
+	ack_params["domain"] = "script_graph";
+	ack_params["through_chunk"] = 0;
+	Dictionary ack;
+	ack["protocol_version"] = "1.4";
+	ack["kind"] = "ack";
+	ack["ack_id"] = "ack:script-spooled";
+	ack["params"] = ack_params;
+	ack["context"] = make_rpc_context(discovery["project_id"], discovery["editor_session_id"]);
+	REQUIRE(send_test_object(client, ack));
+	REQUIRE(wait_for_dispatcher_size(dispatcher, 1));
+	CapturedCommands captured;
+	const MainThreadDispatcher::ProcessStats release_stats = dispatcher.process(capture_command, &captured, 1);
+	CHECK(release_stats.processed == 1);
+	REQUIRE(captured.types.size() == 1);
+	CHECK(captured.types[0] == MainThreadDispatcher::COMMAND_CANCEL);
+
+	client->disconnect_from_host();
+	CHECK(worker.stop() == BridgeTransportWorker::STOPPED);
+	dispatcher.begin_shutdown();
+#endif
 }
 
 #endif // UNIX_ENABLED || WINDOWS_ENABLED

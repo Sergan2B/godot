@@ -34,6 +34,7 @@
 #include "core/variant/variant.h"
 
 class ScriptSemanticAdapter;
+class ScriptGraphAdapter;
 
 class ScriptDeltaJournal {
 public:
@@ -65,6 +66,7 @@ public:
 
 private:
 	friend class ScriptSemanticAdapter;
+	friend class ScriptGraphAdapter;
 	friend struct ScriptDeltaJournalTestAccess;
 
 	struct StoredBatch {

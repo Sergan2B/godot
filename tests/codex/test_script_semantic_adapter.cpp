@@ -142,6 +142,19 @@ TEST_CASE("[CodexS5ScriptAdapter] CSharp projection is exact-content discovery o
 	CHECK(Array(projection.bundle["relations"]).is_empty());
 	CHECK(Array(projection.bundle["diagnostics"]).is_empty());
 	CHECK(projection.facts_checksum.length() == 64);
+	ScriptSemanticAdapter::DocumentProjection later_revision;
+	REQUIRE(ScriptSemanticAdapterTestAccess::project_source(read_fixture("Enemy.cs"), "res://scripts/Enemy.cs", uid_ref("uid://s5enemycsharp"), 8, 12, later_revision) == OK);
+	CHECK(later_revision.facts_checksum == projection.facts_checksum);
+	CHECK(int64_t(Dictionary(later_revision.bundle["document"])["script_graph_revision"]) == 12);
+}
+
+TEST_CASE("[CodexS5ScriptAdapter] A disappeared saved file requests a refresh restart instead of a hard-limit failure") {
+	ScriptSemanticAdapter::DocumentProjection projection;
+	ERR_PRINT_OFF;
+	const Error error = ScriptSemanticAdapter::project_saved_document("res://codex-missing-script.cs", uid_ref("uid://s5missingtransient"), 1, 1, projection);
+	ERR_PRINT_ON;
+	CHECK(error == ERR_BUSY);
+	CHECK(projection.bundle.is_empty());
 }
 
 #ifdef MODULE_GDSCRIPT_ENABLED

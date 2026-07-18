@@ -1474,7 +1474,33 @@ Error ScriptSemanticAdapter::_project_source(const String &p_source, const Strin
 	bundle["diagnostics"] = diagnostics;
 	r_projection.bundle = bundle;
 	r_projection.source_bytes = source_bytes.length();
-	r_projection.facts_checksum = sha256_hex(JSON::stringify(bundle, "", true, true));
+	Dictionary facts_document = document.duplicate();
+	facts_document.erase("resource_revision");
+	facts_document.erase("script_graph_revision");
+	Array facts_symbols;
+	for (const Variant &value : symbols) {
+		Dictionary symbol = Dictionary(value).duplicate();
+		symbol.erase("script_graph_revision");
+		facts_symbols.push_back(symbol);
+	}
+	Array facts_relations;
+	for (const Variant &value : relations) {
+		Dictionary relation = Dictionary(value).duplicate();
+		relation.erase("script_graph_revision");
+		facts_relations.push_back(relation);
+	}
+	Array facts_diagnostics;
+	for (const Variant &value : diagnostics) {
+		Dictionary diagnostic = Dictionary(value).duplicate();
+		diagnostic.erase("script_graph_revision");
+		facts_diagnostics.push_back(diagnostic);
+	}
+	Dictionary facts;
+	facts["document"] = facts_document;
+	facts["symbols"] = facts_symbols;
+	facts["relations"] = facts_relations;
+	facts["diagnostics"] = facts_diagnostics;
+	r_projection.facts_checksum = sha256_hex(JSON::stringify(facts, "", true, true));
 	return r_projection.facts_checksum.is_empty() ? ERR_CANT_CREATE : OK;
 }
 
@@ -1483,7 +1509,8 @@ Error ScriptSemanticAdapter::project_saved_document(const String &p_path, const 
 	ERR_FAIL_COND_V(!_is_valid_script_path(p_path) || !_is_valid_script_ref(p_script_ref, p_path), ERR_INVALID_PARAMETER);
 	const int64_t size_before = FileAccess::get_size(p_path);
 	const uint64_t modified_before = FileAccess::get_modified_time(p_path);
-	ERR_FAIL_COND_V(size_before < 0 || (uint64_t)size_before > MAX_SOURCE_BYTES, ERR_OUT_OF_MEMORY);
+	ERR_FAIL_COND_V(size_before < 0, ERR_BUSY);
+	ERR_FAIL_COND_V((uint64_t)size_before > MAX_SOURCE_BYTES, ERR_OUT_OF_MEMORY);
 	Error read_error = OK;
 	const PackedByteArray bytes = FileAccess::get_file_as_bytes(p_path, &read_error);
 	ERR_FAIL_COND_V(read_error != OK || bytes.size() != size_before, read_error == OK ? ERR_FILE_CORRUPT : read_error);

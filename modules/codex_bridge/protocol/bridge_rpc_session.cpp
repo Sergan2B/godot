@@ -33,6 +33,7 @@
 #include "bridge_frame_codec.h"
 
 #include "modules/codex_bridge/editor/main_thread_dispatcher.h"
+#include "modules/modules_enabled.gen.h"
 
 namespace {
 
@@ -251,8 +252,13 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 			Dictionary capability;
 			capability["name"] = name;
 			capability["version"] = "1.0";
-			// S5-03 freezes negotiation before S5-04 installs the adapter.
+			// The 1.4 profile remains visible in a GDScript-disabled build, but
+			// readiness and dispatch fail closed as required by SCRIPT-001.
+#ifdef MODULE_GDSCRIPT_ENABLED
+			capability["readiness"] = "ready";
+#else
 			capability["readiness"] = "unavailable";
+#endif
 			capabilities.push_back(capability);
 		}
 	}
