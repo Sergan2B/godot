@@ -32,6 +32,8 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 26. [SPRINT-4-PLAN.md](SPRINT-4-PLAN.md) — implementation-ready scene semantics, Bridge RPC 1.3, persistent scene index, MCP, and local two-host gates.
 27. [SPRINT-4-EVIDENCE.md](SPRINT-4-EVIDENCE.md) — local macOS/Windows scene gate, SLO policy, raw reports, and deterministic aggregate.
 28. [SCENE-001-scene-node-resource-model.md](SCENE-001-scene-node-resource-model.md) — frozen D-06 scene/node/subresource identity and composition contract.
+29. [SCRIPT-001-gdscript-and-csharp-adapters.md](SCRIPT-001-gdscript-and-csharp-adapters.md) — frozen D-07 analyzer authority, script identities, ranges, confidence, and adapter contract.
+30. [SPRINT-5-PLAN.md](SPRINT-5-PLAN.md) — implementation-ready GDScript symbols, script index, MCP, and local two-host acceptance plan.
 
 ## Document status
 
@@ -60,6 +62,8 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | `INDEX-001` resource contract | Frozen and implemented; cross-platform `D-05` selects segment store | Extend only through a versioned Sprint 4 contract |
 | Sprint 4 plan | Complete; `S4-01`–`S4-10` and all 12 acceptance criteria pass on one macOS/Windows freeze | Begin Sprint 5 script and symbol intelligence |
 | `SCENE-001` scene contract | D-06 implemented and live-verified through Bridge/MCP on macOS and Windows | Extend only through a versioned post-Sprint-4 contract |
+| `SCRIPT-001` script contract | D-07 accepted; identities, ranges, confidence and enabled/disabled GDScript profiles locally verified on macOS arm64 | Build the independent `S5-02` oracle without production-derived expectations |
+| Sprint 5 plan | In progress; `S5-01` complete locally, `S5-02`–`S5-10` remain | Execute `S5-02`: freeze the independent script fixture and golden oracle |
 
 ## Interim ownership
 

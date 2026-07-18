@@ -1,0 +1,370 @@
+{
+  "$id": "https://godotengine.org/codex/script-semantics/contract-vectors.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "boundedName": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "byteOffset": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "contentHash": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "algorithms": {
+      "additionalProperties": false,
+      "properties": {
+        "content_symbol_domain": {
+          "const": "godot-codex/script-symbol/content-revision/v1"
+        },
+        "diagnostic_domain": {
+          "const": "godot-codex/script-diagnostic/content-revision/v1"
+        },
+        "encoding": {
+          "const": "sha256-base64url-unpadded"
+        },
+        "named_symbol_domain": {
+          "const": "godot-codex/script-symbol/named/v1"
+        }
+      },
+      "required": [
+        "encoding",
+        "named_symbol_domain",
+        "content_symbol_domain",
+        "diagnostic_domain"
+      ],
+      "type": "object"
+    },
+    "confidence_vectors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "authority": {
+            "enum": [
+              "gdscript_analyzer",
+              "gdscript_parser",
+              "godot_resource_loader"
+            ]
+          },
+          "expected_confidence": {
+            "enum": ["exact", "dynamic"]
+          },
+          "freshness": {
+            "enum": ["current", "stale"]
+          },
+          "name": {
+            "$ref": "#/$defs/boundedName"
+          },
+          "resolution": {
+            "enum": [
+              "resolved_unambiguous",
+              "dynamic_target",
+              "string_node_path"
+            ]
+          },
+          "servable_as_current": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "authority",
+          "resolution",
+          "freshness",
+          "expected_confidence",
+          "servable_as_current"
+        ],
+        "type": "object"
+      },
+      "minItems": 6,
+      "type": "array"
+    },
+    "coordinate_contract": {
+      "additionalProperties": false,
+      "properties": {
+        "column_base": {
+          "const": 1
+        },
+        "column_encoding": {
+          "const": "unicode-scalar"
+        },
+        "line_base": {
+          "const": 1
+        },
+        "line_endings": {
+          "const": "preserve-source-bytes"
+        },
+        "source_encoding": {
+          "const": "utf-8"
+        },
+        "span": {
+          "const": "half-open-byte-offset"
+        }
+      },
+      "required": [
+        "source_encoding",
+        "span",
+        "line_base",
+        "column_base",
+        "column_encoding",
+        "line_endings"
+      ],
+      "type": "object"
+    },
+    "identity_vectors": {
+      "items": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "named_symbol"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "identity_scope": {
+                  "const": "persistent"
+                }
+              },
+              "required": ["qualified_key", "symbol_kind"]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "content_symbol"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "identity_scope": {
+                  "const": "content_revision"
+                }
+              },
+              "required": [
+                "source",
+                "owner_qualified_key",
+                "symbol_kind",
+                "start_byte",
+                "end_byte"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "diagnostic"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "identity_scope": {
+                  "const": "content_revision"
+                }
+              },
+              "required": [
+                "source",
+                "severity",
+                "code",
+                "normalized_message",
+                "start_byte",
+                "end_byte"
+              ]
+            }
+          }
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/$defs/boundedName"
+          },
+          "different_identity_from": {
+            "$ref": "#/$defs/boundedName"
+          },
+          "end_byte": {
+            "$ref": "#/$defs/byteOffset"
+          },
+          "expected_id": {
+            "pattern": "^godot:(script-symbol:(named|content-revision)|script-diagnostic):v1:[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "identity_scope": {
+            "enum": ["persistent", "content_revision"]
+          },
+          "kind": {
+            "enum": ["named_symbol", "content_symbol", "diagnostic"]
+          },
+          "language": {
+            "const": "gdscript"
+          },
+          "name": {
+            "$ref": "#/$defs/boundedName"
+          },
+          "normalized_message": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "owner_qualified_key": {
+            "$ref": "#/$defs/boundedName"
+          },
+          "qualified_key": {
+            "$ref": "#/$defs/boundedName"
+          },
+          "same_identity_as": {
+            "$ref": "#/$defs/boundedName"
+          },
+          "script_id": {
+            "pattern": "^godot:resource:(uid|path-content):v1:[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "severity": {
+            "enum": ["error", "warning", "info"]
+          },
+          "source": {
+            "$ref": "#/$defs/boundedName"
+          },
+          "start_byte": {
+            "$ref": "#/$defs/byteOffset"
+          },
+          "symbol_kind": {
+            "enum": [
+              "script",
+              "class",
+              "method",
+              "function",
+              "property",
+              "constant",
+              "enum",
+              "enum_member",
+              "signal",
+              "parameter",
+              "local",
+              "lambda"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "identity_scope",
+          "language",
+          "script_id",
+          "expected_id"
+        ],
+        "type": "object"
+      },
+      "minItems": 9,
+      "type": "array"
+    },
+    "range_vectors": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "end_byte": {
+            "$ref": "#/$defs/byteOffset"
+          },
+          "end_column": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "end_line": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "name": {
+            "$ref": "#/$defs/boundedName"
+          },
+          "needle": {
+            "$ref": "#/$defs/boundedName"
+          },
+          "occurrence": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/$defs/boundedName"
+          },
+          "start_byte": {
+            "$ref": "#/$defs/byteOffset"
+          },
+          "start_column": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "start_line": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "source",
+          "needle",
+          "occurrence",
+          "start_byte",
+          "end_byte",
+          "start_line",
+          "start_column",
+          "end_line",
+          "end_column"
+        ],
+        "type": "object"
+      },
+      "minItems": 5,
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "sources": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 65536,
+            "type": "string"
+          },
+          "name": {
+            "$ref": "#/$defs/boundedName"
+          },
+          "path": {
+            "pattern": "^res://[^\\\\?#\\u0000-\\u001f]+\\.(gd|cs)$",
+            "type": "string"
+          },
+          "sha256": {
+            "$ref": "#/$defs/contentHash"
+          }
+        },
+        "required": ["name", "path", "content", "sha256"],
+        "type": "object"
+      },
+      "minItems": 4,
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "coordinate_contract",
+    "algorithms",
+    "sources",
+    "identity_vectors",
+    "range_vectors",
+    "confidence_vectors"
+  ],
+  "type": "object"
+}

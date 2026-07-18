@@ -19,6 +19,11 @@ mod scene_graph_contract {
     include!("scene_graph_contract.rs");
 }
 
+#[cfg(test)]
+mod script_semantics_contract {
+    include!("script_semantics_contract.rs");
+}
+
 const SCHEMA_BASE_URI: &str = "https://godot-codex.local/schema/v1/";
 const SCHEMA_FILES: [&str; 9] = [
     "common.schema.json",

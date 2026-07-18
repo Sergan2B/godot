@@ -1,0 +1,261 @@
+{
+  "algorithms": {
+    "content_symbol_domain": "godot-codex/script-symbol/content-revision/v1",
+    "diagnostic_domain": "godot-codex/script-diagnostic/content-revision/v1",
+    "encoding": "sha256-base64url-unpadded",
+    "named_symbol_domain": "godot-codex/script-symbol/named/v1"
+  },
+  "confidence_vectors": [
+    {
+      "authority": "gdscript_analyzer",
+      "expected_confidence": "exact",
+      "freshness": "current",
+      "name": "resolved_method_call",
+      "resolution": "resolved_unambiguous",
+      "servable_as_current": true
+    },
+    {
+      "authority": "godot_resource_loader",
+      "expected_confidence": "exact",
+      "freshness": "current",
+      "name": "literal_preload",
+      "resolution": "resolved_unambiguous",
+      "servable_as_current": true
+    },
+    {
+      "authority": "gdscript_parser",
+      "expected_confidence": "dynamic",
+      "freshness": "current",
+      "name": "dynamic_call",
+      "resolution": "dynamic_target",
+      "servable_as_current": true
+    },
+    {
+      "authority": "gdscript_parser",
+      "expected_confidence": "dynamic",
+      "freshness": "current",
+      "name": "dynamic_load",
+      "resolution": "dynamic_target",
+      "servable_as_current": true
+    },
+    {
+      "authority": "gdscript_parser",
+      "expected_confidence": "dynamic",
+      "freshness": "current",
+      "name": "string_node_path",
+      "resolution": "string_node_path",
+      "servable_as_current": true
+    },
+    {
+      "authority": "gdscript_analyzer",
+      "expected_confidence": "exact",
+      "freshness": "stale",
+      "name": "stale_exact_reference",
+      "resolution": "resolved_unambiguous",
+      "servable_as_current": false
+    }
+  ],
+  "coordinate_contract": {
+    "column_base": 1,
+    "column_encoding": "unicode-scalar",
+    "line_base": 1,
+    "line_endings": "preserve-source-bytes",
+    "source_encoding": "utf-8",
+    "span": "half-open-byte-offset"
+  },
+  "identity_vectors": [
+    {
+      "expected_id": "godot:script-symbol:named:v1:u527woh_W0SwNm6Ele6Vmu0Cf1fJoX1Qqd2H_FB_0JA",
+      "identity_scope": "persistent",
+      "kind": "named_symbol",
+      "language": "gdscript",
+      "name": "player_class",
+      "qualified_key": "class:Player",
+      "script_id": "godot:resource:uid:v1:sqJ30thGZ51wWAelzXaPokwt_ZZU6NggpdkmLRA5DHE",
+      "symbol_kind": "class"
+    },
+    {
+      "expected_id": "godot:script-symbol:named:v1:u527woh_W0SwNm6Ele6Vmu0Cf1fJoX1Qqd2H_FB_0JA",
+      "identity_scope": "persistent",
+      "kind": "named_symbol",
+      "language": "gdscript",
+      "name": "player_class_after_body_edit",
+      "qualified_key": "class:Player",
+      "same_identity_as": "player_class",
+      "script_id": "godot:resource:uid:v1:sqJ30thGZ51wWAelzXaPokwt_ZZU6NggpdkmLRA5DHE",
+      "symbol_kind": "class"
+    },
+    {
+      "expected_id": "godot:script-symbol:named:v1:bE1JpRjDl5O_51JqPWg_LyVFbHn-Cnh0sEaOj_FHYVc",
+      "identity_scope": "persistent",
+      "kind": "named_symbol",
+      "language": "gdscript",
+      "name": "take_damage_method",
+      "qualified_key": "class:Player/method:take_damage",
+      "script_id": "godot:resource:uid:v1:sqJ30thGZ51wWAelzXaPokwt_ZZU6NggpdkmLRA5DHE",
+      "symbol_kind": "method"
+    },
+    {
+      "expected_id": "godot:script-symbol:named:v1:bE1JpRjDl5O_51JqPWg_LyVFbHn-Cnh0sEaOj_FHYVc",
+      "identity_scope": "persistent",
+      "kind": "named_symbol",
+      "language": "gdscript",
+      "name": "take_damage_after_line_shift",
+      "qualified_key": "class:Player/method:take_damage",
+      "same_identity_as": "take_damage_method",
+      "script_id": "godot:resource:uid:v1:sqJ30thGZ51wWAelzXaPokwt_ZZU6NggpdkmLRA5DHE",
+      "symbol_kind": "method"
+    },
+    {
+      "different_identity_from": "take_damage_method",
+      "expected_id": "godot:script-symbol:named:v1:aEQ_dlOYAnDhrDhjyQCAdI8w95gxrQL1bNhIRF4aUk4",
+      "identity_scope": "persistent",
+      "kind": "named_symbol",
+      "language": "gdscript",
+      "name": "renamed_receive_damage",
+      "qualified_key": "class:Player/method:receive_damage",
+      "script_id": "godot:resource:uid:v1:sqJ30thGZ51wWAelzXaPokwt_ZZU6NggpdkmLRA5DHE",
+      "symbol_kind": "method"
+    },
+    {
+      "expected_id": "godot:script-symbol:named:v1:UfuvTpc5T3Zkndi9D-CCXP052zKwJJlRRMKfI55bgOo",
+      "identity_scope": "persistent",
+      "kind": "named_symbol",
+      "language": "gdscript",
+      "name": "health_property",
+      "qualified_key": "class:Player/property:health",
+      "script_id": "godot:resource:uid:v1:sqJ30thGZ51wWAelzXaPokwt_ZZU6NggpdkmLRA5DHE",
+      "symbol_kind": "property"
+    },
+    {
+      "end_byte": 163,
+      "expected_id": "godot:script-symbol:content-revision:v1:0qB7M2y7D5OV3ZD44gMIepYAFYjT-mgyRcHKnM1Hwx0",
+      "identity_scope": "content_revision",
+      "kind": "content_symbol",
+      "language": "gdscript",
+      "name": "local_cafe",
+      "owner_qualified_key": "class:Player/method:take_damage",
+      "script_id": "godot:resource:uid:v1:sqJ30thGZ51wWAelzXaPokwt_ZZU6NggpdkmLRA5DHE",
+      "source": "player_lf",
+      "start_byte": 157,
+      "symbol_kind": "local"
+    },
+    {
+      "different_identity_from": "local_cafe",
+      "end_byte": 222,
+      "expected_id": "godot:script-symbol:content-revision:v1:kQlp_0eQcYu5D79QahqDKmEkDCisfX4CSvGLFBHz4Yk",
+      "identity_scope": "content_revision",
+      "kind": "content_symbol",
+      "language": "gdscript",
+      "name": "local_cafe_after_line_shift",
+      "owner_qualified_key": "class:Player/method:take_damage",
+      "script_id": "godot:resource:uid:v1:sqJ30thGZ51wWAelzXaPokwt_ZZU6NggpdkmLRA5DHE",
+      "source": "player_shifted_lf",
+      "start_byte": 216,
+      "symbol_kind": "local"
+    },
+    {
+      "code": "parse_error",
+      "end_byte": 24,
+      "expected_id": "godot:script-diagnostic:v1:cNwPsZclAjuNKfcpwUJzlT3C7Uj_w9KgUCVdCX0QTps",
+      "identity_scope": "content_revision",
+      "kind": "diagnostic",
+      "language": "gdscript",
+      "name": "broken_parse_diagnostic",
+      "normalized_message": "expected closing parenthesis",
+      "script_id": "godot:resource:uid:v1:sqJ30thGZ51wWAelzXaPokwt_ZZU6NggpdkmLRA5DHE",
+      "severity": "error",
+      "source": "parse_error_lf",
+      "start_byte": 18
+    }
+  ],
+  "range_vectors": [
+    {
+      "end_byte": 130,
+      "end_column": 17,
+      "end_line": 8,
+      "name": "method_name",
+      "needle": "take_damage",
+      "occurrence": 0,
+      "source": "player_lf",
+      "start_byte": 119,
+      "start_column": 6,
+      "start_line": 8
+    },
+    {
+      "end_byte": 163,
+      "end_column": 11,
+      "end_line": 9,
+      "name": "combining_identifier",
+      "needle": "café",
+      "occurrence": 0,
+      "source": "player_lf",
+      "start_byte": 157,
+      "start_column": 6,
+      "start_line": 9
+    },
+    {
+      "end_byte": 172,
+      "end_column": 17,
+      "end_line": 9,
+      "name": "astral_literal",
+      "needle": "🔥",
+      "occurrence": 0,
+      "source": "player_lf",
+      "start_byte": 168,
+      "start_column": 16,
+      "start_line": 9
+    },
+    {
+      "end_byte": 228,
+      "end_column": 15,
+      "end_line": 12,
+      "name": "tabbed_health_reference",
+      "needle": "health",
+      "occurrence": 2,
+      "source": "player_lf",
+      "start_byte": 222,
+      "start_column": 9,
+      "start_line": 12
+    },
+    {
+      "end_byte": 35,
+      "end_column": 16,
+      "end_line": 2,
+      "name": "crlf_second_line",
+      "needle": "second_line",
+      "occurrence": 0,
+      "source": "ranges_crlf",
+      "start_byte": 24,
+      "start_column": 5,
+      "start_line": 2
+    }
+  ],
+  "schema_version": 1,
+  "sources": [
+    {
+      "content": "extends Node\nclass_name Player\n\nsignal damaged(amount: int)\nconst MAX_HEALTH := 100\nvar health: int = MAX_HEALTH\n\nfunc take_damage(amount: int) -> int:\n\tvar café := \"🔥\"\n\thealth -= amount\n\tdamaged.emit(amount)\n\treturn health\n",
+      "name": "player_lf",
+      "path": "res://scripts/player.gd",
+      "sha256": "sha256:7f66212567a5b21d9537553d0097710c4b5e694a7791a9c83671a687fb7e041c"
+    },
+    {
+      "content": "extends Node\nclass_name Player\n\n# Body-only edit moves declarations without renaming them.\nsignal damaged(amount: int)\nconst MAX_HEALTH := 100\nvar health: int = MAX_HEALTH\n\nfunc take_damage(amount: int) -> int:\n\tvar café := \"🔥\"\n\thealth = max(0, health - amount)\n\tdamaged.emit(amount)\n\treturn health\n",
+      "name": "player_shifted_lf",
+      "path": "res://scripts/player.gd",
+      "sha256": "sha256:ba15321f3dd3cc6fdde7c56c072efc3c918a38c0230573f61ed5fc51e2045b51"
+    },
+    {
+      "content": "extends RefCounted\r\nvar second_line := \"🔥\"\r\n",
+      "name": "ranges_crlf",
+      "path": "res://scripts/ranges.gd",
+      "sha256": "sha256:19688f47044b6fa4d8acf7bda6d5216dc6b3ea8f8d9cd42a4bb0b911a050e680"
+    },
+    {
+      "content": "extends Node\nfunc broken(\n",
+      "name": "parse_error_lf",
+      "path": "res://scripts/broken.gd",
+      "sha256": "sha256:0e791cce4d813744b89d1518f40caaff1867a16b41b60b722cccbd5904cb0dac"
+    }
+  ]
+}

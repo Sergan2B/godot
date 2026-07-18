@@ -1,0 +1,99 @@
+{
+  "artifacts": {
+    "godot_no_gdscript_sha256": "sha256:01ceccebcacd88338e8e8da5ff838edc465923793a7dcbceb33037cab5aad446",
+    "godot_sha256": "sha256:5b0b86a1b459ee638f2d3541ca480bde9d9d6b863bb5069996bd7c1e78622f06"
+  },
+  "baseline": "73ec8ade7897109b8fed2e6fcb714a1ad01dd95b",
+  "builds": {
+    "gdscript_disabled": {
+      "assertions": 113,
+      "assertions_passed": 113,
+      "module_gdscript_enabled": false,
+      "passed": 3,
+      "test_cases": 3
+    },
+    "gdscript_enabled": {
+      "assertions": 2154,
+      "assertions_passed": 2154,
+      "module_gdscript_enabled": true,
+      "passed": 4,
+      "test_cases": 4
+    }
+  },
+  "checks": [
+    "source_scope_hash",
+    "strict_json",
+    "draft_2020_12_schema",
+    "named_negative_schema_cases",
+    "identity_vectors_python_rust_cpp",
+    "utf8_range_vectors_python_rust_cpp",
+    "confidence_vectors_python_rust_cpp",
+    "d07_godot_source_audit",
+    "d07_saved_dirty_separation",
+    "d07_valid_and_invalid_projection",
+    "d07_no_lsp_client_dependency",
+    "d07_bounded_retained_memory",
+    "gdscript_disabled_build_and_tests",
+    "evidence_redaction"
+  ],
+  "contract": {
+    "confidence_vectors": 6,
+    "identity_vectors": 9,
+    "range_vectors": 5,
+    "schema_sha256": "sha256:8559790001639e2b8b25eff3d3cb3c609edd848bd0a9531ac51a407278fb612a",
+    "schema_version": 1,
+    "sources": 4,
+    "vectors_sha256": "sha256:87cfbecd4167bed38f34a381845826570fdc792a6869bd08e7a0975c7cb11d95"
+  },
+  "decision": {
+    "runtime_spike": {
+      "cold_parse_usec": 958,
+      "execution_thread": "godot_test_main_thread",
+      "incremental_parse_usec": 180,
+      "parse_error_diagnostic": true,
+      "rejected": "active_lsp_peer_cache",
+      "retained_memory_budget_bytes": 8388608,
+      "retained_memory_delta_bytes": 746136,
+      "retained_memory_within_budget": true,
+      "retained_projection_count": 32,
+      "schema_version": 1,
+      "selected": "bridge_owned_exact_content_cache",
+      "selected_path_requires_lsp_client": false,
+      "symbol_count": 7,
+      "valid_projection": true,
+      "warm_lookup_iterations": 1000,
+      "warm_lookup_total_usec": 330
+    },
+    "source_audit": {
+      "direct_projection_uses_godot_parser_analyzer": true,
+      "disk_only_lsp_parse_is_stale": true,
+      "lsp_may_contain_dirty_text": true,
+      "lsp_requires_client": true,
+      "projection_source_sha256": "928c5b644f1e8730c9e1729b0a4b85530587d5a0afe8abda24ec00f990a27c7a",
+      "protocol_source_sha256": "b43307c79460124d3a01187bd68bc5ba3fbea72b57bd1341de4fedae52b6b38b",
+      "rejected": "active_lsp_peer_cache",
+      "selected": "bridge_owned_exact_content_cache"
+    }
+  },
+  "platform": "macos-arm64",
+  "redaction": {
+    "complete": true
+  },
+  "remote_ci": "not_run",
+  "schema_version": 1,
+  "source": {
+    "file_count": 17,
+    "scope_manifest": "tests/codex/sprint5_source_scopes.txt",
+    "source_scope_sha256": "sha256:0a2c6706aaa6649c2c0f6d2e1fb4903a6909254eb476b754d64c4cdcd615ef6e"
+  },
+  "sprint": 5,
+  "stage": "S5-01",
+  "status": "passed",
+  "toolchain": {
+    "cargo": "cargo 1.94.1 (29ea6fb6a 2026-03-24)",
+    "godot": "4.8.dev.custom_build.73ec8ade7",
+    "godot_no_gdscript": "4.8.dev.custom_build.73ec8ade7",
+    "python": "CPython 3.14.6",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)"
+  }
+}

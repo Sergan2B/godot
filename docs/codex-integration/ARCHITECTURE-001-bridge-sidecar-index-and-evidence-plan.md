@@ -1072,7 +1072,7 @@ Foundation-решения `D-01`–`D-04` закрыты первым этапо
 | `D-04` | HMAC/proof algorithm и token storage details | [PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) / SECURITY-001 | v1 закрыто; security review продолжается | Auth implementation |
 | `D-05` | SQLite или directory/segment store | INDEX-001 | Первая половина S3 | Persistent index |
 | `D-06` | Persistent node/subresource identity | SCENE-001 | До конца S4 | Cross-revision node facts |
-| `D-07` | GDScript LSP cache reuse vs independent analyzer adapter | SCRIPT-001 | До S5 acceptance | Symbol performance/correctness |
+| `D-07` | GDScript LSP cache reuse vs independent analyzer adapter | [SCRIPT-001](SCRIPT-001-gdscript-and-csharp-adapters.md) / [SPRINT-5-PLAN](SPRINT-5-PLAN.md) | Closed 2026-07-19: bridge-owned exact saved-content cache over Godot parser/analyzer | Symbol performance/correctness |
 | `D-08` | Native history observation depth | EDITOR-001 | До S7 acceptance | Operation summaries |
 | `D-09` | Runtime source mapping confidence | RUNTIME-001 | До S8 acceptance | Runtime evidence |
 | `D-10` | Scene+script transaction atomicity boundary | WRITE-001 | До S10 | Full Undo claim |

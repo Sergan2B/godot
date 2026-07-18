@@ -1,0 +1,17 @@
+docs/codex-integration/ARCHITECTURE-001-bridge-sidecar-index-and-evidence-plan.md
+docs/codex-integration/MASTER_SPRINT_ROADMAP.md
+docs/codex-integration/README.md
+docs/codex-integration/SCRIPT-001-gdscript-and-csharp-adapters.md
+docs/codex-integration/SPRINT-5-PLAN.md
+modules/gdscript/language_server/gdscript_extend_parser.cpp
+modules/gdscript/language_server/gdscript_language_protocol.cpp
+tests/codex/conformance/bundle.rs
+tests/codex/conformance/script_semantics_contract.rs
+tests/codex/fixtures/script_semantics_contract/contract-vectors.json
+tests/codex/fixtures/script_semantics_contract/contract-vectors.schema.json
+tests/codex/script_semantics_contract.py
+tests/codex/sprint5_source_scopes.txt
+tests/codex/sprint5_stage1_evidence.py
+tests/codex/test_script_semantics_contract.cpp
+tests/codex/test_script_semantics_contract.py
+tests/codex/test_sprint5_stage1_evidence.py
