@@ -1,8 +1,8 @@
-# Sprint 3 deferred host runs
+# Sprint 3 host and aggregation runbook
 
-**Status:** ready for Windows x86_64 artifact handoff and final aggregation.
+**Status:** completed and retained for deterministic reproduction.
 
-These wrappers complete the deferred host matrix from
+These wrappers reproduce the completed host matrix from
 [Sprint 3 Stage 5](../../../docs/codex-integration/SPRINT-3-STAGE-5-PLAN.md).
 They are post-freeze orchestration files and are intentionally outside
 `tests/codex/sprint3_source_scopes.txt`. The evidence producers and canonical

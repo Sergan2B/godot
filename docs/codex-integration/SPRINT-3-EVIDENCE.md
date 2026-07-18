@@ -1,234 +1,174 @@
-# Sprint 3 — interim evidence report
+# Sprint 3 — final evidence report
 
-**Status:** In progress — not accepted
+**Status:** Accepted — `S3-01` through `S3-10` complete
 
 **Snapshot:** 2026-07-18
 
-**Scope:** Stage 5 (`S3-09`, `S3-10`)
+**Scope:** ResourceUID identity, direct/reverse resource dependency graph, Bridge RPC
+1.2, persistent segment index, two project-scoped resource MCP tools, recovery, and
+cross-platform acceptance on macOS arm64 and Windows x86_64.
 
-**Current result:** macOS arm64 live and storage reports are tracked and pass at the
-frozen coordinates below. The Windows x86_64 run is reported complete by the operator,
-but its two raw reports and transfer receipt are not present in this checkout or the
-remote branch yet, so they cannot be independently validated or aggregated. Linux was
-removed from the Sprint 3 acceptance matrix by an explicit scope decision; no Linux
-artifact is required.
+## 1. Final result
 
-## Decision summary
+Sprint 3 passes its complete local, model-free acceptance matrix. Both target hosts ran
+the eight-phase editor → Bridge → sidecar → persistent index → MCP gate from the same
+clean source freeze. Both hosts also ran the full D-05 storage/recovery profile. The
+normalized macOS and Windows graphs are identical in every phase, all twelve acceptance
+criteria pass, and the canonical D-05 aggregate selects the segment store.
+
+Linux is not a Sprint 3 acceptance coordinate. This explicit scope decision does not
+change future product-level Linux support. Remote CI is recorded as `not_run` and was
+never a Sprint 3 completion requirement.
 
 | Gate | macOS arm64 | Windows x86_64 | Overall |
 |---|---|---|---|
-| Editor → Bridge → sidecar → persistent index → MCP | **PASS** — tracked | **AWAITING IMPORT** — operator run complete | Open |
-| Full D-05 storage and recovery profile | **PASS** — tracked | **AWAITING IMPORT** — operator run complete | Open |
-| Cross-platform storage aggregate | Input ready | Input awaiting import | Not generated |
-| Final Sprint 3 acceptance | Input ready | Input awaiting import | Not generated |
+| Editor → Bridge → sidecar → persistent index → MCP | **PASS** | **PASS** | **PASS** |
+| Full D-05 storage and recovery profile | **PASS** | **PASS** | **PASS** |
+| Normalized graph parity | Same eight phase digests | Same eight phase digests | **PASS** |
+| Cross-platform storage aggregate | Input accepted | Input accepted | **PASS** — segment |
+| Final Sprint 3 acceptance | Input accepted | Input accepted | **PASS** |
 | Remote CI | `not_run` | `not_run` | Not required |
 
-The earlier Docker `linux/amd64` development preflight remains historical only. Linux
-is outside this sprint's acceptance claim rather than represented by synthetic evidence.
-
-## Frozen source coordinates
+## 2. Frozen source coordinates
 
 | Coordinate | Exact value |
 |---|---|
 | Source-freeze commit | `a90ddd06c81a6210f44552b46ff533248b93ed90` |
 | Scoped source SHA-256 | `sha256:73e99eec9897f8e2b4c6c210a3c56bd57a91ce347aedba030323eb01bf8438eb` |
 | Golden oracle SHA-256 | `sha256:a41ddfc642f653ad88866aeeefe7852d7742b8701e469aec821aef5b9c046f3b` |
-| Previous macOS live evidence commit | `d7339412f0e88475faab7d5f4264629671853888` |
-| Previous macOS storage evidence commit | `7d53adb993c463e4062a6cbfa4be17dd0319a163` |
 
-Every macOS or Windows raw report must record the exact freeze commit and both exact
-digests above. The tracked macOS reports match those coordinates. Product or producer
-source changes require another freeze and regeneration. The schema-3 two-platform
-aggregate is an acceptance-policy-only amendment and explicitly validates raw reports
-against their original frozen tree, so it does not invalidate those platform runs.
+Every raw report records these exact coordinates and `git_dirty=false`. The final
+validator reconstructs the frozen tree from Git, proves that no producer or product
+source changed, and permits only the reviewed two-platform acceptance-policy amendment.
 
-## Tracked current macOS artifacts
+## 3. Canonical artifacts
 
-| Artifact | Status | File SHA-256 | Bytes |
-|---|---|---|---:|
-| [`sprint-3-resource-graph-macos.json`](../../tests/codex/evidence/sprint-3-resource-graph-macos.json) | Current-freeze macOS live **PASS** | `sha256:bb56c6e7e514a7741ae1f29de5eb1127a22757691b736cd9285e37d3f93f7ef3` | 184,357 |
-| [`sprint-3-storage-spike-macos.json`](../../tests/codex/evidence/platform/sprint-3-storage-spike-macos.json) | Current-freeze macOS D-05 **PASS** | `sha256:7ecffdf270148712a492228de0bef83df6d688891e1b8385bf348682e0ff5311` | 352,548 |
+| Artifact | SHA-256 | Bytes | Status |
+|---|---|---:|---|
+| [`sprint-3-resource-graph-macos.json`](../../tests/codex/evidence/sprint-3-resource-graph-macos.json) | `bb56c6e7e514a7741ae1f29de5eb1127a22757691b736cd9285e37d3f93f7ef3` | 184,357 | **PASS** |
+| [`sprint-3-resource-graph-windows.json`](../../tests/codex/evidence/sprint-3-resource-graph-windows.json) | `ae9308db6d15b5ab72059aa893f7bc1e229c6b989d0a2fb979b04b6f2ac0b4e3` | 143,456 | **PASS** |
+| [`sprint-3-storage-spike-macos.json`](../../tests/codex/evidence/platform/sprint-3-storage-spike-macos.json) | `7ecffdf270148712a492228de0bef83df6d688891e1b8385bf348682e0ff5311` | 352,548 | **PASS** |
+| [`sprint-3-storage-spike-windows.json`](../../tests/codex/evidence/platform/sprint-3-storage-spike-windows.json) | `df827948f2004122551fed7ce7792077f362fce3a6f52783938d48964f45a81d` | 361,849 | **PASS** |
+| [`sprint-3-storage-spike-cross-platform.json`](../../tests/codex/evidence/sprint-3-storage-spike-cross-platform.json) | `4a1ae7633c73c0fe3f9c1eef1483f1be6e6e6d1404acd3d8652d559cb0fb882d` | 880,924 | **PASS** — schema 3 |
+| [`sprint-3-acceptance.json`](../../tests/codex/evidence/sprint-3-acceptance.json) | `c42c8463ee2c0155d0dfe9bea62536aa39be8ecc9f21caa10a51abb78d9cf358` | 3,630 | **PASS** — schema 3 |
 
-The legacy `tests/codex/evidence/sprint-3-storage-spike.json` is excluded from
-Stage 5. It records an older commit, a dirty tree, and different source/oracle
-coordinates; it is not the final macOS raw report.
+The transfer receipt is a byte-integrity control and is intentionally not committed.
+It bound the exact Windows report bytes, source coordinates, runner, and manifest helper
+before aggregation installed either report.
 
-## Current macOS live gate
+## 4. Live resource-index acceptance
 
-The following result was generated from the clean current source freeze
-`a90ddd06c81a6210f44552b46ff533248b93ed90` and passes strict Stage 5
-validation.
-
-The schema-3 report records `status=passed`, `execution=local_model_free`,
-`profile=acceptance`, and `platform=macos-arm64` on
-`macOS-26.5.2-arm64-arm-64bit-Mach-O`.
-
-Artifact and toolchain identity:
-
-- Godot `4.8.dev.custom_build.a90ddd06c`, SHA-256
-  `sha256:5f692a7a80ab01f82e85b936cde033f19ac0475b6bd22aa931b190fdb5726027`;
-- `godot-codex-mcp 0.1.0`, SHA-256
-  `sha256:7a44091ed0860c1d92f9260a022e37b2bf57a630a1f31670e686584e4d273202`;
-- CPython `3.14.6`, SCons
-  `4.10.1.055b01f429d58b686701a56df863a817c36bb103`;
-- Rust/Cargo `1.94.1`, target `aarch64-apple-darwin`.
-
-All eight canonical phases completed in order. Every phase passed direct and
-reverse oracle comparison, diagnostics comparison, stable project scope, and
-cleanup. The report contains 416 qualifying cached-query samples, 673 control
-status samples, nine editor telemetry sessions, all eleven MCP contract flags,
-and complete cleanup/redaction claims.
+The macOS and Windows reports both completed, in order:
 
 ```text
 base → rename_uid → rename_uidless → delete → re_add → reimport →
 content_edit → journal_gap
 ```
 
-| Phase | Resources | Dependencies | Diagnostics | Normalized graph SHA-256 |
-|---|---:|---:|---:|---|
-| Base | 18 | 12 | 2 | `95535bd595688dd34440de4e353c1620397380979ab79296840b1fbb5da04703` |
-| UID rename | 18 | 12 | 2 | `b1020bb72cfa2e6f00ce61a602fae487feb9e7b787b48bee804bba138d843912` |
-| UID-less rename | 18 | 12 | 2 | `95535bd595688dd34440de4e353c1620397380979ab79296840b1fbb5da04703` |
-| Delete | 17 | 12 | 3 | `99876df25ad329127f0763ca5671268960acaea61f9282725c38eb85b4fdadca` |
-| Re-add | 18 | 12 | 2 | `95535bd595688dd34440de4e353c1620397380979ab79296840b1fbb5da04703` |
-| Reimport | 18 | 12 | 2 | `95535bd595688dd34440de4e353c1620397380979ab79296840b1fbb5da04703` |
-| Content edit | 18 | 12 | 2 | `95535bd595688dd34440de4e353c1620397380979ab79296840b1fbb5da04703` |
-| Journal gap | 18 | 12 | 2 | `95535bd595688dd34440de4e353c1620397380979ab79296840b1fbb5da04703` |
+Every phase passed direct/reverse oracle comparison, diagnostics comparison, stable
+project scope, cleanup, and the five-tool MCP contract. The base phase reopened both
+editor and sidecar and reused the compatible persistent generation. UID rename preserved
+entity identity with one incremental commit and no full rebuild. The journal-gap phase
+forced a full rebuild while control calls remained responsive.
 
-The base phase reopened both editor and sidecar and reused the same compatible
-generation and immutable segment set. The UID rename preserved entity identity
-with one incremental commit and no full rebuild. The forced journal gap used a
-full rebuild and kept control calls responsive.
+| Phase | Normalized graph SHA-256 on both hosts |
+|---|---|
+| Base | `95535bd595688dd34440de4e353c1620397380979ab79296840b1fbb5da04703` |
+| UID rename | `b1020bb72cfa2e6f00ce61a602fae487feb9e7b787b48bee804bba138d843912` |
+| UID-less rename | `95535bd595688dd34440de4e353c1620397380979ab79296840b1fbb5da04703` |
+| Delete | `99876df25ad329127f0763ca5671268960acaea61f9282725c38eb85b4fdadca` |
+| Re-add | `95535bd595688dd34440de4e353c1620397380979ab79296840b1fbb5da04703` |
+| Reimport | `95535bd595688dd34440de4e353c1620397380979ab79296840b1fbb5da04703` |
+| Content edit | `95535bd595688dd34440de4e353c1620397380979ab79296840b1fbb5da04703` |
+| Journal gap | `95535bd595688dd34440de4e353c1620397380979ab79296840b1fbb5da04703` |
 
-Strict validation command:
+### 4.1 Toolchain and artifacts
 
-```sh
-python3 tests/codex/sprint3_acceptance.py validate-live \
-  tests/codex/evidence/sprint-3-resource-graph-macos.json
-```
-
-Result: **PASS**.
-
-### macOS SLOs
-
-| Population | Samples | p50 | p95 | Limit | Result |
-|---|---:|---:|---:|---:|---|
-| Cached resource query | 416 | 0.145 ms | 0.322 ms | ≤300 ms | **PASS** |
-| Ordinary incremental visibility | 7 | 420.414 ms | 509.421 ms | ≤2,000 ms | **PASS** |
-| Control status/ping during gap rebuild | 673 | 0.405 ms | 0.651 ms | ≤200 ms | **PASS** |
-| Bridge main-thread busy frames | 4,887 | 265 µs | 435 µs | zero >2,000 µs | **PASS** |
-
-Bridge telemetry recorded maximum `1,714 µs`, over-budget count `0`, no buffer
-overflow, and a `2,000 µs` budget. Separately reported non-incremental timings
-were startup p95 `3,349.316 ms`, compatible reopen `4,200.841 ms`, and forced
-journal-gap rebuild `37,697.666 ms`; they are not mixed into ordinary visibility.
-
-## Current macOS D-05 storage and recovery
-
-The schema-2 decision report records `os=macos`, `architecture=aarch64`, a local
-runner with 14 logical CPUs, and Rust `1.94.1`. The full dataset contains 10,000
-resources and 50,000 edges, with five builds, 50 renames, 10,000 timed queries,
-and a 100,000-resource/500,000-edge stress profile.
-
-Both candidates passed all twelve storage gates and all thirteen fault cases,
-including graceful cancellation, hard-kill recovery, corruption isolation,
-locking/reopen, migration, concurrent activation, and the stress reopen. Both
-error lists are empty.
-
-| Backend | Weighted score | 95% CI | Build p50/p95 | Rename p50/p95 | Query p50/p95 | Artifact | Binary |
-|---|---:|---|---|---|---|---:|---:|
-| SQLite | `0.3635030575266095` | `[0.3621476484355271, 0.3647677629397902]` | 857.250 / 865.316 ms | 1,291.327 / 1,321.484 ms | 78.386375 / 80.688042 ms | 262,033,408 B | 4,052,384 B |
-| Segment | `0.8126262900738505` | `[0.8125363973283607, 0.8127450928333679]` | 13,578.809 / 13,614.465 ms | 530.791 / 564.004 ms | 0.022916 / 0.023542 ms | 70,011,685 B | 1,951,136 B |
-
-The raw macOS decision selected `segment`: both backends qualified and segment
-had the higher weighted score (`0.8126`). This is one platform result, not the
-missing canonical two-platform D-05 aggregate or validation receipt.
-
-## Current freeze local repository verification
-
-The current freeze and regenerated macOS evidence were checked locally with:
-
-- Godot macOS arm64 editor rebuilt from the exact freeze and reported version
-  suffix `a90ddd06c`;
-- strict live validator: eight canonical phases and every SLO passed;
-- full D-05 profile: both backends passed 12 gates and 13 fault cases, with
-  `segment` selected;
-- Python acceptance/fixture/receipt suite: 45 passed;
-- production sidecar workspace: 34 passed, Rustfmt passed, and index-store
-  Clippy passed with warnings denied;
-- runner manifest, Bash syntax, freeze digest, and clean-worktree checks passed.
-
-Remote CI was intentionally not run and is not awaited for Sprint 3 acceptance.
-
-## Remaining Windows artifact handoff
-
-The Windows procedure is executable and documented in
-[`tests/codex/runners/README.md`](../../tests/codex/runners/README.md). It uses
-a separate clean worktree at the exact freeze and fail closed on wrong
-architecture, dirty source, digest mismatch, CI markers, containers, incomplete
-SLOs, or failed segment gates/fault cases. The Windows producer and receipt helper
-remain pinned to `0961c5f7fe1bd36e8d62b4966f39c4dbf174b149`; only the downstream
-two-platform aggregation policy changed.
-
-Required reports to return from the Windows device:
-
-```text
-tests/codex/evidence/sprint-3-resource-graph-windows.json
-tests/codex/evidence/platform/sprint-3-storage-spike-windows.json
-```
-
-The device must also return `sprint-3-windows.receipt.json`. This deterministic receipt binds the exact
-raw bytes, freeze coordinates, runner, and transfer helper. They are required
-for aggregation but are transport controls, not final evidence, and are never
-installed or committed.
-
-After those raw reports return, the deterministic aggregation runner must create:
-
-```text
-tests/codex/evidence/sprint-3-storage-spike-cross-platform.json
-tests/codex/evidence/sprint-3-acceptance.json
-```
-
-No synthetic or re-labeled platform evidence is permitted.
-
-## Open acceptance items
-
-| Item | Status | Closure evidence |
+| Coordinate | macOS arm64 | Windows x86_64 |
 |---|---|---|
-| `S3-09` cross-platform smoke | **OPEN** | Import and validate the real Windows live and storage reports |
-| `S3-10` final audit | **OPEN** | Canonical storage and acceptance aggregates plus final document update |
-| `S3-AC-01`–`S3-AC-11` | Current macOS claims pass; cross-platform closure pending | Final acceptance aggregate |
-| `S3-AC-12` normalized Windows/macOS graph equality | **DEFERRED** | Strict Windows report and per-phase digest equality |
-| Sprint 3 Definition of Done | **NOT MET** | Every preceding item closed |
+| Host | `macOS-26.5.2-arm64-arm-64bit-Mach-O` | `Windows-11-10.0.26200-SP0` |
+| Python | CPython 3.14.6 | CPython 3.14.5 |
+| SCons | 4.10.1 | 4.10.1 |
+| Rust/Cargo | 1.94.1 | 1.94.1 |
+| Rust target | `aarch64-apple-darwin` | `x86_64-pc-windows-msvc` |
+| Godot | `4.8.dev.custom_build.a90ddd06c` | `4.8.dev.custom_build.a90ddd06c` |
+| Godot SHA-256 | `5f692a7a80ab01f82e85b936cde033f19ac0475b6bd22aa931b190fdb5726027` | `3b2b8892c475e5ce861237fa3ad2c8b2f02711dd59078f98e7e9f6c229047534` |
+| Sidecar SHA-256 | `7a44091ed0860c1d92f9260a022e37b2bf57a630a1f31670e686584e4d273202` | `ba5515625e5ba0c62f45dba04e066a88cb247e261d55bc3fe87be2797819bcfb` |
 
-## Operational notes
+### 4.2 SLO evidence
 
-- The first real Windows run built Godot and the sidecar successfully, then
-  failed closed before the base live phase because protocol-shaped generation
-  IDs containing `:` were used directly as physical segment-store filenames.
-  Windows Rust tests reproduced `StorageIo(os error 87)`. The fix at the current
-  freeze hashes only physical artifact stems and preserves logical IDs; no
-  partial Windows evidence was retained.
-- The next Windows run reached `rename_uid`, then failed closed because Python
-  used the CP1251 host locale to decode UTF-8 Godot output. The current fixture
-  explicitly decodes Godot output as UTF-8 with replacement for malformed log
-  bytes; a Windows-independent regression test covers that path. Again, no
-  partial Windows evidence was retained.
-- One earlier previous-freeze macOS live attempt observed a single `4,869 µs`
-  Bridge frame while the host was under unrelated heavy Docker/emulator load.
-  It was not committed or relabeled. The current-freeze controlled run passed
-  with maximum `1,714 µs`; future platform gates should use a dedicated host
-  load profile.
-- A full Docker `linux/amd64` storage preflight passed both backends and selected
-  segment, and the aggregation workflow was rehearsed on explicitly synthetic
-  temporary inputs. Neither result is committed or used as acceptance evidence;
-  Linux is no longer a Sprint 3 acceptance coordinate.
-- The deferred runners have cheap fail-closed preflight modes, no-overwrite and
-  failed-run cleanup, transfer receipts, pinned macOS inputs, and rollback-safe
-  four-file installation. Receipt unit tests and injected success, rollback, and
-  input-mutation rehearsals pass outside the evidence tree.
+| Population | macOS p50 / p95 | Windows p50 / p95 | Limit | Result |
+|---|---:|---:|---:|---|
+| Cached resource query, 416 samples/host | 0.145 / 0.322 ms | 0.171 / 0.216 ms | p95 ≤ 300 ms | **PASS** |
+| Ordinary incremental visibility, 7 samples/host | 420.414 / 509.421 ms | 441.527 / 546.254 ms | p95 ≤ 2,000 ms | **PASS** |
+| Control status during gap rebuild | 0.405 / 0.651 ms (673) | 0.214 / 0.256 ms (595) | p95 ≤ 200 ms | **PASS** |
+| Bridge busy frames | 265 / 435 µs (4,887) | 238 / 351 µs (3,196) | zero > 2,000 µs | **PASS** |
 
-The tracked macOS evidence proves the current freeze. Windows production-chain parity,
-cross-platform D-05 completion, `S3-AC-12`, and Sprint 3 Definition of Done remain open
-until the two Windows reports and receipt are imported and the canonical aggregates
-exist and validate.
+The maximum Bridge main-thread sample was `1,714 µs` on macOS and `996 µs` on
+Windows; both over-budget counts are zero and neither telemetry buffer overflowed.
+Startup, compatible reopen, and journal-gap rebuild are classified separately from
+ordinary incremental visibility. Their p95 values were respectively 3,349.316,
+4,200.841, and 37,697.666 ms on macOS and 3,185.753, 6,981.026, and 31,048.502 ms on
+Windows.
+
+## 5. D-05 storage and recovery
+
+Both hosts ran the full 10,000-resource/50,000-edge decision dataset, including the
+100,000-resource/500,000-edge stress reopen and all thirteen cancellation, hard-kill,
+and corruption fault coordinates. Segment passed all twelve gates and all thirteen
+fault cases on both hosts with no errors.
+
+| Host/backend | Qualified | Weighted score | 95% CI | Query p95 | Rename p95 | Result |
+|---|---|---:|---|---:|---:|---|
+| macOS SQLite | Yes | 0.363503 | 0.362148–0.364768 | 80.688 ms | 1,321.484 ms | Pass |
+| macOS Segment | Yes | 0.812626 | 0.812536–0.812745 | 0.023542 ms | 564.004 ms | Pass |
+| Windows SQLite | No | 0 | 0–0 | 352.153 ms | 3,706.530 ms | Fails query and rename SLOs |
+| Windows Segment | Yes | 0.988057 | 0.976567–0.993653 | 0.0502 ms | 654.704 ms | Pass |
+
+The schema-3 canonical aggregate was built twice with reversed input order and produced
+byte-identical output. Its Rust validation receipt binds the exact aggregate SHA-256.
+
+| Backend | Qualified on both hosts | Median score | Cross-platform 95% CI |
+|---|---|---:|---|
+| SQLite | No | 0.181752 | 0.181074–0.182363 |
+| Segment | Yes | 0.900341 | 0.894585–0.903199 |
+
+Final D-05 decision: **segment**. It is the only backend that passed every gate on both
+macOS and Windows.
+
+## 6. Acceptance criteria
+
+| Criterion | Evidence | Result |
+|---|---|---|
+| `S3-AC-01` | Direct/reverse oracle parity in every phase and host | **PASS** |
+| `S3-AC-02` | UID rename preserves identity and commits incrementally | **PASS** |
+| `S3-AC-03` | Missing and stale UID diagnostics match the oracle | **PASS** |
+| `S3-AC-04` | Compatible editor/sidecar reopen plus storage reopen | **PASS** |
+| `S3-AC-05` | Graceful cancellation matrix | **PASS** |
+| `S3-AC-06` | Crash, corruption, migration, and recovery matrix | **PASS** |
+| `S3-AC-07` | Text/binary/import formats and all eight phases | **PASS** |
+| `S3-AC-08` | Delete, re-add, reimport, and journal-gap behavior | **PASS** |
+| `S3-AC-09` | Both resource MCP tools and closed five-tool registry | **PASS** |
+| `S3-AC-10` | Cached-query and incremental-visibility SLOs | **PASS** |
+| `S3-AC-11` | Control responsiveness and Bridge main-thread budget | **PASS** |
+| `S3-AC-12` | Exact Windows/macOS normalized graph equality | **PASS** |
+
+The canonical acceptance artifact records `status=passed`, `remote_ci=not_run`, and all
+twelve criteria as passed.
+
+## 7. Verification and completion
+
+The final audit requires and verifies:
+
+- exact transfer receipt verification before Windows evidence installation;
+- strict validation of both live reports, including raw sample recomputation;
+- two input-order-independent storage merges and byte comparison;
+- canonical Rust validation of every raw storage score, interval, gate, and decision;
+- two deterministic acceptance merges and byte comparison;
+- frozen source/oracle reconstruction and clean producer-scope verification;
+- Python contract, fixture, acceptance, and receipt tests;
+- storage-spike and production-sidecar Rust suites, Rustfmt, Clippy, and repository hooks.
+
+`S3-09` cross-platform smoke is complete. `S3-10` final audit is complete. The Sprint 3
+Definition of Done is met, and the next planned milestone is Sprint 4 (`PackedScene` /
+`SceneState` structural index).

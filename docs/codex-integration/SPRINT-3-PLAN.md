@@ -1,6 +1,6 @@
 # Sprint 3 plan — ResourceUID and resource dependency graph
 
-**Status:** In progress — `S3-01`–`S3-08` complete locally; `S3-09` next
+**Status:** Complete — `S3-01` through `S3-10` accepted locally
 
 **Planned duration:** 10 working days
 
@@ -306,21 +306,23 @@ gap, tools return `index_not_current` rather than labeling stale data as current
 before `D-05`, but only the chosen backend remains production code. `S3-08` does not
 merge before generation/freshness semantics and contract tests are fixed.
 
-Local progress through 2026-07-16: `S3-01` and `S3-02` are implemented and verified against
+Completion through 2026-07-18: `S3-01` and `S3-02` are implemented and verified against
 11 Python contract tests, 2 focused Draft 2020-12 Rust tests, the full 10-test Rust
 conformance suite, and all 8 live Godot fixture phases. `S3-03` is complete for the
 local implementation stream: the storage-neutral API, both spike backends, and strict
 schema-v2 benchmark/fault harness are implemented, and the full macOS `10k/50k` plus
 `100k/500k` run passes every candidate gate and selects the segment store for `D-05`.
-Windows portability verification remains the Stage 5 host gate; Linux is outside the
-Sprint 3 acceptance matrix and remote CI is not required. `S3-04` and `S3-05` are also
+Linux is outside the Sprint 3 acceptance matrix and remote CI is not required. `S3-04`
+and `S3-05` are also
 complete locally: Bridge RPC 1.2,
 `ResourceGraphAdapter`, the bounded incremental journal, and the production Rust
 wire-client pass the eight-phase live gate plus Sprint 1/2 regressions. `S3-06`–`S3-08`
 are complete locally as recorded in the Stage 4 evidence: the production segment store,
 normalizer, coordinator/recovery, signed pagination, and both resource MCP tools pass
-the eight-phase editor → persistent index → MCP gate. `S3-09` and `S3-10` remain open
-until the Windows reports are installed and aggregated; remote CI remains `not_run`.
+the eight-phase editor → persistent index → MCP gate. `S3-09` and `S3-10` are complete:
+the current-freeze macOS and Windows reports pass every live SLO, their normalized graphs
+are identical, and the schema-3 D-05 and final acceptance aggregates validate. Remote CI
+remains `not_run` by design. Exact results are in [SPRINT-3-EVIDENCE](SPRINT-3-EVIDENCE.md).
 
 ### 8.1 Parent-roadmap traceability
 
@@ -493,8 +495,8 @@ live-verified. Each work package still requires:
 - machine-readable expected evidence;
 - compatibility/migration note for schema changes.
 
-The open storage decision `D-05` is planned work, not a pre-sprint blocker. It becomes a
-hard implementation blocker after day 5 if unresolved.
+Storage decision `D-05` is closed: the cross-platform evidence selects segment because
+it is the only backend that passes every gate on both required hosts.
 
 ## 16. Sprint Definition of Done
 

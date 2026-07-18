@@ -1,6 +1,6 @@
 # Sprint 3 Stage 5 — cross-platform E2E and acceptance
 
-**Status:** In progress
+**Status:** Complete — accepted on macOS arm64 and Windows x86_64
 
 **Scope:** `S3-09` and `S3-10`
 

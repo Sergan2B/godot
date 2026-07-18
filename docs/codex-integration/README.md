@@ -26,9 +26,9 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 20. [SPRINT-3-STAGE-3-PLAN.md](SPRINT-3-STAGE-3-PLAN.md) — completed Bridge RPC 1.2, ResourceGraphAdapter, bounded journal, Rust wire-client, and local eight-phase evidence.
 21. [INDEX-001-semantic-index-storage-and-migrations.md](INDEX-001-semantic-index-storage-and-migrations.md) — frozen resource identity/logical-index contract and local segment-store decision.
 22. [SPRINT-3-STAGE-4-PLAN.md](SPRINT-3-STAGE-4-PLAN.md) — production resource index, ingestion/recovery, and two MCP resource tools.
-23. [SPRINT-3-STAGE-5-PLAN.md](SPRINT-3-STAGE-5-PLAN.md) — local Windows/macOS live gates, three-host storage matrix, SLOs, and final evidence aggregation.
-24. [SPRINT-3-EVIDENCE.md](SPRINT-3-EVIDENCE.md) — current macOS evidence, the Windows portability corrections, and remaining cross-platform closure state.
-25. [Sprint 3 deferred host runs](../../tests/codex/runners/README.md) — fail-closed Linux, Windows, and deterministic aggregation runbook.
+23. [SPRINT-3-STAGE-5-PLAN.md](SPRINT-3-STAGE-5-PLAN.md) — completed Windows/macOS live gates, two-host storage matrix, SLOs, and final evidence aggregation.
+24. [SPRINT-3-EVIDENCE.md](SPRINT-3-EVIDENCE.md) — final cross-platform evidence and requirement-by-requirement Sprint 3 acceptance.
+25. [Sprint 3 host and aggregation runbook](../../tests/codex/runners/README.md) — fail-closed Windows reproduction and deterministic aggregation procedure.
 
 ## Document status
 
@@ -47,14 +47,14 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | Sprint 1 Stage 4 local evidence | Passed | Superseded by Stage 5 evidence |
 | Sprint 1 Stage 5 local evidence | Passed and committed locally | Separately authorized publication and remote CI |
 | Sprint 2 implementation | Windows x86_64 and macOS arm64 live editor→bridge→sidecar→MCP evidence complete | Optional external Codex UX capture; Sprint 3 implementation |
-| Sprint 3 plan | In progress; `S3-01`–`S3-08` complete locally | Execute `S3-09` cross-platform smoke and `S3-10` final audit |
+| Sprint 3 plan | Complete; `S3-01`–`S3-10` accepted locally | Begin Sprint 4 structural scene index |
 | Sprint 3 Stage 1 | Complete and locally verified | Execute `S3-03` storage spike; freeze `D-05` by Sprint day 5 |
 | Sprint 3 Stage 2 | Complete locally; full macOS matrix selected segment store | Begin `S3-04`; keep Windows/Linux portability verification separate and explicit |
 | Sprint 3 Stage 3 | Complete and locally verified on macOS arm64 | Begin `S3-06` segment-store ingestion; Windows/Linux remain `not_run` |
 | Sprint 3 Stage 4 | Complete and locally verified on macOS arm64 | Run `S3-09`; Windows/Linux and remote CI remain `not_run` |
-| Sprint 3 Stage 5 | In progress on freeze `a90ddd06c81a`; current macOS live and storage gates pass | Regenerate Windows and Linux reports, aggregate all current-freeze inputs, and close `S3-09`/`S3-10` |
-| Sprint 3 evidence | Interim; current macOS artifacts are complete, Windows/Linux and aggregates remain open | Add the remaining real-host reports and canonical aggregates, then change the report to final |
-| `INDEX-001` resource contract | Frozen; local `D-05` selects segment store | Implement the chosen backend in `S3-06`; do not claim unrun platform gates |
+| Sprint 3 Stage 5 | Complete on freeze `a90ddd06c81a`; macOS/Windows live and storage gates pass | Superseded by final Sprint 3 evidence |
+| Sprint 3 evidence | Final; all 12 criteria pass and canonical D-05 selects segment | Begin Sprint 4 |
+| `INDEX-001` resource contract | Frozen and implemented; cross-platform `D-05` selects segment store | Extend only through a versioned Sprint 4 contract |
 
 ## Interim ownership
 
