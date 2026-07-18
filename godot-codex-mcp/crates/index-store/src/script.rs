@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 
 use crate::StoreError;
 
-const MAX_DOCUMENTS: usize = 200_000;
+const MAX_DOCUMENTS: usize = 250_000;
 const MAX_SYMBOLS: usize = 2_000_000;
 const MAX_RELATIONS: usize = 4_000_000;
 const MAX_DIAGNOSTICS: usize = 2_000_000;
@@ -85,8 +85,8 @@ pub enum ScriptSymbolKind {
 pub enum ScriptTypeState {
     Explicit,
     Inferred,
-    Variant,
-    Unknown,
+    Dynamic,
+    Unavailable,
 }
 
 /// Saved declaration visibility.
@@ -94,20 +94,22 @@ pub enum ScriptTypeState {
 #[serde(rename_all = "snake_case")]
 pub enum ScriptVisibility {
     Public,
+    Protected,
     Private,
     Internal,
-    Local,
 }
 
 /// Stable declaration modifier.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ScriptModifier {
-    Static,
-    Override,
-    Virtual,
-    Exported,
+    Abstract,
     Const,
+    Exported,
+    Override,
+    Static,
+    Tool,
+    Virtual,
 }
 
 /// Shared script relation vocabulary.
@@ -437,17 +439,23 @@ impl ScriptDomainGeneration {
                 return invalid("script relation has no owning document");
             };
             if !valid_id(&relation.relation_id)
-                || matches!(
+                || (matches!(
                     document.completeness,
                     ScriptCompleteness::Invalid | ScriptCompleteness::Unavailable
-                )
+                ) && relation.authority != ScriptRelationAuthority::SceneState)
                 || relation.script_graph_revision != self.script_graph_revision
                 || !valid_endpoint(&relation.source, &symbols)
                 || !valid_relation_shape(relation, &symbols)
                 || relation.detail.as_ref().is_some_and(|detail| {
                     detail.is_empty()
-                        || detail.len() > MAX_NAME_BYTES
-                        || detail.chars().any(char::is_control)
+                        || detail.len() > 128
+                        || !detail.bytes().enumerate().all(|(index, byte)| {
+                            if index == 0 {
+                                byte.is_ascii_lowercase()
+                            } else {
+                                byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'
+                            }
+                        })
                 })
                 || relation.evidence_range.as_ref().is_some_and(|range| {
                     !valid_range(range)
@@ -525,6 +533,32 @@ impl ScriptDomainGeneration {
         {
             return invalid("script adapter status set is incomplete");
         }
+        for document in &self.documents {
+            let Some(status) = self
+                .adapter_statuses
+                .iter()
+                .find(|status| status.language == document.language)
+            else {
+                return invalid("script document adapter status is missing");
+            };
+            let compatible = match status.availability {
+                ScriptAdapterAvailability::Available => {
+                    status.profile == Some(document.adapter_profile)
+                        && document.completeness != ScriptCompleteness::Unavailable
+                }
+                ScriptAdapterAvailability::DiscoveryOnly => {
+                    document.language == ScriptLanguage::Csharp
+                        && status.profile == Some(document.adapter_profile)
+                        && document.completeness == ScriptCompleteness::Unavailable
+                }
+                ScriptAdapterAvailability::Unavailable => {
+                    document.completeness == ScriptCompleteness::Unavailable
+                }
+            };
+            if !compatible {
+                return invalid("script document differs from adapter status");
+            }
+        }
 
         let expected = self.compute_validation_digest();
         if !self.validation_digest.is_empty() && self.validation_digest != expected {
@@ -538,7 +572,6 @@ fn completeness_matches_profile(document: &ScriptDocument) -> bool {
     match document.adapter_profile {
         ScriptAdapterProfile::GdscriptParserAnalyzerV1 => {
             document.language == ScriptLanguage::Gdscript
-                && document.completeness != ScriptCompleteness::Unavailable
         }
         ScriptAdapterProfile::CsharpDiscoveryOnlyV1 => {
             document.language == ScriptLanguage::Csharp
@@ -572,9 +605,9 @@ fn valid_symbol(
             && !name.chars().any(char::is_control)
     });
     let optional_text_valid = |value: &Option<String>, limit: usize| {
-        value.as_ref().is_none_or(|value| {
-            !value.is_empty() && value.len() <= limit && !value.chars().any(char::is_control)
-        })
+        value
+            .as_ref()
+            .is_none_or(|value| value.len() <= limit && !value.chars().any(char::is_control))
     };
     let local_scope_valid = if matches!(
         symbol.kind,
@@ -593,7 +626,7 @@ fn valid_symbol(
         )
         && name_valid
         && !symbol.qualified_key.is_empty()
-        && symbol.qualified_key.len() <= MAX_SIGNATURE_BYTES
+        && symbol.qualified_key.len() <= 2_048
         && !symbol.qualified_key.chars().any(char::is_control)
         && optional_text_valid(&symbol.signature, MAX_SIGNATURE_BYTES)
         && optional_text_valid(&symbol.type_name, MAX_NAME_BYTES)
@@ -688,6 +721,10 @@ fn valid_range(range: &ScriptSourceRange) -> bool {
     valid_path(&range.path)
         && valid_sha256(&range.content_sha256)
         && range.start_byte <= range.end_byte
+        && range.start_line > 0
+        && range.end_line > 0
+        && range.start_column > 0
+        && range.end_column > 0
         && range.start_line <= i32::MAX as u32
         && range.end_line <= i32::MAX as u32
         && range.start_column <= i32::MAX as u32

@@ -1981,15 +1981,15 @@ mod tests {
         let method_id = "godot:script-symbol:named:v1:method-test".to_owned();
         let content_sha256 = format!("sha256:{}", "a".repeat(64));
         let declaration_range =
-            |start_byte, end_byte, start_column, end_column| ScriptSourceRange {
+            |start_byte, end_byte, start_column: u32, end_column: u32| ScriptSourceRange {
                 path: "res://scripts/player.gd".to_owned(),
                 content_sha256: content_sha256.clone(),
                 start_byte,
                 end_byte,
-                start_line: 0,
-                start_column,
-                end_line: 0,
-                end_column,
+                start_line: 1,
+                start_column: start_column + 1,
+                end_line: 1,
+                end_column: end_column + 1,
             };
         let contains_target = ScriptEndpoint::Symbol {
             symbol_id: method_id.clone(),
