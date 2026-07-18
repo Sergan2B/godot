@@ -56,6 +56,7 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "modules/codex_bridge/editor/resource_graph_adapter.h"
 #include "modules/codex_bridge/editor/scene_delta_journal.h"
 #include "modules/codex_bridge/editor/scene_state_adapter.h"
+#include "modules/codex_bridge/editor/script_delta_journal.h"
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
 #include "modules/codex_bridge/protocol/bridge_frame_codec.h"
 #include "modules/codex_bridge/protocol/bridge_handshake.h"
@@ -120,6 +121,26 @@ struct ResourceDeltaJournalTestAccess {
 struct SceneStateAdapterTestAccess {
 	static bool safe_node_path(const String &p_value, bool p_allow_empty = false) {
 		return SceneStateAdapter::_is_safe_node_path(p_value, p_allow_empty);
+	}
+};
+
+struct ScriptDeltaJournalTestAccess {
+	static void append_retained_batch(ScriptDeltaJournal &r_journal, const Dictionary &p_value, uint64_t p_revision, uint64_t p_encoded_bytes = 1) {
+		ScriptDeltaJournal::StoredBatch stored;
+		stored.value = p_value;
+		stored.previous_script_graph_revision = p_revision - 1;
+		stored.script_graph_revision = p_revision;
+		stored.encoded_bytes = p_encoded_bytes;
+		r_journal.batches.push_back(stored);
+		r_journal.total_bytes += p_encoded_bytes;
+	}
+
+	static void retire_prepared(ScriptDeltaJournal &r_journal, ScriptDeltaJournal::PreparedBatch &r_prepared) {
+		r_journal._retire_prepared_batch(r_prepared);
+	}
+
+	static void wait_for_cleanup(ScriptDeltaJournal &r_journal) {
+		r_journal._wait_for_cleanup();
 	}
 };
 
@@ -1520,6 +1541,195 @@ TEST_CASE("[CodexBridge] Resource journal releases worst-case retained and prepa
 	CHECK(prepared.value.is_empty());
 	CHECK(prepared.encoded_bytes == 0);
 	ResourceDeltaJournalTestAccess::wait_for_cleanup(journal);
+	CHECK(prepared_destroyed.get() == 1);
+	CHECK(prepared_off_main.is_set());
+}
+
+static Dictionary make_script_upsert(const Dictionary &p_script_ref, const String &p_path, uint64_t p_script_graph_revision) {
+	Dictionary document;
+	document["script_ref"] = p_script_ref;
+	document["path"] = p_path;
+	document["language"] = "gdscript";
+	document["content_sha256"] = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+	document["adapter_profile"] = "gdscript_parser_analyzer_v1";
+	document["completeness"] = "complete";
+	document["resource_revision"] = 1;
+	document["script_graph_revision"] = (int64_t)p_script_graph_revision;
+	Dictionary bundle;
+	bundle["document"] = document;
+	bundle["symbols"] = Array();
+	bundle["relations"] = Array();
+	bundle["diagnostics"] = Array();
+	Dictionary operation;
+	operation["kind"] = "upsert_document";
+	operation["value"] = bundle;
+	return operation;
+}
+
+static String script_test_sha256_hex(const String &p_value) {
+	const CharString bytes = p_value.utf8();
+	PackedByteArray digest;
+	digest.resize(32);
+	REQUIRE(CryptoCore::sha256(reinterpret_cast<const uint8_t *>(bytes.get_data()), bytes.length(), digest.ptrw()) == OK);
+	return BridgeCrypto::bytes_to_lower_hex(digest);
+}
+
+TEST_CASE("[CodexS5ScriptJournal] Script delta journal binds exact operations and distinguishes current gap and future") {
+	ScriptDeltaJournal journal;
+	journal.initialize(1);
+	const Dictionary script_ref = make_resource_ref("uid://script-a");
+	Array operations;
+	operations.push_back(make_script_upsert(script_ref, "res://scripts/a.gd", 2));
+	Dictionary status;
+	status["language"] = "csharp";
+	status["availability"] = "discovery_only";
+	status["profile"] = "csharp_discovery_only_v1";
+	status["version"] = "1.0";
+	status["diagnostic"] = Variant();
+	Dictionary status_operation;
+	status_operation["kind"] = "adapter_status";
+	status_operation["value"] = status;
+	operations.push_back(status_operation);
+
+	ScriptDeltaJournal::PreparedBatch prepared;
+	REQUIRE(ScriptDeltaJournal::prepare_batch(2, operations, prepared) == OK);
+	const String operations_json = JSON::stringify(operations, "", true, true);
+	CHECK(prepared.checksum == script_test_sha256_hex(operations_json));
+	CHECK(prepared.batch_id.begins_with("script-batch:"));
+	CHECK(prepared.batch_id.length() == 45);
+	CHECK(prepared.operations_bytes == (uint64_t)operations_json.utf8().length());
+	CHECK(prepared.script_graph_revision == 2);
+
+	Dictionary batch;
+	bool invalidated = false;
+	REQUIRE(journal.commit_prepared(2, 7, 5, 10, prepared, batch, invalidated) == OK);
+	CHECK_FALSE(invalidated);
+	CHECK((int64_t)batch["previous_script_graph_revision"] == 1);
+	CHECK((int64_t)batch["script_graph_revision"] == 2);
+	CHECK((int64_t)batch["resource_revision"] == 7);
+	CHECK((int64_t)batch["scene_graph_revision"] == 5);
+	CHECK((int64_t)batch["project_revision"] == 10);
+	CHECK(bool(batch["source_complete"]));
+	CHECK(batch["checksum"] == prepared.checksum);
+	CHECK(Array(batch["operations"]) == operations);
+	CHECK(journal.query_after(2).status == ScriptDeltaJournal::QUERY_CURRENT);
+	CHECK(journal.query_after(1).status == ScriptDeltaJournal::QUERY_BATCH);
+	CHECK(journal.query_after(0).status == ScriptDeltaJournal::QUERY_GAP);
+	CHECK(journal.query_after(3).status == ScriptDeltaJournal::QUERY_FUTURE);
+
+	Dictionary remove;
+	remove["kind"] = "remove_document";
+	remove["script_ref"] = script_ref;
+	remove["path"] = "res://scripts/a.gd";
+	CHECK(ScriptDeltaJournal::operation_key(Dictionary(operations[0])) == ScriptDeltaJournal::operation_key(remove));
+	Array duplicate_operations = operations.duplicate(true);
+	duplicate_operations.push_back(remove);
+	ERR_PRINT_OFF;
+	CHECK(ScriptDeltaJournal::prepare_batch(3, duplicate_operations, prepared) == ERR_INVALID_PARAMETER);
+	ERR_PRINT_ON;
+	CHECK(journal.get_current_script_graph_revision() == 2);
+}
+
+TEST_CASE("[CodexS5ScriptJournal] Script delta journal evicts at its entry bound without breaking newer replay") {
+	ScriptDeltaJournal journal;
+	journal.initialize(1);
+	const Dictionary script_ref = make_resource_ref("uid://script-b");
+	Dictionary batch;
+	bool invalidated = false;
+	for (uint64_t revision = 2; revision <= ScriptDeltaJournal::MAX_ENTRIES + 2; revision++) {
+		Array update;
+		update.push_back(make_script_upsert(script_ref, "res://scripts/b.gd", revision));
+		REQUIRE(journal.commit(revision, revision, revision, revision, update, batch, invalidated) == OK);
+	}
+	CHECK(invalidated);
+	CHECK(journal.get_entry_count() == ScriptDeltaJournal::MAX_ENTRIES);
+	CHECK(journal.get_total_bytes() <= ScriptDeltaJournal::MAX_BYTES);
+	CHECK(journal.query_after(1).status == ScriptDeltaJournal::QUERY_GAP);
+	CHECK(journal.query_after(2).status == ScriptDeltaJournal::QUERY_BATCH);
+}
+
+TEST_CASE("[CodexS5ScriptJournal] Oversized script delta creates a recoverable journal gap") {
+	ScriptDeltaJournal journal;
+	journal.initialize(1);
+	const Dictionary script_ref = make_resource_ref("uid://script-c");
+	Dictionary batch;
+	bool invalidated = false;
+	Array initial;
+	initial.push_back(make_script_upsert(script_ref, "res://scripts/c.gd", 2));
+	REQUIRE(journal.commit(2, 2, 2, 2, initial, batch, invalidated) == OK);
+
+	Dictionary oversized_operation = make_script_upsert(script_ref, "res://scripts/c.gd", 3);
+	Dictionary oversized_bundle = oversized_operation["value"];
+	oversized_bundle["test_payload"] = String("x").repeat(ScriptDeltaJournal::MAX_BATCH_BYTES);
+	oversized_operation["value"] = oversized_bundle;
+	Array oversized;
+	oversized.push_back(oversized_operation);
+	CHECK(journal.commit(3, 3, 3, 3, oversized, batch, invalidated) == ERR_OUT_OF_MEMORY);
+	CHECK(invalidated);
+	CHECK(journal.get_current_script_graph_revision() == 3);
+	CHECK(journal.query_after(2).status == ScriptDeltaJournal::QUERY_GAP);
+	CHECK(journal.is_invalidating());
+	CHECK(journal.drain_invalidation_step());
+	CHECK_FALSE(journal.drain_invalidation_step());
+	CHECK_FALSE(journal.is_invalidating());
+
+	Array recovered;
+	recovered.push_back(make_script_upsert(script_ref, "res://scripts/c.gd", 4));
+	REQUIRE(journal.commit(4, 4, 4, 4, recovered, batch, invalidated) == OK);
+	CHECK_FALSE(invalidated);
+	CHECK(journal.query_after(3).status == ScriptDeltaJournal::QUERY_BATCH);
+}
+
+TEST_CASE("[CodexS5ScriptJournal] Retired script DTOs are destroyed off the main thread") {
+	ScriptDeltaJournal journal;
+	journal.initialize(1);
+
+	SafeNumeric<uint32_t> retained_destroyed;
+	SafeFlag retained_off_main;
+	Ref<ResourceDtoCleanupProbe> retained_probe;
+	retained_probe.instantiate(&retained_destroyed, &retained_off_main);
+	Dictionary retained_leaf;
+	retained_leaf["probe"] = retained_probe;
+	Array retained_operations;
+	retained_operations.resize(1024);
+	for (int index = 0; index < retained_operations.size(); index++) {
+		retained_operations[index] = retained_leaf;
+	}
+	Dictionary retained_batch;
+	retained_batch["operations"] = retained_operations;
+	ScriptDeltaJournalTestAccess::append_retained_batch(journal, retained_batch, 2);
+	retained_batch = Dictionary();
+	retained_operations = Array();
+	retained_leaf = Dictionary();
+	retained_probe.unref();
+
+	journal.invalidate_to(2);
+	CHECK(journal.drain_invalidation_step());
+	CHECK_FALSE(journal.drain_invalidation_step());
+	ScriptDeltaJournalTestAccess::wait_for_cleanup(journal);
+	CHECK(retained_destroyed.get() == 1);
+	CHECK(retained_off_main.is_set());
+
+	SafeNumeric<uint32_t> prepared_destroyed;
+	SafeFlag prepared_off_main;
+	Ref<ResourceDtoCleanupProbe> prepared_probe;
+	prepared_probe.instantiate(&prepared_destroyed, &prepared_off_main);
+	Dictionary prepared_leaf;
+	prepared_leaf["probe"] = prepared_probe;
+	ScriptDeltaJournal::PreparedBatch prepared;
+	prepared.operations.resize(1024);
+	for (int index = 0; index < prepared.operations.size(); index++) {
+		prepared.operations[index] = prepared_leaf;
+	}
+	prepared.operations_bytes = ScriptDeltaJournal::MAX_BATCH_BYTES;
+	prepared_leaf = Dictionary();
+	prepared_probe.unref();
+
+	ScriptDeltaJournalTestAccess::retire_prepared(journal, prepared);
+	CHECK(prepared.operations.is_empty());
+	CHECK(prepared.operations_bytes == 0);
+	CHECK(prepared.script_graph_revision == 0);
+	ScriptDeltaJournalTestAccess::wait_for_cleanup(journal);
 	CHECK(prepared_destroyed.get() == 1);
 	CHECK(prepared_off_main.is_set());
 }
