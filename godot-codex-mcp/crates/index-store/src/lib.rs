@@ -363,6 +363,8 @@ pub struct SceneNode {
     pub internal: bool,
     /// Resolved attached-script resource entity, when available.
     pub attached_script_entity_id: Option<String>,
+    /// Instanced scene declared by this node definition, when applicable.
+    pub instance_scene_entity_id: Option<String>,
     /// Godot authority that produced the record.
     pub authority: String,
     /// Resource graph revision represented by this record.
@@ -674,7 +676,7 @@ impl SceneDomainGeneration {
             if !scene_ids.contains(node.scene_entity_id.as_str())
                 || node.node_path.is_empty()
                 || node.name.is_empty()
-                || node.godot_type.is_empty()
+                || (node.godot_type.is_empty() && node.instance_scene_entity_id.is_none())
             {
                 return Err(StoreError::ValidationFailed(
                     "scene node identity or owner is incomplete".to_owned(),
@@ -1843,6 +1845,7 @@ mod tests {
                     owned: true,
                     internal: false,
                     attached_script_entity_id: None,
+                    instance_scene_entity_id: None,
                     authority: "godot_scene_state".to_owned(),
                     resource_revision: 1,
                     scene_graph_revision: 3,
@@ -1861,6 +1864,7 @@ mod tests {
                     owned: true,
                     internal: false,
                     attached_script_entity_id: Some("entity-b".to_owned()),
+                    instance_scene_entity_id: None,
                     authority: "godot_scene_state".to_owned(),
                     resource_revision: 1,
                     scene_graph_revision: 3,

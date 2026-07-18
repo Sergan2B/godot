@@ -1,6 +1,7 @@
 //! Normalization boundary between Bridge RPC resource facts and the persistent index.
 
 mod coordinator;
+mod scene;
 mod spool;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -33,6 +34,7 @@ pub use coordinator::{
     CoordinatorError, ResourceIndexCoordinator, ResourceIndexReadError, ResourceIndexReader,
     ResourceIndexStaleReason, ResourceIndexStatus,
 };
+pub use scene::SceneNormalizer;
 pub use spool::ResourceSnapshotSpool;
 
 const UID_DOMAIN: &[u8] = b"godot-codex/resource-entity/uid/v1\0";
@@ -62,6 +64,8 @@ pub enum IndexerError {
     Serialization,
     #[error("snapshot_spool_failed: {0}")]
     Spool(&'static str),
+    #[error("scene_observation_conflict: {0}")]
+    Scene(&'static str),
     #[error(transparent)]
     Store(#[from] StoreError),
 }

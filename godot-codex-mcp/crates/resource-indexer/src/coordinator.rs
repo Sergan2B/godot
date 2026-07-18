@@ -214,7 +214,8 @@ impl CoordinatorError {
             Self::Indexer(IndexerError::InvalidPath(code))
             | Self::Indexer(IndexerError::ObservationConflict(code))
             | Self::Indexer(IndexerError::HashUnavailable(code))
-            | Self::Indexer(IndexerError::Spool(code)) => code,
+            | Self::Indexer(IndexerError::Spool(code))
+            | Self::Indexer(IndexerError::Scene(code)) => code,
             Self::Indexer(IndexerError::InvalidUid) => "invalid_resource_uid",
             Self::Indexer(IndexerError::UnsafeResourcePath) => "unsafe_resource_path",
             Self::Indexer(IndexerError::Serialization) => "serialization_failed",
