@@ -838,7 +838,32 @@ fn scene_graph_success(
         .filter_map(|node| node.get("node_id").and_then(Value::as_str))
         .collect();
     let diagnostics = scene_diagnostics(generation, scene, &subjects);
-    let partial_reasons = diagnostic_codes(&diagnostics);
+    let mut partial_reasons = diagnostic_codes(&diagnostics);
+    let project_context_relations: Vec<_> = generation
+        .scene
+        .relations
+        .iter()
+        .filter(|relation| relation.relation == "project_context")
+        .collect();
+    let project_context_truncated = project_context_relations.len() > MAX_RESOURCE_LIMIT;
+    if project_context_truncated {
+        partial_reasons.insert("project_context_truncated".to_owned());
+    }
+    let project_context: Vec<_> = project_context_relations
+        .into_iter()
+        .take(MAX_RESOURCE_LIMIT)
+        .map(|relation| {
+            json!({
+                "key": relation.source,
+                "value": {
+                    "type": relation.attributes.get("value_type"),
+                    "value": relation.attributes.get("value"),
+                    "truncated": relation.attributes.get("truncated"),
+                },
+                "authority": relation.authority,
+            })
+        })
+        .collect();
     CallToolResult::structured(json!({
         "project_id": generation.project_id,
         "schema_version": generation.schema_version,
@@ -851,6 +876,8 @@ fn scene_graph_success(
         "scene": scene_view(scene),
         "query": {"scene": scene.comparison_path, "limit": limit, "offset": offset},
         "nodes": nodes,
+        "project_context": project_context,
+        "project_context_truncated": project_context_truncated,
         "diagnostics": diagnostics,
         "partial_reasons": partial_reasons,
         "truncated": has_more,
@@ -892,14 +919,29 @@ fn inspect_node_success(
         .relations
         .iter()
         .filter(|relation| {
-            matches!(
+            let direct = matches!(
                 relation.relation.as_str(),
                 "attached_script" | "resource_reference"
             ) && (related_ids.contains(&&relation.source)
                 || relation
                     .target
                     .as_ref()
-                    .is_some_and(|target| related_ids.contains(&target)))
+                    .is_some_and(|target| related_ids.contains(&target)));
+            let ownership_prefix = format!("{}:", selected.definition.node_path);
+            let owned_subresource = relation.relation == "subresource"
+                && relation.scene_entity_id.as_deref()
+                    == Some(&selected.definition.scene_entity_id)
+                && relation
+                    .attributes
+                    .get("ownership_paths")
+                    .and_then(Value::as_array)
+                    .is_some_and(|paths| {
+                        paths.iter().any(|path| {
+                            path.as_str()
+                                .is_some_and(|path| path.starts_with(&ownership_prefix))
+                        })
+                    });
+            direct || owned_subresource
         })
         .map(|relation| {
             json!({
@@ -1626,6 +1668,43 @@ mod tests {
                     scene_graph_revision: 3,
                 },
                 SceneRelation {
+                    relation_id: "subresource-player-material".to_owned(),
+                    scene_entity_id: Some(SCENE.to_owned()),
+                    relation: "subresource".to_owned(),
+                    source: "godot:subresource:scene-id:v1:material".to_owned(),
+                    target: Some(SCENE.to_owned()),
+                    declaration_scope: Some(SCENE.to_owned()),
+                    attributes: [
+                        ("resource_type".to_owned(), json!("Gradient")),
+                        ("identity_scope".to_owned(), json!("persistent")),
+                        ("scene_unique_id".to_owned(), json!("Gradient_material")),
+                        ("ownership_paths".to_owned(), json!(["Player:material"])),
+                    ]
+                    .into_iter()
+                    .collect(),
+                    authority: "packed_scene_state".to_owned(),
+                    resource_revision: 1,
+                    scene_graph_revision: 3,
+                },
+                SceneRelation {
+                    relation_id: "project-context-main-scene".to_owned(),
+                    scene_entity_id: None,
+                    relation: "project_context".to_owned(),
+                    source: "application/run/main_scene".to_owned(),
+                    target: None,
+                    declaration_scope: None,
+                    attributes: [
+                        ("value_type".to_owned(), json!("string")),
+                        ("value".to_owned(), json!("uid://scene")),
+                        ("truncated".to_owned(), json!(false)),
+                    ]
+                    .into_iter()
+                    .collect(),
+                    authority: "project_settings".to_owned(),
+                    resource_revision: 1,
+                    scene_graph_revision: 3,
+                },
+                SceneRelation {
                     relation_id: "diagnostic-player".to_owned(),
                     scene_entity_id: Some(SCENE.to_owned()),
                     relation: "diagnostic".to_owned(),
@@ -1878,6 +1957,12 @@ mod tests {
         assert_eq!(first["scene_graph_revision"], 3);
         assert_eq!(first["scene"]["uid"], "uid://scene");
         assert_eq!(first["nodes"][0]["node_path"], ".");
+        assert_eq!(
+            first["project_context"][0]["key"],
+            "application/run/main_scene"
+        );
+        assert_eq!(first["project_context"][0]["value"]["value"], "uid://scene");
+        assert_eq!(first["project_context_truncated"], false);
         assert_eq!(first["status"], "partial");
         assert_eq!(first["partial_reasons"][0], "unresolved_export_metadata");
         assert_eq!(first["truncated"], true);
@@ -1942,6 +2027,13 @@ mod tests {
         assert_eq!(first["properties"][0]["origin"], "inherited");
         assert_eq!(first["attached_script_resource_id"], "entity-b");
         assert_eq!(first["resources"][0]["kind"], "attached_script");
+        assert!(
+            first["resources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|relation| relation["kind"] == "subresource")
+        );
         assert_eq!(first["groups"][0]["group"], "players");
         assert_eq!(first["connections"][0]["method"], "_on_ready");
         assert_eq!(first["animation_references"][0]["animation"], "walk");
