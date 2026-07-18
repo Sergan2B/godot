@@ -1,6 +1,6 @@
 # SCENE-001 — scene, node, and built-in resource model
 
-**Status:** D-06 contract frozen for Sprint 4 implementation
+**Status:** D-06 accepted and live-verified on macOS arm64 and Windows x86_64
 
 **Decision:** `D-06` — persistent node and built-in subresource identity
 

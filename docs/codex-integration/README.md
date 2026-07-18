@@ -58,8 +58,8 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | Sprint 3 Stage 5 | Complete on freeze `a90ddd06c81a`; macOS/Windows live and storage gates pass | Superseded by final Sprint 3 evidence |
 | Sprint 3 evidence | Final; all 12 criteria pass and canonical D-05 selects segment | Begin Sprint 4 |
 | `INDEX-001` resource contract | Frozen and implemented; cross-platform `D-05` selects segment store | Extend only through a versioned Sprint 4 contract |
-| Sprint 4 plan | In progress; `S4-01/S4-02` contract and oracle complete locally | Implement Bridge RPC 1.3 and `SceneStateAdapter` |
-| `SCENE-001` scene contract | D-06 frozen; Python/Rust vectors and Godot fixture load matrix pass locally | Prove the same identities through live Bridge/MCP gates |
+| Sprint 4 plan | Complete; `S4-01`–`S4-10` and all 12 acceptance criteria pass on one macOS/Windows freeze | Begin Sprint 5 script and symbol intelligence |
+| `SCENE-001` scene contract | D-06 implemented and live-verified through Bridge/MCP on macOS and Windows | Extend only through a versioned post-Sprint-4 contract |
 
 ## Interim ownership
 

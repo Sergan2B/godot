@@ -1,6 +1,6 @@
 # Sprint 4 plan — scene semantics and node graph
 
-**Status:** In progress — `S4-01`–`S4-08` complete locally; two-host evidence next
+**Status:** Complete — `S4-01`–`S4-10` accepted locally on macOS arm64 and Windows x86_64
 
 **Planned duration:** 10 working days
 
@@ -169,3 +169,9 @@ tool, selector, limit, generation, index revision, scene graph revision, and off
 7. MCP tools and cursor contract.
 8. macOS live gate and runner freeze.
 9. Windows evidence, final aggregate, and completion documentation.
+
+All boundaries were completed at source freeze
+`f2f616bcf7122a51fafc0b1c053a8baf03cf8a2b`. The canonical aggregate records all
+`S4-AC-01`–`S4-AC-12` cells as passing; see
+[SPRINT-4-EVIDENCE.md](SPRINT-4-EVIDENCE.md). The next implementation milestone is
+Sprint 5, script and symbol intelligence.

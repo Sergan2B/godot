@@ -1,6 +1,6 @@
 # MCP-001 — Project-scoped Godot read tools
 
-**Status:** Sprint 2/3 live-verified; Sprint 4 scene tools implemented locally
+**Status:** Sprint 2/3/4 tools live-verified on macOS arm64 and Windows x86_64
 
 **MCP protocol:** `2025-11-25`
 
