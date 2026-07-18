@@ -1,0 +1,381 @@
+{
+  "$defs": {
+    "attachment": {
+      "additionalProperties": false,
+      "properties": {
+        "class_symbol": {
+          "type": ["string", "null"]
+        },
+        "node_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "oracle_id": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "scene": {
+          "$ref": "#/$defs/res_path"
+        },
+        "script_document": {
+          "type": ["string", "null"]
+        },
+        "state": {
+          "enum": ["attached", "replaced", "removed"]
+        }
+      },
+      "required": ["oracle_id", "scene", "node_path", "script_document", "class_symbol", "state"],
+      "type": "object"
+    },
+    "diagnostic": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "enum": ["gdscript_parser", "gdscript_analyzer"]
+        },
+        "code": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "document": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "evidence_range": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "oracle_id": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "severity": {
+          "enum": ["error", "warning", "info"]
+        }
+      },
+      "required": ["oracle_id", "document", "code", "severity", "authority", "evidence_range"],
+      "type": "object"
+    },
+    "document": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_profile": {
+          "enum": ["gdscript_parser_analyzer_v1", "csharp_discovery_only_v1"]
+        },
+        "class_symbol": {
+          "type": ["string", "null"]
+        },
+        "content_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "diagnostics": {
+          "items": {
+            "$ref": "#/$defs/oracle_id"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "language": {
+          "enum": ["gdscript", "csharp"]
+        },
+        "naming": {
+          "enum": ["named", "path_only"]
+        },
+        "oracle_id": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "path": {
+          "$ref": "#/$defs/res_path"
+        },
+        "script_id": {
+          "pattern": "^godot:resource:(?:uid|path-content):v1:[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "semantic_state": {
+          "enum": ["complete", "partial", "invalid", "unavailable"]
+        }
+      },
+      "required": [
+        "oracle_id",
+        "path",
+        "language",
+        "script_id",
+        "content_sha256",
+        "adapter_profile",
+        "semantic_state",
+        "naming",
+        "class_symbol",
+        "diagnostics"
+      ],
+      "type": "object"
+    },
+    "oracle_id": {
+      "pattern": "^[a-z][a-z0-9_]{0,95}$",
+      "type": "string"
+    },
+    "position": {
+      "items": false,
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "minimum": 1,
+          "type": "integer"
+        }
+      ],
+      "type": "array"
+    },
+    "range": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "items": false,
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "minimum": 1,
+              "type": "integer"
+            }
+          ],
+          "type": "array"
+        },
+        "document": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "end": {
+          "$ref": "#/$defs/position"
+        },
+        "needle": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "occurrence": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "oracle_id": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "start": {
+          "$ref": "#/$defs/position"
+        }
+      },
+      "required": ["oracle_id", "document", "needle", "occurrence", "bytes", "start", "end"],
+      "type": "object"
+    },
+    "relation": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "enum": ["exact", "dynamic"]
+        },
+        "detail": {
+          "pattern": "^[a-z][a-z0-9_]{0,63}$",
+          "type": "string"
+        },
+        "evidence_range": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "oracle_id": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "predicate": {
+          "enum": ["inherits", "overrides", "references_symbol", "calls", "preloads", "loads"]
+        },
+        "resolvable_truth": {
+          "type": "boolean"
+        },
+        "source_symbol": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "target_resource": {
+          "type": ["string", "null"]
+        },
+        "target_symbol": {
+          "type": ["string", "null"]
+        }
+      },
+      "required": [
+        "oracle_id",
+        "source_symbol",
+        "predicate",
+        "target_symbol",
+        "target_resource",
+        "confidence",
+        "detail",
+        "resolvable_truth",
+        "evidence_range"
+      ],
+      "type": "object"
+    },
+    "res_path": {
+      "pattern": "^res://(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[^\\u0000]+$",
+      "type": "string"
+    },
+    "resource": {
+      "additionalProperties": false,
+      "properties": {
+        "oracle_id": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "path": {
+          "$ref": "#/$defs/res_path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "uid": {
+          "pattern": "^uid://[a-z0-9]+$",
+          "type": "string"
+        }
+      },
+      "required": ["oracle_id", "path", "uid", "sha256"],
+      "type": "object"
+    },
+    "sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "symbol": {
+      "additionalProperties": false,
+      "properties": {
+        "document": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "identity_scope": {
+          "enum": ["persistent", "content_revision"]
+        },
+        "kind": {
+          "enum": ["class", "method", "function", "property", "constant", "enum", "enum_member", "signal", "parameter", "local", "lambda"]
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "oracle_id": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "owner": {
+          "type": ["string", "null"]
+        },
+        "qualified_key": {
+          "type": ["string", "null"]
+        },
+        "range": {
+          "$ref": "#/$defs/oracle_id"
+        },
+        "type_state": {
+          "enum": ["typed", "untyped", "inferred", "not_applicable"]
+        }
+      },
+      "required": ["oracle_id", "document", "kind", "name", "identity_scope", "qualified_key", "owner", "range", "type_state"],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "accuracy_truth": {
+      "additionalProperties": false,
+      "properties": {
+        "analyzer_resolvable_relations": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "dynamic_relations": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "false_exact_allowed": {
+          "const": 0
+        }
+      },
+      "required": ["analyzer_resolvable_relations", "dynamic_relations", "false_exact_allowed"],
+      "type": "object"
+    },
+    "attachments": {
+      "items": {
+        "$ref": "#/$defs/attachment"
+      },
+      "minItems": 3,
+      "type": "array"
+    },
+    "coverage": {
+      "items": {
+        "pattern": "^[a-z][a-z0-9_]{0,63}$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "diagnostics": {
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "documents": {
+      "items": {
+        "$ref": "#/$defs/document"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "oracle_version": {
+      "const": 1
+    },
+    "ranges": {
+      "items": {
+        "$ref": "#/$defs/range"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "relations": {
+      "items": {
+        "$ref": "#/$defs/relation"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "resources": {
+      "items": {
+        "$ref": "#/$defs/resource"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "symbols": {
+      "items": {
+        "$ref": "#/$defs/symbol"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "oracle_version",
+    "coverage",
+    "documents",
+    "resources",
+    "ranges",
+    "symbols",
+    "relations",
+    "diagnostics",
+    "attachments",
+    "accuracy_truth"
+  ],
+  "title": "Sprint 5 independent script semantics golden graph",
+  "type": "object"
+}

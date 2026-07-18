@@ -1,0 +1,80 @@
+{
+  "artifacts": {
+    "godot_sha256": "sha256:0e673e61c3d2ce66b964395c90f4bc25ed59001da586f8de7faada80faba95dd"
+  },
+  "baseline": "923a7855a5ff4698a6e99720f4645e7d10984e43",
+  "checks": [
+    "archived_s5_01_evidence",
+    "source_scope_hash",
+    "strict_json",
+    "draft_2020_12_schemas",
+    "named_negative_schema_cases",
+    "manifest_hash_closure",
+    "canonical_phase_matrix",
+    "document_state_matrix",
+    "content_bound_ranges_python_rust_cpp",
+    "canonical_symbol_ids_python_rust",
+    "relation_reference_closure",
+    "zero_false_exact_truth",
+    "dynamic_target_separation",
+    "diagnostic_isolation",
+    "csharp_discovery_only",
+    "scene_attachment_replace_remove",
+    "godot_parser_valid_broken_matrix",
+    "oracle_independence",
+    "evidence_redaction"
+  ],
+  "fixture": {
+    "attachments": 3,
+    "canonical_symbol_ids_sha256": "sha256:f856aad38a404734bed1837487942e4e5a4d3f0776663565ba1d2af796600a78",
+    "coverage_cases": 21,
+    "diagnostics": 4,
+    "documents": 8,
+    "files": 23,
+    "fixture_version": 1,
+    "golden_sha256": "sha256:825d91041b41bbbb2529ca8b7366a6705e9a2da2c8622c22bf7a45c12e67448e",
+    "manifest_sha256": "sha256:7a0ec8961667ded66983dbe6a3de8fdc039b3e94e52ba8945424511db11232ca",
+    "phases": 10,
+    "ranges": 65,
+    "relations": 14,
+    "resources": 2,
+    "schema_version": 1,
+    "symbols": 48
+  },
+  "godot_parser": {
+    "build": {
+      "assertions": 688,
+      "assertions_passed": 688,
+      "passed": 2,
+      "test_cases": 2
+    },
+    "metrics": {
+      "attachment_scenes": 3,
+      "csharp_discovery_documents": 1,
+      "fixture_files_loaded_absolute": true,
+      "gdscript_parse_error_documents": 1,
+      "gdscript_valid_documents": 6,
+      "schema_version": 1
+    }
+  },
+  "platform": "macos-arm64",
+  "redaction": {
+    "complete": true
+  },
+  "remote_ci": "not_run",
+  "schema_version": 1,
+  "source": {
+    "file_count": 48,
+    "scope_manifest": "tests/codex/sprint5_stage2_source_scopes.txt",
+    "source_scope_sha256": "sha256:5a61ca0bffd9b9195e945729e0371d63dd756710fba5621644e9e0403e61c70c"
+  },
+  "sprint": 5,
+  "stage": "S5-02",
+  "status": "passed",
+  "toolchain": {
+    "cargo": "cargo 1.94.1 (29ea6fb6a 2026-03-24)",
+    "godot": "4.8.dev.custom_build.923a7855a",
+    "python": "CPython 3.14.6",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)"
+  }
+}

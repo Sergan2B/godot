@@ -22,6 +22,7 @@ REPOSITORY_ROOT = SCRIPT_DIR.parent.parent
 SOURCE_SCOPE_PATH = SCRIPT_DIR / "sprint5_source_scopes.txt"
 EVIDENCE_PATH = SCRIPT_DIR / "evidence" / "sprint-5-stage-1-contracts.json"
 BASELINE = "73ec8ade7897109b8fed2e6fcb714a1ad01dd95b"
+SOURCE_FREEZE = "923a7855a5ff4698a6e99720f4645e7d10984e43"
 
 CHECKS = (
     "source_scope_hash",
@@ -56,7 +57,7 @@ TOP_LEVEL_FIELDS = {
     "remote_ci",
     "status",
 }
-SOURCE_FIELDS = {"scope_manifest", "source_scope_sha256", "file_count"}
+SOURCE_FIELDS = {"scope_manifest", "source_scope_sha256", "source_commit", "file_count"}
 CONTRACT_FIELDS = {
     "schema_version",
     "vectors_sha256",
@@ -157,6 +158,44 @@ def current_source_coordinate() -> dict[str, Any]:
     return {
         "scope_manifest": "tests/codex/sprint5_source_scopes.txt",
         "source_scope_sha256": "sha256:" + digest.hexdigest(),
+        "file_count": len(values),
+    }
+
+
+def archived_source_coordinate(commit: str) -> dict[str, Any]:
+    require(re.fullmatch(r"[0-9a-f]{40}", commit) is not None, "source-freeze commit is invalid")
+    require(commit == SOURCE_FREEZE, "S5-01 source-freeze commit differs")
+
+    def git_blob(path: str) -> bytes:
+        try:
+            return subprocess.run(
+                ["git", "show", f"{commit}:{path}"],
+                cwd=REPOSITORY_ROOT,
+                check=True,
+                capture_output=True,
+                timeout=30,
+            ).stdout
+        except (OSError, subprocess.SubprocessError) as error:
+            raise EvidenceError(f"S5-01 source-freeze blob is unavailable: {path}") from error
+
+    manifest_path = "tests/codex/sprint5_source_scopes.txt"
+    try:
+        values = tuple(
+            line for line in git_blob(manifest_path).decode("utf-8").splitlines() if line and not line.startswith("#")
+        )
+    except UnicodeError as error:
+        raise EvidenceError("archived source-scope manifest is not UTF-8") from error
+    require(values == tuple(sorted(values)) and len(values) == len(set(values)), "archived source scopes differ")
+    digest = hashlib.sha256()
+    for value in values:
+        digest.update(value.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(git_blob(value))
+        digest.update(b"\0")
+    return {
+        "scope_manifest": manifest_path,
+        "source_scope_sha256": "sha256:" + digest.hexdigest(),
+        "source_commit": commit,
         "file_count": len(values),
     }
 
@@ -292,7 +331,7 @@ def build_evidence(godot: Path, godot_no_gdscript: Path) -> dict[str, Any]:
         "stage": "S5-01",
         "baseline": BASELINE,
         "platform": platform_tag(),
-        "source": current_source_coordinate(),
+        "source": {**current_source_coordinate(), "source_commit": command_version(["git", "rev-parse", "HEAD"])},
         "contract": _contract_coordinate(summary),
         "decision": {"source_audit": summary["d07"], "runtime_spike": runtime},
         "builds": {"gdscript_enabled": enabled, "gdscript_disabled": disabled},
@@ -347,9 +386,11 @@ def validate_evidence(value: dict[str, Any], *, check_checkout: bool = True) -> 
     require(isinstance(source, dict) and set(source) == SOURCE_FIELDS, "source coordinates differ")
     require(source["scope_manifest"] == "tests/codex/sprint5_source_scopes.txt", "source manifest differs")
     _sha_coordinate(source["source_scope_sha256"], "source_scope_sha256")
-    require(source["file_count"] == len(source_scopes()), "source file count differs")
+    require(source["source_commit"] == SOURCE_FREEZE, "S5-01 source-freeze commit differs")
     if check_checkout:
-        require(source == current_source_coordinate(), "current S5-01 source differs from evidence")
+        require(
+            source == archived_source_coordinate(source["source_commit"]), "archived S5-01 source differs from evidence"
+        )
 
     contract_value = value["contract"]
     require(isinstance(contract_value, dict) and set(contract_value) == CONTRACT_FIELDS, "contract coordinates differ")

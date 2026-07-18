@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "fixture_version": {
+      "const": 1
+    },
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[^\\u0000]+$",
+            "type": "string"
+          },
+          "role": {
+            "enum": ["metadata", "project", "resource", "scene", "script", "discovery_script", "uid"]
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": ["path", "role", "sha256"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "phases": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assertions": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_]{0,63}$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "mutation": {
+            "enum": [
+              "none",
+              "player_body_edit",
+              "player_line_shift",
+              "player_symbol_rename",
+              "player_override_change",
+              "player_literal_dependency_change",
+              "attachment_player_to_path_only",
+              "select_broken_document",
+              "discover_enemy_csharp",
+              "force_script_journal_gap"
+            ]
+          },
+          "name": {
+            "enum": [
+              "base",
+              "body_edit",
+              "line_shift",
+              "symbol_rename",
+              "override_change",
+              "literal_dependency_change",
+              "attachment_change",
+              "parse_error",
+              "csharp_discovery",
+              "journal_gap"
+            ]
+          }
+        },
+        "required": ["name", "mutation", "assertions"],
+        "type": "object"
+      },
+      "maxItems": 10,
+      "minItems": 10,
+      "type": "array"
+    },
+    "project": {
+      "const": "res://"
+    },
+    "schema_version": {
+      "const": 1
+    }
+  },
+  "required": ["schema_version", "fixture_version", "project", "files", "phases"],
+  "title": "Sprint 5 script semantics fixture manifest",
+  "type": "object"
+}

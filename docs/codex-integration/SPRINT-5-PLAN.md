@@ -1,7 +1,7 @@
 # Sprint 5 plan — GDScript symbols and program relations
 
-**Status:** In progress — `S5-01` is complete and locally verified on macOS
-arm64; `S5-02` is the next gate; full Sprint 5 acceptance is not claimed
+**Status:** In progress — `S5-01` and `S5-02` are complete and locally verified
+on macOS arm64; `S5-03` is the next gate; full Sprint 5 acceptance is not claimed
 
 **Planned duration:** 10 working days
 
@@ -169,6 +169,16 @@ derived scripts with overrides; parameters and locals; exact calls; dynamic
 calls; literal and dynamic load/preload; string and shorthand node paths;
 parse/analyzer errors in one file; cyclic or missing dependencies; `.cs`
 discovery; and scenes whose script attachment changes.
+
+`S5-02` is frozen by
+[`tests/codex/evidence/sprint-5-stage-2-oracle.json`](../../tests/codex/evidence/sprint-5-stage-2-oracle.json).
+Its hand-authored truth set contains 23 fixture files, eight saved documents,
+48 declarations, 14 exact/dynamic relations, 65 UTF-8 content-bound ranges,
+four isolated diagnostics, and three attachment states. Strict Python/Rust
+validators reproduce the graph without importing Bridge, sidecar, index, or
+MCP implementation code; Godot C++ independently parses the six valid
+GDScript documents and the intentionally broken document. The ten later live
+phases are named here, but no live ingestion or cross-host acceptance is claimed.
 
 `S5-06` adds independently content-addressed script-document, symbol, relation,
 reference, diagnostic, and lookup shards. Migration validates the active

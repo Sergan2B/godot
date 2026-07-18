@@ -1,0 +1,174 @@
+{
+  "fixture_version": 1,
+  "files": [
+    {
+      "path": ".gitignore",
+      "role": "metadata",
+      "sha256": "64721fbb7bc1e6bb4e163ec390c01a36aebf3f71e35c81ecf0dcad54e94fa730"
+    },
+    {
+      "path": "project.godot",
+      "role": "project",
+      "sha256": "cb6fc95f5603400dd8316f29c71228a2b3d922fcd1c8eab179bb96f11b64be47"
+    },
+    {
+      "path": "resources/alternate_profile.tres",
+      "role": "resource",
+      "sha256": "f6c9b98c705e6afb69a93cd3ca09ab49d6e8adfb58cd53f437695f3139f34915"
+    },
+    {
+      "path": "resources/damage_profile.tres",
+      "role": "resource",
+      "sha256": "74d49031fefd36dcb147c4b79347517b829a9e6e2aa4c64f064c6ae7783e677c"
+    },
+    {
+      "path": "scenes/attachment_player.tscn",
+      "role": "scene",
+      "sha256": "eb5351a2c91a0a91b54d9f097d4be3ff7703651e62f17a881a9c166f60d577f6"
+    },
+    {
+      "path": "scenes/attachment_removed.tscn",
+      "role": "scene",
+      "sha256": "f5c499ff843f65a78f407c428f23c80207aa2893e79fd20bb8d4b97004fa0123"
+    },
+    {
+      "path": "scenes/attachment_replaced.tscn",
+      "role": "scene",
+      "sha256": "78b48d0d3358876024b7bb63832d8779940e8bfa9698585a556aed298e67fefe"
+    },
+    {
+      "path": "scripts/Enemy.cs",
+      "role": "discovery_script",
+      "sha256": "52f6670daee178eb5269113f2e3e20300296dfec48826a5bb101990cd1830a69"
+    },
+    {
+      "path": "scripts/Enemy.cs.uid",
+      "role": "uid",
+      "sha256": "5670897d64bea50605f91c44cc318aa0f9df0bcf493c96518545a6a998a1ff67"
+    },
+    {
+      "path": "scripts/base_actor.gd",
+      "role": "script",
+      "sha256": "5e5c2a44bab5737e46514efd58b1fb2168f23a510790de25499cd71d2c961be5"
+    },
+    {
+      "path": "scripts/base_actor.gd.uid",
+      "role": "uid",
+      "sha256": "8e1fc3efc095fdede9112ed1f78f8b097cb88f1060b3e32f8e7bdf0ae63b6541"
+    },
+    {
+      "path": "scripts/broken.gd",
+      "role": "script",
+      "sha256": "59a45f8401a08455fdb3c36b91f29d5bf66c1ac781c84de2fd9f87098f2cb217"
+    },
+    {
+      "path": "scripts/broken.gd.uid",
+      "role": "uid",
+      "sha256": "9587d087753534ea287e3c4f92d837e109677ca9bdf8c94d04e9740987bb5d0e"
+    },
+    {
+      "path": "scripts/cycle_a.gd",
+      "role": "script",
+      "sha256": "8368e4b705d585bba7bb2a95e61de69893fb68fa7c108fb35757ee9ebd64f5bd"
+    },
+    {
+      "path": "scripts/cycle_a.gd.uid",
+      "role": "uid",
+      "sha256": "83b02d25d39c0d16875264edefbb8fd523387bc42f92ebf139325cd8b81b0b5e"
+    },
+    {
+      "path": "scripts/cycle_b.gd",
+      "role": "script",
+      "sha256": "fc8159aeea309a0ee1951dd96036a2b8415c0514a51dd5409409a76d465c9609"
+    },
+    {
+      "path": "scripts/cycle_b.gd.uid",
+      "role": "uid",
+      "sha256": "216988a81ba41de4476963438260a2cbd1694630fbde504fa23efd32e24de728"
+    },
+    {
+      "path": "scripts/missing_base.gd",
+      "role": "script",
+      "sha256": "d8cf4304555dce2a5a61123ac948c4ecfa1d628f40062196b888886a2aa8b491"
+    },
+    {
+      "path": "scripts/missing_base.gd.uid",
+      "role": "uid",
+      "sha256": "4ca95d14cd9aaaaf24273bdc5cde1416eff9358b6c0564bf48986debb5e3970e"
+    },
+    {
+      "path": "scripts/path_only.gd",
+      "role": "script",
+      "sha256": "b41f243bef846aae946b759766484633ef6fdab361aa734a1ec0057950a3a120"
+    },
+    {
+      "path": "scripts/path_only.gd.uid",
+      "role": "uid",
+      "sha256": "f3f96d35fc6ddf2095ae6f4dc882226cb0f64f45c6b858bdb53123e5e806cda1"
+    },
+    {
+      "path": "scripts/player.gd",
+      "role": "script",
+      "sha256": "8b0f27ddcd021bdeec1989889b93bdd1200f0971befb7ac50250d7054084bacf"
+    },
+    {
+      "path": "scripts/player.gd.uid",
+      "role": "uid",
+      "sha256": "620915c8f58f1e668bc04daa7f99b4dcf722605c63aea36d887ffad5fc16a461"
+    }
+  ],
+  "phases": [
+    {
+      "assertions": ["base_graph_exact", "zero_false_exact", "all_resolvable_truth_present"],
+      "mutation": "none",
+      "name": "base"
+    },
+    {
+      "assertions": ["named_identity_preserved", "content_hash_changed"],
+      "mutation": "player_body_edit",
+      "name": "body_edit"
+    },
+    {
+      "assertions": ["named_identity_preserved", "content_scoped_identity_changed", "ranges_shifted"],
+      "mutation": "player_line_shift",
+      "name": "line_shift"
+    },
+    {
+      "assertions": ["renamed_symbol_identity_changed", "exact_call_target_updated"],
+      "mutation": "player_symbol_rename",
+      "name": "symbol_rename"
+    },
+    {
+      "assertions": ["override_target_exact", "dependent_relation_advanced"],
+      "mutation": "player_override_change",
+      "name": "override_change"
+    },
+    {
+      "assertions": ["literal_target_changed", "dynamic_load_unchanged"],
+      "mutation": "player_literal_dependency_change",
+      "name": "literal_dependency_change"
+    },
+    {
+      "assertions": ["old_attachment_removed", "replacement_attachment_exact"],
+      "mutation": "attachment_player_to_path_only",
+      "name": "attachment_change"
+    },
+    {
+      "assertions": ["diagnostic_current", "stale_symbols_not_current", "other_documents_current"],
+      "mutation": "select_broken_document",
+      "name": "parse_error"
+    },
+    {
+      "assertions": ["csharp_discovered", "csharp_semantics_unavailable", "no_false_csharp_symbols"],
+      "mutation": "discover_enemy_csharp",
+      "name": "csharp_discovery"
+    },
+    {
+      "assertions": ["full_resnapshot_required", "no_partial_generation_published"],
+      "mutation": "force_script_journal_gap",
+      "name": "journal_gap"
+    }
+  ],
+  "project": "res://",
+  "schema_version": 1
+}

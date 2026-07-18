@@ -62,8 +62,8 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | `INDEX-001` resource contract | Frozen and implemented; cross-platform `D-05` selects segment store | Extend only through a versioned Sprint 4 contract |
 | Sprint 4 plan | Complete; `S4-01`–`S4-10` and all 12 acceptance criteria pass on one macOS/Windows freeze | Begin Sprint 5 script and symbol intelligence |
 | `SCENE-001` scene contract | D-06 implemented and live-verified through Bridge/MCP on macOS and Windows | Extend only through a versioned post-Sprint-4 contract |
-| `SCRIPT-001` script contract | D-07 accepted; identities, ranges, confidence and enabled/disabled GDScript profiles locally verified on macOS arm64 | Build the independent `S5-02` oracle without production-derived expectations |
-| Sprint 5 plan | In progress; `S5-01` complete locally, `S5-02`–`S5-10` remain | Execute `S5-02`: freeze the independent script fixture and golden oracle |
+| `SCRIPT-001` script contract | D-07 accepted; contract vectors and independent script oracle locally verified on macOS arm64 | Implement the compatible Bridge RPC 1.4 script profile |
+| Sprint 5 plan | In progress; `S5-01`–`S5-02` complete locally, `S5-03`–`S5-10` remain | Execute `S5-03`: Bridge RPC 1.4 schemas, negotiation, and compatibility |
 
 ## Interim ownership
 

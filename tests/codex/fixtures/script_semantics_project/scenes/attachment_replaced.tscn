@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3 uid="uid://s5attachmentreplaced"]
+
+[ext_resource type="Script" uid="uid://s5pathonly" path="res://scripts/path_only.gd" id="1_script"]
+
+[node name="Root" type="Node"]
+
+[node name="Actor" type="Node" parent="."]
+script = ExtResource("1_script")
+
+[node name="Marker" type="Node" parent="Actor"]

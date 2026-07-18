@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://s5attachmentremoved"]
+
+[node name="Root" type="Node"]
+
+[node name="Actor" type="Node" parent="."]
+
+[node name="Marker" type="Node" parent="Actor"]

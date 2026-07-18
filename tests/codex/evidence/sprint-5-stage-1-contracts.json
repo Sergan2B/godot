@@ -84,6 +84,7 @@
   "source": {
     "file_count": 17,
     "scope_manifest": "tests/codex/sprint5_source_scopes.txt",
+    "source_commit": "923a7855a5ff4698a6e99720f4645e7d10984e43",
     "source_scope_sha256": "sha256:0a2c6706aaa6649c2c0f6d2e1fb4903a6909254eb476b754d64c4cdcd615ef6e"
   },
   "sprint": 5,

@@ -1,0 +1,19 @@
+; Engine configuration file.
+; Sprint 5 semantic-oracle fixture; keep deterministic and editor-independent.
+
+config_version=5
+
+[application]
+
+config/name="Codex Script Semantics Fixture"
+run/main_scene="res://scenes/attachment_player.tscn"
+
+[display]
+
+window/size/viewport_width=640
+window/size/viewport_height=360
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
