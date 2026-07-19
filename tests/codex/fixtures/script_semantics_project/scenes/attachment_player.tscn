@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://s5attachmentplayer"]
+[gd_scene load_steps=2 format=3 uid="uid://r36xm44kmd74"]
 
 [ext_resource type="Script" uid="uid://s5player" path="res://scripts/player.gd" id="1_script"]
 

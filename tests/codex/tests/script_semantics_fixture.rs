@@ -459,7 +459,7 @@ fn script_semantics_fixture_golden_graph_closes_relations_and_identities() {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>(),
-        "f856aad38a404734bed1837487942e4e5a4d3f0776663565ba1d2af796600a78"
+        "fb9dfb15e2e6d442baa02305b581b495a5b0f3b8375b0f7965fae27901fe214c"
     );
 
     let mut exact = 0;

@@ -30,7 +30,7 @@ func _apply_bonus(value: int) -> int:
 	return adjust.call(1)
 
 func exact_load_uid() -> Resource:
-	return load("uid://s5damageprofile")
+	return load("uid://b3iupk70ub7mc")
 
 func dynamic_actions(target: Object, method_name: StringName, path: String, node_path: NodePath) -> void:
 	target.call(method_name, 1)

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import shutil
@@ -71,6 +72,13 @@ class FixtureError(RuntimeError):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise FixtureError(message)
+
+
+def uid_entity_id(uid: str) -> str:
+    require(uid.startswith("uid://") and len(uid) > len("uid://"), "document UID differs")
+    digest = hashlib.sha256(b"godot-codex/resource-entity/uid/v1\0" + uid.encode("utf-8")).digest()
+    encoded = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return "godot:resource:uid:v1:" + encoded
 
 
 def strict_json_load(path: Path) -> Any:
@@ -237,10 +245,7 @@ def validate_documents(
         uid_path = PROJECT_ROOT / (relative + ".uid")
         require(uid_path.is_file(), f"document UID sidecar is missing: {oracle_id}")
         uid = uid_path.read_text(encoding="utf-8").strip()
-        require(
-            document.get("script_id") == "godot:resource:uid:v1:" + uid.removeprefix("uid://"),
-            f"document script ID differs: {oracle_id}",
-        )
+        require(document.get("script_id") == uid_entity_id(uid), f"document script ID differs: {oracle_id}")
         listed_diagnostics = _array_member(document, "diagnostics", f"document {oracle_id}")
         for diagnostic_id in listed_diagnostics:
             require(

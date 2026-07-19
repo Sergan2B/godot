@@ -2490,7 +2490,7 @@ mod tests {
         );
         assert_eq!(
             normalized.semantic_digest,
-            "sha256:b105ec15abc36d826f5480dea4db8350a1ea926be507cf2cedf876f1189018e8"
+            "sha256:709dd89c7066f81aaa1d1fd266dba50ab90ae2abe5ddc43c94f91e6028cfde69"
         );
     }
 

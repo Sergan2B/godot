@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://s5attachmentreplaced"]
+[gd_scene load_steps=2 format=3 uid="uid://ev0jb2icdafb"]
 
 [ext_resource type="Script" uid="uid://s5pathonly" path="res://scripts/path_only.gd" id="1_script"]
 

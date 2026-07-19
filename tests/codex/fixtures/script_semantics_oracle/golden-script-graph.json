@@ -97,19 +97,19 @@
       "naming": "named",
       "oracle_id": "base",
       "path": "res://scripts/base_actor.gd",
-      "script_id": "godot:resource:uid:v1:s5baseactor",
+      "script_id": "godot:resource:uid:v1:Bom9qDDm2ArGbg9bVEmgwOJb4cl2mM8sH0A4gM_fOso",
       "semantic_state": "complete"
     },
     {
       "adapter_profile": "gdscript_parser_analyzer_v1",
       "class_symbol": "player_class",
-      "content_sha256": "sha256:8b0f27ddcd021bdeec1989889b93bdd1200f0971befb7ac50250d7054084bacf",
+      "content_sha256": "sha256:38b0d38a55841a60e64c3300ab06b08d7c51212d748a665cb626420706fec1f0",
       "diagnostics": [],
       "language": "gdscript",
       "naming": "named",
       "oracle_id": "player",
       "path": "res://scripts/player.gd",
-      "script_id": "godot:resource:uid:v1:s5player",
+      "script_id": "godot:resource:uid:v1:sqJ30thGZ51wWAelzXaPokwt_ZZU6NggpdkmLRA5DHE",
       "semantic_state": "complete"
     },
     {
@@ -121,7 +121,7 @@
       "naming": "path_only",
       "oracle_id": "path_only",
       "path": "res://scripts/path_only.gd",
-      "script_id": "godot:resource:uid:v1:s5pathonly",
+      "script_id": "godot:resource:uid:v1:-j8N2S7s-sirO-WyawSVasYqrl_WUZGJwCbofXcXcd8",
       "semantic_state": "complete"
     },
     {
@@ -133,7 +133,7 @@
       "naming": "path_only",
       "oracle_id": "broken",
       "path": "res://scripts/broken.gd",
-      "script_id": "godot:resource:uid:v1:s5broken",
+      "script_id": "godot:resource:uid:v1:S2eOZPnfXqH1dCMsR7cIlOFgNZEandwkrrkSmdLtz-s",
       "semantic_state": "invalid"
     },
     {
@@ -145,7 +145,7 @@
       "naming": "path_only",
       "oracle_id": "missing_base",
       "path": "res://scripts/missing_base.gd",
-      "script_id": "godot:resource:uid:v1:s5missingbase",
+      "script_id": "godot:resource:uid:v1:YsKeUYxs8mm_xJ7GP11oLtBk82OlCFyQ-i-KCaEmldM",
       "semantic_state": "partial"
     },
     {
@@ -157,7 +157,7 @@
       "naming": "path_only",
       "oracle_id": "cycle_a",
       "path": "res://scripts/cycle_a.gd",
-      "script_id": "godot:resource:uid:v1:s5cyclea",
+      "script_id": "godot:resource:uid:v1:BWcPwtYKYuOGyD7qVVtLyc4g51dWm8ETpliw9-Qs1Jc",
       "semantic_state": "partial"
     },
     {
@@ -169,7 +169,7 @@
       "naming": "path_only",
       "oracle_id": "cycle_b",
       "path": "res://scripts/cycle_b.gd",
-      "script_id": "godot:resource:uid:v1:s5cycleb",
+      "script_id": "godot:resource:uid:v1:c_VI3n6WcDjNAC5OvkiEIM1B-coZiVa6fKDQgidq7Vc",
       "semantic_state": "partial"
     },
     {
@@ -181,7 +181,7 @@
       "naming": "path_only",
       "oracle_id": "enemy_cs",
       "path": "res://scripts/Enemy.cs",
-      "script_id": "godot:resource:uid:v1:s5enemycsharp",
+      "script_id": "godot:resource:uid:v1:TFNGNS1RPGfvDro1Y3fG0JVdvQ0szvdWOAJo0jCYXQg",
       "semantic_state": "unavailable"
     }
   ],
@@ -224,21 +224,21 @@
     {"bytes": [600, 623], "document": "player", "end": [28, 39], "needle": "func(delta: int) -> int", "occurrence": 0, "oracle_id": "player_lambda_adjust", "start": [28, 16]},
     {"bytes": [605, 610], "document": "player", "end": [28, 26], "needle": "delta", "occurrence": 0, "oracle_id": "player_lambda_param_delta", "start": [28, 21]},
     {"bytes": [677, 691], "document": "player", "end": [32, 20], "needle": "exact_load_uid", "occurrence": 0, "oracle_id": "player_method_exact_load_uid", "start": [32, 6]},
-    {"bytes": [751, 766], "document": "player", "end": [35, 21], "needle": "dynamic_actions", "occurrence": 0, "oracle_id": "player_method_dynamic_actions", "start": [35, 6]},
-    {"bytes": [767, 773], "document": "player", "end": [35, 28], "needle": "target", "occurrence": 0, "oracle_id": "player_param_target", "start": [35, 22]},
-    {"bytes": [783, 794], "document": "player", "end": [35, 49], "needle": "method_name", "occurrence": 0, "oracle_id": "player_param_method_name", "start": [35, 38]},
-    {"bytes": [808, 812], "document": "player", "end": [35, 67], "needle": "path", "occurrence": 1, "oracle_id": "player_param_path", "start": [35, 63]},
-    {"bytes": [822, 831], "document": "player", "end": [35, 86], "needle": "node_path", "occurrence": 0, "oracle_id": "player_param_node_path", "start": [35, 77]},
-    {"bytes": [919, 925], "document": "player", "end": [39, 12], "needle": "marker", "occurrence": 0, "oracle_id": "player_local_marker", "start": [39, 6]},
+    {"bytes": [749, 764], "document": "player", "end": [35, 21], "needle": "dynamic_actions", "occurrence": 0, "oracle_id": "player_method_dynamic_actions", "start": [35, 6]},
+    {"bytes": [765, 771], "document": "player", "end": [35, 28], "needle": "target", "occurrence": 0, "oracle_id": "player_param_target", "start": [35, 22]},
+    {"bytes": [781, 792], "document": "player", "end": [35, 49], "needle": "method_name", "occurrence": 0, "oracle_id": "player_param_method_name", "start": [35, 38]},
+    {"bytes": [806, 810], "document": "player", "end": [35, 67], "needle": "path", "occurrence": 1, "oracle_id": "player_param_path", "start": [35, 63]},
+    {"bytes": [820, 829], "document": "player", "end": [35, 86], "needle": "node_path", "occurrence": 0, "oracle_id": "player_param_node_path", "start": [35, 77]},
+    {"bytes": [917, 923], "document": "player", "end": [39, 12], "needle": "marker", "occurrence": 0, "oracle_id": "player_local_marker", "start": [39, 6]},
     {"bytes": [9, 36], "document": "player", "end": [1, 37], "needle": "res://scripts/base_actor.gd", "occurrence": 0, "oracle_id": "rel_inherits", "start": [1, 10]},
     {"bytes": [488, 505], "document": "player", "end": [24, 36], "needle": "super.take_damage", "occurrence": 0, "oracle_id": "rel_super_call", "start": [24, 19]},
     {"bytes": [522, 534], "document": "player", "end": [25, 21], "needle": "_apply_bonus", "occurrence": 0, "oracle_id": "rel_helper_call", "start": [25, 9]},
     {"bytes": [262, 297], "document": "player", "end": [18, 68], "needle": "res://resources/damage_profile.tres", "occurrence": 0, "oracle_id": "rel_preload", "start": [18, 33]},
-    {"bytes": [721, 742], "document": "player", "end": [33, 36], "needle": "uid://s5damageprofile", "occurrence": 0, "oracle_id": "rel_load_uid", "start": [33, 15]},
-    {"bytes": [853, 864], "document": "player", "end": [36, 13], "needle": "target.call", "occurrence": 0, "oracle_id": "rel_dynamic_call", "start": [36, 2]},
-    {"bytes": [882, 892], "document": "player", "end": [37, 12], "needle": "load(path)", "occurrence": 0, "oracle_id": "rel_dynamic_load", "start": [37, 2]},
-    {"bytes": [894, 913], "document": "player", "end": [38, 21], "needle": "get_node(node_path)", "occurrence": 0, "oracle_id": "rel_node_path", "start": [38, 2]},
-    {"bytes": [929, 936], "document": "player", "end": [39, 23], "needle": "$Marker", "occurrence": 0, "oracle_id": "rel_shorthand", "start": [39, 16]},
+    {"bytes": [721, 740], "document": "player", "end": [33, 34], "needle": "uid://b3iupk70ub7mc", "occurrence": 0, "oracle_id": "rel_load_uid", "start": [33, 15]},
+    {"bytes": [851, 862], "document": "player", "end": [36, 13], "needle": "target.call", "occurrence": 0, "oracle_id": "rel_dynamic_call", "start": [36, 2]},
+    {"bytes": [880, 890], "document": "player", "end": [37, 12], "needle": "load(path)", "occurrence": 0, "oracle_id": "rel_dynamic_load", "start": [37, 2]},
+    {"bytes": [892, 911], "document": "player", "end": [38, 21], "needle": "get_node(node_path)", "occurrence": 0, "oracle_id": "rel_node_path", "start": [38, 2]},
+    {"bytes": [927, 934], "document": "player", "end": [39, 23], "needle": "$Marker", "occurrence": 0, "oracle_id": "rel_shorthand", "start": [39, 16]},
     {"bytes": [656, 667], "document": "player", "end": [30, 20], "needle": "adjust.call", "occurrence": 0, "oracle_id": "rel_lambda_call", "start": [30, 9]},
     {"bytes": [18, 31], "document": "path_only", "end": [3, 18], "needle": "untyped_value", "occurrence": 0, "oracle_id": "path_property_untyped", "start": [3, 5]},
     {"bytes": [42, 46], "document": "path_only", "end": [5, 10], "needle": "echo", "occurrence": 0, "oracle_id": "path_function_echo", "start": [5, 6]},
@@ -273,14 +273,14 @@
     {
       "oracle_id": "alternate_profile",
       "path": "res://resources/alternate_profile.tres",
-      "sha256": "sha256:f6c9b98c705e6afb69a93cd3ca09ab49d6e8adfb58cd53f437695f3139f34915",
-      "uid": "uid://s5alternateprofile"
+      "sha256": "sha256:46b565c83d0443c774c98cdb1463d36adf19be724cd6f0f99fd62e9aa6072d43",
+      "uid": "uid://b53lfeoqlgg1w"
     },
     {
       "oracle_id": "damage_profile",
       "path": "res://resources/damage_profile.tres",
-      "sha256": "sha256:74d49031fefd36dcb147c4b79347517b829a9e6e2aa4c64f064c6ae7783e677c",
-      "uid": "uid://s5damageprofile"
+      "sha256": "sha256:facb4ae3e12e259f75be60706e9ea6302c340fa29951d07e29757bee86c26b45",
+      "uid": "uid://b3iupk70ub7mc"
     }
   ],
   "schema_version": 1,

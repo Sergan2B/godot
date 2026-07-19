@@ -14,27 +14,27 @@
     {
       "path": "resources/alternate_profile.tres",
       "role": "resource",
-      "sha256": "f6c9b98c705e6afb69a93cd3ca09ab49d6e8adfb58cd53f437695f3139f34915"
+      "sha256": "46b565c83d0443c774c98cdb1463d36adf19be724cd6f0f99fd62e9aa6072d43"
     },
     {
       "path": "resources/damage_profile.tres",
       "role": "resource",
-      "sha256": "74d49031fefd36dcb147c4b79347517b829a9e6e2aa4c64f064c6ae7783e677c"
+      "sha256": "facb4ae3e12e259f75be60706e9ea6302c340fa29951d07e29757bee86c26b45"
     },
     {
       "path": "scenes/attachment_player.tscn",
       "role": "scene",
-      "sha256": "eb5351a2c91a0a91b54d9f097d4be3ff7703651e62f17a881a9c166f60d577f6"
+      "sha256": "bba2172e4cb5cd8df75203b6148d6dabd6043325408286773b72529586fdcbbc"
     },
     {
       "path": "scenes/attachment_removed.tscn",
       "role": "scene",
-      "sha256": "f5c499ff843f65a78f407c428f23c80207aa2893e79fd20bb8d4b97004fa0123"
+      "sha256": "9c8ddc5f4ebca3f6d63aeff5d4600996e4180f80ae2de53355db393faccc094b"
     },
     {
       "path": "scenes/attachment_replaced.tscn",
       "role": "scene",
-      "sha256": "78b48d0d3358876024b7bb63832d8779940e8bfa9698585a556aed298e67fefe"
+      "sha256": "9e36d1d4a7a3d3a83f5b0b41c27c491f510e5afb3a7b0a14735590dfff9e9088"
     },
     {
       "path": "scripts/Enemy.cs",
@@ -44,7 +44,7 @@
     {
       "path": "scripts/Enemy.cs.uid",
       "role": "uid",
-      "sha256": "5670897d64bea50605f91c44cc318aa0f9df0bcf493c96518545a6a998a1ff67"
+      "sha256": "20ac04d2690952916f86d84968c71e070608cda1e79122ca7cc6e8b41640151b"
     },
     {
       "path": "scripts/base_actor.gd",
@@ -94,7 +94,7 @@
     {
       "path": "scripts/missing_base.gd.uid",
       "role": "uid",
-      "sha256": "4ca95d14cd9aaaaf24273bdc5cde1416eff9358b6c0564bf48986debb5e3970e"
+      "sha256": "509da0e649c66a7a847d99057fe8eceba4cadc7a8381cd4792e00c34c8ee3c44"
     },
     {
       "path": "scripts/path_only.gd",
@@ -109,7 +109,7 @@
     {
       "path": "scripts/player.gd",
       "role": "script",
-      "sha256": "8b0f27ddcd021bdeec1989889b93bdd1200f0971befb7ac50250d7054084bacf"
+      "sha256": "38b0d38a55841a60e64c3300ab06b08d7c51212d748a665cb626420706fec1f0"
     },
     {
       "path": "scripts/player.gd.uid",
