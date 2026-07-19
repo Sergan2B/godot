@@ -24,8 +24,8 @@ use crate::{
     ScriptSnapshotSpool, normalize_resource_path,
 };
 
-const DELTA_POLL_INTERVAL: Duration = Duration::from_millis(50);
-const CATALOG_RETRY_INTERVAL: Duration = Duration::from_millis(25);
+const DELTA_POLL_INTERVAL: Duration = Duration::from_millis(20);
+const CATALOG_RETRY_INTERVAL: Duration = Duration::from_millis(10);
 const RETRY_MIN: Duration = Duration::from_millis(200);
 const RETRY_MAX: Duration = Duration::from_secs(5);
 

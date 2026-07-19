@@ -272,7 +272,7 @@ def wait_for_editor_file(
                 raise ScriptGateError("Godot could not start the Bridge transport worker")
             if "resource graph live driver cannot" in log_text:
                 raise ScriptGateError("Godot live driver could not access EditorFileSystem")
-        time.sleep(0.05)
+        time.sleep(0.02)
     raise ScriptGateError(f"timed out waiting for {description}")
 
 
@@ -458,7 +458,7 @@ def wait_script_current(
         if control_samples is not None:
             _, _, elapsed = tool_call(client, "godot_get_editor_state", {})
             control_samples.append(elapsed)
-        time.sleep(0.05)
+        time.sleep(0.02)
     sidecar_tail = " | ".join(client.process.tail[-20:])
     raise ScriptGateError(f"script index did not become current: {last}; sidecar_tail={sidecar_tail}")
 

@@ -57,7 +57,7 @@ public:
 	static constexpr uint32_t SNAPSHOT_CHUNK_BYTES = 256 * 1024;
 	static constexpr uint64_t SNAPSHOT_WINDOW_BYTES = 32 * 1024 * 1024;
 	static constexpr uint64_t SNAPSHOT_TIMEOUT_USEC = 120000000;
-	static constexpr uint64_t RESOURCE_BUDGET_USEC = 200;
+	static constexpr uint64_t RESOURCE_BUDGET_USEC = 800;
 	static constexpr uint64_t FRAME_SAFETY_MARGIN_USEC = 200;
 	static constexpr uint32_t SNAPSHOT_BUILD_CHUNK_BYTES = SNAPSHOT_CHUNK_BYTES;
 	static constexpr uint32_t MAX_SNAPSHOT_CHUNKS = 65536;
