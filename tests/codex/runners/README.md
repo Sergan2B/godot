@@ -1,4 +1,57 @@
-# Sprint 3 host and aggregation runbook
+# Codex integration host runbooks
+
+## Sprint 5 script semantics gate
+
+Sprint 5 acceptance is local-only on native macOS arm64 and Windows x86_64.
+Linux and hosted CI are not acceptance coordinates and remain recorded as
+`not_run`. Both hosts must run the same clean source-freeze commit; do not use
+Wine, WSL, containers, or a modified checkout as a substitute.
+
+The macOS host establishes the source freeze. From a clean
+`codex/integration` checkout, run:
+
+```sh
+tests/codex/runners/sprint5_macos_arm64.sh
+```
+
+The wrapper rebuilds the Godot editor, release sidecar, and Bridge script probe,
+runs the ten canonical fixture phases and local Rust/Python gates, then validates
+the report at:
+
+```text
+tests/codex/evidence/sprint-5-script-semantics-macos.json
+```
+
+Read `source.git_commit` from that report. On the native Windows x86_64 host,
+fetch that exact commit, check it out without local source changes, and run:
+
+```powershell
+tests\codex\runners\sprint5_windows_x86_64.ps1
+```
+
+The Windows wrapper applies the same build, ten-phase, SLO, cleanup, redaction,
+and evidence checks and produces:
+
+```text
+tests/codex/evidence/sprint-5-script-semantics-windows.json
+```
+
+Copy the Windows JSON byte-for-byte back to the macOS checkout. After both raw
+reports are present, build the deterministic aggregate with:
+
+```sh
+python3 tests/codex/sprint5_acceptance.py merge \
+  tests/codex/evidence/sprint-5-script-semantics-macos.json \
+  tests/codex/evidence/sprint-5-script-semantics-windows.json \
+  tests/codex/evidence/sprint-5-acceptance.json
+```
+
+The merge fails unless both reports bind the same source, fixture, oracle, and
+canonical symbol identities and all ten normalized phase digests match. Every
+wrapper refuses to overwrite existing evidence and removes partial output after
+a failed run.
+
+## Sprint 3 host and aggregation runbook
 
 **Status:** completed and retained for deterministic reproduction.
 

@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = std::env::args_os().skip(1);
     let project_root = PathBuf::from(
         arguments.next().ok_or(
-            "usage: script_graph_live <project-root> [--poll-delta|--wait-delta] [--signal-ready] [--details]",
+            "usage: script_graph_live <project-root> [--poll-delta|--wait-delta] [--after=<revision>] [--signal-ready] [--details]",
         )?,
     );
     let flags: Vec<_> = arguments.collect();
@@ -17,6 +17,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wait_delta = flags.iter().any(|argument| argument == "--wait-delta");
     let signal_ready = flags.iter().any(|argument| argument == "--signal-ready");
     let details = flags.iter().any(|argument| argument == "--details");
+    let requested_after = flags
+        .iter()
+        .find_map(|argument| argument.to_str()?.strip_prefix("--after="))
+        .map(str::parse::<u64>)
+        .transpose()?;
 
     let mut client = BridgeClient::connect(&project_root).await?;
     let profile = client.negotiated_profile();
@@ -79,10 +84,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if poll_delta || wait_delta {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+        let after_revision = requested_after.unwrap_or(snapshot.accepted.script_graph_revision);
         output["delta"] = loop {
-            let delta = client
-                .get_next_script_delta(snapshot.accepted.script_graph_revision)
-                .await?;
+            let delta = client.get_next_script_delta(after_revision).await?;
             if wait_delta
                 && matches!(delta, ScriptDeltaPoll::Current { .. })
                 && tokio::time::Instant::now() < deadline
