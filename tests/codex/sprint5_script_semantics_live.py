@@ -1417,7 +1417,16 @@ def main() -> int:
             },
         }
         if not all(performance["gates"].values()):
-            raise ScriptGateError("one or more Sprint 5 SLOs failed")
+            failed_gates = sorted(name for name, passed in performance["gates"].items() if not passed)
+            raise ScriptGateError(
+                "Sprint 5 SLOs failed: "
+                + ", ".join(failed_gates)
+                + "; observed "
+                + f"cached_p95_ms={performance['cached_symbol_query_ms']['p95']}, "
+                + f"visibility_p95_ms={performance['saved_change_visibility_ms']['p95']}, "
+                + f"control_p95_ms={performance['bulk_status_ping_ms']['p95']}, "
+                + f"bridge_max_usec={max(bridge)}"
+            )
 
         rust_verbose = command_output(["rustc", "--version", "--verbose"], REPOSITORY_ROOT / "godot-codex-mcp")
         temporary_path = str(run_root)
