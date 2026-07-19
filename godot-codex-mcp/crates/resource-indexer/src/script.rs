@@ -63,7 +63,6 @@ impl ScriptNormalizer {
             )?;
             let resource = resources.find(&document.script_ref)?;
             let detached_csharp_discovery = resource.is_none()
-                && matches!(document.script_ref, bridge::ResourceRef::Path(_))
                 && document.language == bridge::ScriptLanguage::Csharp
                 && document.adapter_profile == bridge::ScriptAdapterProfile::CsharpDiscoveryOnlyV1
                 && document.completeness == bridge::ScriptCompleteness::Unavailable;
@@ -1368,6 +1367,33 @@ mod tests {
                 .all(|resource| resource.entity_id != csharp.script_resource_id)
         );
         domain.validate().expect("valid detached C# domain");
+    }
+
+    #[test]
+    fn csharp_uid_discovery_document_survives_without_a_resource_catalog_record() {
+        let mut base = base_generation();
+        let csharp_resource_id = base.resources[4].entity_id.clone();
+        base.resources.remove(4);
+        base.scene
+            .nodes
+            .retain(|node| node.attached_script_entity_id.as_deref() != Some(&csharp_resource_id));
+        base.scene.validation_digest = base.scene.compute_validation_digest();
+        let graph = normalized_graph(&base);
+
+        let domain = ScriptNormalizer
+            .normalize_graph(&base, SESSION, &graph)
+            .expect("detached UID-addressed C# discovery document");
+        let csharp = domain
+            .documents
+            .iter()
+            .find(|document| document.language == store::ScriptLanguage::Csharp)
+            .expect("C# discovery document");
+        assert_eq!(csharp.path, "res://scripts/Enemy.cs");
+        assert_eq!(csharp.script_resource_id, csharp_resource_id);
+        assert_eq!(csharp.completeness, store::ScriptCompleteness::Unavailable);
+        domain
+            .validate()
+            .expect("valid detached UID-addressed C# domain");
     }
 
     #[test]

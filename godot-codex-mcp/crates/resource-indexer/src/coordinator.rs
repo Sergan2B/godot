@@ -24,7 +24,8 @@ use crate::{
     ScriptSnapshotSpool, normalize_resource_path,
 };
 
-const DELTA_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const DELTA_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const CATALOG_RETRY_INTERVAL: Duration = Duration::from_millis(25);
 const RETRY_MIN: Duration = Duration::from_millis(200);
 const RETRY_MAX: Duration = Duration::from_secs(5);
 
@@ -972,8 +973,7 @@ impl ResourceIndexCoordinator {
                     || matches!(
                         self.script_reader.status(),
                         ScriptIndexStatus::NotCurrent {
-                            reason: ScriptIndexStaleReason::ResourceChanged
-                                | ScriptIndexStaleReason::SceneChanged
+                            reason: ScriptIndexStaleReason::SceneChanged
                                 | ScriptIndexStaleReason::CompositionFailed
                                 | ScriptIndexStaleReason::StartupValidation
                         }
@@ -982,12 +982,18 @@ impl ResourceIndexCoordinator {
                     changed = true;
                     self.full_script_snapshot(client, store).await?;
                 } else {
-                    match client
-                        .get_next_script_delta(active.script.script_graph_revision)
+                    match next_script_delta_when_ready(client, active.script.script_graph_revision)
                         .await?
                     {
                         ScriptDeltaPoll::Current { .. } => {
-                            self.script_reader.publish_current(store)?;
+                            if active.script.resource_revision
+                                != active.checkpoint.resource_revision
+                            {
+                                changed = true;
+                                self.full_script_snapshot(client, store).await?;
+                            } else {
+                                self.script_reader.publish_current(store)?;
+                            }
                         }
                         ScriptDeltaPoll::Batch { batch, .. } => {
                             changed = true;
@@ -1111,10 +1117,17 @@ impl ResourceIndexCoordinator {
             .join("codex")
             .join("index")
             .join("staging");
-        let mut spool = ResourceSnapshotSpool::create(&staging)?;
-        let transfer = client.stream_resource_snapshot(&mut spool).await?;
+        let (transfer, snapshot) = loop {
+            let mut spool = ResourceSnapshotSpool::create(&staging)?;
+            match client.stream_resource_snapshot(&mut spool).await {
+                Ok(transfer) => break (transfer, spool.confirmed_snapshot()?),
+                Err(error) if is_catalog_building(&error, "resource_catalog_building") => {
+                    tokio::time::sleep(CATALOG_RETRY_INTERVAL).await;
+                }
+                Err(error) => return Err(error.into()),
+            }
+        };
         validate_transfer_binding(client, &transfer)?;
-        let snapshot = spool.confirmed_snapshot()?;
         let generation = self.normalizer.normalize_full_snapshot(
             client.project_id(),
             index_revision,
@@ -1140,7 +1153,32 @@ impl ResourceIndexCoordinator {
                 }
             },
         );
-        let snapshot = client.get_scene_snapshot().await?;
+        let mut snapshot = loop {
+            match client.get_scene_snapshot().await {
+                Ok(snapshot) => break snapshot,
+                Err(error) if is_catalog_building(&error, "scene_catalog_building") => {
+                    tokio::time::sleep(CATALOG_RETRY_INTERVAL).await;
+                }
+                Err(error) => return Err(error.into()),
+            }
+        };
+        if snapshot.end.resource_revision != store.active_generation()?.checkpoint.resource_revision
+        {
+            // A saved file can advance the resource clock before the scene
+            // adapter emits any scene delta. Rebase the resource domain first,
+            // then capture one scene snapshot against that exact checkpoint.
+            self.full_snapshot(client, store).await?;
+            self.reader.publish_current(store)?;
+            snapshot = loop {
+                match client.get_scene_snapshot().await {
+                    Ok(snapshot) => break snapshot,
+                    Err(error) if is_catalog_building(&error, "scene_catalog_building") => {
+                        tokio::time::sleep(CATALOG_RETRY_INTERVAL).await;
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+            };
+        }
         validate_scene_snapshot_binding(client, store, &snapshot)?;
         self.scene_catalog = snapshot
             .payload
@@ -1301,9 +1339,16 @@ impl ResourceIndexCoordinator {
             .join("codex")
             .join("index")
             .join("staging");
-        let mut spool = ScriptSnapshotSpool::create(&staging)?;
-        client.stream_script_snapshot(&mut spool).await?;
-        let snapshot = spool.confirmed_snapshot()?;
+        let snapshot = loop {
+            let mut spool = ScriptSnapshotSpool::create(&staging)?;
+            match client.stream_script_snapshot(&mut spool).await {
+                Ok(_) => break spool.confirmed_snapshot()?,
+                Err(error) if is_catalog_building(&error, "script_catalog_building") => {
+                    tokio::time::sleep(CATALOG_RETRY_INTERVAL).await;
+                }
+                Err(error) => return Err(error.into()),
+            }
+        };
         validate_script_snapshot_binding(client, store, &snapshot)?;
         let graph = normalize_script_snapshot(&snapshot)?;
         let base = store.active_generation()?;
@@ -1470,6 +1515,35 @@ fn next_index_revision(store: &SegmentStore) -> Result<u64, CoordinatorError> {
     }
 }
 
+fn is_catalog_building(error: &BridgeError, expected_code: &str) -> bool {
+    matches!(
+        error,
+        BridgeError::Rpc {
+            code,
+            retryable: true,
+            ..
+        } if code == expected_code
+    )
+}
+
+async fn next_script_delta_when_ready(
+    client: &mut BridgeClient,
+    after_script_graph_revision: u64,
+) -> Result<ScriptDeltaPoll, CoordinatorError> {
+    loop {
+        match client
+            .get_next_script_delta(after_script_graph_revision)
+            .await
+        {
+            Ok(delta) => return Ok(delta),
+            Err(error) if is_catalog_building(&error, "script_catalog_building") => {
+                tokio::time::sleep(CATALOG_RETRY_INTERVAL).await;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
 fn validate_transfer_binding(
     client: &BridgeClient,
     transfer: &ResourceSnapshotTransfer,
@@ -1491,11 +1565,16 @@ fn validate_scene_snapshot_binding(
     let active = store.active_generation()?;
     if snapshot.accepted.revisions.editor_session_id != client.editor_session_id()
         || snapshot.end.revisions.editor_session_id != client.editor_session_id()
-        || snapshot.accepted.resource_revision != snapshot.end.resource_revision
-        || snapshot.accepted.scene_graph_revision != snapshot.end.scene_graph_revision
-        || snapshot.end.resource_revision != active.checkpoint.resource_revision
     {
-        return Err(IndexerError::Scene("scene_snapshot_session_changed").into());
+        return Err(IndexerError::Scene("scene_snapshot_editor_session_changed").into());
+    }
+    if snapshot.accepted.resource_revision != snapshot.end.resource_revision
+        || snapshot.accepted.scene_graph_revision != snapshot.end.scene_graph_revision
+    {
+        return Err(IndexerError::Scene("scene_snapshot_revision_changed").into());
+    }
+    if snapshot.end.resource_revision != active.checkpoint.resource_revision {
+        return Err(IndexerError::Scene("scene_snapshot_resource_checkpoint").into());
     }
     Ok(())
 }
@@ -1573,6 +1652,19 @@ fn apply_script_operations(
                 payload.adapter_statuses.push(value.clone());
             }
         }
+    }
+    for document in &mut payload.documents {
+        document.resource_revision = batch.resource_revision;
+        document.script_graph_revision = batch.script_graph_revision;
+    }
+    for symbol in &mut payload.symbols {
+        symbol.script_graph_revision = batch.script_graph_revision;
+    }
+    for relation in &mut payload.relations {
+        relation.script_graph_revision = batch.script_graph_revision;
+    }
+    for diagnostic in &mut payload.diagnostics {
+        diagnostic.script_graph_revision = batch.script_graph_revision;
     }
     Ok(())
 }
@@ -2173,5 +2265,74 @@ mod tests {
                 "script_delta_remove_missing"
             )))
         ));
+    }
+
+    #[test]
+    fn script_delta_rebinds_unchanged_records_to_the_atomic_batch_revision() {
+        let mut payload: ScriptSnapshotPayload = serde_json::from_value(serde_json::json!({
+            "documents": [{
+                "script_ref": {"uid": "uid://changed"},
+                "path": "res://changed.gd",
+                "language": "gdscript",
+                "content_sha256": format!("sha256:{}", "a".repeat(64)),
+                "adapter_profile": "gdscript_parser_analyzer_v1",
+                "completeness": "complete",
+                "resource_revision": 1,
+                "script_graph_revision": 1
+            }, {
+                "script_ref": {"uid": "uid://stable"},
+                "path": "res://stable.gd",
+                "language": "gdscript",
+                "content_sha256": format!("sha256:{}", "b".repeat(64)),
+                "adapter_profile": "gdscript_parser_analyzer_v1",
+                "completeness": "complete",
+                "resource_revision": 1,
+                "script_graph_revision": 1
+            }],
+            "symbols": [],
+            "relations": [],
+            "diagnostics": [],
+            "adapter_statuses": []
+        }))
+        .expect("script payload");
+        let batch: ScriptDeltaBatch = serde_json::from_value(serde_json::json!({
+            "batch_id": "script-batch:00000000000000000000000000000002",
+            "previous_script_graph_revision": 1,
+            "script_graph_revision": 2,
+            "resource_revision": 2,
+            "scene_graph_revision": 1,
+            "project_revision": 2,
+            "operations": [{
+                "kind": "upsert_document",
+                "value": {
+                    "document": {
+                        "script_ref": {"uid": "uid://changed"},
+                        "path": "res://changed.gd",
+                        "language": "gdscript",
+                        "content_sha256": format!("sha256:{}", "c".repeat(64)),
+                        "adapter_profile": "gdscript_parser_analyzer_v1",
+                        "completeness": "complete",
+                        "resource_revision": 2,
+                        "script_graph_revision": 2
+                    },
+                    "symbols": [],
+                    "relations": [],
+                    "diagnostics": []
+                }
+            }],
+            "source_complete": true,
+            "checksum": "checksum"
+        }))
+        .expect("script batch");
+
+        apply_script_operations(&mut payload, &batch).expect("script upsert");
+        assert_eq!(payload.documents.len(), 2);
+        assert!(
+            payload
+                .documents
+                .iter()
+                .all(|document| document.resource_revision == 2
+                    && document.script_graph_revision == 2)
+        );
     }
 }

@@ -862,16 +862,34 @@ fn validate_document(
         ScriptLanguage::Gdscript => document.path.ends_with(".gd"),
         ScriptLanguage::Csharp => document.path.ends_with(".cs"),
     };
-    if !profile_matches_language(document.adapter_profile, document.language)
-        || !extension_matches
-        || document.resource_revision != expected_resource_revision
-        || document.script_graph_revision != expected_script_graph_revision
-        || expected_resource_revision > MAX_SAFE_REVISION
+    if !profile_matches_language(document.adapter_profile, document.language) {
+        return Err(BridgeError::Invalid(
+            "script document adapter profile is invalid".to_owned(),
+        ));
+    }
+    if !extension_matches {
+        return Err(BridgeError::Invalid(
+            "script document language extension is invalid".to_owned(),
+        ));
+    }
+    if expected_resource_revision > MAX_SAFE_REVISION
         || expected_script_graph_revision > MAX_SAFE_REVISION
     {
         return Err(BridgeError::Invalid(
-            "script document is invalid".to_owned(),
+            "script document snapshot revision is invalid".to_owned(),
         ));
+    }
+    if document.resource_revision != expected_resource_revision {
+        return Err(BridgeError::Invalid(format!(
+            "script document resource revision {} does not match snapshot {}",
+            document.resource_revision, expected_resource_revision
+        )));
+    }
+    if document.script_graph_revision != expected_script_graph_revision {
+        return Err(BridgeError::Invalid(format!(
+            "script document graph revision {} does not match snapshot {}",
+            document.script_graph_revision, expected_script_graph_revision
+        )));
     }
     Ok(())
 }

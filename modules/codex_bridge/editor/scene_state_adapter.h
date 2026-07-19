@@ -210,6 +210,7 @@ private:
 	static String _sha256_hex(const String &p_value);
 	static String _canonical_node_path(const String &p_path);
 	static bool _is_safe_node_path(const String &p_path, bool p_allow_empty = false);
+	static void _stamp_project_context_revision(Array &r_values, uint64_t p_scene_graph_revision);
 	static void _collect_resource_ownership(const Variant &p_value, const String &p_path, int p_depth, HashMap<ObjectID, RBSet<String>> &r_ownership, Vector<Ref<Resource>> &r_subresources);
 	bool _append_diagnostic(Array &r_diagnostics, const Dictionary &p_diagnostic);
 

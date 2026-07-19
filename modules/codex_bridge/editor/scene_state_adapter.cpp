@@ -103,6 +103,17 @@ bool SceneStateAdapter::_is_safe_node_path(const String &p_path, bool p_allow_em
 	return !p_path.begins_with("/") && !p_path.contains("\\") && !p_path.contains(":") && !p_path.contains("\0") && !p_path.contains("//") && !p_path.contains("../") && p_path.utf8().length() <= 2048;
 }
 
+void SceneStateAdapter::_stamp_project_context_revision(Array &r_values, uint64_t p_scene_graph_revision) {
+	for (int index = 0; index < r_values.size(); index++) {
+		if (r_values[index].get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		Dictionary value = r_values[index];
+		value["scene_graph_revision"] = (int64_t)p_scene_graph_revision;
+		r_values[index] = value;
+	}
+}
+
 void SceneStateAdapter::_collect_resource_ownership(const Variant &p_value, const String &p_path, int p_depth, HashMap<ObjectID, RBSet<String>> &r_ownership, Vector<Ref<Resource>> &r_subresources) {
 	if (p_depth > BoundedVariantProjector::MAX_DEPTH) {
 		return;
@@ -912,6 +923,11 @@ bool SceneStateAdapter::_reconcile(RefreshOutcome &r_outcome) {
 		return true;
 	}
 	if (operations.is_empty()) {
+		// Project-context capture stamps observations with the candidate next
+		// revision. A no-op refresh does not advance the scene clock, so keep the
+		// active snapshot facts bound to the still-current revision.
+		const uint64_t current = revision_clock ? revision_clock->get_scene_graph_revision() : journal.get_current_revision();
+		_stamp_project_context_revision(project_context, current);
 		observed_catalog.clear();
 		refresh_phase = REFRESH_IDLE;
 		return true;

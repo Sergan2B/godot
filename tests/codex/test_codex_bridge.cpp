@@ -123,6 +123,10 @@ struct SceneStateAdapterTestAccess {
 	static bool safe_node_path(const String &p_value, bool p_allow_empty = false) {
 		return SceneStateAdapter::_is_safe_node_path(p_value, p_allow_empty);
 	}
+
+	static void stamp_project_context_revision(Array &r_values, uint64_t p_scene_graph_revision) {
+		SceneStateAdapter::_stamp_project_context_revision(r_values, p_scene_graph_revision);
+	}
 };
 
 struct ScriptDeltaJournalTestAccess {
@@ -160,14 +164,23 @@ struct ScriptGraphAdapterTestAccess {
 
 	static void install_catalog_bundle(ScriptGraphAdapter &r_adapter, const String &p_key, const Dictionary &p_bundle, const String &p_facts_checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef") {
 		r_adapter.catalog.insert(p_key, make_record(p_bundle, p_facts_checksum));
+		const Dictionary document = p_bundle["document"];
+		r_adapter.catalog_resource_revision = document.get("resource_revision", 1);
 		r_adapter.catalog_ready = true;
 		r_adapter.catalog_limit_exceeded = false;
 		r_adapter.refresh_requested = false;
 		r_adapter.refresh_phase = ScriptGraphAdapter::REFRESH_IDLE;
 	}
 
+	static Dictionary catalog_bundle(const ScriptGraphAdapter &p_adapter, const String &p_key) {
+		const RBMap<String, ScriptGraphAdapter::CatalogRecord>::Element *record = p_adapter.catalog.find(p_key);
+		return record ? record->value().bundle : Dictionary();
+	}
+
 	static void stage_observed_bundle(ScriptGraphAdapter &r_adapter, const String &p_key, const Dictionary &p_bundle, const String &p_facts_checksum) {
 		r_adapter.observed_catalog.insert(p_key, make_record(p_bundle, p_facts_checksum));
+		const Dictionary document = p_bundle["document"];
+		r_adapter.target_resource_revision = document.get("resource_revision", 1);
 		r_adapter.refresh_requested = false;
 		r_adapter.refresh_phase = ScriptGraphAdapter::REFRESH_RECONCILE_BEGIN;
 	}
@@ -355,6 +368,13 @@ TEST_CASE("[CodexBridge] Scene paths and delta journal fail closed") {
 	CHECK_FALSE(SceneStateAdapterTestAccess::safe_node_path("Root\\Child"));
 	CHECK_FALSE(SceneStateAdapterTestAccess::safe_node_path("Root/../Child"));
 	CHECK_FALSE(SceneStateAdapterTestAccess::safe_node_path("Root:property"));
+	Array project_context;
+	Dictionary project_fact;
+	project_fact["key"] = "application/run/main_scene";
+	project_fact["scene_graph_revision"] = (int64_t)9;
+	project_context.push_back(project_fact);
+	SceneStateAdapterTestAccess::stamp_project_context_revision(project_context, 8);
+	CHECK((int64_t)Dictionary(project_context[0])["scene_graph_revision"] == 8);
 
 	SceneDeltaJournal journal;
 	journal.initialize(1);
@@ -1607,7 +1627,7 @@ TEST_CASE("[CodexBridge] Resource journal releases worst-case retained and prepa
 	CHECK(prepared_off_main.is_set());
 }
 
-static Dictionary make_script_upsert(const Dictionary &p_script_ref, const String &p_path, uint64_t p_script_graph_revision) {
+static Dictionary make_script_upsert(const Dictionary &p_script_ref, const String &p_path, uint64_t p_script_graph_revision, uint64_t p_resource_revision = 1) {
 	Dictionary document;
 	document["script_ref"] = p_script_ref;
 	document["path"] = p_path;
@@ -1615,7 +1635,7 @@ static Dictionary make_script_upsert(const Dictionary &p_script_ref, const Strin
 	document["content_sha256"] = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
 	document["adapter_profile"] = "gdscript_parser_analyzer_v1";
 	document["completeness"] = "complete";
-	document["resource_revision"] = 1;
+	document["resource_revision"] = (int64_t)p_resource_revision;
 	document["script_graph_revision"] = (int64_t)p_script_graph_revision;
 	Dictionary bundle;
 	bundle["document"] = document;
@@ -1715,6 +1735,9 @@ TEST_CASE("[CodexS5ScriptGraph] Script snapshot freezes one bounded revision and
 	CHECK((int64_t)Dictionary(result["limits_applied"])["snapshot_chunk_bytes"] == (int64_t)ScriptGraphAdapter::SNAPSHOT_CHUNK_BYTES);
 	adapter.cancel_snapshot(41);
 	CHECK_FALSE(adapter.is_snapshot_active());
+	CHECK(revisions.record_resource_change() == 2);
+	CHECK(adapter.begin_snapshot(42, 200, context, error_data) == ERR_UNAVAILABLE);
+	CHECK(adapter.has_pending_work());
 #else
 	Dictionary error_data;
 	CHECK(adapter.begin_snapshot(41, 100, Dictionary(), error_data) == ERR_UNAVAILABLE);
@@ -1784,6 +1807,57 @@ TEST_CASE("[CodexS5ScriptGraph] Script refresh publishes exact upsert and remove
 	CHECK(Dictionary(removed_operations[0])["kind"] == "remove_document");
 	CHECK(Dictionary(removed_operations[0])["path"] == "res://scripts/delta.gd");
 	drain_script_refresh(adapter);
+	adapter.shutdown();
+#endif
+}
+
+TEST_CASE("[CodexS5ScriptGraph] Changed refresh advances every catalog document to one atomic revision") {
+#ifdef MODULE_GDSCRIPT_ENABLED
+	BridgeRevisionClock revisions;
+	revisions.initialize("editor:0123456789abcdef0123456789abcdef");
+	ScriptGraphAdapter adapter;
+	adapter.initialize(&revisions);
+	const Dictionary stable_ref = make_resource_ref("uid://script-stable");
+	const Dictionary changed_ref = make_resource_ref("uid://script-changed");
+	ScriptGraphAdapterTestAccess::install_catalog_bundle(adapter, "uid:uid://script-stable", make_script_upsert(stable_ref, "res://scripts/stable.gd", 1)["value"], "facts-stable");
+	ScriptGraphAdapterTestAccess::install_catalog_bundle(adapter, "uid:uid://script-changed", make_script_upsert(changed_ref, "res://scripts/changed.gd", 1)["value"], "facts-before");
+
+	ScriptGraphAdapterTestAccess::stage_observed_bundle(adapter, "uid:uid://script-stable", make_script_upsert(stable_ref, "res://scripts/stable.gd", 2)["value"], "facts-stable");
+	ScriptGraphAdapterTestAccess::stage_observed_bundle(adapter, "uid:uid://script-changed", make_script_upsert(changed_ref, "res://scripts/changed.gd", 2)["value"], "facts-after");
+	const ScriptGraphAdapter::RefreshOutcome changed = finish_script_refresh(adapter);
+	REQUIRE(changed.changed);
+	CHECK(changed.current_script_graph_revision == 2);
+
+	const Dictionary stable_bundle = ScriptGraphAdapterTestAccess::catalog_bundle(adapter, "uid:uid://script-stable");
+	const Dictionary changed_bundle = ScriptGraphAdapterTestAccess::catalog_bundle(adapter, "uid:uid://script-changed");
+	REQUIRE_FALSE(stable_bundle.is_empty());
+	REQUIRE_FALSE(changed_bundle.is_empty());
+	CHECK((int64_t)Dictionary(stable_bundle["document"])["script_graph_revision"] == 2);
+	CHECK((int64_t)Dictionary(changed_bundle["document"])["script_graph_revision"] == 2);
+	drain_script_refresh(adapter);
+	adapter.shutdown();
+#endif
+}
+
+TEST_CASE("[CodexS5ScriptGraph] Resource-only refresh rebinds fresh DTOs without advancing the script graph") {
+#ifdef MODULE_GDSCRIPT_ENABLED
+	BridgeRevisionClock revisions;
+	revisions.initialize("editor:0123456789abcdef0123456789abcdef");
+	ScriptGraphAdapter adapter;
+	adapter.initialize(&revisions);
+	const Dictionary script_ref = make_resource_ref("uid://script-resource-rebind");
+	ScriptGraphAdapterTestAccess::install_catalog_bundle(adapter, "uid:uid://script-resource-rebind", make_script_upsert(script_ref, "res://scripts/resource_rebind.gd", 1, 1)["value"], "facts-stable");
+
+	CHECK(revisions.record_resource_change() == 2);
+	ScriptGraphAdapterTestAccess::stage_observed_bundle(adapter, "uid:uid://script-resource-rebind", make_script_upsert(script_ref, "res://scripts/resource_rebind.gd", 2, 2)["value"], "facts-stable");
+	drain_script_refresh(adapter);
+
+	const Dictionary bundle = ScriptGraphAdapterTestAccess::catalog_bundle(adapter, "uid:uid://script-resource-rebind");
+	REQUIRE_FALSE(bundle.is_empty());
+	const Dictionary document = bundle["document"];
+	CHECK((int64_t)document["resource_revision"] == 2);
+	CHECK((int64_t)document["script_graph_revision"] == 1);
+	CHECK(revisions.get_script_graph_revision() == 1);
 	adapter.shutdown();
 #endif
 }

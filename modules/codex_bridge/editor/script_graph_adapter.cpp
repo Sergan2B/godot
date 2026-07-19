@@ -41,6 +41,11 @@
 #include "editor/file_system/editor_file_system.h"
 
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
+#include "modules/modules_enabled.gen.h"
+
+#ifdef MODULE_GDSCRIPT_ENABLED
+#include "modules/gdscript/gdscript_cache.h"
+#endif
 
 String ScriptGraphAdapter::_make_snapshot_id() {
 	PackedByteArray random;
@@ -96,6 +101,29 @@ uint64_t ScriptGraphAdapter::_bundle_count(const Dictionary &p_bundle, const Str
 	return Array(p_bundle[p_key]).size();
 }
 
+bool ScriptGraphAdapter::_stamp_bundle_script_graph_revision(Dictionary &r_bundle, uint64_t p_script_graph_revision) {
+	if (!r_bundle.has("document") || r_bundle["document"].get_type() != Variant::DICTIONARY ||
+			_bundle_count(r_bundle, "symbols") == UINT64_MAX || _bundle_count(r_bundle, "relations") == UINT64_MAX || _bundle_count(r_bundle, "diagnostics") == UINT64_MAX) {
+		return false;
+	}
+	Dictionary document = r_bundle["document"];
+	document["script_graph_revision"] = (int64_t)p_script_graph_revision;
+	r_bundle["document"] = document;
+	for (const String &family : { String("symbols"), String("relations"), String("diagnostics") }) {
+		Array values = r_bundle[family];
+		for (int index = 0; index < values.size(); index++) {
+			if (values[index].get_type() != Variant::DICTIONARY) {
+				return false;
+			}
+			Dictionary value = values[index];
+			value["script_graph_revision"] = (int64_t)p_script_graph_revision;
+			values[index] = value;
+		}
+		r_bundle[family] = values;
+	}
+	return true;
+}
+
 bool ScriptGraphAdapter::_account_bundle(const Dictionary &p_bundle) {
 	const uint64_t symbols = _bundle_count(p_bundle, "symbols");
 	const uint64_t relations = _bundle_count(p_bundle, "relations");
@@ -121,6 +149,7 @@ void ScriptGraphAdapter::_reset_refresh() {
 	raw_directory_stack.clear();
 	raw_scan_started = false;
 	refresh_file = nullptr;
+	cache_invalidation_file = nullptr;
 	projection_file = RefreshFile();
 	projection_resource_revision = 1;
 	projection_error = OK;
@@ -316,8 +345,8 @@ bool ScriptGraphAdapter::_collect_one_raw_path() {
 		refresh_paths.insert(path);
 		return true;
 	}
-	refresh_file = refresh_files.front();
-	refresh_phase = REFRESH_PROJECT;
+	cache_invalidation_file = refresh_files.front();
+	refresh_phase = REFRESH_INVALIDATE_CACHE;
 	return false;
 }
 
@@ -367,6 +396,24 @@ bool ScriptGraphAdapter::_collect_one_path() {
 		return false;
 	}
 	return _collect_one_raw_path();
+}
+
+bool ScriptGraphAdapter::_invalidate_one_cached_script() {
+	if (!cache_invalidation_file) {
+		refresh_file = refresh_files.front();
+		refresh_phase = REFRESH_PROJECT;
+		return false;
+	}
+	const RefreshFile file = cache_invalidation_file->value();
+	cache_invalidation_file = cache_invalidation_file->next();
+	const RBMap<String, CatalogRecord>::Element *existing = catalog.find(file.key);
+	const bool source_changed = !existing || existing->value().source_modified_time != FileAccess::get_modified_time(file.path) || existing->value().source_bytes != FileAccess::get_size(file.path);
+#ifdef MODULE_GDSCRIPT_ENABLED
+	if (source_changed && file.path.ends_with(".gd")) {
+		GDScriptCache::remove_script(file.path);
+	}
+#endif
+	return true;
 }
 
 void ScriptGraphAdapter::_project_document_thread(void *p_userdata) {
@@ -460,11 +507,6 @@ bool ScriptGraphAdapter::_project_one_document() {
 	record.facts_checksum = projection.facts_checksum;
 	record.source_modified_time = projection.source_modified_time;
 	record.source_bytes = projection.source_bytes;
-	const RBMap<String, CatalogRecord>::Element *existing = catalog.find(file.key);
-	if (existing && existing->value().facts_checksum == record.facts_checksum) {
-		journal._retire_dictionary(record.bundle);
-		record = existing->value();
-	}
 	if (!_account_bundle(record.bundle)) {
 		journal._retire_dictionary(record.bundle);
 		refresh_limit_exceeded = true;
@@ -488,6 +530,13 @@ void ScriptGraphAdapter::_reset_reconcile() {
 	reconcile_preparing = false;
 	journal_prepare_task = -1;
 	journal_prepare_error = OK;
+}
+
+void ScriptGraphAdapter::_restart_refresh() {
+	refresh_requested = true;
+	_reset_reconcile();
+	_enqueue_catalog_retirement(observed_catalog);
+	_begin_refresh_drain(REFRESH_IDLE);
 }
 
 void ScriptGraphAdapter::_prepare_journal_batch_thread(void *p_userdata) {
@@ -516,6 +565,7 @@ bool ScriptGraphAdapter::_reconcile(RefreshOutcome &r_outcome) {
 				journal.invalidate_to(current);
 				catalog_limit_exceeded = refresh_limit_exceeded;
 				catalog_ready = false;
+				catalog_resource_revision = 0;
 				r_outcome.invalidated = true;
 				r_outcome.last_contiguous_script_graph_revision = previous;
 				r_outcome.current_script_graph_revision = current;
@@ -526,10 +576,19 @@ bool ScriptGraphAdapter::_reconcile(RefreshOutcome &r_outcome) {
 				_begin_refresh_drain(journal.is_invalidating() ? REFRESH_DRAIN_JOURNAL : REFRESH_IDLE);
 				return true;
 			}
+			if (!pending_cache_invalidations.is_empty()) {
+				_restart_refresh();
+				return true;
+			}
+			if (revision_clock && revision_clock->get_resource_revision() != target_resource_revision) {
+				_restart_refresh();
+				return true;
+			}
 			if (!catalog_ready) {
 				catalog = std::move(observed_catalog);
 				catalog_ready = true;
 				catalog_limit_exceeded = false;
+				catalog_resource_revision = target_resource_revision;
 				_reset_reconcile();
 				_reset_refresh();
 				return true;
@@ -576,7 +635,21 @@ bool ScriptGraphAdapter::_reconcile(RefreshOutcome &r_outcome) {
 		}
 		case REFRESH_RECONCILE_PREPARE: {
 			if (reconcile_operations.is_empty()) {
-				_enqueue_catalog_retirement(observed_catalog);
+				if (catalog_resource_revision != target_resource_revision) {
+					const uint64_t current = revision_clock ? revision_clock->get_script_graph_revision() : journal.get_current_script_graph_revision();
+					for (KeyValue<String, CatalogRecord> &entry : observed_catalog) {
+						if (!_stamp_bundle_script_graph_revision(entry.value.bundle, current)) {
+							refresh_projection_failed = true;
+							refresh_phase = REFRESH_RECONCILE_BEGIN;
+							return true;
+						}
+					}
+					_enqueue_catalog_retirement(catalog);
+					catalog = std::move(observed_catalog);
+					catalog_resource_revision = target_resource_revision;
+				} else {
+					_enqueue_catalog_retirement(observed_catalog);
+				}
 				_reset_reconcile();
 				_begin_refresh_drain(REFRESH_IDLE);
 				return true;
@@ -603,6 +676,10 @@ bool ScriptGraphAdapter::_reconcile(RefreshOutcome &r_outcome) {
 				return false;
 			}
 			_wait_for_journal_preparation();
+			if (revision_clock && revision_clock->get_resource_revision() != target_resource_revision) {
+				_restart_refresh();
+				return true;
+			}
 			const uint64_t current = revision_clock ? revision_clock->record_script_graph_change() : reconcile_next_revision;
 			const Dictionary revisions = revision_clock ? revision_clock->get_revision_vector() : Dictionary();
 			bool invalidated = current != reconcile_next_revision || journal_prepare_error != OK;
@@ -620,6 +697,7 @@ bool ScriptGraphAdapter::_reconcile(RefreshOutcome &r_outcome) {
 			}
 			_enqueue_catalog_retirement(catalog);
 			catalog = std::move(observed_catalog);
+			catalog_resource_revision = target_resource_revision;
 			r_outcome.changed = !invalidated;
 			r_outcome.invalidated = invalidated;
 			r_outcome.last_contiguous_script_graph_revision = reconcile_previous_revision;
@@ -639,6 +717,8 @@ bool ScriptGraphAdapter::_process_refresh_step(RefreshOutcome &r_outcome) {
 	switch (refresh_phase) {
 		case REFRESH_COLLECT:
 			return _collect_one_path();
+		case REFRESH_INVALIDATE_CACHE:
+			return _invalidate_one_cached_script();
 		case REFRESH_PROJECT:
 			return _project_one_document();
 		case REFRESH_RECONCILE_BEGIN:
@@ -718,7 +798,9 @@ void ScriptGraphAdapter::shutdown() {
 	journal._retire_array(adapter_statuses);
 	catalog_ready = false;
 	catalog_limit_exceeded = false;
+	catalog_resource_revision = 0;
 	refresh_requested = false;
+	pending_cache_invalidations.clear();
 	revision_clock = nullptr;
 	while (journal.drain_invalidation_step()) {
 	}
@@ -731,9 +813,28 @@ void ScriptGraphAdapter::request_refresh() {
 	}
 }
 
+void ScriptGraphAdapter::invalidate_saved_paths(const Vector<String> &p_paths) {
+	for (const String &path : p_paths) {
+		if (path.begins_with("res://") && path.ends_with(".gd")) {
+			pending_cache_invalidations.insert(path);
+		}
+	}
+	if (!pending_cache_invalidations.is_empty()) {
+		request_refresh();
+	}
+}
+
 bool ScriptGraphAdapter::process_refresh(uint64_t p_budget_usec, RefreshOutcome &r_outcome) {
 	r_outcome = RefreshOutcome();
 	ERR_FAIL_COND_V_MSG(!Thread::is_main_thread(), false, "ScriptGraphAdapter must run on the main thread.");
+	if (refresh_phase == REFRESH_IDLE && !pending_cache_invalidations.is_empty()) {
+		RBSet<String>::Element *path = pending_cache_invalidations.front();
+#ifdef MODULE_GDSCRIPT_ENABLED
+		GDScriptCache::remove_script(path->get());
+#endif
+		pending_cache_invalidations.erase(path);
+		return true;
+	}
 	if (refresh_phase == REFRESH_IDLE && refresh_requested && !_begin_refresh()) {
 		return false;
 	}
@@ -967,12 +1068,16 @@ Error ScriptGraphAdapter::begin_snapshot(uint64_t p_request_id, uint64_t p_now_u
 	if (!catalog_ready || refresh_requested || refresh_phase != REFRESH_IDLE || journal.is_invalidating()) {
 		return ERR_UNAVAILABLE;
 	}
+	if (revision_clock && catalog_resource_revision != revision_clock->get_resource_revision()) {
+		request_refresh();
+		return ERR_UNAVAILABLE;
+	}
 	_reset_snapshot();
 	snapshot_active = true;
 	snapshot_request_id = p_request_id;
 	snapshot_started_usec = p_now_usec;
 	snapshot_id = _make_snapshot_id();
-	snapshot_resource_revision = revision_clock ? revision_clock->get_resource_revision() : 1;
+	snapshot_resource_revision = catalog_resource_revision;
 	snapshot_scene_graph_revision = revision_clock ? revision_clock->get_scene_graph_revision() : 1;
 	snapshot_script_graph_revision = revision_clock ? revision_clock->get_script_graph_revision() : journal.get_current_script_graph_revision();
 	snapshot_revisions = revision_clock ? revision_clock->get_revision_vector() : Dictionary();
@@ -1088,7 +1193,7 @@ bool ScriptGraphAdapter::is_snapshot_active() const {
 }
 
 bool ScriptGraphAdapter::has_pending_work() const {
-	return refresh_requested || refresh_phase != REFRESH_IDLE || snapshot_active;
+	return refresh_requested || refresh_phase != REFRESH_IDLE || snapshot_active || !pending_cache_invalidations.is_empty();
 }
 
 uint64_t ScriptGraphAdapter::get_script_graph_revision() const {

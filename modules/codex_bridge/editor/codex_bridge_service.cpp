@@ -310,6 +310,7 @@ void CodexBridgeService::_on_filesystem_changed() {
 void CodexBridgeService::_on_resources_reimported(const Vector<String> &p_paths) {
 	resource_graph_adapter.mark_reimported(p_paths);
 	scene_state_adapter.request_refresh();
+	script_graph_adapter.invalidate_saved_paths(p_paths);
 	script_graph_adapter.request_refresh();
 }
 
@@ -319,6 +320,7 @@ void CodexBridgeService::_on_resources_reload(const PackedStringArray &p_paths) 
 	if (!p_paths.is_empty()) {
 		resource_graph_adapter.request_refresh();
 		scene_state_adapter.request_refresh();
+		script_graph_adapter.invalidate_saved_paths(p_paths);
 		script_graph_adapter.request_refresh();
 	}
 }
@@ -552,6 +554,13 @@ void CodexBridgeService::_process_resource_graph(uint64_t p_budget_usec) {
 
 	ResourceGraphAdapter::RefreshOutcome refresh;
 	if (resource_graph_adapter.process_refresh(p_budget_usec, refresh)) {
+		if (refresh.changed || refresh.invalidated) {
+			// Resource, scene, and script scans rotate independently. A dependent
+			// scan may finish before the resource clock advances, so explicitly
+			// schedule a new checkpoint-bound pass after the resource outcome.
+			scene_state_adapter.request_refresh();
+			script_graph_adapter.request_refresh();
+		}
 		if (refresh.changed) {
 			Dictionary params;
 			params["event_seq"] = refresh.revisions["event_seq"];
@@ -702,9 +711,19 @@ void CodexBridgeService::_notification(int p_what) {
 				bool run_resource_bulk = false;
 				bool run_scene_bulk = false;
 				bool run_script_bulk = false;
+				if (!resource_work && script_work) {
+					run_script_bulk = true;
+					work_lane_turn = 3;
+				}
 				for (int offset = 0; offset < 4; offset++) {
+					if (run_script_bulk) {
+						break;
+					}
 					const int candidate = (work_lane_turn + offset) % 4;
-					if ((candidate == 0 && resource_work) || (candidate == 1 && scene_work) || (candidate == 2 && script_work) || (candidate == 3 && control_work)) {
+					// Scene and script observations bind one resource checkpoint. Let
+					// the resource pass settle before either dependent lane can commit.
+					const bool dependent_lane_ready = !resource_work;
+					if ((candidate == 0 && resource_work) || (candidate == 1 && scene_work && dependent_lane_ready) || (candidate == 2 && script_work && dependent_lane_ready) || (candidate == 3 && control_work)) {
 						run_resource_bulk = candidate == 0;
 						run_scene_bulk = candidate == 1;
 						run_script_bulk = candidate == 2;
@@ -720,12 +739,12 @@ void CodexBridgeService::_notification(int p_what) {
 						(run_script_bulk ? ScriptGraphAdapter::SCRIPT_BUDGET_USEC : 0);
 				MainThreadDispatcher::ProcessStats dispatcher_stats;
 				if (dispatcher_budget > 0) {
-					dispatcher_stats = dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
+						dispatcher_stats = dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
 				}
 				const bool bulk_lane_available = dispatcher_stats.consumed == 0 || dispatcher_stats.elapsed_usec < dispatcher_budget;
-				// Resource, scene, script, and queued control work rotate as four
-				// bounded lanes. Scene and script own the complete 2 ms slice on their
-				// turn; the explicit control lane prevents either side from starving.
+				// Resource, scene, script, and queued control work remain bounded.
+				// Script frames reserve a measured dispatcher slice; if it is consumed,
+				// bulk work waits for the next frame instead of crossing the 2 ms gate.
 				if (run_resource_bulk && bulk_lane_available) {
 					_process_resource_graph(ResourceGraphAdapter::RESOURCE_BUDGET_USEC);
 				}

@@ -52,7 +52,7 @@ public:
 	static constexpr uint32_t MAX_RETIRE_RECORDS_PER_BATCH = 256;
 	static constexpr uint64_t MAX_RETIRE_SOURCE_BYTES_PER_BATCH = 8 * 1024 * 1024;
 	static constexpr uint64_t SCRIPT_BUDGET_USEC = 600;
-	static constexpr uint64_t FRAME_SAFETY_MARGIN_USEC = 1400;
+	static constexpr uint64_t FRAME_SAFETY_MARGIN_USEC = 1000;
 
 	struct RefreshOutcome {
 		bool changed = false;
@@ -106,6 +106,7 @@ private:
 	enum RefreshPhase {
 		REFRESH_IDLE,
 		REFRESH_COLLECT,
+		REFRESH_INVALIDATE_CACHE,
 		REFRESH_PROJECT,
 		REFRESH_RECONCILE_BEGIN,
 		REFRESH_RECONCILE_OBSERVED,
@@ -125,6 +126,7 @@ private:
 	RBMap<String, CatalogRecord> pending_retiring_catalog;
 	Array retiring_bundles;
 	uint64_t retiring_source_bytes = 0;
+	uint64_t catalog_resource_revision = 0;
 	Array adapter_statuses;
 	bool catalog_ready = false;
 	bool catalog_limit_exceeded = false;
@@ -137,7 +139,9 @@ private:
 	bool raw_scan_started = false;
 	RBMap<String, RefreshFile> refresh_files;
 	RBSet<String> refresh_paths;
+	RBSet<String> pending_cache_invalidations;
 	RBMap<String, RefreshFile>::Element *refresh_file = nullptr;
+	RBMap<String, RefreshFile>::Element *cache_invalidation_file = nullptr;
 	bool projection_preparing = false;
 	int64_t projection_task = -1;
 	RefreshFile projection_file;
@@ -198,6 +202,7 @@ private:
 	static String _script_ref_key(const Dictionary &p_script_ref);
 	static bool _is_script_path(const String &p_path);
 	static uint64_t _bundle_count(const Dictionary &p_bundle, const String &p_key);
+	static bool _stamp_bundle_script_graph_revision(Dictionary &r_bundle, uint64_t p_script_graph_revision);
 	bool _account_bundle(const Dictionary &p_bundle);
 
 	void _reset_refresh();
@@ -210,10 +215,12 @@ private:
 	bool _begin_raw_scan();
 	bool _collect_one_raw_path();
 	bool _collect_one_path();
+	bool _invalidate_one_cached_script();
 	static void _project_document_thread(void *p_userdata);
 	void _wait_for_projection();
 	bool _project_one_document();
 	void _reset_reconcile();
+	void _restart_refresh();
 	static void _prepare_journal_batch_thread(void *p_userdata);
 	void _wait_for_journal_preparation();
 	bool _reconcile(RefreshOutcome &r_outcome);
@@ -232,6 +239,7 @@ public:
 	void initialize(BridgeRevisionClock *p_revision_clock);
 	void shutdown();
 	void request_refresh();
+	void invalidate_saved_paths(const Vector<String> &p_paths);
 	bool process_refresh(uint64_t p_budget_usec, RefreshOutcome &r_outcome);
 
 	Error begin_snapshot(uint64_t p_request_id, uint64_t p_now_usec, const Dictionary &p_context, Dictionary &r_error_data);
