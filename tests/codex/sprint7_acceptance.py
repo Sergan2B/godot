@@ -397,7 +397,7 @@ def validate_report(report: dict[str, Any], check_checkout: bool = True) -> dict
     require(isinstance(performance, dict) and set(performance) == performance_fields, "performance fields differ")
     for prefix, budget, minimum in (
         ("selection", 500, 20),
-        ("change_visibility", 2000, 3),
+        ("change_visibility", 2000, 20),
         ("control_ping", 200, 20),
         ("editor_summary", 500, 20),
     ):

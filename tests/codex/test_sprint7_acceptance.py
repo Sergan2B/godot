@@ -97,8 +97,8 @@ def report() -> dict[str, Any]:
         "performance": {
             "selection_samples_ms": samples,
             "selection_p95_ms": 5.0,
-            "change_visibility_samples_ms": [100.0, 200.0, 300.0],
-            "change_visibility_p95_ms": 300.0,
+            "change_visibility_samples_ms": [100.0] * 20,
+            "change_visibility_p95_ms": 100.0,
             "control_ping_samples_ms": samples,
             "control_ping_p95_ms": 5.0,
             "editor_summary_samples_ms": samples,

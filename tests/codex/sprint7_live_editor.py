@@ -628,6 +628,33 @@ def run_session(
             transitions[action] = observed
             previous = observed
 
+        # A p95 over the three semantic transition kinds would collapse to a
+        # maximum and would not be statistically meaningful. Exercise nine
+        # additional native Undo/Redo pairs so the latency gate has 21 real
+        # editor operations while the canonical transition evidence above
+        # remains compact.
+        for _ in range(9):
+            for action, expected_transition, expected_value in (
+                ("undo", "undo", DISK_VALUE),
+                ("redo", "redo", LIVE_VALUE),
+            ):
+                phase += 1
+                started = time.perf_counter_ns()
+                command(project, action)
+                wait_phase(editor, phase_path, phase, log_path, timeout)
+                _, observed = wait_observation(
+                    client,
+                    timeout,
+                    minimum_operation_seq=previous["operation_seq"],
+                    transition_kind=expected_transition,
+                    expected_value=expected_value,
+                )
+                visibility_samples.append(round((time.perf_counter_ns() - started) / 1_000_000, 3))
+                require(observed["selection_ids"] == initial["selection_ids"], "selection identity drifted during SLO sampling")
+                require(observed["dirty_scene_revision"] > previous["dirty_scene_revision"], "SLO sample did not advance the affected scene revision")
+                require(observed["clean_scene_revision"] == previous["clean_scene_revision"], "SLO sample advanced the unaffected scene revision")
+                previous = observed
+
         page, page_error, _ = tool_call(client, "godot_get_open_scenes", {"limit": 1})
         cursor = page.get("next_cursor")
         require(not page_error and isinstance(cursor, str), "live list did not issue a signed cursor")
