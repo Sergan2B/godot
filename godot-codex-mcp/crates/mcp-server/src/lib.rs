@@ -3405,7 +3405,7 @@ fn stale_live_error(code: &str, snapshot: &SemanticSnapshot) -> CallToolResult {
         "error": {
             "code": code,
             "message": "requested editor revision is stale",
-            "retryable": false,
+            "retryable": true,
             "current": {
                 "editor_session_id": snapshot.editor_session_id,
                 "snapshot_id": snapshot.snapshot_id,
@@ -4567,6 +4567,12 @@ mod tests {
         );
         assert_eq!(
             structured_content(&stale)
+                .and_then(|value| value.pointer("/error/retryable"))
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            structured_content(&stale)
                 .and_then(|value| value.pointer("/error/current/event_seq"))
                 .and_then(Value::as_u64),
             Some(current.revisions.event_seq)
@@ -4601,6 +4607,12 @@ mod tests {
                 .and_then(|value| value.pointer("/error/code"))
                 .and_then(Value::as_str),
             Some("stale_scene_revision")
+        );
+        assert_eq!(
+            structured_content(&stale_scene)
+                .and_then(|value| value.pointer("/error/retryable"))
+                .and_then(Value::as_bool),
+            Some(true)
         );
     }
 
