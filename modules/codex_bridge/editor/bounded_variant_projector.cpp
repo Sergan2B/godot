@@ -32,6 +32,22 @@
 
 #include "core/io/json.h"
 #include "core/io/resource.h"
+#include "core/object/object.h"
+
+Dictionary BoundedVariantProjector::_omitted(const String &p_type, const String &p_reason, int64_t p_size_hint) {
+	Dictionary omitted;
+	omitted["type"] = p_type;
+	omitted["opaque"] = true;
+	omitted["omitted_reason"] = p_reason;
+	if (p_size_hint >= 0) {
+		omitted["size_hint"] = p_size_hint;
+	}
+	return omitted;
+}
+
+String BoundedVariantProjector::_next_reference(ProjectionContext &r_context) {
+	return "ref:" + String::num_uint64(r_context.next_reference++);
+}
 
 String BoundedVariantProjector::type_token(Variant::Type p_type) {
 	switch (p_type) {
@@ -103,16 +119,16 @@ String BoundedVariantProjector::type_token(Variant::Type p_type) {
 		case Variant::PACKED_VECTOR4_ARRAY:
 			return "packed_array";
 		case Variant::OBJECT:
-			return "resource";
+			return "object";
 		default:
 			return "unsupported";
 	}
 }
 
-Variant BoundedVariantProjector::project_raw(const Variant &p_value, bool &r_truncated, int p_depth) {
+Variant BoundedVariantProjector::_project_raw(const Variant &p_value, bool &r_truncated, int p_depth, ProjectionContext &r_context) {
 	if (p_depth > MAX_DEPTH) {
 		r_truncated = true;
-		return Variant();
+		return _omitted(type_token(p_value.get_type()), "max_depth");
 	}
 	switch (p_value.get_type()) {
 		case Variant::NIL:
@@ -183,18 +199,52 @@ Variant BoundedVariantProjector::project_raw(const Variant &p_value, bool &r_tru
 		}
 		case Variant::ARRAY: {
 			const Array source = p_value;
-			Array result;
+			const void *identity = source.id();
+			const String *known_reference = r_context.array_references.getptr(identity);
+			if (known_reference) {
+				Dictionary reference;
+				reference["type"] = "array";
+				reference["reference_id"] = *known_reference;
+				reference["reference"] = true;
+				return reference;
+			}
+			const String reference_id = _next_reference(r_context);
+			r_context.array_references.insert(identity, reference_id);
+			Array items;
 			const int count = MIN(source.size(), MAX_CONTAINER_ITEMS);
 			for (int index = 0; index < count; index++) {
-				result.push_back(project_raw(source[index], r_truncated, p_depth + 1));
+				items.push_back(_project_raw(source[index], r_truncated, p_depth + 1, r_context));
 			}
-			r_truncated = r_truncated || source.size() > count;
+			Dictionary result;
+			result["type"] = "array";
+			result["reference_id"] = reference_id;
+			result["items"] = items;
+			result["size"] = source.size();
+			if (source.size() > count) {
+				result["omitted_count"] = source.size() - count;
+				r_truncated = true;
+			}
 			return result;
 		}
 		case Variant::DICTIONARY: {
 			const Dictionary source = p_value;
+			const void *identity = source.id();
+			const String *known_reference = r_context.dictionary_references.getptr(identity);
+			if (known_reference) {
+				Dictionary reference;
+				reference["type"] = "dictionary";
+				reference["reference_id"] = *known_reference;
+				reference["reference"] = true;
+				return reference;
+			}
+			const String reference_id = _next_reference(r_context);
+			r_context.dictionary_references.insert(identity, reference_id);
 			Dictionary result;
-			const Array keys = source.keys();
+			result["type"] = "dictionary";
+			result["reference_id"] = reference_id;
+			Array entries;
+			Array keys = source.keys();
+			keys.sort();
 			const int count = MIN(keys.size(), MAX_CONTAINER_ITEMS);
 			for (int index = 0; index < count; index++) {
 				String key = keys[index].stringify();
@@ -202,43 +252,69 @@ Variant BoundedVariantProjector::project_raw(const Variant &p_value, bool &r_tru
 					key = key.left(MAX_STRING_CHARACTERS);
 					r_truncated = true;
 				}
-				result[key] = project_raw(source[keys[index]], r_truncated, p_depth + 1);
+				Dictionary entry;
+				entry["key"] = key;
+				entry["value"] = _project_raw(source[keys[index]], r_truncated, p_depth + 1, r_context);
+				entries.push_back(entry);
 			}
-			r_truncated = r_truncated || keys.size() > count;
+			result["entries"] = entries;
+			result["size"] = keys.size();
+			if (keys.size() > count) {
+				result["omitted_count"] = keys.size() - count;
+				r_truncated = true;
+			}
 			return result;
 		}
 		case Variant::OBJECT: {
-			const Ref<Resource> resource = p_value;
+			Object *object = p_value;
+			if (!object) {
+				return Variant();
+			}
+			Resource *resource = Object::cast_to<Resource>(object);
 			Dictionary projected;
-			if (resource.is_valid()) {
-				String path = resource->get_path();
-				if (path.begins_with("res://")) {
-					projected["path"] = path.get_slice("::", 0);
-				}
-				if (!resource->get_scene_unique_id().is_empty()) {
-					projected["scene_unique_id"] = resource->get_scene_unique_id();
-				}
-				projected["godot_type"] = resource->get_class();
+			projected["godot_type"] = object->get_class();
+			if (!resource) {
+				projected["opaque"] = true;
+				projected["omitted_reason"] = "unsupported_object";
+				return projected;
+			}
+			projected["resource_ref"] = true;
+			const String path = resource->get_path();
+			if (path.begins_with("res://")) {
+				projected["path"] = path.get_slice("::", 0);
+			}
+			if (!resource->get_scene_unique_id().is_empty()) {
+				projected["scene_unique_id"] = resource->get_scene_unique_id();
 			}
 			return projected;
 		}
 		default: {
-			Dictionary opaque;
-			opaque["type"] = Variant::get_type_name(p_value.get_type());
-			opaque["opaque"] = true;
-			return opaque;
+			return _omitted(type_token(p_value.get_type()), "unsupported_type");
 		}
 	}
 }
 
+Variant BoundedVariantProjector::project_raw(const Variant &p_value, bool &r_truncated, int p_depth) {
+	ProjectionContext context;
+	return _project_raw(p_value, r_truncated, p_depth, context);
+}
+
 Dictionary BoundedVariantProjector::project_typed(const Variant &p_value) {
 	bool truncated = false;
+	ProjectionContext context;
 	Dictionary result;
-	result["type"] = type_token(p_value.get_type());
-	result["value"] = project_raw(p_value, truncated);
+	String projected_type = type_token(p_value.get_type());
+	if (p_value.get_type() == Variant::OBJECT) {
+		Object *object = p_value;
+		if (object && Object::cast_to<Resource>(object)) {
+			projected_type = "resource";
+		}
+	}
+	result["type"] = projected_type;
+	result["value"] = _project_raw(p_value, truncated, 0, context);
 	result["truncated"] = truncated;
 	if (JSON::stringify(result, "", true, true).utf8().length() > MAX_ENCODED_BYTES) {
-		result["value"] = Variant();
+		result["value"] = _omitted(projected_type, "max_encoded_bytes");
 		result["truncated"] = true;
 	}
 	return result;

@@ -357,6 +357,67 @@ TEST_CASE("[CodexBridge] Bounded variant projection preserves type and fails clo
 	Dictionary projected_resource = BoundedVariantProjector::project_typed(resource);
 	CHECK(projected_resource["type"] == "resource");
 	CHECK_FALSE(Dictionary(projected_resource["value"]).has("path"));
+
+	Array cyclic;
+	cyclic.push_back(cyclic);
+	Dictionary projected_cycle = BoundedVariantProjector::project_typed(cyclic);
+	CHECK_FALSE((bool)projected_cycle["truncated"]);
+	Dictionary cycle_value = projected_cycle["value"];
+	CHECK(cycle_value["reference_id"] == "ref:1");
+	Array cycle_items = cycle_value["items"];
+	REQUIRE(cycle_items.size() == 1);
+	Dictionary cycle_reference = cycle_items[0];
+	CHECK((bool)cycle_reference["reference"]);
+	CHECK(cycle_reference["reference_id"] == "ref:1");
+	Dictionary cyclic_dictionary;
+	cyclic_dictionary["self"] = cyclic_dictionary;
+	Dictionary projected_dictionary_cycle = BoundedVariantProjector::project_typed(cyclic_dictionary);
+	Dictionary dictionary_cycle_value = projected_dictionary_cycle["value"];
+	CHECK(dictionary_cycle_value["reference_id"] == "ref:1");
+	Array dictionary_entries = dictionary_cycle_value["entries"];
+	REQUIRE(dictionary_entries.size() == 1);
+	Dictionary dictionary_reference = Dictionary(dictionary_entries[0])["value"];
+	CHECK((bool)dictionary_reference["reference"]);
+	CHECK(dictionary_reference["reference_id"] == "ref:1");
+
+	Array shared;
+	shared.push_back(7);
+	Array repeated;
+	repeated.push_back(shared);
+	repeated.push_back(shared);
+	Dictionary projected_repeated = BoundedVariantProjector::project_typed(repeated);
+	Array repeated_items = Dictionary(projected_repeated["value"])["items"];
+	REQUIRE(repeated_items.size() == 2);
+	const Dictionary first_shared = repeated_items[0];
+	const Dictionary second_shared = repeated_items[1];
+	CHECK(first_shared["reference_id"] == second_shared["reference_id"]);
+	CHECK_FALSE(first_shared.has("reference"));
+	CHECK((bool)second_shared["reference"]);
+
+	Dictionary first_dictionary;
+	first_dictionary["z"] = 1;
+	first_dictionary["a"] = 2;
+	Dictionary second_dictionary;
+	second_dictionary["a"] = 2;
+	second_dictionary["z"] = 1;
+	CHECK(JSON::stringify(BoundedVariantProjector::project_typed(first_dictionary), "", true, true) == JSON::stringify(BoundedVariantProjector::project_typed(second_dictionary), "", true, true));
+
+	Ref<RefCounted> opaque_object;
+	opaque_object.instantiate();
+	Dictionary projected_object = BoundedVariantProjector::project_typed(opaque_object);
+	CHECK(projected_object["type"] == "object");
+	Dictionary object_value = projected_object["value"];
+	CHECK((bool)object_value["opaque"]);
+	CHECK(object_value["omitted_reason"] == "unsupported_object");
+	CHECK_FALSE(object_value.has("object_id"));
+
+	Array oversized;
+	for (int index = 0; index < BoundedVariantProjector::MAX_CONTAINER_ITEMS; index++) {
+		oversized.push_back(String("x").repeat(128));
+	}
+	Dictionary projected_oversized = BoundedVariantProjector::project_typed(oversized);
+	CHECK((bool)projected_oversized["truncated"]);
+	CHECK(Dictionary(projected_oversized["value"])["omitted_reason"] == "max_encoded_bytes");
 }
 
 TEST_CASE("[CodexBridge] Scene paths and delta journal fail closed") {

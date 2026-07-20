@@ -30,9 +30,21 @@
 
 #pragma once
 
+#include "core/templates/hash_map.h"
 #include "core/variant/variant.h"
 
 class BoundedVariantProjector {
+private:
+	struct ProjectionContext {
+		HashMap<const void *, String> array_references;
+		HashMap<const void *, String> dictionary_references;
+		uint64_t next_reference = 1;
+	};
+
+	static Variant _project_raw(const Variant &p_value, bool &r_truncated, int p_depth, ProjectionContext &r_context);
+	static Dictionary _omitted(const String &p_type, const String &p_reason, int64_t p_size_hint = -1);
+	static String _next_reference(ProjectionContext &r_context);
+
 public:
 	static constexpr int MAX_DEPTH = 8;
 	static constexpr int MAX_CONTAINER_ITEMS = 1000;
