@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "files": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[^\\u0000]+$",
+            "type": "string"
+          },
+          "role": {
+            "enum": ["metadata", "project", "resource", "scene", "script", "uid"]
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": ["path", "role", "sha256"],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "fixture_version": {"const": 1},
+    "mutations": {
+      "items": {
+        "enum": ["none", "rename_resource_keep_uid", "rename_symbol", "duplicate_provenance", "disable_script_domain", "inject_conflict", "add_budget_pressure", "force_journal_gap"]
+      },
+      "minItems": 8,
+      "maxItems": 8,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "project": {"const": "res://"}
+  },
+  "required": ["fixture_version", "project", "files", "mutations"],
+  "type": "object"
+}

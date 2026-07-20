@@ -1,0 +1,153 @@
+{
+  "budgets": {
+    "method": "utf8_byte_upper_bound_v1",
+    "project": 4096,
+    "scene": 2048
+  },
+  "confidence": [
+    "dynamic",
+    "exact",
+    "probable",
+    "runtime_confirmed"
+  ],
+  "conflict_vectors": [
+    {
+      "facts": [
+        {
+          "authority": "packed_scene_state",
+          "value": "Node2D"
+        },
+        {
+          "authority": "synthetic_conflict_probe",
+          "value": "CharacterBody2D"
+        }
+      ],
+      "oracle_id": "single_value_type_conflict",
+      "predicate": "declared_type",
+      "single_valued": true
+    }
+  ],
+  "coverage": [
+    "bounded_summaries",
+    "conflict_retention",
+    "duplicate_provenance",
+    "node_usage",
+    "partial_domains",
+    "resource_uid_rename",
+    "scene_instance",
+    "signal_connection",
+    "symbol_call",
+    "symbol_override"
+  ],
+  "dedup_vectors": [
+    {
+      "expected_evidence_sources": [
+        "gdscript_parser_analyzer",
+        "scene_state"
+      ],
+      "oracle_id": "player_script_attachment",
+      "predicate": "attaches_script",
+      "source": "main_player_node",
+      "target": "player_script"
+    }
+  ],
+  "false_exact_allowed": 0,
+  "phases": [
+    "base",
+    "resource_uid_rename",
+    "symbol_rename",
+    "duplicate_provenance",
+    "partial_domains",
+    "conflict",
+    "budget_pressure",
+    "journal_gap"
+  ],
+  "queries": [
+    {
+      "expected": [
+        {
+          "confidence": "exact",
+          "evidence_source": "packed_scene_state",
+          "oracle_id": "profile_scene_property",
+          "predicate": "references",
+          "source": "main_player_node"
+        },
+        {
+          "confidence": "exact",
+          "evidence_source": "gdscript_parser_analyzer",
+          "oracle_id": "profile_preload",
+          "predicate": "preloads",
+          "source": "player_script"
+        }
+      ],
+      "oracle_id": "resource_profile",
+      "target": {
+        "kind": "resource",
+        "selector": "uid://s6profile"
+      }
+    },
+    {
+      "expected": [
+        {
+          "confidence": "exact",
+          "evidence_source": "packed_scene_state",
+          "oracle_id": "child_instance",
+          "predicate": "instantiates",
+          "source": "main_child_node"
+        }
+      ],
+      "oracle_id": "scene_child",
+      "target": {
+        "kind": "scene",
+        "selector": "uid://s6child"
+      }
+    },
+    {
+      "expected": [
+        {
+          "confidence": "exact",
+          "evidence_source": "scene_state",
+          "oracle_id": "healed_connection",
+          "predicate": "connects_signal",
+          "source": "main_scene"
+        },
+        {
+          "confidence": "exact",
+          "evidence_source": "gdscript_parser_analyzer",
+          "oracle_id": "healed_emit",
+          "predicate": "references_symbol",
+          "source": "player_recover"
+        }
+      ],
+      "oracle_id": "signal_healed",
+      "target": {
+        "kind": "signal",
+        "selector": "Main/Player:healed"
+      }
+    },
+    {
+      "expected": [
+        {
+          "confidence": "exact",
+          "evidence_source": "gdscript_analyzer",
+          "oracle_id": "take_damage_call",
+          "predicate": "calls",
+          "source": "player_apply_damage"
+        },
+        {
+          "confidence": "exact",
+          "evidence_source": "gdscript_analyzer",
+          "oracle_id": "take_damage_override",
+          "predicate": "overrides",
+          "source": "player_take_damage"
+        }
+      ],
+      "oracle_id": "symbol_take_damage",
+      "target": {
+        "kind": "script_symbol",
+        "selector": "res://scripts/base_actor.gd::class:ContextBaseActor/method:take_damage"
+      }
+    }
+  ],
+  "schema_version": 1
+}

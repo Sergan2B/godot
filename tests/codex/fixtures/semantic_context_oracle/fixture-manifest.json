@@ -1,0 +1,71 @@
+{
+  "files": [
+    {
+      "path": ".gitignore",
+      "role": "metadata",
+      "sha256": "847f01257b6f561524f02f6d61e31f01f0634b0dd83cca80739db489c3d4bdc6"
+    },
+    {
+      "path": "project.godot",
+      "role": "project",
+      "sha256": "7c7be451144ee116b338cbe700f53e4edff94e92f0c0cd4331fdc3b96d4146bb"
+    },
+    {
+      "path": "resources/shared_profile.tres",
+      "role": "resource",
+      "sha256": "bef132c65409e8af5e79f14165f27d0f78ac778a63288963d309fc37bc28b1ed"
+    },
+    {
+      "path": "scenes/child.tscn",
+      "role": "scene",
+      "sha256": "701005d90a1ad092fcf65a4289e1c609c79b68e6e2d53a17ebb9c967296b7d64"
+    },
+    {
+      "path": "scenes/main.tscn",
+      "role": "scene",
+      "sha256": "bc066bb7a43f69d7c8e56de7321ed90507cf1edea75d7b850666b2faaf62df3f"
+    },
+    {
+      "path": "scripts/base_actor.gd",
+      "role": "script",
+      "sha256": "91598975b2d2bb8d2e514d4a1cffa4c6e48a8058516a980a209ed70bcea45f24"
+    },
+    {
+      "path": "scripts/base_actor.gd.uid",
+      "role": "uid",
+      "sha256": "c1461f133d86b0455834d396b92d227654fac34842193524be5252ae0403c033"
+    },
+    {
+      "path": "scripts/main.gd",
+      "role": "script",
+      "sha256": "81fd7617fc23b6a494c6a6fe2a7e927942abfb564953c576d1ac4e9eb8cec2bb"
+    },
+    {
+      "path": "scripts/main.gd.uid",
+      "role": "uid",
+      "sha256": "23763383c46a6bfcc6de3f713346e3f4031dc81f469f8940c9f8bf12e72a1256"
+    },
+    {
+      "path": "scripts/player.gd",
+      "role": "script",
+      "sha256": "0a2c11699970c2bd9aefc81c2f9fe02fab1aab629de52fefbff38bff30d8b223"
+    },
+    {
+      "path": "scripts/player.gd.uid",
+      "role": "uid",
+      "sha256": "d670ddf75ffc93aa165800756a5dfecaa1038f3ce6eab2dffde0fb171b7cef37"
+    }
+  ],
+  "fixture_version": 1,
+  "mutations": [
+    "none",
+    "rename_resource_keep_uid",
+    "rename_symbol",
+    "duplicate_provenance",
+    "disable_script_domain",
+    "inject_conflict",
+    "add_budget_pressure",
+    "force_journal_gap"
+  ],
+  "project": "res://"
+}

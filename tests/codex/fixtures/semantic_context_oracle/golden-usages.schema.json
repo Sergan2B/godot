@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "$defs": {
+    "oracle_id": {"pattern": "^[a-z][a-z0-9_]{0,63}$", "type": "string"},
+    "expected": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {"enum": ["exact", "probable", "dynamic", "runtime_confirmed"]},
+        "evidence_source": {"$ref": "#/$defs/oracle_id"},
+        "oracle_id": {"$ref": "#/$defs/oracle_id"},
+        "predicate": {"enum": ["references", "instantiates", "inherits", "overrides", "attaches_script", "declares_symbol", "references_symbol", "connects_signal", "belongs_to_group", "preloads", "loads", "calls"]},
+        "source": {"$ref": "#/$defs/oracle_id"}
+      },
+      "required": ["oracle_id", "source", "predicate", "confidence", "evidence_source"],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "budgets": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {"const": "utf8_byte_upper_bound_v1"},
+        "project": {"const": 4096},
+        "scene": {"const": 2048}
+      },
+      "required": ["method", "project", "scene"],
+      "type": "object"
+    },
+    "confidence": {"items": {"enum": ["dynamic", "exact", "probable", "runtime_confirmed"]}, "minItems": 4, "maxItems": 4, "type": "array", "uniqueItems": true},
+    "conflict_vectors": {"items": {"type": "object"}, "minItems": 1, "type": "array"},
+    "coverage": {"items": {"$ref": "#/$defs/oracle_id"}, "minItems": 10, "type": "array", "uniqueItems": true},
+    "dedup_vectors": {"items": {"type": "object"}, "minItems": 1, "type": "array"},
+    "false_exact_allowed": {"const": 0},
+    "phases": {"items": {"$ref": "#/$defs/oracle_id"}, "minItems": 8, "maxItems": 8, "type": "array", "uniqueItems": true},
+    "queries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "expected": {"items": {"$ref": "#/$defs/expected"}, "minItems": 1, "type": "array"},
+          "oracle_id": {"$ref": "#/$defs/oracle_id"},
+          "target": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {"enum": ["entity_id", "resource", "scene", "node_path", "script_symbol", "signal"]},
+              "selector": {"minLength": 1, "type": "string"}
+            },
+            "required": ["kind", "selector"],
+            "type": "object"
+          }
+        },
+        "required": ["oracle_id", "target", "expected"],
+        "type": "object"
+      },
+      "minItems": 4,
+      "type": "array"
+    },
+    "schema_version": {"const": 1}
+  },
+  "required": ["schema_version", "coverage", "confidence", "budgets", "phases", "queries", "dedup_vectors", "conflict_vectors", "false_exact_allowed"],
+  "type": "object"
+}

@@ -1,0 +1,17 @@
+[gd_scene load_steps=5 format=3 uid="uid://s6main"]
+
+[ext_resource type="Script" uid="uid://s6mainscript" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" uid="uid://s6playerscript" path="res://scripts/player.gd" id="2_player"]
+[ext_resource type="Resource" uid="uid://s6profile" path="res://resources/shared_profile.tres" id="3_profile"]
+[ext_resource type="PackedScene" uid="uid://s6child" path="res://scenes/child.tscn" id="4_child"]
+
+[node name="Main" type="Node" unique_id=6101]
+script = ExtResource("1_main")
+
+[node name="Player" type="Node2D" parent="." unique_id=6102 groups=["actors"]]
+script = ExtResource("2_player")
+metadata/profile = ExtResource("3_profile")
+
+[node name="Child" parent="." unique_id=6103 instance=ExtResource("4_child")]
+
+[connection signal="healed" from="Player" to="." method="_on_player_healed"]
