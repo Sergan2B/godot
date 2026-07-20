@@ -291,10 +291,12 @@ struct ProjectionContext {
 		if ((uint32_t)relations.size() >= ScriptSemanticAdapter::MAX_RELATIONS_PER_DOCUMENT || p_source_symbol_id.is_empty() || p_predicate.is_empty() ||
 				(p_confidence != "exact" && p_confidence != "dynamic") || (p_confidence == "exact" && p_target.get_type() != Variant::DICTIONARY) ||
 				(p_confidence == "dynamic" && p_target.get_type() != Variant::NIL) || !utf8_within(p_detail, 128)) {
+			ERR_PRINT("[codex_bridge] Invalid " + p_predicate + "/" + p_detail + " relation projection for " + path);
 			return false;
 		}
 		Dictionary evidence_range;
 		if (!make_range(p_evidence_node, evidence_range)) {
+			ERR_PRINT("[codex_bridge] Invalid " + p_predicate + "/" + p_detail + " evidence range for " + path);
 			return false;
 		}
 		const String relation_key = p_source_symbol_id + "\n" + p_predicate + "\n" + p_confidence + "\n" + p_detail + "\n" +
@@ -950,7 +952,28 @@ static Variant external_class_node_endpoint(const ProjectionContext &p_context, 
 	if (!p_class) {
 		return Variant();
 	}
-	const String existing_id = p_context.find_declaration(p_member_name.is_empty() ? static_cast<const GDScriptParser::Node *>(p_class) : static_cast<const GDScriptParser::Node *>(p_class->has_function(p_member_name) ? p_class->get_member(p_member_name).function : nullptr));
+	const GDScriptParser::Node *member_node = p_class;
+	if (!p_member_name.is_empty() && p_class->has_member(p_member_name)) {
+		const GDScriptParser::ClassNode::Member member = p_class->get_member(p_member_name);
+		switch (member.type) {
+			case GDScriptParser::ClassNode::Member::FUNCTION:
+				member_node = member.function;
+				break;
+			case GDScriptParser::ClassNode::Member::SIGNAL:
+				member_node = member.signal;
+				break;
+			case GDScriptParser::ClassNode::Member::VARIABLE:
+				member_node = member.variable;
+				break;
+			case GDScriptParser::ClassNode::Member::CONSTANT:
+				member_node = member.constant;
+				break;
+			default:
+				member_node = nullptr;
+				break;
+		}
+	}
+	const String existing_id = p_context.find_declaration(member_node);
 	if (!existing_id.is_empty()) {
 		return symbol_endpoint(existing_id);
 	}
@@ -1009,16 +1032,32 @@ static Variant base_method_endpoint(const ProjectionContext &p_context, const GD
 
 static bool project_node_relations(ProjectionContext &r_context, const GDScriptParser::Node *p_node, const String &p_source_symbol_id, const GDScriptParser::ClassNode *p_owner_class);
 
-static bool project_identifier_relation(ProjectionContext &r_context, const GDScriptParser::IdentifierNode *p_identifier, const String &p_source_symbol_id) {
+static bool project_identifier_relation(ProjectionContext &r_context, const GDScriptParser::IdentifierNode *p_identifier, const String &p_source_symbol_id, const GDScriptParser::ClassNode *p_owner_class) {
 	const String detail = reference_detail(p_identifier);
 	if (detail.is_empty()) {
 		return true;
 	}
 	const String target_id = r_context.find_declaration(identifier_declaration(p_identifier));
-	if (target_id.is_empty() || target_id == p_source_symbol_id) {
+	if (target_id == p_source_symbol_id) {
 		return true;
 	}
-	return r_context.append_relation(p_source_symbol_id, "references_symbol", symbol_endpoint(target_id), "exact", p_identifier, detail);
+	Variant target;
+	if (!target_id.is_empty()) {
+		target = symbol_endpoint(target_id);
+	} else if (p_identifier && p_identifier->source == GDScriptParser::IdentifierNode::MEMBER_SIGNAL) {
+		const GDScriptParser::ClassNode *owner = p_owner_class;
+		while (owner) {
+			if (owner->has_member(p_identifier->name)) {
+				const GDScriptParser::ClassNode::Member member = owner->get_member(p_identifier->name);
+				if (member.type == GDScriptParser::ClassNode::Member::SIGNAL && member.signal == p_identifier->signal_source) {
+					target = external_class_node_endpoint(r_context, owner, "signal", p_identifier->name);
+					break;
+				}
+			}
+			owner = owner->base_type.kind == GDScriptParser::DataType::CLASS ? owner->base_type.class_type : nullptr;
+		}
+	}
+	return target.get_type() != Variant::DICTIONARY || r_context.append_relation(p_source_symbol_id, "references_symbol", target, "exact", p_identifier, detail);
 }
 
 static bool project_call_relation(ProjectionContext &r_context, const GDScriptParser::CallNode *p_call, const String &p_source_symbol_id, const GDScriptParser::ClassNode *p_owner_class) {
@@ -1098,7 +1137,7 @@ static bool project_expression_relations(ProjectionContext &r_context, const GDS
 	}
 	switch (p_expression->type) {
 		case GDScriptParser::Node::IDENTIFIER:
-			return project_identifier_relation(r_context, static_cast<const GDScriptParser::IdentifierNode *>(p_expression), p_source_symbol_id);
+			return project_identifier_relation(r_context, static_cast<const GDScriptParser::IdentifierNode *>(p_expression), p_source_symbol_id, p_owner_class);
 		case GDScriptParser::Node::CALL: {
 			const GDScriptParser::CallNode *call = static_cast<const GDScriptParser::CallNode *>(p_expression);
 			if (!project_call_relation(r_context, call, p_source_symbol_id, p_owner_class) || !project_expression_relations(r_context, call->callee, p_source_symbol_id, p_owner_class)) {
@@ -1244,6 +1283,12 @@ static bool project_class_relations(ProjectionContext &r_context, const GDScript
 		GDScriptParser::Node evidence;
 		const GDScriptParser::Node *evidence_node = p_class;
 		if (!p_class->extends_path.is_empty() && text_evidence_node(r_context, p_class->extends_start_line, p_class->extends_start_column, p_class->extends_end_column, p_class->extends_path, evidence)) {
+			evidence_node = &evidence;
+		} else if (!p_class->extends.is_empty() && p_class->extends[0] && p_class->extends[p_class->extends.size() - 1]) {
+			evidence.start_line = p_class->extends[0]->start_line;
+			evidence.start_column = p_class->extends[0]->start_column;
+			evidence.end_line = p_class->extends[p_class->extends.size() - 1]->end_line;
+			evidence.end_column = p_class->extends[p_class->extends.size() - 1]->end_column;
 			evidence_node = &evidence;
 		}
 		if (!r_context.append_relation(class_id, "inherits", base_endpoint, "exact", evidence_node, "script_inheritance")) {
@@ -1426,7 +1471,14 @@ Error ScriptSemanticAdapter::_project_source(const String &p_source, const Strin
 		document["completeness"] = parse_error != OK ? "invalid" : (analyzer_error == OK ? "complete" : "partial");
 
 		if (parse_error == OK) {
-			ERR_FAIL_COND_V(!project_class(context, root, String(), Variant(), true) || !project_class_relations(context, root), ERR_INVALID_DATA);
+			if (!project_class(context, root, String(), Variant(), true)) {
+				ERR_PRINT("[codex_bridge] Script declaration projection failed for " + p_path);
+				return ERR_INVALID_DATA;
+			}
+			if (!project_class_relations(context, root)) {
+				ERR_PRINT("[codex_bridge] Script relation projection failed for " + p_path);
+				return ERR_INVALID_DATA;
+			}
 		}
 		const String error_authority = parse_error == OK ? "gdscript_analyzer" : "gdscript_parser";
 		for (const GDScriptParser::ParserError &error : parser.get_errors()) {

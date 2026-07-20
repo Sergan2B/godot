@@ -300,8 +300,29 @@ impl SemanticQueryIndex {
         }
 
         let mut facts = BTreeMap::<String, SemanticFact>::new();
+        let mut precise_source_resources = BTreeSet::new();
+        if scene_current {
+            precise_source_resources.extend(
+                generation
+                    .scene
+                    .scenes
+                    .iter()
+                    .filter_map(|scene| scene.source_resource_entity_id.clone()),
+            );
+        }
+        if script_current {
+            precise_source_resources.extend(
+                generation
+                    .script
+                    .documents
+                    .iter()
+                    .map(|document| document.script_resource_id.clone()),
+            );
+        }
         for edge in &generation.dependencies {
-            if edge.resolution != DependencyResolution::Resolved {
+            if edge.resolution != DependencyResolution::Resolved
+                || precise_source_resources.contains(&edge.source_entity_id)
+            {
                 continue;
             }
             let Some(target) = edge.target_entity_id.as_deref() else {
@@ -408,11 +429,12 @@ impl SemanticQueryIndex {
             .iter()
             .filter(|_| scene_current)
         {
-            let target = signal_entity_id(
+            let emitter = canonical_node_definition(
+                generation,
                 &connection.scene_entity_id,
                 &connection.emitter_node_entity_id,
-                &connection.signal,
             );
+            let target = signal_entity_id(&connection.scene_entity_id, emitter, &connection.signal);
             entity_kinds.insert(target.clone(), SemanticEntityKind::Signal);
             entity_scenes.insert(target.clone(), connection.scene_entity_id.clone());
             add_fact(
@@ -911,26 +933,10 @@ fn signal_aliases(
                 .as_deref()
                 .expect("filtered attached script");
             if script_reaches(attached, &symbol.script_resource_id, &parents) {
-                let mut emitters = vec![node.node_entity_id.as_str()];
-                emitters.extend(
-                    generation
-                        .scene
-                        .relations
-                        .iter()
-                        .filter(|relation| {
-                            relation.relation == "occurrence"
-                                && relation.scene_entity_id.as_deref()
-                                    == Some(node.scene_entity_id.as_str())
-                                && relation.target.as_deref() == Some(node.node_entity_id.as_str())
-                        })
-                        .map(|relation| relation.source.as_str()),
-                );
-                for emitter in emitters {
-                    aliases.entry(symbol.symbol_id.clone()).or_default().push((
-                        signal_entity_id(&node.scene_entity_id, emitter, name),
-                        node.scene_entity_id.clone(),
-                    ));
-                }
+                aliases.entry(symbol.symbol_id.clone()).or_default().push((
+                    signal_entity_id(&node.scene_entity_id, &node.node_entity_id, name),
+                    node.scene_entity_id.clone(),
+                ));
             }
         }
     }
@@ -939,6 +945,24 @@ fn signal_aliases(
         values.dedup();
     }
     aliases
+}
+
+fn canonical_node_definition<'a>(
+    generation: &'a IndexGeneration,
+    scene_id: &str,
+    node_id: &'a str,
+) -> &'a str {
+    generation
+        .scene
+        .relations
+        .iter()
+        .find(|relation| {
+            relation.relation == "occurrence"
+                && relation.scene_entity_id.as_deref() == Some(scene_id)
+                && relation.source == node_id
+        })
+        .and_then(|relation| relation.target.as_deref())
+        .unwrap_or(node_id)
 }
 
 fn endpoint_script<'a>(
@@ -1038,7 +1062,8 @@ mod tests {
     use super::*;
     use crate::{
         DependencyEdge, GenerationState, IngestionCheckpoint, LOGICAL_SCHEMA_V1, RecordValidity,
-        ResourceEntity, SceneDomainGeneration, ScriptDomainGeneration,
+        ResourceEntity, SceneDomainGeneration, SceneEntity, SceneIdentityScope,
+        ScriptDomainGeneration,
     };
 
     fn generation() -> IndexGeneration {
@@ -1129,6 +1154,43 @@ mod tests {
         let facts = index.facts_for_target("target");
         assert_eq!(facts.len(), 1);
         assert_eq!(facts[0].evidence.len(), 2);
+    }
+
+    #[test]
+    fn current_semantic_owner_suppresses_coarse_resource_dependency() {
+        let mut value = generation();
+        value.scene = SceneDomainGeneration {
+            editor_session_id: "editor-1".to_owned(),
+            resource_revision: 1,
+            scene_graph_revision: 1,
+            source_complete: true,
+            snapshot_checksum: format!("sha256:{}", "3".repeat(64)),
+            scenes: vec![SceneEntity {
+                scene_entity_id: "scene-owner".to_owned(),
+                source_resource_entity_id: Some("owner".to_owned()),
+                uid: Some("uid://scene-owner".to_owned()),
+                comparison_path: "res://owner.tscn".to_owned(),
+                content_generation: format!("sha256:{}", "4".repeat(64)),
+                identity_scope: SceneIdentityScope::Persistent,
+                base_scene_entity_id: None,
+                authority: "packed_scene_state".to_owned(),
+                resource_revision: 1,
+                scene_graph_revision: 1,
+            }],
+            ..SceneDomainGeneration::default()
+        };
+
+        assert!(
+            SemanticQueryIndex::build_available(&value, true, false)
+                .facts_for_target("target")
+                .is_empty()
+        );
+        assert_eq!(
+            SemanticQueryIndex::build_available(&value, false, false)
+                .facts_for_target("target")
+                .len(),
+            1
+        );
     }
 
     #[test]

@@ -1159,7 +1159,7 @@ fn resolve_find_usages_target(
                 &selected.definition.node_entity_id,
                 signal,
             );
-            let entity_id = [occurrence_signal, definition_signal]
+            let entity_id = [definition_signal, occurrence_signal]
                 .into_iter()
                 .find(|candidate| query_index.entity_kind(candidate).is_some())
                 .ok_or((

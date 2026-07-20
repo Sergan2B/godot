@@ -60,9 +60,20 @@ static String fixture_script(const String &p_name) {
 	return TestUtils::get_executable_dir().path_join("../tests/codex/fixtures/script_semantics_project/scripts").path_join(p_name).simplify_path();
 }
 
+static String semantic_context_fixture_script(const String &p_name) {
+	return TestUtils::get_executable_dir().path_join("../tests/codex/fixtures/semantic_context_project/scripts").path_join(p_name).simplify_path();
+}
+
 static String read_fixture(const String &p_name) {
 	Error error = OK;
 	const String source = FileAccess::get_file_as_string(fixture_script(p_name), &error);
+	REQUIRE(error == OK);
+	return source;
+}
+
+static String read_semantic_context_fixture(const String &p_name) {
+	Error error = OK;
+	const String source = FileAccess::get_file_as_string(semantic_context_fixture_script(p_name), &error);
 	REQUIRE(error == OK);
 	return source;
 }
@@ -158,6 +169,23 @@ TEST_CASE("[CodexS5ScriptAdapter] A disappeared saved file requests a refresh re
 }
 
 #ifdef MODULE_GDSCRIPT_ENABLED
+
+TEST_CASE("[CodexS6SemanticContext] Every golden fixture script projects independently") {
+	struct FixtureCase {
+		const char *file;
+		const char *uid;
+	};
+	const FixtureCase cases[] = {
+		{ "base_actor.gd", "uid://s6baseactor" },
+		{ "main.gd", "uid://s6mainscript" },
+		{ "player.gd", "uid://s6playerscript" },
+	};
+	for (const FixtureCase &fixture : cases) {
+		ScriptSemanticAdapter::DocumentProjection projection;
+		CAPTURE(fixture.file);
+		CHECK(ScriptSemanticAdapterTestAccess::project_source(read_semantic_context_fixture(fixture.file), String("res://scripts/") + fixture.file, uid_ref(fixture.uid), 1, 1, projection) == OK);
+	}
+}
 
 TEST_CASE("[CodexS5ScriptAdapter] Saved GDScript declarations preserve canonical UTF-8 ranges") {
 	ScriptSemanticAdapter::DocumentProjection projection;
