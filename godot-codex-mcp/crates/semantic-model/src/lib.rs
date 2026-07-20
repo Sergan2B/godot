@@ -54,8 +54,12 @@ pub struct SemanticSnapshot {
     pub revisions: RevisionVector,
     pub editor_state: Value,
     pub inspector_state: Option<Value>,
+    pub script_state: Option<Value>,
+    pub history_state: Option<Value>,
     pub scenes: BTreeMap<String, Value>,
     pub nodes: BTreeMap<String, Value>,
+    pub script_tabs: BTreeMap<String, Value>,
+    pub histories: BTreeMap<String, Value>,
     pub current_scene_id: Option<String>,
     pub selected_node_ids: Vec<String>,
     pub truncated: bool,
@@ -69,8 +73,12 @@ impl SemanticSnapshot {
     ) -> Result<Self, ReplicaError> {
         let mut editor_state = None;
         let mut inspector_state = None;
+        let mut script_state = None;
+        let mut history_state = None;
         let mut scenes = BTreeMap::new();
         let mut nodes = BTreeMap::new();
+        let mut script_tabs = BTreeMap::new();
+        let mut histories = BTreeMap::new();
         let mut truncated = metadata
             .limits_applied
             .get("truncated")
@@ -99,6 +107,26 @@ impl SemanticSnapshot {
                 }
                 "inspector_state" => {
                     if inspector_state.replace(entity).is_some() {
+                        return Err(ReplicaError::DuplicateEntity(entity_id));
+                    }
+                }
+                "script_state" => {
+                    if script_state.replace(entity).is_some() {
+                        return Err(ReplicaError::DuplicateEntity(entity_id));
+                    }
+                }
+                "history_state" => {
+                    if history_state.replace(entity).is_some() {
+                        return Err(ReplicaError::DuplicateEntity(entity_id));
+                    }
+                }
+                "script_tab" => {
+                    if script_tabs.insert(entity_id.clone(), entity).is_some() {
+                        return Err(ReplicaError::DuplicateEntity(entity_id));
+                    }
+                }
+                "editor_history" => {
+                    if histories.insert(entity_id.clone(), entity).is_some() {
                         return Err(ReplicaError::DuplicateEntity(entity_id));
                     }
                 }
@@ -144,8 +172,12 @@ impl SemanticSnapshot {
             revisions: metadata.revisions,
             editor_state,
             inspector_state,
+            script_state,
+            history_state,
             scenes,
             nodes,
+            script_tabs,
+            histories,
             current_scene_id,
             selected_node_ids,
             truncated,
@@ -299,6 +331,38 @@ impl SemanticSnapshot {
             "facts": [],
             "evidence": [{"source": "live_editor_snapshot", "freshness": "current"}],
             "inspector": self.inspector_state,
+        })
+    }
+
+    pub fn open_scripts_result(&self) -> Value {
+        json!({
+            "schema_version": "editor/1.0",
+            "project_id": self.project_id,
+            "editor_session_id": self.editor_session_id,
+            "snapshot_id": self.snapshot_id,
+            "revision_vector": self.revisions,
+            "status": "ready",
+            "freshness": "current",
+            "truncated": self.truncated,
+            "entities": self.script_tabs.values().cloned().collect::<Vec<_>>(),
+            "script_state": self.script_state,
+            "evidence": [{"source": "live_editor_snapshot", "freshness": "current"}],
+        })
+    }
+
+    pub fn editor_history_result(&self) -> Value {
+        json!({
+            "schema_version": "editor/1.0",
+            "project_id": self.project_id,
+            "editor_session_id": self.editor_session_id,
+            "snapshot_id": self.snapshot_id,
+            "revision_vector": self.revisions,
+            "status": "ready",
+            "freshness": "current",
+            "truncated": self.truncated,
+            "entities": self.histories.values().cloned().collect::<Vec<_>>(),
+            "history_state": self.history_state,
+            "evidence": [{"source": "live_editor_snapshot", "freshness": "current"}],
         })
     }
 }
@@ -581,6 +645,56 @@ mod tests {
             .unwrap();
         assert_eq!(replicator.status(), ReplicaStatus::Ready);
         assert!(replicator.read().is_ok());
+    }
+
+    #[test]
+    fn live_script_and_native_history_entities_remain_distinct() {
+        let snapshot = SemanticSnapshot::from_entities(
+            metadata(),
+            vec![
+                json!({
+                    "kind": "editor_state",
+                    "entity_id": "editor:0123456789abcdef0123456789abcdef",
+                    "current_scene_id": ""
+                }),
+                json!({
+                    "kind": "script_state",
+                    "entity_id": "scripts:0123456789abcdef0123456789abcdef",
+                    "active_script_id": "script:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "open_script_ids": ["script:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]
+                }),
+                json!({
+                    "kind": "script_tab",
+                    "entity_id": "script:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "dirty": true,
+                    "source_text_included": false,
+                    "selections": [{"start_line": 2, "start_column": 1, "end_line": 3, "end_column": 4}]
+                }),
+                json!({
+                    "kind": "history_state",
+                    "entity_id": "histories:0123456789abcdef0123456789abcdef",
+                    "last_operation_seq": 9,
+                    "history_ids": ["history:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
+                }),
+                json!({
+                    "kind": "editor_history",
+                    "entity_id": "history:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "last_operation_seq": 9,
+                    "action_name": "Set position",
+                    "transition_kind": "unknown",
+                    "last_operation": {"kind": "opaque"}
+                }),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.script_tabs.len(), 1);
+        assert_eq!(snapshot.histories.len(), 1);
+        assert_eq!(snapshot.open_scripts_result()["entities"][0]["dirty"], true);
+        assert_eq!(
+            snapshot.editor_history_result()["entities"][0]["last_operation"]["kind"],
+            "opaque"
+        );
     }
 
     #[test]

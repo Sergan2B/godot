@@ -36,6 +36,7 @@
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "core/string/print_string.h"
+#include "core/templates/hash_set.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/editor_data.h"
 #include "editor/editor_node.h"
@@ -239,9 +240,11 @@ void CodexBridgeService::_disconnect_editor_signals() {
 	editor_signals_connected = false;
 }
 
-void CodexBridgeService::_publish_event(const String &p_event_type, const String &p_property, bool p_scene_mutation) {
+void CodexBridgeService::_publish_event(const String &p_event_type, const String &p_property, bool p_scene_mutation, bool p_native_operation) {
 	const String scene_id = _get_current_scene_id();
-	if (p_scene_mutation && !scene_id.is_empty()) {
+	if (p_native_operation) {
+		revision_clock.record_native_operation(scene_id);
+	} else if (p_scene_mutation && !scene_id.is_empty()) {
 		revision_clock.record_scene_change(scene_id);
 	} else {
 		revision_clock.record_selection_change();
@@ -294,7 +297,72 @@ void CodexBridgeService::_on_property_edited(const String &p_property) {
 	}
 }
 
+bool CodexBridgeService::_observe_native_histories(bool p_record_changes) {
+	EditorUndoRedoManager *manager = EditorUndoRedoManager::get_singleton();
+	if (!manager) {
+		return false;
+	}
+	EditorData &editor_data = EditorNode::get_editor_data();
+	Vector<int> history_ids;
+	HashSet<int> unique_ids;
+	history_ids.push_back(EditorUndoRedoManager::GLOBAL_HISTORY);
+	unique_ids.insert(EditorUndoRedoManager::GLOBAL_HISTORY);
+	for (int scene_index = 0; scene_index < editor_data.get_edited_scene_count(); scene_index++) {
+		const int history_id = editor_data.get_scene_history_id(scene_index);
+		if (!unique_ids.has(history_id)) {
+			history_ids.push_back(history_id);
+			unique_ids.insert(history_id);
+		}
+	}
+	bool changed = false;
+	for (int history_id : history_ids) {
+		if (!manager->has_history(history_id)) {
+			continue;
+		}
+		UndoRedo *history = manager->get_history_undo_redo(history_id);
+		if (!history) {
+			continue;
+		}
+		NativeHistoryObservation current;
+		current.action_count = history->get_history_count();
+		current.current_action = history->get_current_action();
+		current.version = history->get_version();
+		const NativeHistoryObservation *previous = native_history_observations.getptr(history_id);
+		if (previous && previous->action_count == current.action_count && previous->current_action == current.current_action && previous->version == current.version) {
+			continue;
+		}
+		if (previous && p_record_changes) {
+			String transition_kind = "unknown";
+			if (current.action_count < previous->action_count) {
+				transition_kind = "clear";
+			} else if (current.current_action < previous->current_action) {
+				transition_kind = "undo";
+			} else if (current.current_action > previous->current_action && current.action_count == previous->action_count) {
+				transition_kind = "redo";
+			} else if (current.action_count > previous->action_count || current.version > previous->version) {
+				transition_kind = "commit";
+			}
+			String scene_id;
+			for (int scene_index = 0; scene_index < editor_data.get_edited_scene_count(); scene_index++) {
+				if (editor_data.get_scene_history_id(scene_index) == history_id) {
+					scene_id = EditorContextAdapter::make_scene_id(transport_worker.get_editor_session_id(), editor_data.get_edited_scene_root(scene_index));
+					break;
+				}
+			}
+			const uint64_t operation_seq = revision_clock.record_native_operation(scene_id);
+			Dictionary summary;
+			summary["transition_kind"] = transition_kind;
+			summary["last_operation_seq"] = (int64_t)operation_seq;
+			native_history_transitions[String::num_int64(history_id)] = summary;
+			changed = true;
+		}
+		native_history_observations.insert(history_id, current);
+	}
+	return changed;
+}
+
 void CodexBridgeService::_on_undo_redo_version_changed() {
+	native_operation_pending = _observe_native_histories(true) || native_operation_pending;
 	if (!scene_change_pending) {
 		scene_change_pending = true;
 		callable_mp(this, &CodexBridgeService::_flush_scene_change).call_deferred();
@@ -331,16 +399,18 @@ void CodexBridgeService::_on_project_settings_changed() {
 
 void CodexBridgeService::_flush_scene_change() {
 	scene_change_pending = false;
+	const bool native_operation = native_operation_pending;
+	native_operation_pending = false;
 	const String property = pending_property;
 	pending_property.clear();
-	_publish_event(property.is_empty() ? "scene_changed" : "property_changed", property, true);
+	_publish_event(native_operation ? "editor_operation" : (property.is_empty() ? "scene_changed" : "property_changed"), property, !native_operation, false);
 }
 
 void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Dictionary &p_params) {
 	Dictionary snapshot;
 	const Dictionary revisions = revision_clock.get_revision_vector();
 	const bool full_live_context = String(p_params.get("_protocol_version", "1.1")) == "1.5";
-	if (EditorContextAdapter::capture(transport_worker.get_project_id(), transport_worker.get_editor_session_id(), revisions, snapshot, full_live_context) != OK) {
+	if (EditorContextAdapter::capture(transport_worker.get_project_id(), transport_worker.get_editor_session_id(), revisions, snapshot, full_live_context, native_history_transitions) != OK) {
 		transport_worker.complete_request(p_request_id, Dictionary());
 		return;
 	}
@@ -805,6 +875,9 @@ Error CodexBridgeService::start() {
 	script_graph_adapter.initialize(&revision_clock);
 	work_lane_turn = 0;
 	frame_telemetry.reset(OS::get_singleton()->get_environment("GODOT_CODEX_EVIDENCE_TELEMETRY") == "1");
+	native_history_observations.clear();
+	native_history_transitions.clear();
+	_observe_native_histories(false);
 	_connect_editor_signals();
 	state = STATE_RUNNING;
 	print_verbose("[codex_bridge] Service started.");
@@ -823,6 +896,9 @@ void CodexBridgeService::stop() {
 	script_graph_adapter.shutdown();
 	work_lane_turn = 0;
 	scene_change_pending = false;
+	native_operation_pending = false;
+	native_history_observations.clear();
+	native_history_transitions.clear();
 	pending_property.clear();
 	dispatcher.begin_shutdown();
 	const BridgeTransportWorker::StopResult stop_result = transport_worker.stop();

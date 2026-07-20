@@ -66,18 +66,27 @@ private:
 	bool editor_signals_connected = false;
 	int work_lane_turn = 0;
 	bool scene_change_pending = false;
+	bool native_operation_pending = false;
 	String pending_property;
+	struct NativeHistoryObservation {
+		int action_count = 0;
+		int current_action = -1;
+		uint64_t version = 0;
+	};
+	HashMap<int, NativeHistoryObservation> native_history_observations;
+	Dictionary native_history_transitions;
 
 	static void _dispatch_command(const MainThreadDispatcher::Command &p_command, void *p_userdata);
 	Dictionary _make_context() const;
 	String _get_current_scene_id() const;
 	void _connect_editor_signals();
 	void _disconnect_editor_signals();
-	void _publish_event(const String &p_event_type, const String &p_property = String(), bool p_scene_mutation = false);
+	void _publish_event(const String &p_event_type, const String &p_property = String(), bool p_scene_mutation = false, bool p_native_operation = false);
 	void _on_selection_changed();
 	void _on_scene_changed();
 	void _on_property_edited(const String &p_property);
 	void _on_undo_redo_version_changed();
+	bool _observe_native_histories(bool p_record_changes);
 	void _on_filesystem_changed();
 	void _on_resources_reimported(const Vector<String> &p_paths);
 	void _on_resources_reload(const PackedStringArray &p_paths);

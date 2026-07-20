@@ -33,6 +33,7 @@
 #include "bounded_variant_projector.h"
 
 #include "core/crypto/crypto_core.h"
+#include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/object/property_info.h"
 #include "core/object/script_language.h"
@@ -43,6 +44,7 @@
 #include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/inspector/editor_inspector.h"
+#include "editor/script/script_editor_plugin.h"
 #include "scene/main/node.h"
 
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
@@ -74,6 +76,10 @@ String EditorContextAdapter::_make_node_id(const String &p_editor_session_id, co
 
 String EditorContextAdapter::_make_history_id(const String &p_editor_session_id, int p_native_history_id) {
 	return _make_opaque_id("history:", "godot-codex-history/v1\n" + p_editor_session_id, String::num_int64(p_native_history_id));
+}
+
+String EditorContextAdapter::_make_script_id(const String &p_editor_session_id, const String &p_identity) {
+	return _make_opaque_id("script:", "godot-codex-live-script/v1\n" + p_editor_session_id, p_identity);
 }
 
 String EditorContextAdapter::_bounded_identity(const String &p_value, bool &r_truncated) {
@@ -145,7 +151,7 @@ Array EditorContextAdapter::_capture_properties(Object *p_object, int p_limit, c
 	return properties;
 }
 
-Error EditorContextAdapter::capture(const String &p_project_id, const String &p_editor_session_id, const Dictionary &p_revisions, Dictionary &r_snapshot, bool p_full_live_context) {
+Error EditorContextAdapter::capture(const String &p_project_id, const String &p_editor_session_id, const Dictionary &p_revisions, Dictionary &r_snapshot, bool p_full_live_context, const Dictionary &p_history_transitions) {
 	ERR_FAIL_COND_V_MSG(!Thread::is_main_thread(), ERR_BUG, "Editor context must be captured on the main thread.");
 	EditorNode *editor = EditorNode::get_singleton();
 	ERR_FAIL_NULL_V(editor, ERR_UNCONFIGURED);
@@ -340,6 +346,163 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 			truncated = truncated || inspector_truncated;
 		}
 		entities.push_back(inspector_entity);
+
+		ScriptEditor *script_editor = ScriptEditor::get_singleton();
+		Array open_script_ids;
+		String active_script_id;
+		bool scripts_truncated = false;
+		if (script_editor) {
+			const Vector<Ref<Script>> open_scripts = script_editor->get_open_scripts();
+			const PackedStringArray unsaved_files = script_editor->get_unsaved_files();
+			HashSet<String> unsaved_paths;
+			for (const String &path : unsaved_files) {
+				unsaved_paths.insert(path);
+			}
+			ScriptEditorBase *current_editor = script_editor->get_current_editor();
+			const Ref<Resource> current_resource = current_editor ? current_editor->get_edited_resource() : Ref<Resource>();
+			const int script_limit = MIN(open_scripts.size(), MAX_OPEN_SCRIPTS);
+			for (int script_index = 0; script_index < script_limit; script_index++) {
+				const Ref<Script> &script = open_scripts[script_index];
+				if (script.is_null()) {
+					continue;
+				}
+				const String raw_path = script->get_path();
+				const bool saved_resource = raw_path.begins_with("res://") && raw_path.find("::") < 0;
+				const String public_path = saved_resource ? raw_path : String();
+				const String identity = saved_resource ? raw_path : String(script->get_class()) + "\n" + raw_path + "\n" + String::num_uint64(script->get_instance_id());
+				const String script_id = _make_script_id(p_editor_session_id, identity);
+				const bool active = current_resource.is_valid() && current_resource.ptr() == script.ptr();
+				const String editor_hash = script->get_source_code().sha256_text();
+				const String disk_hash = saved_resource ? FileAccess::get_sha256(raw_path) : String();
+				const bool dirty = unsaved_paths.has(raw_path) || (saved_resource && (disk_hash.is_empty() || disk_hash != editor_hash));
+
+				Dictionary script_entity;
+				script_entity["kind"] = "script_tab";
+				script_entity["entity_id"] = script_id;
+				script_entity["identity_scope"] = "editor_session";
+				script_entity["tab_index"] = script_index;
+				script_entity["path"] = public_path;
+				script_entity["built_in"] = !saved_resource;
+				ScriptLanguage *language = script->get_language();
+				script_entity["language"] = language ? language->get_name() : String();
+				script_entity["active"] = active;
+				script_entity["dirty"] = dirty;
+				script_entity["disk_content_sha256"] = disk_hash;
+				script_entity["editor_content_sha256"] = editor_hash;
+				script_entity["source_text_included"] = false;
+				Array selections;
+				bool selections_truncated = false;
+				if (active) {
+					active_script_id = script_id;
+					TextEditorBase *text_editor = Object::cast_to<TextEditorBase>(current_editor);
+					CodeEdit *code_edit = text_editor && text_editor->get_code_editor() ? text_editor->get_code_editor()->get_text_editor() : nullptr;
+					if (code_edit) {
+						const int caret_limit = MIN(code_edit->get_caret_count(), MAX_SCRIPT_SELECTIONS);
+						for (int caret_index = 0; caret_index < caret_limit; caret_index++) {
+							Dictionary range;
+							range["caret_index"] = caret_index;
+							if (code_edit->has_selection(caret_index)) {
+								range["start_line"] = code_edit->get_selection_from_line(caret_index) + 1;
+								range["start_column"] = code_edit->get_selection_from_column(caret_index) + 1;
+								range["end_line"] = code_edit->get_selection_to_line(caret_index) + 1;
+								range["end_column"] = code_edit->get_selection_to_column(caret_index) + 1;
+								range["empty"] = false;
+							} else {
+								const int line = code_edit->get_caret_line(caret_index) + 1;
+								const int column = code_edit->get_caret_column(caret_index) + 1;
+								range["start_line"] = line;
+								range["start_column"] = column;
+								range["end_line"] = line;
+								range["end_column"] = column;
+								range["empty"] = true;
+							}
+							selections.push_back(range);
+						}
+						selections_truncated = code_edit->get_caret_count() > MAX_SCRIPT_SELECTIONS;
+					}
+				}
+				script_entity["selections"] = selections;
+				script_entity["selections_truncated"] = selections_truncated;
+				truncated = truncated || selections_truncated;
+				open_script_ids.push_back(script_id);
+				entities.push_back(script_entity);
+			}
+			scripts_truncated = open_scripts.size() > MAX_OPEN_SCRIPTS;
+			truncated = truncated || scripts_truncated;
+		}
+		Dictionary script_state;
+		script_state["kind"] = "script_state";
+		script_state["entity_id"] = _make_opaque_id("scripts:", "godot-codex-script-state/v1", p_editor_session_id);
+		script_state["open_script_ids"] = open_script_ids;
+		script_state["active_script_id"] = active_script_id;
+		script_state["open_scripts_truncated"] = scripts_truncated;
+		entities.push_back(script_state);
+
+		Dictionary history_state;
+		history_state["kind"] = "history_state";
+		history_state["entity_id"] = _make_opaque_id("histories:", "godot-codex-history-state/v1", p_editor_session_id);
+		Array history_ids;
+		if (undo_redo) {
+			Vector<int> native_history_ids;
+			HashSet<int> unique_history_ids;
+			native_history_ids.push_back(EditorUndoRedoManager::GLOBAL_HISTORY);
+			unique_history_ids.insert(EditorUndoRedoManager::GLOBAL_HISTORY);
+			for (int scene_index = 0; scene_index < MIN(scene_count, MAX_OPEN_SCENES); scene_index++) {
+				const int native_history_id = editor_data.get_scene_history_id(scene_index);
+				if (!unique_history_ids.has(native_history_id)) {
+					native_history_ids.push_back(native_history_id);
+					unique_history_ids.insert(native_history_id);
+				}
+			}
+			for (int native_history_id : native_history_ids) {
+				if (!undo_redo->has_history(native_history_id)) {
+					continue;
+				}
+				UndoRedo *native_history = undo_redo->get_history_undo_redo(native_history_id);
+				if (!native_history) {
+					continue;
+				}
+				const String history_id = _make_history_id(p_editor_session_id, native_history_id);
+				Dictionary history_entity;
+				history_entity["kind"] = "editor_history";
+				history_entity["entity_id"] = history_id;
+				history_entity["identity_scope"] = "editor_session";
+				history_entity["scope"] = native_history_id == EditorUndoRedoManager::GLOBAL_HISTORY ? "global" : "scene";
+				history_entity["native_version"] = (int64_t)native_history->get_version();
+				const int action_count = native_history->get_history_count();
+				const int current_action = native_history->get_current_action();
+				const int described_action = current_action >= 0 ? current_action : (native_history->has_redo() ? current_action + 1 : -1);
+				history_entity["action_count"] = action_count;
+				history_entity["current_action_index"] = current_action;
+				history_entity["action_name"] = _bounded_identity(described_action >= 0 && described_action < action_count ? native_history->get_action_name(described_action) : String(), truncated);
+				history_entity["saved_state"] = undo_redo->is_history_unsaved(native_history_id) ? "unsaved" : "saved";
+				history_entity["can_undo"] = native_history->has_undo();
+				history_entity["can_redo"] = native_history->has_redo();
+				const Dictionary transition = p_history_transitions.get(String::num_int64(native_history_id), Dictionary());
+				history_entity["transition_kind"] = transition.get("transition_kind", "unknown");
+				history_entity["last_operation_seq"] = transition.get("last_operation_seq", p_revisions.get("operation_seq", 0));
+				Dictionary operation;
+				operation["kind"] = "opaque";
+				operation["omitted_reason"] = "native_operation_payload_unavailable";
+				history_entity["last_operation"] = operation;
+				if (native_history_id != EditorUndoRedoManager::GLOBAL_HISTORY) {
+					for (int scene_index = 0; scene_index < MIN(scene_count, MAX_OPEN_SCENES); scene_index++) {
+						if (editor_data.get_scene_history_id(scene_index) == native_history_id) {
+							Node *scene_root = editor_data.get_edited_scene_root(scene_index);
+							if (scene_root) {
+								history_entity["scene_id"] = make_scene_id(p_editor_session_id, scene_root);
+							}
+							break;
+						}
+					}
+				}
+				history_ids.push_back(history_id);
+				entities.push_back(history_entity);
+			}
+		}
+		history_state["history_ids"] = history_ids;
+		history_state["last_operation_seq"] = p_revisions.get("operation_seq", 0);
+		entities.push_back(history_state);
 	}
 
 	editor_entity["current_scene_id"] = current_scene_id;
