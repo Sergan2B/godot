@@ -2,6 +2,7 @@ mod cursor;
 mod live_overlay;
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use cursor::{CursorBinding, CursorCodec, CursorTool};
@@ -21,7 +22,7 @@ use godot_codex_resource_indexer::{
     ScriptIndexReadError, ScriptIndexReader, SemanticIndexReadError, SemanticIndexReader,
     SemanticPartialCode, SemanticPartialDomain, SemanticPartialReason, normalize_resource_path,
 };
-use godot_codex_semantic_model::SnapshotReplicator;
+use godot_codex_semantic_model::{SemanticSnapshot, SnapshotReplicator};
 use live_overlay::{LiveOverlay, overlay_metadata};
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
@@ -40,7 +41,9 @@ const DEFAULT_RESOURCE_LIMIT: usize = 50;
 const MAX_RESOURCE_LIMIT: usize = 200;
 const MAX_TOTAL_RESULTS: usize = 250_000;
 const MAX_SCRIPT_DIAGNOSTICS: usize = 200;
+const EDITOR_SUMMARY_MAX_BYTES: usize = 4096;
 const PROJECT_SUMMARY_URI: &str = "godot://project/summary";
+const EDITOR_SUMMARY_URI: &str = "godot://editor/summary";
 const SCENE_SUMMARY_PREFIX: &str = "godot://scene/";
 const SCENE_SUMMARY_SUFFIX: &str = "/summary";
 
@@ -52,9 +55,41 @@ fn default_find_usages_limit() -> usize {
     FIND_USAGES_DEFAULT_LIMIT
 }
 
+#[derive(Clone, Debug, Default, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct LiveGuardInput {
+    #[serde(default)]
+    expected_editor_session_id: Option<String>,
+    #[serde(default)]
+    expected_event_seq: Option<u64>,
+    #[serde(default)]
+    expected_scene_revision: Option<u64>,
+}
+
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-struct EmptyInput {}
+struct LiveListInput {
+    #[serde(default = "default_resource_limit")]
+    limit: usize,
+    #[serde(default)]
+    cursor: Option<String>,
+    #[serde(default)]
+    expected_editor_session_id: Option<String>,
+    #[serde(default)]
+    expected_event_seq: Option<u64>,
+    #[serde(default)]
+    expected_scene_revision: Option<u64>,
+}
+
+impl From<&LiveListInput> for LiveGuardInput {
+    fn from(input: &LiveListInput) -> Self {
+        Self {
+            expected_editor_session_id: input.expected_editor_session_id.clone(),
+            expected_event_seq: input.expected_event_seq,
+            expected_scene_revision: input.expected_scene_revision,
+        }
+    }
+}
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -317,6 +352,14 @@ enum Query {
     SelectedNodes,
 }
 
+#[derive(Clone, Copy)]
+enum LiveListQuery {
+    OpenScenes,
+    OpenScripts,
+    EditorHistory,
+    Diagnostics,
+}
+
 #[derive(Clone)]
 pub struct GodotMcpServer {
     #[allow(dead_code, reason = "tool_handler macro accesses this router field")]
@@ -392,39 +435,203 @@ impl GodotMcpServer {
         }
     }
 
-    fn query(&self, query: Query) -> CallToolResult {
-        match self.replicator.read() {
-            Ok(snapshot) => {
-                let value = match query {
-                    Query::EditorState => snapshot.editor_state_result(),
-                    Query::CurrentScene => snapshot.current_scene_result(),
-                    Query::SelectedNodes => snapshot.selected_nodes_result(),
-                };
-                CallToolResult::structured(value)
-            }
-            Err(error) => CallToolResult::structured_error(json!({
+    fn live_snapshot(
+        &self,
+        guard: &LiveGuardInput,
+    ) -> Result<Arc<SemanticSnapshot>, CallToolResult> {
+        let snapshot = self.replicator.read().map_err(|error| {
+            CallToolResult::structured_error(json!({
                 "error": {
                     "code": "editor_state_unavailable",
                     "message": error.message,
                     "retryable": true,
                     "replica_status": error.status,
                 }
-            })),
+            }))
+        })?;
+        if guard
+            .expected_editor_session_id
+            .as_ref()
+            .is_some_and(|expected| expected.len() > 128 || expected != &snapshot.editor_session_id)
+            || guard
+                .expected_event_seq
+                .is_some_and(|expected| expected != snapshot.revisions.event_seq)
+        {
+            return Err(stale_live_error("stale_editor_state", &snapshot));
         }
+        if let Some(expected) = guard.expected_scene_revision {
+            let current = snapshot
+                .current_scene_id
+                .as_ref()
+                .and_then(|scene_id| snapshot.revisions.scene_revisions.get(scene_id))
+                .copied()
+                .unwrap_or(0);
+            if expected != current {
+                return Err(stale_live_error("stale_scene_revision", &snapshot));
+            }
+        }
+        Ok(snapshot)
     }
 
-    fn live_dirty_scripts(&self, project_id: &str) -> Result<Vec<Value>, CallToolResult> {
-        let Ok(snapshot) = self.replicator.read() else {
-            return Ok(Vec::new());
+    fn query(&self, query: Query, guard: &LiveGuardInput) -> CallToolResult {
+        let snapshot = match self.live_snapshot(guard) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return error,
         };
-        let composer = LiveOverlay::bind(&snapshot, project_id).map_err(|_| {
+        let value = match query {
+            Query::EditorState => snapshot.editor_state_result(),
+            Query::CurrentScene => snapshot.current_scene_result(),
+            Query::SelectedNodes => snapshot.selected_nodes_result(),
+        };
+        CallToolResult::structured(value)
+    }
+
+    fn live_list_query(&self, input: LiveListInput, query: LiveListQuery) -> CallToolResult {
+        if !(1..=MAX_RESOURCE_LIMIT).contains(&input.limit) {
+            return structured_error("invalid_limit", "limit must be between 1 and 200", false);
+        }
+        let snapshot = match self.live_snapshot(&LiveGuardInput::from(&input)) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return error,
+        };
+        let (tool, selector, state, item_key, mut items) = match query {
+            LiveListQuery::OpenScenes => (
+                CursorTool::OpenScenes,
+                "open_scenes",
+                Some(snapshot.editor_state.clone()),
+                "scenes",
+                snapshot.scenes.values().cloned().collect::<Vec<_>>(),
+            ),
+            LiveListQuery::OpenScripts => (
+                CursorTool::OpenScripts,
+                "open_scripts",
+                snapshot.script_state.clone(),
+                "scripts",
+                snapshot.script_tabs.values().cloned().collect::<Vec<_>>(),
+            ),
+            LiveListQuery::EditorHistory => (
+                CursorTool::EditorHistory,
+                "editor_history",
+                snapshot.history_state.clone(),
+                "histories",
+                snapshot.histories.values().cloned().collect::<Vec<_>>(),
+            ),
+            LiveListQuery::Diagnostics => (
+                CursorTool::Diagnostics,
+                "diagnostics",
+                snapshot.diagnostic_state.clone(),
+                "diagnostics",
+                snapshot.diagnostics.values().cloned().collect::<Vec<_>>(),
+            ),
+        };
+        items.sort_by(|left, right| match query {
+            LiveListQuery::OpenScenes | LiveListQuery::OpenScripts => left
+                .get("tab_index")
+                .and_then(Value::as_u64)
+                .cmp(&right.get("tab_index").and_then(Value::as_u64)),
+            LiveListQuery::Diagnostics => left
+                .get("output_seq")
+                .and_then(Value::as_u64)
+                .cmp(&right.get("output_seq").and_then(Value::as_u64)),
+            LiveListQuery::EditorHistory => left
+                .get("entity_id")
+                .and_then(Value::as_str)
+                .cmp(&right.get("entity_id").and_then(Value::as_str)),
+        });
+        let scene_revision = snapshot
+            .current_scene_id
+            .as_ref()
+            .and_then(|scene_id| snapshot.revisions.scene_revisions.get(scene_id))
+            .copied();
+        let binding = CursorBinding {
+            project_id: &snapshot.project_id,
+            tool,
+            selector,
+            limit: input.limit,
+            generation_id: &snapshot.snapshot_id,
+            index_revision: 0,
+            resource_revision: 0,
+            scene_graph_revision: None,
+            script_graph_revision: None,
+            editor_session_id: Some(&snapshot.editor_session_id),
+            snapshot_id: Some(&snapshot.snapshot_id),
+            event_seq: Some(snapshot.revisions.event_seq),
+            scene_revision,
+        };
+        let now = unix_seconds();
+        let offset = match cursor_offset(input.cursor.as_deref(), &self.cursor_codec, &binding, now)
+        {
+            Ok(offset) => offset,
+            Err(error) => return error,
+        };
+        if offset > items.len() || offset >= MAX_TOTAL_RESULTS {
+            return structured_error(
+                "stale_cursor",
+                "cursor offset is outside the current editor snapshot",
+                false,
+            );
+        }
+        let page = items
+            .iter()
+            .skip(offset)
+            .take(input.limit)
+            .cloned()
+            .collect::<Vec<_>>();
+        let has_more = offset
+            .checked_add(input.limit)
+            .is_some_and(|end| end < items.len());
+        let next_cursor = match next_cursor(
+            has_more,
+            offset,
+            page.len(),
+            &self.cursor_codec,
+            &binding,
+            now,
+        ) {
+            Ok(cursor) => cursor,
+            Err(error) => return error,
+        };
+        let mut result = json!({
+            "schema_version": "editor/1.0",
+            "project_id": snapshot.project_id,
+            "editor_session_id": snapshot.editor_session_id,
+            "snapshot_id": snapshot.snapshot_id,
+            "revision_vector": snapshot.revisions,
+            "status": "ready",
+            "freshness": "current",
+            "state": state,
+            "limit": input.limit,
+            "offset": offset,
+            "total": items.len(),
+            "truncated": snapshot.truncated || has_more,
+            "next_cursor": next_cursor,
+            "evidence": [{"source": "live_editor_snapshot", "freshness": "current"}],
+        });
+        result[item_key] = json!(page);
+        CallToolResult::structured(result)
+    }
+
+    fn live_snapshot_for_project(
+        &self,
+        project_id: &str,
+    ) -> Result<Option<Arc<SemanticSnapshot>>, CallToolResult> {
+        let Ok(snapshot) = self.replicator.read() else {
+            return Ok(None);
+        };
+        LiveOverlay::bind(&snapshot, project_id).map_err(|_| {
             structured_error(
                 "editor_project_mismatch",
                 "live editor snapshot belongs to another project",
                 true,
             )
         })?;
-        Ok(composer.dirty_scripts())
+        Ok(Some(snapshot))
+    }
+
+    fn dirty_scripts_from(snapshot: Option<&Arc<SemanticSnapshot>>) -> Vec<Value> {
+        snapshot
+            .and_then(|snapshot| LiveOverlay::bind(snapshot, &snapshot.project_id).ok())
+            .map_or_else(Vec::new, |composer| composer.dirty_scripts())
     }
 
     fn resource_query(&self, input: ResourceInput, tool: CursorTool) -> CallToolResult {
@@ -451,6 +658,10 @@ impl GodotMcpServer {
             resource_revision: generation.checkpoint.resource_revision,
             scene_graph_revision: None,
             script_graph_revision: None,
+            editor_session_id: None,
+            snapshot_id: None,
+            event_seq: None,
+            scene_revision: None,
         };
         let now = unix_seconds();
         let offset = match input.cursor.as_deref() {
@@ -485,7 +696,11 @@ impl GodotMcpServer {
             | CursorTool::InspectNode
             | CursorTool::SearchSymbols
             | CursorTool::InspectSymbol
-            | CursorTool::FindUsages => unreachable!("resource tool"),
+            | CursorTool::FindUsages
+            | CursorTool::OpenScenes
+            | CursorTool::OpenScripts
+            | CursorTool::EditorHistory
+            | CursorTool::Diagnostics => unreachable!("resource tool"),
         };
         let result = match result {
             Ok(result) => result,
@@ -547,6 +762,15 @@ impl GodotMcpServer {
                 Ok(scene) => scene,
                 Err((code, message)) => return structured_error(code, message, false),
             };
+        let live_snapshot = match self.live_snapshot_for_project(&generation.project_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return error,
+        };
+        let live_scene_revision = live_snapshot.as_ref().and_then(|snapshot| {
+            let composer = LiveOverlay::bind(snapshot, &generation.project_id).ok()?;
+            let live_scene = composer.scene_for_path(&scene.comparison_path)?;
+            live_scene.get("scene_revision").and_then(Value::as_u64)
+        });
         let binding = CursorBinding {
             project_id: &generation.project_id,
             tool: CursorTool::SceneGraph,
@@ -557,6 +781,16 @@ impl GodotMcpServer {
             resource_revision: generation.scene.resource_revision,
             scene_graph_revision: Some(generation.scene.scene_graph_revision),
             script_graph_revision: None,
+            editor_session_id: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.editor_session_id.as_str()),
+            snapshot_id: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.snapshot_id.as_str()),
+            event_seq: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.revisions.event_seq),
+            scene_revision: live_scene_revision,
         };
         let now = unix_seconds();
         let offset = match cursor_offset(input.cursor.as_deref(), &self.cursor_codec, &binding, now)
@@ -584,17 +818,9 @@ impl GodotMcpServer {
             .collect();
         let mut live_overlay = json!({"status": "unavailable"});
         let mut live_conflicts = Vec::new();
-        if let Ok(live_snapshot) = self.replicator.read() {
-            let composer = match LiveOverlay::bind(&live_snapshot, &generation.project_id) {
-                Ok(composer) => composer,
-                Err(_) => {
-                    return structured_error(
-                        "editor_project_mismatch",
-                        "live editor snapshot belongs to another project",
-                        true,
-                    );
-                }
-            };
+        if let Some(live_snapshot) = live_snapshot.as_ref() {
+            let composer = LiveOverlay::bind(live_snapshot, &generation.project_id)
+                .expect("project binding was validated before cursor construction");
             if let Some(composed) =
                 composer.compose_scene_nodes(&scene.comparison_path, composed_nodes.clone())
             {
@@ -695,6 +921,15 @@ impl GodotMcpServer {
             Ok(selected) => selected,
             Err((code, message)) => return structured_error(code, message, false),
         };
+        let live_snapshot = match self.live_snapshot_for_project(&generation.project_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return error,
+        };
+        let live_scene_revision = live_snapshot.as_ref().and_then(|snapshot| {
+            let composer = LiveOverlay::bind(snapshot, &generation.project_id).ok()?;
+            let live_scene = composer.scene_for_path(&selected.scene.comparison_path)?;
+            live_scene.get("scene_revision").and_then(Value::as_u64)
+        });
         let binding = CursorBinding {
             project_id: &generation.project_id,
             tool: CursorTool::InspectNode,
@@ -705,6 +940,16 @@ impl GodotMcpServer {
             resource_revision: generation.scene.resource_revision,
             scene_graph_revision: Some(generation.scene.scene_graph_revision),
             script_graph_revision: None,
+            editor_session_id: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.editor_session_id.as_str()),
+            snapshot_id: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.snapshot_id.as_str()),
+            event_seq: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.revisions.event_seq),
+            scene_revision: live_scene_revision,
         };
         let now = unix_seconds();
         let offset = match cursor_offset(input.cursor.as_deref(), &self.cursor_codec, &binding, now)
@@ -736,17 +981,9 @@ impl GodotMcpServer {
             .unwrap_or(&selected.definition.node_path);
         let mut live_overlay = json!({"status": "unavailable"});
         let mut live_conflicts = Vec::new();
-        if let Ok(live_snapshot) = self.replicator.read() {
-            let composer = match LiveOverlay::bind(&live_snapshot, &generation.project_id) {
-                Ok(composer) => composer,
-                Err(_) => {
-                    return structured_error(
-                        "editor_project_mismatch",
-                        "live editor snapshot belongs to another project",
-                        true,
-                    );
-                }
-            };
+        if let Some(live_snapshot) = live_snapshot.as_ref() {
+            let composer = LiveOverlay::bind(live_snapshot, &generation.project_id)
+                .expect("project binding was validated before cursor construction");
             if let Some(composed) = composer.compose_node_properties(
                 &selected.scene.comparison_path,
                 effective_node_path,
@@ -853,6 +1090,10 @@ impl GodotMcpServer {
             "script": script_filter.as_ref().map(|(_, canonical, _)| canonical),
         })
         .to_string();
+        let live_snapshot = match self.live_snapshot_for_project(&generation.project_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return error,
+        };
         let binding = CursorBinding {
             project_id: &generation.project_id,
             tool: CursorTool::SearchSymbols,
@@ -863,6 +1104,16 @@ impl GodotMcpServer {
             resource_revision: generation.script.resource_revision,
             scene_graph_revision: None,
             script_graph_revision: Some(generation.script.script_graph_revision),
+            editor_session_id: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.editor_session_id.as_str()),
+            snapshot_id: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.snapshot_id.as_str()),
+            event_seq: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.revisions.event_seq),
+            scene_revision: None,
         };
         let now = unix_seconds();
         let offset = match cursor_offset(input.cursor.as_deref(), &self.cursor_codec, &binding, now)
@@ -902,10 +1153,7 @@ impl GodotMcpServer {
             Ok(cursor) => cursor,
             Err(result) => return result,
         };
-        let dirty_scripts = match self.live_dirty_scripts(&generation.project_id) {
-            Ok(scripts) => scripts,
-            Err(error) => return error,
-        };
+        let dirty_scripts = Self::dirty_scripts_from(live_snapshot.as_ref());
         search_symbols_success(
             generation,
             &input,
@@ -968,6 +1216,10 @@ impl GodotMcpServer {
             }
             _ => unreachable!("selector shape was validated"),
         };
+        let live_snapshot = match self.live_snapshot_for_project(&generation.project_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return error,
+        };
         let binding = CursorBinding {
             project_id: &generation.project_id,
             tool: CursorTool::InspectSymbol,
@@ -978,6 +1230,16 @@ impl GodotMcpServer {
             resource_revision: generation.script.resource_revision,
             scene_graph_revision: Some(generation.script.scene_graph_revision),
             script_graph_revision: Some(generation.script.script_graph_revision),
+            editor_session_id: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.editor_session_id.as_str()),
+            snapshot_id: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.snapshot_id.as_str()),
+            event_seq: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.revisions.event_seq),
+            scene_revision: None,
         };
         let now = unix_seconds();
         let offset = match cursor_offset(input.cursor.as_deref(), &self.cursor_codec, &binding, now)
@@ -1013,10 +1275,7 @@ impl GodotMcpServer {
             Ok(cursor) => cursor,
             Err(result) => return result,
         };
-        let dirty_scripts = match self.live_dirty_scripts(&generation.project_id) {
-            Ok(scripts) => scripts,
-            Err(error) => return error,
-        };
+        let dirty_scripts = Self::dirty_scripts_from(live_snapshot.as_ref());
         inspect_symbol_success(
             generation,
             &selector_binding,
@@ -1072,6 +1331,10 @@ impl GodotMcpServer {
         })
         .to_string();
         let revisions = query_index.revisions();
+        let live_snapshot = match self.live_snapshot_for_project(&generation.project_id) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return error,
+        };
         let binding = CursorBinding {
             project_id: &generation.project_id,
             tool: CursorTool::FindUsages,
@@ -1082,6 +1345,16 @@ impl GodotMcpServer {
             resource_revision: revisions.resource_revision,
             scene_graph_revision: revisions.scene_graph_revision,
             script_graph_revision: revisions.script_graph_revision,
+            editor_session_id: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.editor_session_id.as_str()),
+            snapshot_id: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.snapshot_id.as_str()),
+            event_seq: live_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.revisions.event_seq),
+            scene_revision: None,
         };
         let now = unix_seconds();
         let offset = match cursor_offset(input.cursor.as_deref(), &self.cursor_codec, &binding, now)
@@ -1113,10 +1386,7 @@ impl GodotMcpServer {
             },
             None => None,
         };
-        let dirty_scripts = match self.live_dirty_scripts(&generation.project_id) {
-            Ok(scripts) => scripts,
-            Err(error) => return error,
-        };
+        let dirty_scripts = Self::dirty_scripts_from(live_snapshot.as_ref());
         CallToolResult::structured(json!({
             "project_id": generation.project_id,
             "generation_id": query_index.generation_id(),
@@ -1153,6 +1423,12 @@ impl GodotMcpServer {
                     "Deterministic bounded project context with revisions and evidence IDs",
                 )
                 .with_mime_type("application/json"),
+            Resource::new(EDITOR_SUMMARY_URI, "godot_editor_summary")
+                .with_title("Godot live editor summary")
+                .with_description(
+                    "Deterministic bounded live editor context including dirty and revision state",
+                )
+                .with_mime_type("application/json"),
         ]
     }
 
@@ -1168,6 +1444,22 @@ impl GodotMcpServer {
     }
 
     fn read_summary_resource(&self, uri: &str) -> Result<ReadResourceResult, McpError> {
+        if uri == EDITOR_SUMMARY_URI {
+            let snapshot = self.replicator.read().map_err(|error| {
+                McpError::resource_not_found(
+                    "live editor summary is not currently available",
+                    Some(json!({
+                        "code": "editor_state_unavailable",
+                        "retryable": true,
+                        "replica_status": error.status,
+                    })),
+                )
+            })?;
+            let text = build_editor_summary(&snapshot)?;
+            return Ok(ReadResourceResult::new(vec![
+                ResourceContents::text(text, uri).with_mime_type("application/json"),
+            ]));
+        }
         let snapshot = self
             .semantic_index
             .pin_current()
@@ -1184,6 +1476,128 @@ impl GodotMcpServer {
             ResourceContents::text(text, uri).with_mime_type("application/json"),
         ]))
     }
+}
+
+fn build_editor_summary(snapshot: &SemanticSnapshot) -> Result<String, McpError> {
+    let mut scenes = snapshot
+        .scenes
+        .values()
+        .map(|scene| {
+            json!({
+                "scene_id": scene.get("entity_id"),
+                "path": scene.get("path"),
+                "title": scene.get("title"),
+                "current": scene.get("current"),
+                "dirty": scene.get("dirty"),
+                "scene_revision": scene.get("scene_revision"),
+            })
+        })
+        .collect::<Vec<_>>();
+    scenes.sort_by(|left, right| {
+        left.get("scene_id")
+            .and_then(Value::as_str)
+            .cmp(&right.get("scene_id").and_then(Value::as_str))
+    });
+    let mut scripts = snapshot
+        .script_tabs
+        .values()
+        .map(|script| {
+            json!({
+                "script_id": script.get("entity_id"),
+                "path": script.get("path"),
+                "active": script.get("active"),
+                "dirty": script.get("dirty"),
+                "selection_count": script.get("selections").and_then(Value::as_array).map(Vec::len),
+            })
+        })
+        .collect::<Vec<_>>();
+    scripts.sort_by(|left, right| {
+        left.get("script_id")
+            .and_then(Value::as_str)
+            .cmp(&right.get("script_id").and_then(Value::as_str))
+    });
+    let mut histories = snapshot
+        .histories
+        .values()
+        .map(|history| {
+            json!({
+                "history_id": history.get("entity_id"),
+                "scene_id": history.get("scene_id"),
+                "action_name": history.get("action_name"),
+                "saved_state": history.get("saved_state"),
+                "can_undo": history.get("can_undo"),
+                "can_redo": history.get("can_redo"),
+                "transition_kind": history.get("transition_kind"),
+                "last_operation_seq": history.get("last_operation_seq"),
+            })
+        })
+        .collect::<Vec<_>>();
+    histories.sort_by(|left, right| {
+        left.get("history_id")
+            .and_then(Value::as_str)
+            .cmp(&right.get("history_id").and_then(Value::as_str))
+    });
+    let dirty_scene_count = scenes
+        .iter()
+        .filter(|scene| scene.get("dirty").and_then(Value::as_bool) == Some(true))
+        .count();
+    let dirty_script_count = scripts
+        .iter()
+        .filter(|script| script.get("dirty").and_then(Value::as_bool) == Some(true))
+        .count();
+    let mut summary = json!({
+        "schema_version": "editor/1.0",
+        "project_id": snapshot.project_id,
+        "editor_session_id": snapshot.editor_session_id,
+        "snapshot_id": snapshot.snapshot_id,
+        "revision_vector": snapshot.revisions,
+        "current_scene_id": snapshot.current_scene_id,
+        "selected_node_ids": snapshot.selected_node_ids,
+        "inspector_object_id": snapshot.inspector_state.as_ref().and_then(|state| state.get("object_id")),
+        "active_script_id": snapshot.script_state.as_ref().and_then(|state| state.get("active_script_id")),
+        "dirty_scene_count": dirty_scene_count,
+        "dirty_script_count": dirty_script_count,
+        "diagnostic_count": snapshot.diagnostics.len(),
+        "viewport_kind": snapshot.viewport_state.as_ref().and_then(|state| state.get("active_kind")),
+        "scenes": scenes,
+        "scripts": scripts,
+        "histories": histories,
+        "truncated": snapshot.truncated,
+        "evidence": [{"source": "live_editor_snapshot", "freshness": "current"}],
+    });
+    let reduction_order = ["histories", "scripts", "scenes", "selected_node_ids"];
+    let mut text = serde_json::to_string(&summary).map_err(|_| {
+        McpError::internal_error(
+            "live editor summary serialization failed".to_owned(),
+            Some(json!({"code": "summary_unavailable"})),
+        )
+    })?;
+    while text.len() > EDITOR_SUMMARY_MAX_BYTES {
+        let mut reduced = false;
+        for key in reduction_order {
+            if let Some(values) = summary.get_mut(key).and_then(Value::as_array_mut)
+                && !values.is_empty()
+            {
+                values.pop();
+                summary["truncated"] = json!(true);
+                reduced = true;
+                break;
+            }
+        }
+        if !reduced {
+            return Err(McpError::internal_error(
+                "live editor summary could not be bounded".to_owned(),
+                Some(json!({"code": "summary_unavailable"})),
+            ));
+        }
+        text = serde_json::to_string(&summary).map_err(|_| {
+            McpError::internal_error(
+                "live editor summary serialization failed".to_owned(),
+                Some(json!({"code": "summary_unavailable"})),
+            )
+        })?;
+    }
+    Ok(text)
 }
 
 fn resolve_find_usages_target(
@@ -2753,7 +3167,11 @@ fn resource_success(
             | CursorTool::InspectNode
             | CursorTool::SearchSymbols
             | CursorTool::InspectSymbol
-            | CursorTool::FindUsages => unreachable!("resource tool"),
+            | CursorTool::FindUsages
+            | CursorTool::OpenScenes
+            | CursorTool::OpenScripts
+            | CursorTool::EditorHistory
+            | CursorTool::Diagnostics => unreachable!("resource tool"),
         })
         .collect();
     let mut response = json!({
@@ -2789,7 +3207,11 @@ fn resource_success(
         | CursorTool::InspectNode
         | CursorTool::SearchSymbols
         | CursorTool::InspectSymbol
-        | CursorTool::FindUsages => unreachable!("resource tool"),
+        | CursorTool::FindUsages
+        | CursorTool::OpenScenes
+        | CursorTool::OpenScripts
+        | CursorTool::EditorHistory
+        | CursorTool::Diagnostics => unreachable!("resource tool"),
     }] = Value::Array(related);
     CallToolResult::structured(response)
 }
@@ -2973,6 +3395,28 @@ fn structured_error(code: &str, message: &str, retryable: bool) -> CallToolResul
     }))
 }
 
+fn stale_live_error(code: &str, snapshot: &SemanticSnapshot) -> CallToolResult {
+    let current_scene_revision = snapshot
+        .current_scene_id
+        .as_ref()
+        .and_then(|scene_id| snapshot.revisions.scene_revisions.get(scene_id))
+        .copied();
+    CallToolResult::structured_error(json!({
+        "error": {
+            "code": code,
+            "message": "requested editor revision is stale",
+            "retryable": false,
+            "current": {
+                "editor_session_id": snapshot.editor_session_id,
+                "snapshot_id": snapshot.snapshot_id,
+                "event_seq": snapshot.revisions.event_seq,
+                "current_scene_id": snapshot.current_scene_id,
+                "scene_revision": current_scene_revision,
+            }
+        }
+    }))
+}
+
 fn unix_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2993,9 +3437,9 @@ impl GodotMcpServer {
     )]
     fn godot_get_editor_state(
         &self,
-        Parameters(EmptyInput {}): Parameters<EmptyInput>,
+        Parameters(input): Parameters<LiveGuardInput>,
     ) -> CallToolResult {
-        self.query(Query::EditorState)
+        self.query(Query::EditorState, &input)
     }
 
     #[tool(
@@ -3010,9 +3454,9 @@ impl GodotMcpServer {
     )]
     fn godot_get_current_scene(
         &self,
-        Parameters(EmptyInput {}): Parameters<EmptyInput>,
+        Parameters(input): Parameters<LiveGuardInput>,
     ) -> CallToolResult {
-        self.query(Query::CurrentScene)
+        self.query(Query::CurrentScene, &input)
     }
 
     #[tool(
@@ -3027,9 +3471,119 @@ impl GodotMcpServer {
     )]
     fn godot_get_selected_nodes(
         &self,
-        Parameters(EmptyInput {}): Parameters<EmptyInput>,
+        Parameters(input): Parameters<LiveGuardInput>,
     ) -> CallToolResult {
-        self.query(Query::SelectedNodes)
+        self.query(Query::SelectedNodes, &input)
+    }
+
+    #[tool(
+        description = "Return every open Godot scene tab with live identity, dirty state, selection, and revisions",
+        annotations(
+            title = "Godot open scenes",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn godot_get_open_scenes(
+        &self,
+        Parameters(input): Parameters<LiveListInput>,
+    ) -> CallToolResult {
+        self.live_list_query(input, LiveListQuery::OpenScenes)
+    }
+
+    #[tool(
+        description = "Return the current Godot Inspector object and bounded live editable properties",
+        annotations(
+            title = "Godot Inspector state",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn godot_get_inspector_state(
+        &self,
+        Parameters(input): Parameters<LiveGuardInput>,
+    ) -> CallToolResult {
+        let snapshot = match self.live_snapshot(&input) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return error,
+        };
+        CallToolResult::structured(snapshot.inspector_state_result())
+    }
+
+    #[tool(
+        description = "Return open Godot script tabs, the active script, dirty hashes, and bounded selections without source text",
+        annotations(
+            title = "Godot open scripts",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn godot_get_open_scripts(
+        &self,
+        Parameters(input): Parameters<LiveListInput>,
+    ) -> CallToolResult {
+        self.live_list_query(input, LiveListQuery::OpenScripts)
+    }
+
+    #[tool(
+        description = "Return bounded native Godot Undo/Redo history summaries with opaque operation payloads",
+        annotations(
+            title = "Godot editor history",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn godot_get_editor_history(
+        &self,
+        Parameters(input): Parameters<LiveListInput>,
+    ) -> CallToolResult {
+        self.live_list_query(input, LiveListQuery::EditorHistory)
+    }
+
+    #[tool(
+        description = "Return the bounded redacted snapshot of Godot editor Output diagnostics without runtime inference",
+        annotations(
+            title = "Godot editor diagnostics",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn godot_get_diagnostics(
+        &self,
+        Parameters(input): Parameters<LiveListInput>,
+    ) -> CallToolResult {
+        self.live_list_query(input, LiveListQuery::Diagnostics)
+    }
+
+    #[tool(
+        description = "Return bounded Godot editor viewport metadata; screenshot pixels are unavailable in this milestone",
+        annotations(
+            title = "Godot viewport state",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn godot_get_viewport_state(
+        &self,
+        Parameters(input): Parameters<LiveGuardInput>,
+    ) -> CallToolResult {
+        let snapshot = match self.live_snapshot(&input) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return error,
+        };
+        CallToolResult::structured(snapshot.viewport_state_result())
     }
 
     #[tool(
@@ -3188,7 +3742,7 @@ impl ServerHandler for GodotMcpServer {
         )
             .with_protocol_version(ProtocolVersion::V_2025_11_25)
             .with_instructions(
-                "Read-only, project-scoped Godot context. Read godot://project/summary first for project questions and a godot://scene/{scene_id}/summary resource for scene questions. Use godot_find_usages for impact questions and cite evidence IDs. Distinguish exact, dynamic, partial, and unavailable results. All results come from checksum-verified snapshots and immutable index generations.",
+                "Read-only, project-scoped Godot context. Read godot://project/summary for saved-project questions, godot://editor/summary for current editor questions, and a godot://scene/{scene_id}/summary resource for indexed scene questions. Use the focused live-editor tools for unsaved tabs, Inspector, scripts, history, diagnostics, and viewport metadata; pass expected revision coordinates when consistency matters. Use godot_find_usages for impact questions and cite evidence IDs. Distinguish editor state from disk state and exact, dynamic, partial, stale, and unavailable results. All results come from checksum-verified snapshots and immutable index generations.",
             )
     }
 }
@@ -3983,7 +4537,7 @@ mod tests {
     #[test]
     fn unavailable_replica_is_a_retryable_tool_error() {
         let server = GodotMcpServer::new(SnapshotReplicator::new());
-        let result = server.godot_get_editor_state(Parameters(EmptyInput {}));
+        let result = server.godot_get_editor_state(Parameters(LiveGuardInput::default()));
         assert_eq!(result.is_error, Some(true));
         assert_eq!(
             structured_content(&result)
@@ -3991,6 +4545,44 @@ mod tests {
                 .and_then(Value::as_str),
             Some("editor_state_unavailable")
         );
+    }
+
+    #[test]
+    fn live_reads_fail_closed_on_stale_revision_guards() {
+        let server = GodotMcpServer::new(canonical_ready_replica());
+        let current = server.replicator.read().unwrap();
+        let stale = server.godot_get_open_scenes(Parameters(LiveListInput {
+            limit: 50,
+            cursor: None,
+            expected_editor_session_id: Some(current.editor_session_id.clone()),
+            expected_event_seq: Some(current.revisions.event_seq + 1),
+            expected_scene_revision: None,
+        }));
+        assert_eq!(stale.is_error, Some(true));
+        assert_eq!(
+            structured_content(&stale)
+                .and_then(|value| value.pointer("/error/code"))
+                .and_then(Value::as_str),
+            Some("stale_editor_state")
+        );
+        assert_eq!(
+            structured_content(&stale)
+                .and_then(|value| value.pointer("/error/current/event_seq"))
+                .and_then(Value::as_u64),
+            Some(current.revisions.event_seq)
+        );
+
+        let ready = server.godot_get_open_scenes(Parameters(LiveListInput {
+            limit: 1,
+            cursor: None,
+            expected_editor_session_id: Some(current.editor_session_id.clone()),
+            expected_event_seq: Some(current.revisions.event_seq),
+            expected_scene_revision: None,
+        }));
+        assert_ne!(ready.is_error, Some(true));
+        let content = structured_content(&ready).unwrap();
+        assert_eq!(content["editor_session_id"], current.editor_session_id);
+        assert!(content["scenes"].is_array());
     }
 
     #[test]
@@ -4003,16 +4595,22 @@ mod tests {
     }
 
     #[test]
-    fn exactly_ten_tools_are_declared_read_only_with_closed_schemas() {
+    fn exactly_sixteen_tools_are_declared_read_only_with_closed_schemas() {
         let server = GodotMcpServer::new(SnapshotReplicator::new());
         let tools = server.tool_router.list_all();
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 16);
         let names: BTreeSet<_> = tools.iter().map(|tool| tool.name.as_ref()).collect();
         assert!(names.contains("godot_get_scene_graph"));
         assert!(names.contains("godot_inspect_node"));
         assert!(names.contains("godot_search_symbols"));
         assert!(names.contains("godot_inspect_symbol"));
         assert!(names.contains("godot_find_usages"));
+        assert!(names.contains("godot_get_open_scenes"));
+        assert!(names.contains("godot_get_inspector_state"));
+        assert!(names.contains("godot_get_open_scripts"));
+        assert!(names.contains("godot_get_editor_history"));
+        assert!(names.contains("godot_get_diagnostics"));
+        assert!(names.contains("godot_get_viewport_state"));
         for tool in tools {
             let annotations = tool.annotations.as_ref().expect("annotations");
             assert_eq!(annotations.read_only_hint, Some(true));
@@ -4193,10 +4791,14 @@ mod tests {
         let resources = info.capabilities.resources.expect("resources capability");
         assert_eq!(resources.subscribe, None);
         assert_eq!(resources.list_changed, None);
-        assert_eq!(GodotMcpServer::summary_resources().len(), 1);
+        assert_eq!(GodotMcpServer::summary_resources().len(), 2);
         assert_eq!(
             GodotMcpServer::summary_resources()[0].uri,
             PROJECT_SUMMARY_URI
+        );
+        assert_eq!(
+            GodotMcpServer::summary_resources()[1].uri,
+            EDITOR_SUMMARY_URI
         );
         assert_eq!(GodotMcpServer::summary_resource_templates().len(), 1);
         assert_eq!(
@@ -4219,6 +4821,18 @@ mod tests {
         assert_eq!(value["kind"], "godot_project_summary");
         assert_eq!(value["budget"]["method"], "utf8_byte_upper_bound_v1");
         assert!(value["evidence_ids"].is_array());
+
+        let live_server = GodotMcpServer::new(canonical_ready_replica());
+        let editor = live_server
+            .read_summary_resource(EDITOR_SUMMARY_URI)
+            .expect("editor summary");
+        let ResourceContents::TextResourceContents { text, .. } = &editor.contents[0] else {
+            panic!("editor summary must be text");
+        };
+        assert!(text.len() <= EDITOR_SUMMARY_MAX_BYTES);
+        let value: Value = serde_json::from_str(text).expect("editor summary JSON");
+        assert_eq!(value["schema_version"], "editor/1.0");
+        assert!(value["revision_vector"].is_object());
 
         let scene_id = "godot:scene:uid:v1:testscene";
         let uri = format!(
@@ -4862,7 +5476,7 @@ mod tests {
     #[test]
     fn canonical_snapshot_reaches_the_selected_nodes_tool_without_a_model() {
         let server = GodotMcpServer::new(canonical_ready_replica());
-        let result = server.godot_get_selected_nodes(Parameters(EmptyInput {}));
+        let result = server.godot_get_selected_nodes(Parameters(LiveGuardInput::default()));
         assert_ne!(result.is_error, Some(true));
         let content = structured_content(&result).expect("structured tool result");
         assert_eq!(content.pointer("/scene_dirty"), Some(&Value::Bool(true)));

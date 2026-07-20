@@ -17,6 +17,10 @@ pub(crate) enum CursorTool {
     SearchSymbols,
     InspectSymbol,
     FindUsages,
+    OpenScenes,
+    OpenScripts,
+    EditorHistory,
+    Diagnostics,
 }
 
 impl CursorTool {
@@ -29,6 +33,10 @@ impl CursorTool {
             Self::SearchSymbols => "godot_search_symbols",
             Self::InspectSymbol => "godot_inspect_symbol",
             Self::FindUsages => "godot_find_usages",
+            Self::OpenScenes => "godot_get_open_scenes",
+            Self::OpenScripts => "godot_get_open_scripts",
+            Self::EditorHistory => "godot_get_editor_history",
+            Self::Diagnostics => "godot_get_diagnostics",
         }
     }
 }
@@ -43,6 +51,10 @@ pub(crate) struct CursorBinding<'a> {
     pub resource_revision: u64,
     pub scene_graph_revision: Option<u64>,
     pub script_graph_revision: Option<u64>,
+    pub editor_session_id: Option<&'a str>,
+    pub snapshot_id: Option<&'a str>,
+    pub event_seq: Option<u64>,
+    pub scene_revision: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -58,6 +70,10 @@ struct CursorPayload {
     resource_revision: u64,
     scene_graph_revision: Option<u64>,
     script_graph_revision: Option<u64>,
+    editor_session_id: Option<String>,
+    snapshot_id: Option<String>,
+    event_seq: Option<u64>,
+    scene_revision: Option<u64>,
     offset: usize,
     issued_at: u64,
     expires_at: u64,
@@ -97,6 +113,10 @@ impl CursorCodec {
             resource_revision: binding.resource_revision,
             scene_graph_revision: binding.scene_graph_revision,
             script_graph_revision: binding.script_graph_revision,
+            editor_session_id: binding.editor_session_id.map(str::to_owned),
+            snapshot_id: binding.snapshot_id.map(str::to_owned),
+            event_seq: binding.event_seq,
+            scene_revision: binding.scene_revision,
             offset,
             issued_at: now,
             expires_at: now.checked_add(CURSOR_TTL_SECONDS).ok_or(())?,
@@ -153,6 +173,10 @@ impl CursorCodec {
             || payload.resource_revision != binding.resource_revision
             || payload.scene_graph_revision != binding.scene_graph_revision
             || payload.script_graph_revision != binding.script_graph_revision
+            || payload.editor_session_id.as_deref() != binding.editor_session_id
+            || payload.snapshot_id.as_deref() != binding.snapshot_id
+            || payload.event_seq != binding.event_seq
+            || payload.scene_revision != binding.scene_revision
             || payload.issued_at > now.saturating_add(5)
             || payload.expires_at < now
             || payload.expires_at.checked_sub(payload.issued_at) != Some(CURSOR_TTL_SECONDS)
@@ -178,6 +202,10 @@ mod tests {
             resource_revision: 2,
             scene_graph_revision: None,
             script_graph_revision: None,
+            editor_session_id: None,
+            snapshot_id: None,
+            event_seq: None,
+            scene_revision: None,
         }
     }
 
@@ -240,5 +268,16 @@ mod tests {
                 .validate(&script_cursor, &stale_resource, 1_001)
                 .is_err()
         );
+
+        let mut live_binding = binding(CursorTool::OpenScenes);
+        live_binding.generation_id = "snapshot:one";
+        live_binding.editor_session_id = Some("editor:one");
+        live_binding.snapshot_id = Some("snapshot:one");
+        live_binding.event_seq = Some(10);
+        live_binding.scene_revision = Some(4);
+        let live_cursor = codec.issue(&live_binding, 1, 1_000).unwrap();
+        let mut stale_live = live_binding;
+        stale_live.event_seq = Some(11);
+        assert!(codec.validate(&live_cursor, &stale_live, 1_001).is_err());
     }
 }
