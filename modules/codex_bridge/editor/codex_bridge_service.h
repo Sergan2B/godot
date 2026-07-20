@@ -37,6 +37,8 @@
 #include "scene_state_adapter.h"
 #include "script_graph_adapter.h"
 
+#include "core/templates/hash_set.h"
+
 #include "editor/plugins/editor_plugin.h"
 
 #include "modules/codex_bridge/transport/bridge_transport_worker.h"
@@ -75,6 +77,7 @@ private:
 	};
 	HashMap<int, NativeHistoryObservation> native_history_observations;
 	Dictionary native_history_transitions;
+	HashSet<String> observed_scene_ids;
 
 	static void _dispatch_command(const MainThreadDispatcher::Command &p_command, void *p_userdata);
 	Dictionary _make_context() const;
@@ -84,9 +87,11 @@ private:
 	void _publish_event(const String &p_event_type, const String &p_property = String(), bool p_scene_mutation = false, bool p_native_operation = false);
 	void _on_selection_changed();
 	void _on_scene_changed();
+	void _on_scene_closed(const String &p_path);
 	void _on_property_edited(const String &p_property);
 	void _on_undo_redo_version_changed();
 	bool _observe_native_histories(bool p_record_changes);
+	bool _refresh_open_scene_ids(bool p_retire_missing);
 	void _on_filesystem_changed();
 	void _on_resources_reimported(const Vector<String> &p_paths);
 	void _on_resources_reload(const PackedStringArray &p_paths);

@@ -56,10 +56,13 @@ pub struct SemanticSnapshot {
     pub inspector_state: Option<Value>,
     pub script_state: Option<Value>,
     pub history_state: Option<Value>,
+    pub diagnostic_state: Option<Value>,
+    pub viewport_state: Option<Value>,
     pub scenes: BTreeMap<String, Value>,
     pub nodes: BTreeMap<String, Value>,
     pub script_tabs: BTreeMap<String, Value>,
     pub histories: BTreeMap<String, Value>,
+    pub diagnostics: BTreeMap<String, Value>,
     pub current_scene_id: Option<String>,
     pub selected_node_ids: Vec<String>,
     pub truncated: bool,
@@ -75,10 +78,13 @@ impl SemanticSnapshot {
         let mut inspector_state = None;
         let mut script_state = None;
         let mut history_state = None;
+        let mut diagnostic_state = None;
+        let mut viewport_state = None;
         let mut scenes = BTreeMap::new();
         let mut nodes = BTreeMap::new();
         let mut script_tabs = BTreeMap::new();
         let mut histories = BTreeMap::new();
+        let mut diagnostics = BTreeMap::new();
         let mut truncated = metadata
             .limits_applied
             .get("truncated")
@@ -130,6 +136,21 @@ impl SemanticSnapshot {
                         return Err(ReplicaError::DuplicateEntity(entity_id));
                     }
                 }
+                "diagnostic_state" => {
+                    if diagnostic_state.replace(entity).is_some() {
+                        return Err(ReplicaError::DuplicateEntity(entity_id));
+                    }
+                }
+                "viewport_state" => {
+                    if viewport_state.replace(entity).is_some() {
+                        return Err(ReplicaError::DuplicateEntity(entity_id));
+                    }
+                }
+                "editor_diagnostic" => {
+                    if diagnostics.insert(entity_id.clone(), entity).is_some() {
+                        return Err(ReplicaError::DuplicateEntity(entity_id));
+                    }
+                }
                 "scene" => {
                     if scenes.insert(entity_id.clone(), entity).is_some() {
                         return Err(ReplicaError::DuplicateEntity(entity_id));
@@ -174,10 +195,13 @@ impl SemanticSnapshot {
             inspector_state,
             script_state,
             history_state,
+            diagnostic_state,
+            viewport_state,
             scenes,
             nodes,
             script_tabs,
             histories,
+            diagnostics,
             current_scene_id,
             selected_node_ids,
             truncated,
@@ -362,6 +386,40 @@ impl SemanticSnapshot {
             "truncated": self.truncated,
             "entities": self.histories.values().cloned().collect::<Vec<_>>(),
             "history_state": self.history_state,
+            "evidence": [{"source": "live_editor_snapshot", "freshness": "current"}],
+        })
+    }
+
+    pub fn diagnostics_result(&self) -> Value {
+        let mut diagnostics = self.diagnostics.values().cloned().collect::<Vec<_>>();
+        diagnostics.sort_by_key(|value| value.get("output_seq").and_then(Value::as_u64));
+        json!({
+            "schema_version": "editor/1.0",
+            "project_id": self.project_id,
+            "editor_session_id": self.editor_session_id,
+            "snapshot_id": self.snapshot_id,
+            "revision_vector": self.revisions,
+            "status": "ready",
+            "freshness": "current",
+            "truncated": self.truncated,
+            "entities": diagnostics,
+            "diagnostic_state": self.diagnostic_state,
+            "evidence": [{"source": "editor_output_snapshot", "freshness": "current"}],
+        })
+    }
+
+    pub fn viewport_state_result(&self) -> Value {
+        json!({
+            "schema_version": "editor/1.0",
+            "project_id": self.project_id,
+            "editor_session_id": self.editor_session_id,
+            "snapshot_id": self.snapshot_id,
+            "revision_vector": self.revisions,
+            "status": "ready",
+            "freshness": "current",
+            "truncated": self.truncated,
+            "entities": self.viewport_state.iter().cloned().collect::<Vec<_>>(),
+            "viewport": self.viewport_state,
             "evidence": [{"source": "live_editor_snapshot", "freshness": "current"}],
         })
     }
@@ -684,6 +742,25 @@ mod tests {
                     "transition_kind": "unknown",
                     "last_operation": {"kind": "opaque"}
                 }),
+                json!({
+                    "kind": "diagnostic_state",
+                    "entity_id": "diagnostics:cccccccccccccccccccccccccccccccc",
+                    "diagnostic_ids": ["diagnostic:dddddddddddddddddddddddddddddddd"],
+                    "omitted_count": 0
+                }),
+                json!({
+                    "kind": "editor_diagnostic",
+                    "entity_id": "diagnostic:dddddddddddddddddddddddddddddddd",
+                    "output_seq": 4,
+                    "severity": "warning",
+                    "runtime_semantics_inferred": false
+                }),
+                json!({
+                    "kind": "viewport_state",
+                    "entity_id": "viewport:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                    "active_kind": "2d",
+                    "screenshot_available": false
+                }),
             ],
         )
         .unwrap();
@@ -694,6 +771,14 @@ mod tests {
         assert_eq!(
             snapshot.editor_history_result()["entities"][0]["last_operation"]["kind"],
             "opaque"
+        );
+        assert_eq!(
+            snapshot.diagnostics_result()["entities"][0]["output_seq"],
+            4
+        );
+        assert_eq!(
+            snapshot.viewport_state_result()["viewport"]["screenshot_available"],
+            false
         );
     }
 

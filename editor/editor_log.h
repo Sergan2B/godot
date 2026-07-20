@@ -56,6 +56,7 @@ private:
 		String text;
 		MessageType type;
 		int count = 1;
+		uint64_t output_sequence = 0;
 		bool clear = true;
 
 		LogMessage() {}
@@ -127,6 +128,7 @@ private:
 	int line_limit = 10000;
 
 	Vector<LogMessage> messages;
+	uint64_t next_output_sequence = 0;
 	// Maps MessageTypes to LogFilters for convenient access and storage (don't need 1 member per filter).
 	HashMap<MessageType, LogFilter *> type_filter_map;
 
@@ -180,6 +182,8 @@ protected:
 
 public:
 	void add_message(const String &p_msg, MessageType p_type = MSG_TYPE_STD);
+	Array get_messages_snapshot(int p_max_messages) const;
+	int get_message_count() const { return messages.size(); }
 	void register_undo_redo(UndoRedo *p_undo_redo);
 	void deinit();
 

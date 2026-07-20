@@ -45,6 +45,8 @@ public:
 	static constexpr int MAX_INSPECTOR_PROPERTIES = 512;
 	static constexpr int MAX_OPEN_SCRIPTS = 256;
 	static constexpr int MAX_SCRIPT_SELECTIONS = 32;
+	static constexpr int MAX_DIAGNOSTICS = 200;
+	static constexpr int MAX_DIAGNOSTIC_BYTES = 262144;
 	static constexpr int MAX_STRING_CHARACTERS = 16384;
 	static constexpr int MAX_IDENTITY_CHARACTERS = 1024;
 	static constexpr int MAX_PROJECTED_VALUE_BYTES = 65536;
@@ -61,5 +63,6 @@ private:
 	static String _make_node_id(const String &p_editor_session_id, const String &p_scene_id, const String &p_node_path);
 	static String _make_history_id(const String &p_editor_session_id, int p_native_history_id);
 	static String _make_script_id(const String &p_editor_session_id, const String &p_identity);
+	static String _redact_output_message(const String &p_message, bool &r_redacted);
 	static Array _capture_properties(Object *p_object, int p_limit, const String &p_scene_id, const Dictionary &p_revisions, bool &r_truncated, int &r_total_bytes);
 };

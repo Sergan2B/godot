@@ -32,19 +32,25 @@
 
 #include "bounded_variant_projector.h"
 
+#include "core/config/project_settings.h"
 #include "core/crypto/crypto_core.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/object/property_info.h"
 #include "core/object/script_language.h"
 #include "core/os/thread.h"
+#include "core/os/os.h"
 #include "core/templates/hash_set.h"
 #include "editor/editor_data.h"
 #include "editor/editor_interface.h"
+#include "editor/editor_log.h"
+#include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/inspector/editor_inspector.h"
 #include "editor/script/script_editor_plugin.h"
+#include "editor/scene/3d/node_3d_editor_plugin.h"
+#include "editor/scene/canvas_item_editor_plugin.h"
 #include "scene/main/node.h"
 
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
@@ -80,6 +86,53 @@ String EditorContextAdapter::_make_history_id(const String &p_editor_session_id,
 
 String EditorContextAdapter::_make_script_id(const String &p_editor_session_id, const String &p_identity) {
 	return _make_opaque_id("script:", "godot-codex-live-script/v1\n" + p_editor_session_id, p_identity);
+}
+
+String EditorContextAdapter::_redact_output_message(const String &p_message, bool &r_redacted) {
+	String message = p_message;
+	const String lowered = message.to_lower();
+	static const char *sensitive_markers[] = { "authorization:", "bearer ", "api_key", "apikey", "password=", "password:", "secret=", "secret:", "token=", "token:" };
+	for (const char *marker : sensitive_markers) {
+		if (lowered.contains(marker)) {
+			r_redacted = true;
+			return "<redacted sensitive output>";
+		}
+	}
+	const String project_root = ProjectSettings::get_singleton() ? ProjectSettings::get_singleton()->get_resource_path().replace("\\", "/").trim_suffix("/") : String();
+	if (!project_root.is_empty()) {
+		const String normalized = message.replace("\\", "/");
+		if (normalized.contains(project_root)) {
+			message = normalized.replace(project_root, "<project>");
+			r_redacted = true;
+		}
+	}
+	String home = OS::get_singleton()->get_environment("HOME");
+	if (home.is_empty()) {
+		home = OS::get_singleton()->get_environment("USERPROFILE");
+	}
+	home = home.replace("\\", "/").trim_suffix("/");
+	if (!home.is_empty()) {
+		const String normalized = message.replace("\\", "/");
+		if (normalized.contains(home)) {
+			message = normalized.replace(home, "<home>");
+			r_redacted = true;
+		}
+	}
+	if (message.utf8().length() > MAX_STRING_CHARACTERS) {
+		int low = 0;
+		int high = message.length();
+		while (low < high) {
+			const int middle = (low + high + 1) / 2;
+			if (message.left(middle).utf8().length() <= MAX_STRING_CHARACTERS) {
+				low = middle;
+			} else {
+				high = middle - 1;
+			}
+		}
+		message = message.left(low);
+		r_redacted = true;
+	}
+	return message;
 }
 
 String EditorContextAdapter::_bounded_identity(const String &p_value, bool &r_truncated) {
@@ -503,6 +556,83 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		history_state["history_ids"] = history_ids;
 		history_state["last_operation_seq"] = p_revisions.get("operation_seq", 0);
 		entities.push_back(history_state);
+
+		Array diagnostic_ids;
+		int diagnostic_bytes = 0;
+		int omitted_diagnostics = 0;
+		EditorLog *editor_log = EditorNode::get_log();
+		if (editor_log) {
+			const Array output_messages = editor_log->get_messages_snapshot(MAX_DIAGNOSTICS);
+			omitted_diagnostics = MAX(0, editor_log->get_message_count() - output_messages.size());
+			for (int message_index = 0; message_index < output_messages.size(); message_index++) {
+				const Dictionary raw_message = output_messages[message_index];
+				bool redacted = false;
+				const String message = _redact_output_message(raw_message.get("text", String()), redacted);
+				Dictionary diagnostic;
+				diagnostic["kind"] = "editor_diagnostic";
+				const int64_t output_seq = raw_message.get("output_seq", 0);
+				const String diagnostic_id = _make_opaque_id("diagnostic:", "godot-codex-output/v1\n" + p_editor_session_id, String::num_int64(output_seq));
+				diagnostic["entity_id"] = diagnostic_id;
+				diagnostic["source"] = "editor_output";
+				const int message_type = raw_message.get("type", 0);
+				diagnostic["severity"] = message_type == EditorLog::MSG_TYPE_ERROR ? "error" : (message_type == EditorLog::MSG_TYPE_WARNING ? "warning" : "info");
+				diagnostic["message"] = message;
+				diagnostic["repeat_count"] = raw_message.get("count", 1);
+				diagnostic["output_seq"] = output_seq;
+				diagnostic["redacted"] = redacted;
+				diagnostic["runtime_semantics_inferred"] = false;
+				const int encoded_bytes = JSON::stringify(diagnostic, "", true, true).utf8().length();
+				if (diagnostic_bytes + encoded_bytes > MAX_DIAGNOSTIC_BYTES) {
+					omitted_diagnostics += output_messages.size() - message_index;
+					truncated = true;
+					break;
+				}
+				diagnostic_bytes += encoded_bytes;
+				diagnostic_ids.push_back(diagnostic_id);
+				entities.push_back(diagnostic);
+			}
+		}
+		Dictionary diagnostic_state;
+		diagnostic_state["kind"] = "diagnostic_state";
+		diagnostic_state["entity_id"] = _make_opaque_id("diagnostics:", "godot-codex-diagnostic-state/v1", p_editor_session_id);
+		diagnostic_state["diagnostic_ids"] = diagnostic_ids;
+		diagnostic_state["omitted_count"] = omitted_diagnostics;
+		diagnostic_state["encoded_bytes"] = diagnostic_bytes;
+		entities.push_back(diagnostic_state);
+
+		Dictionary viewport_entity;
+		viewport_entity["kind"] = "viewport_state";
+		viewport_entity["entity_id"] = _make_opaque_id("viewport:", "godot-codex-viewport/v1", p_editor_session_id);
+		EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+		const int selected_screen = main_screen ? main_screen->get_selected_index() : -1;
+		static const char *screen_names[] = { "2d", "3d", "script", "game", "asset_library" };
+		viewport_entity["active_kind"] = selected_screen >= 0 && selected_screen < 5 ? screen_names[selected_screen] : "unknown";
+		viewport_entity["visible"] = main_screen && main_screen->is_visible_in_tree();
+		if (main_screen && main_screen->get_control()) {
+			const Size2 logical_size = main_screen->get_control()->get_size();
+			viewport_entity["logical_size"] = Vector2i((int)logical_size.x, (int)logical_size.y);
+			viewport_entity["scale"] = MAX(1.0, (double)EDSCALE);
+		}
+		if (CanvasItemEditor::get_singleton()) {
+			const Dictionary state_2d = CanvasItemEditor::get_singleton()->get_state();
+			Dictionary camera_2d;
+			camera_2d["zoom"] = state_2d.get("zoom", 1.0);
+			camera_2d["offset"] = state_2d.get("ofs", Vector2());
+			viewport_entity["camera_2d"] = _project_variant(camera_2d, 0, truncated);
+		}
+		if (Node3DEditor::get_singleton()) {
+			const Dictionary state_3d = Node3DEditor::get_singleton()->get_state();
+			Dictionary projection_3d;
+			projection_3d["fov"] = state_3d.get("fov", 0.0);
+			projection_3d["znear"] = state_3d.get("znear", 0.0);
+			projection_3d["zfar"] = state_3d.get("zfar", 0.0);
+			projection_3d["viewport_mode"] = state_3d.get("viewport_mode", 0);
+			projection_3d["viewports"] = state_3d.get("viewports", Array());
+			viewport_entity["camera_3d"] = _project_variant(projection_3d, 0, truncated);
+		}
+		viewport_entity["screenshot_available"] = false;
+		viewport_entity["screenshot_omitted_reason"] = "deferred_to_sprint_8";
+		entities.push_back(viewport_entity);
 	}
 
 	editor_entity["current_scene_id"] = current_scene_id;

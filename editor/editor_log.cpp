@@ -272,6 +272,7 @@ void EditorLog::_process_message(const String &p_msg, MessageType p_type, bool p
 	} else {
 		// Different message to the previous one received.
 		LogMessage message(p_msg, p_type, p_clear);
+		message.output_sequence = ++next_output_sequence;
 		_add_log_line(message);
 		messages.push_back(message);
 	}
@@ -291,6 +292,22 @@ void EditorLog::add_message(const String &p_msg, MessageType p_type) {
 	for (int i = 0; i < line_count; i++) {
 		_process_message(lines[i], p_type, i == line_count - 1);
 	}
+}
+
+Array EditorLog::get_messages_snapshot(int p_max_messages) const {
+	Array snapshot;
+	const int limit = CLAMP(p_max_messages, 0, messages.size());
+	const int first = messages.size() - limit;
+	for (int message_index = first; message_index < messages.size(); message_index++) {
+		const LogMessage &message = messages[message_index];
+		Dictionary entry;
+		entry["text"] = message.text;
+		entry["type"] = (int64_t)message.type;
+		entry["count"] = message.count;
+		entry["output_seq"] = (int64_t)message.output_sequence;
+		snapshot.push_back(entry);
+	}
+	return snapshot;
 }
 
 void EditorLog::_set_dock_tab_icon(Ref<Texture2D> p_icon) {

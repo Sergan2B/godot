@@ -187,6 +187,7 @@ void CodexBridgeService::_connect_editor_signals() {
 		selection->connect(SNAME("selection_changed"), callable_mp(this, &CodexBridgeService::_on_selection_changed));
 	}
 	EditorNode::get_singleton()->connect(SNAME("scene_changed"), callable_mp(this, &CodexBridgeService::_on_scene_changed));
+	EditorNode::get_singleton()->connect(SNAME("scene_closed"), callable_mp(this, &CodexBridgeService::_on_scene_closed));
 	if (InspectorDock::get_singleton() && InspectorDock::get_inspector_singleton()) {
 		InspectorDock::get_inspector_singleton()->connect(SNAME("property_edited"), callable_mp(this, &CodexBridgeService::_on_property_edited));
 	}
@@ -215,6 +216,9 @@ void CodexBridgeService::_disconnect_editor_signals() {
 	}
 	if (EditorNode::get_singleton()->is_connected(SNAME("scene_changed"), callable_mp(this, &CodexBridgeService::_on_scene_changed))) {
 		EditorNode::get_singleton()->disconnect(SNAME("scene_changed"), callable_mp(this, &CodexBridgeService::_on_scene_changed));
+	}
+	if (EditorNode::get_singleton()->is_connected(SNAME("scene_closed"), callable_mp(this, &CodexBridgeService::_on_scene_closed))) {
+		EditorNode::get_singleton()->disconnect(SNAME("scene_closed"), callable_mp(this, &CodexBridgeService::_on_scene_closed));
 	}
 	if (InspectorDock::get_singleton() && InspectorDock::get_inspector_singleton() && InspectorDock::get_inspector_singleton()->is_connected(SNAME("property_edited"), callable_mp(this, &CodexBridgeService::_on_property_edited))) {
 		InspectorDock::get_inspector_singleton()->disconnect(SNAME("property_edited"), callable_mp(this, &CodexBridgeService::_on_property_edited));
@@ -286,7 +290,14 @@ void CodexBridgeService::_on_selection_changed() {
 }
 
 void CodexBridgeService::_on_scene_changed() {
+	_refresh_open_scene_ids(true);
 	_publish_event("scene_changed", String(), true);
+}
+
+void CodexBridgeService::_on_scene_closed(const String &p_path) {
+	(void)p_path;
+	_refresh_open_scene_ids(true);
+	_publish_event("scene_closed");
 }
 
 void CodexBridgeService::_on_property_edited(const String &p_property) {
@@ -361,6 +372,29 @@ bool CodexBridgeService::_observe_native_histories(bool p_record_changes) {
 	return changed;
 }
 
+bool CodexBridgeService::_refresh_open_scene_ids(bool p_retire_missing) {
+	HashSet<String> current_scene_ids;
+	EditorData &editor_data = EditorNode::get_editor_data();
+	for (int scene_index = 0; scene_index < editor_data.get_edited_scene_count(); scene_index++) {
+		Node *scene_root = editor_data.get_edited_scene_root(scene_index);
+		if (!scene_root) {
+			continue;
+		}
+		current_scene_ids.insert(EditorContextAdapter::make_scene_id(transport_worker.get_editor_session_id(), scene_root));
+	}
+	bool retired = false;
+	if (p_retire_missing) {
+		for (const String &scene_id : observed_scene_ids) {
+			if (!current_scene_ids.has(scene_id)) {
+				revision_clock.retire_scene(scene_id);
+				retired = true;
+			}
+		}
+	}
+	observed_scene_ids = current_scene_ids;
+	return retired;
+}
+
 void CodexBridgeService::_on_undo_redo_version_changed() {
 	native_operation_pending = _observe_native_histories(true) || native_operation_pending;
 	if (!scene_change_pending) {
@@ -380,6 +414,7 @@ void CodexBridgeService::_on_resources_reimported(const Vector<String> &p_paths)
 	scene_state_adapter.request_refresh();
 	script_graph_adapter.invalidate_saved_paths(p_paths);
 	script_graph_adapter.request_refresh();
+	_publish_event("resources_reimported");
 }
 
 void CodexBridgeService::_on_resources_reload(const PackedStringArray &p_paths) {
@@ -408,6 +443,7 @@ void CodexBridgeService::_flush_scene_change() {
 
 void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Dictionary &p_params) {
 	Dictionary snapshot;
+	_refresh_open_scene_ids(true);
 	const Dictionary revisions = revision_clock.get_revision_vector();
 	const bool full_live_context = String(p_params.get("_protocol_version", "1.1")) == "1.5";
 	if (EditorContextAdapter::capture(transport_worker.get_project_id(), transport_worker.get_editor_session_id(), revisions, snapshot, full_live_context, native_history_transitions) != OK) {
@@ -877,6 +913,8 @@ Error CodexBridgeService::start() {
 	frame_telemetry.reset(OS::get_singleton()->get_environment("GODOT_CODEX_EVIDENCE_TELEMETRY") == "1");
 	native_history_observations.clear();
 	native_history_transitions.clear();
+	observed_scene_ids.clear();
+	_refresh_open_scene_ids(false);
 	_observe_native_histories(false);
 	_connect_editor_signals();
 	state = STATE_RUNNING;
@@ -899,6 +937,7 @@ void CodexBridgeService::stop() {
 	native_operation_pending = false;
 	native_history_observations.clear();
 	native_history_transitions.clear();
+	observed_scene_ids.clear();
 	pending_property.clear();
 	dispatcher.begin_shutdown();
 	const BridgeTransportWorker::StopResult stop_result = transport_worker.stop();
