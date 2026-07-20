@@ -4,12 +4,17 @@
 //! Physical stores implement these interfaces without changing the observable
 //! generation, revision, validation, and query rules.
 
+mod context;
 mod script;
 mod segment;
 mod semantic;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+pub use context::{
+    ContextSummaryError, PROJECT_SUMMARY_TOKEN_BUDGET, SCENE_SUMMARY_TOKEN_BUDGET,
+    SUMMARY_BUDGET_METHOD, build_project_summary, build_scene_summary,
+};
 pub use script::{
     ScriptAdapterAvailability, ScriptAdapterProfile, ScriptAdapterStatus, ScriptCompleteness,
     ScriptConfidence, ScriptDiagnostic, ScriptDiagnosticAuthority, ScriptDiagnosticSeverity,

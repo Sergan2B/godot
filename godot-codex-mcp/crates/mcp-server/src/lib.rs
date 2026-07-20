@@ -5,14 +5,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use cursor::{CursorBinding, CursorCodec, CursorTool};
 use godot_codex_index_store::{
-    DependencyEdge, FIND_USAGES_DEFAULT_LIMIT, FindUsagesQuery, FindUsagesQueryError,
-    FindUsagesScope, IndexRead, IndexReadSnapshot, ResourceEntity, ResourceQuery, ResourceSelector,
-    SceneEntity, SceneNode, SceneProperty, SceneRelation, ScriptAdapterAvailability,
-    ScriptCompleteness, ScriptDiagnostic, ScriptDocument, ScriptEndpoint, ScriptLanguage,
-    ScriptPredicate, ScriptRelation, ScriptSourceRange, ScriptSymbol, ScriptSymbolInspectionQuery,
-    ScriptSymbolInspectionResult, ScriptSymbolKind, ScriptSymbolMatch, ScriptSymbolQuery,
-    ScriptSymbolQueryResult, ScriptSymbolSelector, SemanticConfidence, SemanticEntityKind,
-    SemanticQueryIndex, StoreError, signal_entity_id,
+    ContextSummaryError, DependencyEdge, FIND_USAGES_DEFAULT_LIMIT, FindUsagesQuery,
+    FindUsagesQueryError, FindUsagesScope, IndexRead, IndexReadSnapshot, ResourceEntity,
+    ResourceQuery, ResourceSelector, SceneEntity, SceneNode, SceneProperty, SceneRelation,
+    ScriptAdapterAvailability, ScriptCompleteness, ScriptDiagnostic, ScriptDocument,
+    ScriptEndpoint, ScriptLanguage, ScriptPredicate, ScriptRelation, ScriptSourceRange,
+    ScriptSymbol, ScriptSymbolInspectionQuery, ScriptSymbolInspectionResult, ScriptSymbolKind,
+    ScriptSymbolMatch, ScriptSymbolQuery, ScriptSymbolQueryResult, ScriptSymbolSelector,
+    SemanticConfidence, SemanticEntityKind, SemanticQueryIndex, StoreError, build_project_summary,
+    build_scene_summary, signal_entity_id,
 };
 use godot_codex_resource_indexer::{
     ResourceIndexReadError, ResourceIndexReader, SceneIndexReadError, SceneIndexReader,
@@ -21,9 +22,14 @@ use godot_codex_resource_indexer::{
 };
 use godot_codex_semantic_model::SnapshotReplicator;
 use rmcp::{
-    ServerHandler,
+    ErrorData as McpError, RoleServer, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{CallToolResult, ProtocolVersion, ServerCapabilities, ServerInfo},
+    model::{
+        CallToolResult, ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams,
+        ProtocolVersion, ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents,
+        ResourceTemplate, ServerCapabilities, ServerInfo,
+    },
+    service::RequestContext,
     tool, tool_handler, tool_router,
 };
 use serde_json::{Value, json};
@@ -32,6 +38,9 @@ const DEFAULT_RESOURCE_LIMIT: usize = 50;
 const MAX_RESOURCE_LIMIT: usize = 200;
 const MAX_TOTAL_RESULTS: usize = 250_000;
 const MAX_SCRIPT_DIAGNOSTICS: usize = 200;
+const PROJECT_SUMMARY_URI: &str = "godot://project/summary";
+const SCENE_SUMMARY_PREFIX: &str = "godot://scene/";
+const SCENE_SUMMARY_SUFFIX: &str = "/summary";
 
 fn default_resource_limit() -> usize {
     DEFAULT_RESOURCE_LIMIT
@@ -1003,6 +1012,46 @@ impl GodotMcpServer {
             "next_cursor": next_cursor,
         }))
     }
+
+    fn summary_resources() -> Vec<Resource> {
+        vec![
+            Resource::new(PROJECT_SUMMARY_URI, "godot_project_summary")
+                .with_title("Godot project semantic summary")
+                .with_description(
+                    "Deterministic bounded project context with revisions and evidence IDs",
+                )
+                .with_mime_type("application/json"),
+        ]
+    }
+
+    fn summary_resource_templates() -> Vec<ResourceTemplate> {
+        vec![
+            ResourceTemplate::new("godot://scene/{scene_id}/summary", "godot_scene_summary")
+                .with_title("Godot scene semantic summary")
+                .with_description(
+                    "Deterministic bounded context for one percent-encoded canonical scene ID",
+                )
+                .with_mime_type("application/json"),
+        ]
+    }
+
+    fn read_summary_resource(&self, uri: &str) -> Result<ReadResourceResult, McpError> {
+        let snapshot = self
+            .semantic_index
+            .pin_current()
+            .map_err(summary_index_error)?;
+        let text = if uri == PROJECT_SUMMARY_URI {
+            build_project_summary(snapshot.generation(), snapshot.query_index())
+                .map_err(summary_build_error)?
+        } else {
+            let scene_id = parse_scene_summary_uri(uri)?;
+            build_scene_summary(snapshot.generation(), snapshot.query_index(), &scene_id)
+                .map_err(summary_build_error)?
+        };
+        Ok(ReadResourceResult::new(vec![
+            ResourceContents::text(text, uri).with_mime_type("application/json"),
+        ]))
+    }
 }
 
 fn resolve_find_usages_target(
@@ -1245,6 +1294,103 @@ fn find_usages_error(error: FindUsagesQueryError) -> CallToolResult {
             "usage query exceeded the bounded result window",
             false,
         ),
+    }
+}
+
+fn parse_scene_summary_uri(uri: &str) -> Result<String, McpError> {
+    let segment = uri
+        .strip_prefix(SCENE_SUMMARY_PREFIX)
+        .and_then(|value| value.strip_suffix(SCENE_SUMMARY_SUFFIX))
+        .filter(|value| {
+            !value.is_empty()
+                && value.len() <= 768
+                && !value.contains(['/', '?', '#'])
+                && !value.chars().any(char::is_control)
+        })
+        .ok_or_else(|| summary_not_found("invalid scene summary URI"))?;
+    let mut decoded = Vec::with_capacity(segment.len());
+    let bytes = segment.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' if index + 2 < bytes.len() => {
+                let high = uppercase_hex(bytes[index + 1])
+                    .ok_or_else(|| summary_not_found("invalid scene summary URI"))?;
+                let low = uppercase_hex(bytes[index + 2])
+                    .ok_or_else(|| summary_not_found("invalid scene summary URI"))?;
+                decoded.push((high << 4) | low);
+                index += 3;
+            }
+            byte if is_unreserved(byte) => {
+                decoded.push(byte);
+                index += 1;
+            }
+            _ => return Err(summary_not_found("invalid scene summary URI")),
+        }
+    }
+    let scene_id =
+        String::from_utf8(decoded).map_err(|_| summary_not_found("invalid scene summary URI"))?;
+    if !scene_id.starts_with("godot:scene:") || encode_uri_segment(&scene_id) != segment {
+        return Err(summary_not_found("invalid scene summary URI"));
+    }
+    Ok(scene_id)
+}
+
+fn encode_uri_segment(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        if is_unreserved(byte) {
+            encoded.push(char::from(byte));
+        } else {
+            const HEX: &[u8; 16] = b"0123456789ABCDEF";
+            encoded.push('%');
+            encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+            encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+    }
+    encoded
+}
+
+fn is_unreserved(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~')
+}
+
+fn uppercase_hex(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn summary_not_found(message: &'static str) -> McpError {
+    McpError::resource_not_found(message, Some(json!({"code": "resource_not_found"})))
+}
+
+fn summary_index_error(error: SemanticIndexReadError) -> McpError {
+    let code = match error {
+        SemanticIndexReadError::ProjectNotBound => "project_not_bound",
+        SemanticIndexReadError::NotReady => "index_not_ready",
+        SemanticIndexReadError::NotCurrent | SemanticIndexReadError::TornGeneration => {
+            "index_not_current"
+        }
+        SemanticIndexReadError::CapabilityUnavailable => "capability_unavailable",
+    };
+    McpError::resource_not_found(
+        "semantic summary is not currently available",
+        Some(json!({"code": code, "retryable": code != "capability_unavailable"})),
+    )
+}
+
+fn summary_build_error(error: ContextSummaryError) -> McpError {
+    match error {
+        ContextSummaryError::SceneNotFound => summary_not_found("scene summary was not found"),
+        ContextSummaryError::BudgetTooSmall | ContextSummaryError::Serialization => {
+            McpError::internal_error(
+                "semantic summary could not be bounded".to_owned(),
+                Some(json!({"code": "summary_unavailable"})),
+            )
+        }
     }
 }
 
@@ -2831,11 +2977,44 @@ impl GodotMcpServer {
 
 #[tool_handler]
 impl ServerHandler for GodotMcpServer {
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, McpError> {
+        Ok(ListResourcesResult::with_all_items(
+            Self::summary_resources(),
+        ))
+    }
+
+    async fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, McpError> {
+        Ok(ListResourceTemplatesResult::with_all_items(
+            Self::summary_resource_templates(),
+        ))
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, McpError> {
+        self.read_summary_resource(&request.uri)
+    }
+
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
+        )
             .with_protocol_version(ProtocolVersion::V_2025_11_25)
             .with_instructions(
-                "Read-only, project-scoped Godot editor, resource, composed scene, and saved-script symbol context. Results are returned only from checksum-verified current snapshots and immutable index generations.",
+                "Read-only, project-scoped Godot context. Read godot://project/summary first for project questions and a godot://scene/{scene_id}/summary resource for scene questions. Use godot_find_usages for impact questions and cite evidence IDs. Distinguish exact, dynamic, partial, and unavailable results. All results come from checksum-verified snapshots and immutable index generations.",
             )
     }
 }
@@ -3831,6 +4010,70 @@ mod tests {
             .and_then(|value| value["usages"].as_array())
             .expect("symbol usages");
         assert!(usages.iter().any(|usage| usage["predicate"] == "calls"));
+    }
+
+    #[test]
+    fn summary_resources_are_stable_bounded_and_do_not_enable_subscriptions() {
+        let server = indexed_script_server();
+        let info = server.get_info();
+        let resources = info.capabilities.resources.expect("resources capability");
+        assert_eq!(resources.subscribe, None);
+        assert_eq!(resources.list_changed, None);
+        assert_eq!(GodotMcpServer::summary_resources().len(), 1);
+        assert_eq!(
+            GodotMcpServer::summary_resources()[0].uri,
+            PROJECT_SUMMARY_URI
+        );
+        assert_eq!(GodotMcpServer::summary_resource_templates().len(), 1);
+        assert_eq!(
+            GodotMcpServer::summary_resource_templates()[0].uri_template,
+            "godot://scene/{scene_id}/summary"
+        );
+
+        let project = server
+            .read_summary_resource(PROJECT_SUMMARY_URI)
+            .expect("project summary");
+        let ResourceContents::TextResourceContents {
+            text, mime_type, ..
+        } = &project.contents[0]
+        else {
+            panic!("project summary must be text");
+        };
+        assert_eq!(mime_type.as_deref(), Some("application/json"));
+        assert!(text.len() <= 4_096);
+        let value: Value = serde_json::from_str(text).expect("project summary JSON");
+        assert_eq!(value["kind"], "godot_project_summary");
+        assert_eq!(value["budget"]["method"], "utf8_byte_upper_bound_v1");
+        assert!(value["evidence_ids"].is_array());
+
+        let scene_id = "godot:scene:uid:v1:testscene";
+        let uri = format!(
+            "{SCENE_SUMMARY_PREFIX}{}{SCENE_SUMMARY_SUFFIX}",
+            encode_uri_segment(scene_id)
+        );
+        let scene = server.read_summary_resource(&uri).expect("scene summary");
+        let ResourceContents::TextResourceContents { text, .. } = &scene.contents[0] else {
+            panic!("scene summary must be text");
+        };
+        assert!(text.len() <= 2_048);
+        let value: Value = serde_json::from_str(text).expect("scene summary JSON");
+        assert_eq!(value["scene_entity_id"], scene_id);
+        assert!(value["root_structure"].is_array());
+    }
+
+    #[test]
+    fn scene_summary_uri_parser_is_canonical_and_filesystem_independent() {
+        let scene_id = "godot:scene:uid:v1:testscene";
+        let encoded = encode_uri_segment(scene_id);
+        assert_eq!(
+            parse_scene_summary_uri(&format!(
+                "{SCENE_SUMMARY_PREFIX}{encoded}{SCENE_SUMMARY_SUFFIX}"
+            )),
+            Ok(scene_id.to_owned())
+        );
+        assert!(parse_scene_summary_uri("godot://scene/..%2Fsecret/summary").is_err());
+        assert!(parse_scene_summary_uri("godot://scene/godot%3ascene%3auid/summary").is_err());
+        assert!(parse_scene_summary_uri("file:///tmp/project.godot").is_err());
     }
 
     #[test]
