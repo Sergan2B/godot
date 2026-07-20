@@ -4,8 +4,8 @@
 RPC 1.4 `S5-03`, bounded editor adapter/journal `S5-04`, and strict Rust wire
 normalization `S5-05`, plus logical schema 1.3/`segment-v3` persistence `S5-06`,
 atomic cross-domain composition `S5-07`, and both bounded symbol MCP tools
-`S5-08` are locally verified on macOS arm64; `S5-09`–`S5-10` and two-host
-acceptance remain pending
+`S5-08` and the macOS arm64 `S5-09` live gate are verified; Sprint 5 is closed
+with Windows and two-host parity explicitly waived/unverified
 
 **Decision:** `D-07` — use a bridge-owned saved-content cache over Godot's
 GDScript parser/analyzer; do not depend on the active LSP peer cache
@@ -336,5 +336,7 @@ decision.
 deterministic exact/prefix search and inspection pagination, revision-bound HMAC
 cursors, partial-result/error/limit behavior, and redacted source evidence.
 
-Full Sprint 5 acceptance additionally requires same-freeze macOS/Windows graph
-digest parity and every `S5-AC-01`–`S5-AC-12` criterion from the parent plan.
+Full Sprint 5 acceptance still requires same-freeze macOS/Windows graph digest
+parity and every `S5-AC-01`–`S5-AC-12` criterion from the parent plan. The actual
+Sprint 5 closeout waives that Windows proof and therefore does not claim full
+two-host acceptance; see [SPRINT-5-EVIDENCE.md](SPRINT-5-EVIDENCE.md).

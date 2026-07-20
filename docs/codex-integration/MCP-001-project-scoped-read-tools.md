@@ -1,7 +1,8 @@
 # MCP-001 — Project-scoped Godot read tools
 
 **Status:** Sprint 2/3/4 tools live-verified on macOS arm64 and Windows x86_64;
-Sprint 5 symbol tools locally verified through `S5-08`
+Sprint 5 symbol tools pass the macOS live gate, with Windows qualification
+explicitly waived/unverified
 
 **MCP protocol:** `2025-11-25`
 

@@ -560,12 +560,14 @@ cancel/crash/corruption recovery. Единый semantic coordinator незави
 контролирует freshness resource/scene/script доменов, потоково принимает script
 snapshot/delta, разрешает literal load/preload через resource graph и атомарно
 пересобирает SceneState attachments. Реальный macOS smoke закрепляет все три
-reader-а на одной генерации без превышений 2 ms; это не заменяет двуххостовый
-`S5-09`. Два symbol MCP tool используют текущий script reader, детерминированные
+reader-а на одной генерации без превышений 2 ms. Два symbol MCP tool используют
+текущий script reader, детерминированные
 exact/prefix queries, закрытые schemas и revision-bound HMAC cursors; локально
 проходят registry, selector/filter, pagination, partial/error/limit и redaction
-tests. Следующий gate — macOS/Windows live, accuracy и SLO evidence `S5-09`;
-полная Sprint 5 приёмка пока не заявляется.
+tests. Финальный macOS live gate проходит accuracy и SLO checks на freeze
+`d1bccbf4fe84`; Windows rerun и двуххостовый `S5-AC-12` явно waived/unverified.
+Sprint 5 административно закрыт без заявления полной кроссплатформенной
+приёмки; решение и риск записаны в [SPRINT-5-EVIDENCE](SPRINT-5-EVIDENCE.md).
 
 #### Цель
 
@@ -1427,4 +1429,4 @@ S8 и S9 могут идти параллельно после S7, но S10 пр
 
 [ADR-001](ADR-001-component-boundaries-and-sidecar-language.md), [PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) и канонический bundle `schemas/codex_bridge/v1` закрывают первый foundation-этап Sprint 1. Editor-only `modules/codex_bridge`, build guards, service/worker lifecycle и bounded main-thread dispatcher закрывают второй этап по локальному evidence [SPRINT-1-STAGE-2](SPRINT-1-STAGE-2.md). Private discovery, project-local lock, atomic runtime publication, права `0700`/`0600`, rotating token, macOS UDS framing и mutual HMAC handshake закрывают третий этап по локальному evidence [SPRINT-1-STAGE-3](SPRINT-1-STAGE-3.md). Authenticated request/response/cancel envelopes, lifecycle methods, deadlines, cancellation, exactly-once terminal arbitration и backpressure закрывают четвёртый этап по локальному evidence [SPRINT-1-STAGE-4](SPRINT-1-STAGE-4.md). Locked Rust conformance client, прямое использование канонических schemas/fixtures, cross-language discovery/handshake/lifecycle и negative transport suite, а также воспроизводимый redacted trace закрывают пятый этап по локальному evidence [SPRINT-1-STAGE-5](SPRINT-1-STAGE-5.md).
 
-Локальная реализация и проверка Sprint 1 и Sprint 2 завершены. Sprint 3 принят: ResourceUID, прямой/обратный граф зависимостей, Bridge RPC 1.2, persistent segment index и два resource MCP tool прошли полный macOS/Windows evidence по [SPRINT-3-EVIDENCE](SPRINT-3-EVIDENCE.md); канонический D-05 выбирает segment store. Sprint 4 также принят: structural `PackedScene`/`SceneState` index, Bridge RPC 1.3, `segment-v2` и два scene MCP tool прошли единый macOS/Windows freeze по [SPRINT-4-EVIDENCE](SPRINT-4-EVIDENCE.md). Sprint 5 начат: `S5-01` локально закрывает D-07 и фиксирует [SCRIPT-001](SCRIPT-001-gdscript-and-csharp-adapters.md), `S5-02` фиксирует независимый script fixture/golden oracle, `S5-03` — compatible Bridge RPC 1.4 profile, `S5-04` — bounded editor adapter, snapshot/delta journal и GDScript-disabled behavior, `S5-05` — strict Rust wire client, canonical normalizer и semantic digest, `S5-06` — logical schema 1.3, `segment-v3` и fault-safe v2 migration, `S5-07` — независимая freshness и атомарная resource/scene/script composition, а `S5-08` — два bounded symbol MCP tool с deterministic pagination и revision-bound cursors; следующий gate — macOS/Windows live, accuracy и SLO evidence `S5-09` по [SPRINT-5-PLAN](SPRINT-5-PLAN.md). Публикация и remote CI выполняются только по отдельной авторизации.
+Локальная реализация и проверка Sprint 1 и Sprint 2 завершены. Sprint 3 принят: ResourceUID, прямой/обратный граф зависимостей, Bridge RPC 1.2, persistent segment index и два resource MCP tool прошли полный macOS/Windows evidence по [SPRINT-3-EVIDENCE](SPRINT-3-EVIDENCE.md); канонический D-05 выбирает segment store. Sprint 4 также принят: structural `PackedScene`/`SceneState` index, Bridge RPC 1.3, `segment-v2` и два scene MCP tool прошли единый macOS/Windows freeze по [SPRINT-4-EVIDENCE](SPRINT-4-EVIDENCE.md). Sprint 5 закрыт с явным waiver: `S5-01`–`S5-08` реализованы, macOS live/accuracy/SLO gate проходит, а Windows и двуххостовый `S5-AC-12` остаются unverified по [SPRINT-5-EVIDENCE](SPRINT-5-EVIDENCE.md). Следующее действие — Sprint 6: find usages, evidence aggregation и Codex context shaping. Публикация и remote CI выполняются только по отдельной авторизации.

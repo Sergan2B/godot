@@ -1,0 +1,59 @@
+{
+  "acceptance": {
+    "S5-AC-01": "passed_macos",
+    "S5-AC-02": "passed_macos",
+    "S5-AC-03": "passed_macos",
+    "S5-AC-04": "passed_macos",
+    "S5-AC-05": "passed_macos",
+    "S5-AC-06": "passed_macos",
+    "S5-AC-07": "passed_macos",
+    "S5-AC-08": "passed_macos",
+    "S5-AC-09": "passed_macos",
+    "S5-AC-10": "passed_macos",
+    "S5-AC-11": "passed_macos",
+    "S5-AC-12": "waived_unverified"
+  },
+  "decision": {
+    "date": "2026-07-20",
+    "reason": "The owner explicitly chose to defer the Windows rerun and close Sprint 5 without two-host qualification.",
+    "risk": "Windows-specific behavior and cross-platform semantic digest parity remain unverified."
+  },
+  "implementation_gates": {
+    "S5-01": "complete",
+    "S5-02": "complete",
+    "S5-03": "complete",
+    "S5-04": "complete",
+    "S5-05": "complete",
+    "S5-06": "complete",
+    "S5-07": "complete",
+    "S5-08": "complete",
+    "S5-09": "closed_with_windows_waiver",
+    "S5-10": "administrative_closeout_complete"
+  },
+  "linux": "not_in_scope",
+  "platforms": {
+    "macos-arm64": {
+      "report": "sprint-5-script-semantics-macos.json",
+      "sha256": "sha256:b9869d4d0ec309b58706c1d505e2084759adf77bafa6de6e048775ba4df0e8f4",
+      "status": "passed"
+    },
+    "windows-x86_64": {
+      "report": null,
+      "status": "waived_unverified"
+    }
+  },
+  "profile": "administrative_closeout",
+  "release_qualification": "not_two_host_qualified",
+  "remote_ci": "not_run",
+  "schema_version": 1,
+  "source": {
+    "canonical_symbol_ids_sha256": "sha256:fb9dfb15e2e6d442baa02305b581b495a5b0f3b8375b0f7965fae27901fe214c",
+    "fixture_manifest_sha256": "sha256:ce1b36e1c2d303527fe49ced728993aac370eb353ec114bfb6c1571a193c1d45",
+    "fixture_sha256": "sha256:84fdc0fd5ecbc1f68018f971e1f9871d8361ec673161922c4d443c4e5e7c68ae",
+    "git_commit": "d1bccbf4fe84a88939cb2232408b4758ef5cee86",
+    "golden_script_graph_sha256": "sha256:5e6a3158c46e4215e4bbbf973efa55cd29840c8df753c4dcb0c7530bc061c9e5",
+    "relevant_source_sha256": "sha256:b3417019e8503130307b61707002274d3c4c7a7fb5d4c6409d8f4a068811ae9a"
+  },
+  "sprint": 5,
+  "status": "closed_with_waiver"
+}

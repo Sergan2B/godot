@@ -1,10 +1,9 @@
 # Sprint 5 plan — GDScript symbols and program relations
 
-**Status:** In progress — `S5-01`–`S5-08` are complete and locally verified on
-macOS arm64, including the GDScript-disabled build, strict Rust normalization,
-`segment-v3`, atomic resource/scene/script composition, and both bounded symbol
-MCP tools; `S5-09` is the next
-gate; full Sprint 5 acceptance is not claimed
+**Status:** Administratively closed with an explicit Windows waiver — `S5-01`–
+`S5-08` and the macOS arm64 `S5-09` gate pass; Windows x86_64 and two-host
+criterion `S5-AC-12` remain waived/unverified, so full cross-platform acceptance
+is not claimed
 
 **Planned duration:** 10 working days
 
@@ -44,8 +43,9 @@ The sprint exposes two additional read-only MCP tools:
 The resulting graph connects scripts to Sprint 3 resources and Sprint 4 scene
 nodes while preserving independent resource, scene, and script freshness. It
 closes architecture decision `D-07`, advances Bridge RPC through a compatible
-1.4 profile, and proves deterministic saved-script semantics on macOS arm64 and
-Windows x86_64. Linux and remote CI are not Sprint 5 acceptance coordinates.
+1.4 profile, and proves deterministic saved-script semantics on macOS arm64.
+Windows x86_64 was planned as the second qualifying host but was explicitly
+waived at closeout; Linux and remote CI are not Sprint 5 acceptance coordinates.
 
 ## 2. Scope boundaries
 
@@ -154,8 +154,8 @@ content hash.
 | `S5-06` | Logical schema 1.3 and `segment-v3` | `segment-v2` resource/scene results remain unchanged; script shards recover atomically after cancellation, crash, or corruption |
 | `S5-07` | Semantic coordinator and cross-domain composition | Resource, scene, and script freshness remain independent; inheritance, calls, loads, and attachments activate atomically |
 | `S5-08` | Two symbol MCP tools | Closed schemas, deterministic lookup/paging, cursor isolation, partial results, limits, errors, and redaction pass locally |
-| `S5-09` | macOS and Windows live gates | Both hosts pass the same source freeze, canonical mutation/recovery phases, semantic digest, accuracy, and SLO gates |
-| `S5-10` | Deterministic final aggregate | `S5-AC-01`–`S5-AC-12` pass; raw evidence hashes, docs, and aggregate agree byte-for-byte |
+| `S5-09` | macOS and Windows live gates | macOS passes the frozen live/accuracy/SLO gate; Windows is explicitly waived and remains unverified |
+| `S5-10` | Closeout record | Evidence hashes, docs, accepted risk, and the lack of two-host qualification are recorded without manufacturing a passing aggregate |
 
 `S5-01` is frozen by
 [`tests/codex/evidence/sprint-5-stage-1-contracts.json`](../../tests/codex/evidence/sprint-5-stage-1-contracts.json).
@@ -373,6 +373,15 @@ the identical fixture phases. The aggregate fails closed unless both reports
 bind the same source/fixture/oracle coordinates and all phase semantic digests
 match exactly.
 
+### 8.1 Closeout exception
+
+On 2026-07-20 the owner explicitly waived the Windows rerun to stop the
+cross-device evidence loop. The strict two-host rule above is unchanged: no
+qualifying aggregate exists, and `S5-AC-12` remains unverified. The waiver closes
+Sprint 5 administratively and permits Sprint 6 work while retaining Windows
+qualification as accepted release risk. The canonical decision and macOS proof
+are recorded in [SPRINT-5-EVIDENCE.md](SPRINT-5-EVIDENCE.md).
+
 ## 9. Schedule and dependencies
 
 | Working day | Planned gate | Dependency |
@@ -385,7 +394,7 @@ match exactly.
 | 7 | `S5-07` coordinator and resource/scene/script composition | `S5-06` |
 | 8 | `S5-08` MCP tools and contract/security tests | `S5-07` current queries |
 | 9 | `S5-09` macOS live gate, SLO, source freeze | All implementation gates |
-| 10 | Windows live gate, deterministic aggregate, `S5-10` docs | Exact macOS source freeze |
+| 10 | Windows waived; explicit closeout record and `S5-10` docs | Exact macOS source freeze |
 
 No stage may consume a later stage as an unstated prerequisite. D-07, identity,
 range, confidence, fixture, and oracle decisions freeze before wire/storage code.
@@ -403,16 +412,17 @@ calendar does not override acceptance.
 7. Coordinator, independent freshness, attachments, and cross-domain relations.
 8. `godot_search_symbols`, `godot_inspect_symbol`, cursors, errors, and redaction.
 9. macOS runner, live evidence, SLO, and source freeze.
-10. Windows evidence, deterministic final aggregate, and completion documentation.
+10. Windows evidence and deterministic aggregate, or an explicit waiver and
+    non-qualifying closeout record; completion documentation.
 
 Each commit must be independently reviewable and leave existing Sprint 1–4
 tests green. Generated binaries, temporary projects, caches, tokens, absolute
 paths, and unredacted traces are never committed. Evidence-only closing commits
 must not change the frozen implementation or fixture source scopes.
 
-## 11. Definition of Done
+## 11. Definition of Done and actual closeout
 
-Sprint 5 is complete only when:
+The original full-acceptance Definition of Done requires:
 
 - all `S5-01`–`S5-10` exit conditions are satisfied;
 - D-07 and the normative `SCRIPT-001` contract are committed;
@@ -430,3 +440,9 @@ Sprint 5 is complete only when:
 
 The next milestone after this Definition of Done is Sprint 6: find usages,
 evidence aggregation, and Codex context shaping.
+
+The actual 2026-07-20 closeout satisfies the implementation requirements and
+all macOS gates, but not the two-host bullets above. Sprint 5 is therefore
+**closed with waiver**, not **fully accepted**. Windows qualification and
+`S5-AC-12` remain explicit known risk and may be resumed without reopening the
+completed implementation scope.

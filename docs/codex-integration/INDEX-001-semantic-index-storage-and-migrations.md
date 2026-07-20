@@ -546,7 +546,7 @@ edges remain observable; neither resolves to a similarly named file.
 | Golden fixture/oracle format | Frozen by `S3-02` | Complete |
 | `D-05` persistent backend and physical migration | Segment store selected by full local macOS matrix | Complete locally; Windows/Linux portability `not_run` |
 | `D-06` node/subresource persistent identity | Implemented and accepted by matching macOS/Windows Sprint 4 evidence | Complete |
-| `S5-06` logical schema 1.3 and `segment-v3` | Script shards, v2 migration, digest reuse, cancellation/crash/corruption recovery locally verified | Complete locally; two-host Sprint 5 evidence remains `S5-09` |
+| `S5-06` logical schema 1.3 and `segment-v3` | Script shards, v2 migration, digest reuse, cancellation/crash/corruption recovery pass locally and in the macOS live gate | Complete; Windows Sprint 5 qualification is waived/unverified |
 
 ### 15.1 `S3-03` execution status
 
