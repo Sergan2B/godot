@@ -53,6 +53,7 @@ pub struct SemanticSnapshot {
     pub base_event_seq: u64,
     pub revisions: RevisionVector,
     pub editor_state: Value,
+    pub inspector_state: Option<Value>,
     pub scenes: BTreeMap<String, Value>,
     pub nodes: BTreeMap<String, Value>,
     pub current_scene_id: Option<String>,
@@ -67,6 +68,7 @@ impl SemanticSnapshot {
         entities: Vec<Value>,
     ) -> Result<Self, ReplicaError> {
         let mut editor_state = None;
+        let mut inspector_state = None;
         let mut scenes = BTreeMap::new();
         let mut nodes = BTreeMap::new();
         let mut truncated = metadata
@@ -92,6 +94,11 @@ impl SemanticSnapshot {
             match kind {
                 "editor_state" => {
                     if editor_state.replace(entity).is_some() {
+                        return Err(ReplicaError::DuplicateEntity(entity_id));
+                    }
+                }
+                "inspector_state" => {
+                    if inspector_state.replace(entity).is_some() {
                         return Err(ReplicaError::DuplicateEntity(entity_id));
                     }
                 }
@@ -136,6 +143,7 @@ impl SemanticSnapshot {
             base_event_seq: metadata.base_event_seq,
             revisions: metadata.revisions,
             editor_state,
+            inspector_state,
             scenes,
             nodes,
             current_scene_id,
@@ -265,6 +273,32 @@ impl SemanticSnapshot {
             "scene": scene,
             "scene_dirty": scene_dirty,
             "selected_nodes": selected,
+        })
+    }
+
+    pub fn inspector_state_result(&self) -> Value {
+        let partial_reasons = if self.truncated {
+            vec!["bounded_projection"]
+        } else {
+            Vec::new()
+        };
+        json!({
+            "schema_version": "editor/1.0",
+            "project_id": self.project_id,
+            "editor_session_id": self.editor_session_id,
+            "snapshot_id": self.snapshot_id,
+            "revision_vector": self.revisions,
+            "capabilities_used": ["editor.inspector", "sync.full_snapshot_v1", "sync.event_stream_v1"],
+            "status": "ready",
+            "freshness": "current",
+            "truncated": self.truncated,
+            "partial_reasons": partial_reasons,
+            "diagnostics": [],
+            "limits_applied": self.limits_applied,
+            "entities": self.inspector_state.iter().cloned().collect::<Vec<_>>(),
+            "facts": [],
+            "evidence": [{"source": "live_editor_snapshot", "freshness": "current"}],
+            "inspector": self.inspector_state,
         })
     }
 }

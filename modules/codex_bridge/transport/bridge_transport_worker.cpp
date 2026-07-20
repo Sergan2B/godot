@@ -522,6 +522,7 @@ static bool apply_rpc_outcome(TransportClient &r_client, BridgeRpcSession::Outco
 		command.request_id = r_outcome.internal_request_id;
 		command.deadline_usec = r_outcome.deadline_usec;
 		command.params = r_outcome.params;
+		command.params["_protocol_version"] = r_client.rpc.get_protocol_version();
 		bool expired = false;
 		const MainThreadDispatcher::EnqueueResult enqueue_result = enqueue_request(p_context, command, expired);
 		if (expired) {

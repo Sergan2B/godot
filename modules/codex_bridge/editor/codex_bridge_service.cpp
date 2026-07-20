@@ -95,7 +95,7 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 			service->transport_worker.complete_request(p_command.request_id, result);
 		} break;
 		case MainThreadDispatcher::COMMAND_EDITOR_SNAPSHOT:
-			service->_complete_snapshot(p_command.request_id);
+			service->_complete_snapshot(p_command.request_id, p_command.params);
 			break;
 		case MainThreadDispatcher::COMMAND_RESOURCE_SNAPSHOT: {
 			Dictionary error_data;
@@ -336,10 +336,11 @@ void CodexBridgeService::_flush_scene_change() {
 	_publish_event(property.is_empty() ? "scene_changed" : "property_changed", property, true);
 }
 
-void CodexBridgeService::_complete_snapshot(uint64_t p_request_id) {
+void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Dictionary &p_params) {
 	Dictionary snapshot;
 	const Dictionary revisions = revision_clock.get_revision_vector();
-	if (EditorContextAdapter::capture(transport_worker.get_project_id(), transport_worker.get_editor_session_id(), revisions, snapshot) != OK) {
+	const bool full_live_context = String(p_params.get("_protocol_version", "1.1")) == "1.5";
+	if (EditorContextAdapter::capture(transport_worker.get_project_id(), transport_worker.get_editor_session_id(), revisions, snapshot, full_live_context) != OK) {
 		transport_worker.complete_request(p_request_id, Dictionary());
 		return;
 	}
@@ -376,8 +377,12 @@ void CodexBridgeService::_complete_snapshot(uint64_t p_request_id) {
 	result["base_event_seq"] = revisions["event_seq"];
 	result["revisions"] = revisions;
 	Array domains;
-	domains.push_back("editor_context");
-	domains.push_back("editor_inspector");
+	if (p_params.has("domains") && p_params["domains"].get_type() == Variant::ARRAY) {
+		domains = p_params["domains"];
+	} else {
+		domains.push_back("editor_context");
+		domains.push_back("editor_inspector");
+	}
 	result["domains"] = domains;
 	Dictionary limits;
 	limits["snapshot_chunk_bytes"] = SNAPSHOT_CHUNK_BYTES;
@@ -388,6 +393,12 @@ void CodexBridgeService::_complete_snapshot(uint64_t p_request_id) {
 	limits["projected_value_bytes"] = EditorContextAdapter::MAX_PROJECTED_VALUE_BYTES;
 	limits["inspector_bytes_per_node"] = EditorContextAdapter::MAX_INSPECTOR_BYTES_PER_NODE;
 	limits["total_inspector_bytes"] = EditorContextAdapter::MAX_TOTAL_INSPECTOR_BYTES;
+	if (full_live_context) {
+		limits["open_scenes"] = EditorContextAdapter::MAX_OPEN_SCENES;
+		limits["scene_nodes"] = EditorContextAdapter::MAX_SCENE_NODES;
+		limits["selected_nodes"] = EditorContextAdapter::MAX_SELECTED_NODES;
+		limits["inspector_properties"] = EditorContextAdapter::MAX_INSPECTOR_PROPERTIES;
+	}
 	limits["truncated"] = snapshot["truncated"];
 	result["limits_applied"] = limits;
 
@@ -784,7 +795,7 @@ Error CodexBridgeService::start() {
 	if (error != OK) {
 		dispatcher.begin_shutdown();
 		state = STATE_STOPPED;
-		ERR_PRINT("[codex_bridge] Failed to start the transport worker.");
+		ERR_PRINT(vformat("[codex_bridge] Failed to start the transport worker (error %d).", (int)error));
 		return error;
 	}
 
