@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "coverage": [
+    "clean_saved_scene",
+    "dirty_saved_scene",
+    "unsaved_scene",
+    "multi_selection",
+    "inspector_targets",
+    "open_scripts",
+    "native_history",
+    "opaque_operation",
+    "bounded_variants",
+    "diagnostic_redaction",
+    "viewport_metadata",
+    "scene_close",
+    "reimport",
+    "event_gap_reconnect",
+    "session_reset",
+    "disk_live_composition",
+    "rpc_1_4_compatibility"
+  ],
+  "states": {
+    "open_scenes": [
+      {"live_scene_id": "scene:11111111111111111111111111111111", "path": "res://clean.tscn", "dirty": false, "identity_scope": "editor_session"},
+      {"live_scene_id": "scene:22222222222222222222222222222222", "path": "res://dirty.tscn", "dirty": true, "identity_scope": "editor_session"},
+      {"live_scene_id": "scene:33333333333333333333333333333333", "path": "", "dirty": true, "identity_scope": "editor_session"}
+    ],
+    "selection": [
+      "node:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "node:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "node:cccccccccccccccccccccccccccccccc"
+    ],
+    "selection_after_snapshot": [
+      "node:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "node:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "node:cccccccccccccccccccccccccccccccc"
+    ],
+    "inspector_targets": ["node", "resource", "object"],
+    "scripts": [
+      {"live_script_id": "script:11111111111111111111111111111111", "path": "res://scripts/clean_actor.gd", "active": false, "dirty": false, "selection_count": 0},
+      {"live_script_id": "script:22222222222222222222222222222222", "path": "res://scripts/live_actor.gd", "active": true, "dirty": true, "selection_count": 2}
+    ]
+  },
+  "composition_vectors": [
+    {
+      "scene_path": "res://dirty.tscn",
+      "node_path": "Alpha",
+      "coverage": "complete",
+      "disk_properties": {"display_name": "disk-alpha", "movement_speed": 8.0, "disk_only": "retained"},
+      "live_properties": {"display_name": "editor-alpha", "movement_speed": 21.5},
+      "expected_effective": {"display_name": "editor-alpha", "movement_speed": 21.5, "disk_only": "retained"},
+      "expected_conflicts": ["display_name", "movement_speed"]
+    },
+    {
+      "scene_path": "res://dirty.tscn",
+      "node_path": "UnknownAfterLimit",
+      "coverage": "partial",
+      "disk_properties": {"disk_only": "must-not-be-tombstoned"},
+      "live_properties": {},
+      "expected_effective": {"disk_only": "must-not-be-tombstoned"},
+      "expected_conflicts": []
+    }
+  ],
+  "revision_transitions": [
+    {"kind": "commit", "operation_seq": 41, "dirty_scene_revision": 8, "clean_scene_revision": 2},
+    {"kind": "undo", "operation_seq": 42, "dirty_scene_revision": 9, "clean_scene_revision": 2},
+    {"kind": "redo", "operation_seq": 43, "dirty_scene_revision": 10, "clean_scene_revision": 2},
+    {"kind": "unknown", "operation_seq": 44, "dirty_scene_revision": 11, "clean_scene_revision": 2, "payload": {"kind": "opaque"}}
+  ],
+  "stale_vectors": [
+    {"guard": "editor_session_id", "expected_error": "stale_editor_state"},
+    {"guard": "event_seq", "expected_error": "stale_editor_state"},
+    {"guard": "scene_revision", "expected_error": "stale_scene_revision"},
+    {"guard": "closed_scene_id", "expected_error": "stale_scene_revision"}
+  ],
+  "variant_vectors": [
+    {"kind": "cycle", "expected": "reference"},
+    {"kind": "oversized_array", "expected_omitted_reason": "max_items"},
+    {"kind": "oversized_string", "expected_omitted_reason": "max_encoded_bytes"},
+    {"kind": "unsupported_object", "expected_omitted_reason": "unsupported_object"}
+  ],
+  "diagnostics": {
+    "maximum_records": 200,
+    "maximum_message_bytes": 16384,
+    "maximum_snapshot_bytes": 262144,
+    "redaction_probes": ["token:", "password=", "/Users/", "C:\\Users\\"],
+    "forbidden_output": ["fixture-only-secret", "/Users/alice/project", "C:\\Users\\alice\\project"]
+  },
+  "viewport": {
+    "required": ["active_kind", "visible", "logical_size", "scale", "screenshot_available"],
+    "forbidden": ["pixels", "rid", "texture", "image_data"],
+    "screenshot_available": false
+  },
+  "lifecycle": {
+    "closed_scene_removed": true,
+    "reimport_requires_new_disk_generation": true,
+    "event_gap_requires_full_snapshot": true,
+    "reconnect_hides_old_current": true,
+    "session_reset_discards_overlay": true
+  },
+  "compatibility": {
+    "resource_snapshot_request_1_4_sha256": "62edee4230bf150ad254444d69c589317b17187fe4965a3c0bb19d114093fcf8",
+    "scene_snapshot_request_1_4_sha256": "0d311af644622b38d472b6c75eed203aae445782fa7a1f45508a98ca4b4bb1b0"
+  }
+}

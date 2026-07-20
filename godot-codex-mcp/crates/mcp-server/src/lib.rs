@@ -4583,6 +4583,25 @@ mod tests {
         let content = structured_content(&ready).unwrap();
         assert_eq!(content["editor_session_id"], current.editor_session_id);
         assert!(content["scenes"].is_array());
+
+        let current_scene_revision = current
+            .current_scene_id
+            .as_ref()
+            .and_then(|scene_id| current.revisions.scene_revisions.get(scene_id))
+            .copied()
+            .unwrap_or(0);
+        let stale_scene = server.godot_get_inspector_state(Parameters(LiveGuardInput {
+            expected_editor_session_id: Some(current.editor_session_id.clone()),
+            expected_event_seq: Some(current.revisions.event_seq),
+            expected_scene_revision: Some(current_scene_revision + 1),
+        }));
+        assert_eq!(stale_scene.is_error, Some(true));
+        assert_eq!(
+            structured_content(&stale_scene)
+                .and_then(|value| value.pointer("/error/code"))
+                .and_then(Value::as_str),
+            Some("stale_scene_revision")
+        );
     }
 
     #[test]

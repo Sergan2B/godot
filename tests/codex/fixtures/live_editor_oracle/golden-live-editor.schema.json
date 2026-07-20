@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "coverage", "states", "composition_vectors", "revision_transitions", "stale_vectors", "variant_vectors", "diagnostics", "viewport", "lifecycle", "compatibility"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "coverage": {"type": "array", "minItems": 17, "uniqueItems": true, "items": {"type": "string"}},
+    "states": {"type": "object"},
+    "composition_vectors": {"type": "array", "minItems": 2},
+    "revision_transitions": {"type": "array", "minItems": 4},
+    "stale_vectors": {"type": "array", "minItems": 4},
+    "variant_vectors": {"type": "array", "minItems": 4},
+    "diagnostics": {"type": "object"},
+    "viewport": {"type": "object"},
+    "lifecycle": {"type": "object"},
+    "compatibility": {
+      "type": "object",
+      "required": ["resource_snapshot_request_1_4_sha256", "scene_snapshot_request_1_4_sha256"],
+      "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+    }
+  },
+  "additionalProperties": false
+}

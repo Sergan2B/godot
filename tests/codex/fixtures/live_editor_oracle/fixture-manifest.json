@@ -1,0 +1,28 @@
+{
+  "fixture_version": 1,
+  "project": "res://",
+  "files": [
+    {"path": ".gitignore", "sha256": "531d0d253cec1addb97b2cb2d144b6589ff934513eb9c9b8cf882cb49e4c0c32"},
+    {"path": "addons/codex_sprint7_live/codex_sprint7_live.gd", "sha256": "2a1acf75f280a014891164cde83731d4c7c772bf12d0d4eaad97a52daf1a7cb4"},
+    {"path": "addons/codex_sprint7_live/plugin.cfg", "sha256": "b5f5545c5eebf2d6103ac0cd572f78476a83f20c751c43e192e24431fff6484b"},
+    {"path": "clean.tscn", "sha256": "121be9b14b5a969f53afa87dd137ea1d9680174a3a058e89594ea92af11cebc1"},
+    {"path": "dirty.tscn", "sha256": "3a1280965cffe7b1ebb3d1f6484c1fc0cb6a233282d2823577e76e0450bb4c39"},
+    {"path": "project.godot", "sha256": "519af8e07664c251b05f9e7fdf0b757140a0c3995ddece5a3701cf740c1fab6c"},
+    {"path": "scripts/clean_actor.gd", "sha256": "9bd279c54778e3d77ed54adc9f0ffa054be168fa2b21e919881c2e30776db944"},
+    {"path": "scripts/live_actor.gd", "sha256": "041ddddc51ec9af5c93fe539f4a6b6c7d54d268850da946bf2b1727aef7f97da"},
+    {"path": "shared_resource.tres", "sha256": "8149de72aac42a0ed81a11fdd1c91c12bd251c502428d3d44a8d5643e8b7a61b"}
+  ],
+  "phases": [
+    "baseline",
+    "commit",
+    "undo",
+    "redo",
+    "opaque",
+    "partial_capture",
+    "close",
+    "reimport",
+    "event_gap",
+    "reconnect",
+    "session_reset"
+  ]
+}

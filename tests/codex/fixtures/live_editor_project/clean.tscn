@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/clean_actor.gd" id="1_clean"]
+
+[node name="CleanRoot" type="Node2D"]
+
+[node name="CleanA" type="Node2D" parent="."]
+script = ExtResource("1_clean")
+label = "clean-a"
+
+[node name="CleanB" type="Node2D" parent="."]
+script = ExtResource("1_clean")
+label = "clean-b"

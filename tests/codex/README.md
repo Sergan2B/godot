@@ -4,6 +4,23 @@ This directory contains the Sprint 1 Rust conformance client, the shared Godot
 fixture, and the Sprint 2 live smoke harness. It is test infrastructure; the
 production sidecar now lives in the repository-root `godot-codex-mcp` workspace.
 
+## Sprint 7 live-editor oracle
+
+`fixtures/live_editor_project` is the opt-in real-editor project used by the
+Sprint 7 macOS gate. `fixtures/live_editor_oracle` is an independent golden
+model for clean/dirty/unsaved tabs, stable multi-selection, Inspector targets,
+open scripts, native history, revision conflicts, bounded diagnostics,
+viewport metadata, lifecycle invalidation, and disk/live composition.
+
+```sh
+python3 -m unittest tests/codex/test_live_editor_fixture.py
+python3 tests/codex/live_editor_fixture.py
+```
+
+The automation plugin is inert unless `CODEX_SPRINT7_AUTOMATION=1` is set.
+Its phase/command markers live only under the staged project's `.godot`
+directory and are removed by the acceptance runner.
+
 ## Offline checks
 
 The exact stable toolchain is pinned in `rust-toolchain.toml`, and all commands

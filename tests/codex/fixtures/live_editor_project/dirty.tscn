@@ -1,0 +1,22 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/live_actor.gd" id="1_live"]
+[ext_resource type="Resource" path="res://shared_resource.tres" id="2_shared"]
+
+[node name="DirtyRoot" type="Node2D"]
+
+[node name="Alpha" type="Node2D" parent="."]
+script = ExtResource("1_live")
+display_name = "disk-alpha"
+movement_speed = 8.0
+fixture_resource = ExtResource("2_shared")
+
+[node name="Beta" type="Node2D" parent="."]
+script = ExtResource("1_live")
+display_name = "disk-beta"
+movement_speed = 9.0
+
+[node name="Gamma" type="Node2D" parent="."]
+script = ExtResource("1_live")
+display_name = "disk-gamma"
+movement_speed = 10.0
