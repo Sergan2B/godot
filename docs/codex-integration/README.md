@@ -35,6 +35,9 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 29. [SCRIPT-001-gdscript-and-csharp-adapters.md](SCRIPT-001-gdscript-and-csharp-adapters.md) — frozen D-07 analyzer authority, script identities, ranges, confidence, and adapter contract.
 30. [SPRINT-5-PLAN.md](SPRINT-5-PLAN.md) — implementation-ready GDScript symbols, script index, MCP, and local two-host acceptance plan.
 31. [SPRINT-5-EVIDENCE.md](SPRINT-5-EVIDENCE.md) — macOS live evidence and the explicit non-qualifying Windows waiver used to close Sprint 5.
+32. [SPRINT-6-PLAN.md](SPRINT-6-PLAN.md) — executable find-usages, evidence aggregation, bounded context, and local acceptance plan.
+33. [EVIDENCE-001-semantic-facts-and-evidence.md](EVIDENCE-001-semantic-facts-and-evidence.md) — canonical fact/evidence identity, deduplication, confidence, conflict, and safety rules.
+34. [CONTEXT-001-model-facing-context.md](CONTEXT-001-model-facing-context.md) — unified find-usages and token-bounded MCP resource contract.
 
 ## Document status
 
@@ -65,6 +68,8 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | `SCENE-001` scene contract | D-06 implemented and live-verified through Bridge/MCP on macOS and Windows | Extend only through a versioned post-Sprint-4 contract |
 | `SCRIPT-001` script contract | D-07 through strict Bridge RPC 1.4 normalization, `segment-v3`, atomic cross-domain composition, and both symbol tools pass on macOS arm64 | Windows parity remains waived/unverified |
 | Sprint 5 plan | Closed with waiver; implementation and macOS live/accuracy/SLO gates pass, Windows and `S5-AC-12` remain unverified | Begin Sprint 6; retain the Windows release risk |
+| Sprint 6 plan | In progress; contracts and independent oracle freeze first | Execute `S6-01`–`S6-02` |
+| `EVIDENCE-001` / `CONTEXT-001` | Sprint 6 contract freeze candidates | Validate against the independent semantic-context oracle |
 
 ## Interim ownership
 

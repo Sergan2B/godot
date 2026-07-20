@@ -606,6 +606,12 @@ Sprint 5 административно закрыт без заявления �
 **Длительность:** 2 недели
 **Milestone:** Semantic Alpha / M1
 
+Исполнимая декомпозиция `S6-01`–`S6-10`, evidence/context contracts, единый
+find-usages API, bounded MCP resources и локальная macOS приёмка определены в
+[SPRINT-6-PLAN.md](SPRINT-6-PLAN.md). Нормативные модели зафиксированы в
+[EVIDENCE-001](EVIDENCE-001-semantic-facts-and-evidence.md) и
+[CONTEXT-001](CONTEXT-001-model-facing-context.md).
+
 #### Цель
 
 Собрать данные предыдущих спринтов в надёжные запросы, пригодные для рассуждений Codex.
