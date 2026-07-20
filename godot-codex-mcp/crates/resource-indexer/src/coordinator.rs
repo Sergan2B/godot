@@ -13,7 +13,8 @@ use godot_codex_bridge_client::{
     normalize_script_snapshot,
 };
 use godot_codex_index_store::{
-    IndexReadSnapshot, ScriptDomainGeneration, SegmentIndexReader, SegmentStore, StoreError,
+    IndexReadSnapshot, ScriptDomainGeneration, SegmentIndexReader, SegmentStore,
+    SemanticQueryIndex, StoreError,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -160,6 +161,44 @@ pub enum ScriptIndexReadError {
     CapabilityUnavailable,
 }
 
+/// Independently freshness-gated domain omitted from one semantic read.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum SemanticPartialDomain {
+    Scene,
+    Script,
+}
+
+/// Stable reason why one optional semantic domain was excluded.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum SemanticPartialCode {
+    ProjectNotBound,
+    NotReady,
+    NotCurrent,
+    CapabilityUnavailable,
+}
+
+/// One explicit partial marker returned alongside current facts.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct SemanticPartialReason {
+    pub domain: SemanticPartialDomain,
+    pub code: SemanticPartialCode,
+}
+
+/// Stable failures for the required resource-domain semantic snapshot.
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum SemanticIndexReadError {
+    #[error("project_not_bound")]
+    ProjectNotBound,
+    #[error("index_not_ready")]
+    NotReady,
+    #[error("index_not_current")]
+    NotCurrent,
+    #[error("capability_unavailable")]
+    CapabilityUnavailable,
+    #[error("torn_generation")]
+    TornGeneration,
+}
+
 struct ResourceIndexState {
     status: ResourceIndexStatus,
     reader: Option<SegmentIndexReader>,
@@ -191,6 +230,146 @@ pub struct SceneIndexReader {
 #[derive(Clone)]
 pub struct ScriptIndexReader {
     state: Arc<RwLock<ScriptIndexState>>,
+}
+
+/// Joins independently gated resource, scene, and script readers for one request.
+#[derive(Clone)]
+pub struct SemanticIndexReader {
+    resource: ResourceIndexReader,
+    scene: SceneIndexReader,
+    script: ScriptIndexReader,
+}
+
+/// One immutable semantic view with explicit exclusions for non-current domains.
+pub struct SemanticIndexSnapshot {
+    snapshot: IndexReadSnapshot,
+    query_index: Arc<SemanticQueryIndex>,
+    partial_reasons: Vec<SemanticPartialReason>,
+}
+
+impl SemanticIndexSnapshot {
+    #[must_use]
+    pub fn generation(&self) -> &godot_codex_index_store::IndexGeneration {
+        self.snapshot.generation()
+    }
+
+    #[must_use]
+    pub fn query_index(&self) -> &SemanticQueryIndex {
+        &self.query_index
+    }
+
+    #[must_use]
+    pub fn partial_reasons(&self) -> &[SemanticPartialReason] {
+        &self.partial_reasons
+    }
+}
+
+impl SemanticIndexReader {
+    #[must_use]
+    pub fn new(
+        resource: ResourceIndexReader,
+        scene: SceneIndexReader,
+        script: ScriptIndexReader,
+    ) -> Self {
+        Self {
+            resource,
+            scene,
+            script,
+        }
+    }
+
+    /// Pins the required resource domain and includes only scene/script domains
+    /// that independently validate against the exact same generation.
+    pub fn pin_current(&self) -> Result<SemanticIndexSnapshot, SemanticIndexReadError> {
+        let snapshot = self.resource.pin_current().map_err(map_resource_error)?;
+        let mut partial_reasons = Vec::new();
+        let scene_current = match self.scene.pin_current() {
+            Ok(scene) => {
+                ensure_same_generation(snapshot.generation(), scene.generation(), false)?;
+                true
+            }
+            Err(error) => {
+                partial_reasons.push(SemanticPartialReason {
+                    domain: SemanticPartialDomain::Scene,
+                    code: map_scene_partial(error),
+                });
+                false
+            }
+        };
+        let script_current = match self.script.pin_current() {
+            Ok(script) => {
+                ensure_same_generation(snapshot.generation(), script.generation(), true)?;
+                true
+            }
+            Err(error) => {
+                partial_reasons.push(SemanticPartialReason {
+                    domain: SemanticPartialDomain::Script,
+                    code: map_script_partial(error),
+                });
+                false
+            }
+        };
+        let query_index = if scene_current && script_current {
+            snapshot.semantic_query_index()
+        } else {
+            Arc::new(SemanticQueryIndex::build_available(
+                snapshot.generation(),
+                scene_current,
+                script_current,
+            ))
+        };
+        Ok(SemanticIndexSnapshot {
+            snapshot,
+            query_index,
+            partial_reasons,
+        })
+    }
+}
+
+fn ensure_same_generation(
+    expected: &godot_codex_index_store::IndexGeneration,
+    actual: &godot_codex_index_store::IndexGeneration,
+    include_script: bool,
+) -> Result<(), SemanticIndexReadError> {
+    if expected.generation_id != actual.generation_id
+        || expected.index_revision != actual.index_revision
+        || expected.checkpoint.resource_revision != actual.checkpoint.resource_revision
+        || expected.scene.scene_graph_revision != actual.scene.scene_graph_revision
+        || (include_script
+            && expected.script.script_graph_revision != actual.script.script_graph_revision)
+    {
+        return Err(SemanticIndexReadError::TornGeneration);
+    }
+    Ok(())
+}
+
+fn map_resource_error(error: ResourceIndexReadError) -> SemanticIndexReadError {
+    match error {
+        ResourceIndexReadError::ProjectNotBound => SemanticIndexReadError::ProjectNotBound,
+        ResourceIndexReadError::NotReady => SemanticIndexReadError::NotReady,
+        ResourceIndexReadError::NotCurrent => SemanticIndexReadError::NotCurrent,
+        ResourceIndexReadError::CapabilityUnavailable => {
+            SemanticIndexReadError::CapabilityUnavailable
+        }
+    }
+}
+
+fn map_scene_partial(error: SceneIndexReadError) -> SemanticPartialCode {
+    match error {
+        SceneIndexReadError::ProjectNotBound => SemanticPartialCode::ProjectNotBound,
+        SceneIndexReadError::NotReady => SemanticPartialCode::NotReady,
+        SceneIndexReadError::NotCurrent => SemanticPartialCode::NotCurrent,
+        SceneIndexReadError::CapabilityUnavailable => SemanticPartialCode::CapabilityUnavailable,
+    }
+}
+
+fn map_script_partial(error: ScriptIndexReadError) -> SemanticPartialCode {
+    match error {
+        ScriptIndexReadError::ProjectNotBound => SemanticPartialCode::ProjectNotBound,
+        ScriptIndexReadError::NotReady => SemanticPartialCode::NotReady,
+        ScriptIndexReadError::NotCurrent => SemanticPartialCode::NotCurrent,
+        ScriptIndexReadError::CapabilityUnavailable => SemanticPartialCode::CapabilityUnavailable,
+    }
 }
 
 impl Default for ScriptIndexReader {

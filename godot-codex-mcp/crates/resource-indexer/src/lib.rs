@@ -36,7 +36,8 @@ pub use coordinator::{
     CoordinatorError, ResourceIndexCoordinator, ResourceIndexReadError, ResourceIndexReader,
     ResourceIndexStaleReason, ResourceIndexStatus, SceneIndexReadError, SceneIndexReader,
     SceneIndexStaleReason, SceneIndexStatus, ScriptIndexReadError, ScriptIndexReader,
-    ScriptIndexStaleReason, ScriptIndexStatus,
+    ScriptIndexStaleReason, ScriptIndexStatus, SemanticIndexReadError, SemanticIndexReader,
+    SemanticIndexSnapshot, SemanticPartialCode, SemanticPartialDomain, SemanticPartialReason,
 };
 pub use scene::SceneNormalizer;
 pub use script::ScriptNormalizer;

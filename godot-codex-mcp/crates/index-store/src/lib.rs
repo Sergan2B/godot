@@ -6,6 +6,7 @@
 
 mod script;
 mod segment;
+mod semantic;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,6 +22,11 @@ pub use script::{
 pub use segment::{
     IndexReadSnapshot, SEGMENT_PHYSICAL_VERSION, SegmentFaultInjection, SegmentFaultMode,
     SegmentFaultPoint, SegmentIndexReader, SegmentIndexStore, SegmentStore, SegmentTransaction,
+};
+pub use semantic::{
+    ConflictDiagnostic, EvidenceRecord, SemanticConfidence, SemanticEntityKind, SemanticFact,
+    SemanticPredicate, SemanticQueryIndex, SemanticRevisionVector, SemanticSourceRange,
+    signal_entity_id,
 };
 
 use serde::{Deserialize, Serialize};

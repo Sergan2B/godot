@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
 use crate::{
     BuildState, DependencyEdge, DependencyResolution, Diagnostic, GenerationBuilder,
@@ -12,7 +12,7 @@ use crate::{
     MigrationRunner, ResourceEntity, ResourceQuery, ResourceQueryResult, ResourceSelector,
     SceneAnimationReference, SceneConnection, SceneEntity, SceneGroupMembership, SceneNode,
     SceneProperty, SceneRelation, ScriptDiagnostic, ScriptDocument, ScriptReference,
-    ScriptRelation, ScriptSymbol, SourceDocument, StoreError, Tombstone,
+    ScriptRelation, ScriptSymbol, SemanticQueryIndex, SourceDocument, StoreError, Tombstone,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -172,6 +172,7 @@ struct ScriptLookupRecord {
 
 struct SegmentCache {
     generation: IndexGeneration,
+    semantic: OnceLock<Arc<SemanticQueryIndex>>,
     entity_lookup: BTreeMap<String, usize>,
     uid_lookup: BTreeMap<String, usize>,
     path_lookup: BTreeMap<String, usize>,
@@ -191,6 +192,15 @@ impl IndexReadSnapshot {
     #[must_use]
     pub fn generation(&self) -> &IndexGeneration {
         &self.cache.generation
+    }
+
+    /// Returns the once-derived semantic reverse-query index for this generation.
+    #[must_use]
+    pub fn semantic_query_index(&self) -> Arc<SemanticQueryIndex> {
+        self.cache
+            .semantic
+            .get_or_init(|| Arc::new(SemanticQueryIndex::build(&self.cache.generation)))
+            .clone()
     }
 }
 
@@ -264,6 +274,7 @@ impl SegmentCache {
         }
         Self {
             generation,
+            semantic: OnceLock::new(),
             entity_lookup,
             uid_lookup,
             path_lookup,
