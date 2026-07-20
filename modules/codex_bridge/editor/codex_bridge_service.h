@@ -68,6 +68,7 @@ private:
 	bool editor_signals_connected = false;
 	int work_lane_turn = 0;
 	bool scene_change_pending = false;
+	uint64_t scene_change_not_before_usec = 0;
 	bool native_operation_pending = false;
 	String pending_property;
 	struct NativeHistoryObservation {

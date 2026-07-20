@@ -54,6 +54,7 @@ namespace {
 static constexpr int SNAPSHOT_CHUNK_BYTES = 262144;
 static constexpr int SNAPSHOT_ENTITY_LIMIT = 1000;
 static constexpr int EDITOR_SNAPSHOT_CHUNKS_PER_FRAME = 2;
+static constexpr uint64_t EDITOR_CHANGE_DEBOUNCE_USEC = 100000;
 static_assert(
 		MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME >= SceneStateAdapter::FRAME_SAFETY_MARGIN_USEC + SceneStateAdapter::SCENE_BUDGET_USEC,
 		"Scene scheduling must leave a nonnegative dispatcher lane.");
@@ -303,10 +304,8 @@ void CodexBridgeService::_on_scene_closed(const String &p_path) {
 
 void CodexBridgeService::_on_property_edited(const String &p_property) {
 	pending_property = p_property;
-	if (!scene_change_pending) {
-		scene_change_pending = true;
-		callable_mp(this, &CodexBridgeService::_flush_scene_change).call_deferred();
-	}
+	scene_change_pending = true;
+	scene_change_not_before_usec = OS::get_singleton()->get_ticks_usec() + EDITOR_CHANGE_DEBOUNCE_USEC;
 }
 
 bool CodexBridgeService::_observe_native_histories(bool p_record_changes) {
@@ -398,10 +397,8 @@ bool CodexBridgeService::_refresh_open_scene_ids(bool p_retire_missing) {
 
 void CodexBridgeService::_on_undo_redo_version_changed() {
 	native_operation_pending = _observe_native_histories(true) || native_operation_pending;
-	if (!scene_change_pending) {
-		scene_change_pending = true;
-		callable_mp(this, &CodexBridgeService::_flush_scene_change).call_deferred();
-	}
+	scene_change_pending = true;
+	scene_change_not_before_usec = OS::get_singleton()->get_ticks_usec() + EDITOR_CHANGE_DEBOUNCE_USEC;
 }
 
 void CodexBridgeService::_on_filesystem_changed() {
@@ -435,6 +432,7 @@ void CodexBridgeService::_on_project_settings_changed() {
 
 void CodexBridgeService::_flush_scene_change() {
 	scene_change_pending = false;
+	scene_change_not_before_usec = 0;
 	const bool native_operation = native_operation_pending;
 	native_operation_pending = false;
 	const String property = pending_property;
@@ -1059,6 +1057,9 @@ void CodexBridgeService::_notification(int p_what) {
 		} break;
 		case NOTIFICATION_PROCESS: {
 			if (state == STATE_RUNNING) {
+				if (scene_change_pending && OS::get_singleton()->get_ticks_usec() >= scene_change_not_before_usec) {
+					_flush_scene_change();
+				}
 				const uint64_t frame_started_usec = OS::get_singleton()->get_ticks_usec();
 				const bool resource_work = resource_graph_adapter.has_pending_work();
 				const bool scene_work = scene_state_adapter.has_pending_work();
@@ -1179,6 +1180,7 @@ void CodexBridgeService::stop() {
 	script_graph_adapter.shutdown();
 	work_lane_turn = 0;
 	scene_change_pending = false;
+	scene_change_not_before_usec = 0;
 	native_operation_pending = false;
 	native_history_observations.clear();
 	native_history_transitions.clear();
