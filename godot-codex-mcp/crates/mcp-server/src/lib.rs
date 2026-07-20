@@ -881,13 +881,17 @@ impl GodotMcpServer {
         scene_graph_success(
             generation,
             scene,
-            input.limit,
-            offset,
-            page,
-            has_more,
-            next_cursor,
-            live_overlay,
-            live_conflicts,
+            ValuePage {
+                limit: input.limit,
+                offset,
+                items: page,
+                has_more,
+                next_cursor,
+            },
+            LiveComposition {
+                overlay: live_overlay,
+                conflicts: live_conflicts,
+            },
         )
     }
 
@@ -957,13 +961,28 @@ impl GodotMcpServer {
             Ok(offset) => offset,
             Err(result) => return result,
         };
+        // Definition properties remain keyed by their canonical definition for
+        // direct scene occurrences. Only materialized instance-chain
+        // properties are keyed by the occurrence ID.
+        let property_subject_id = selected
+            .occurrence
+            .filter(|occurrence| {
+                occurrence
+                    .attributes
+                    .get("instance_chain")
+                    .and_then(Value::as_array)
+                    .is_some_and(|chain| !chain.is_empty())
+            })
+            .map_or(selected.definition.node_entity_id.as_str(), |_| {
+                selected.subject_id.as_str()
+            });
         let mut properties: Vec<_> = generation
             .scene
             .properties
             .iter()
             .filter(|property| {
                 property.scene_entity_id == selected.scene.scene_entity_id
-                    && property.subject_entity_id == selected.subject_id
+                    && property.subject_entity_id == property_subject_id
             })
             .collect();
         properties.sort_by(|left, right| {
@@ -1042,13 +1061,17 @@ impl GodotMcpServer {
         inspect_node_success(
             generation,
             &selected,
-            input.limit,
-            offset,
-            page,
-            has_more,
-            next_cursor,
-            live_overlay,
-            live_conflicts,
+            ValuePage {
+                limit: input.limit,
+                offset,
+                items: page,
+                has_more,
+                next_cursor,
+            },
+            LiveComposition {
+                overlay: live_overlay,
+                conflicts: live_conflicts,
+            },
         )
     }
 
@@ -2849,18 +2872,27 @@ fn script_checkpoint(generation: &godot_codex_index_store::IndexGeneration) -> V
     })
 }
 
+struct ValuePage {
+    limit: usize,
+    offset: usize,
+    items: Vec<Value>,
+    has_more: bool,
+    next_cursor: Option<String>,
+}
+
+struct LiveComposition {
+    overlay: Value,
+    conflicts: Vec<Value>,
+}
+
 fn scene_graph_success(
     generation: &godot_codex_index_store::IndexGeneration,
     scene: &SceneEntity,
-    limit: usize,
-    offset: usize,
-    nodes: Vec<Value>,
-    has_more: bool,
-    next_cursor: Option<String>,
-    live_overlay: Value,
-    live_conflicts: Vec<Value>,
+    page: ValuePage,
+    live: LiveComposition,
 ) -> CallToolResult {
-    let subjects: BTreeSet<_> = nodes
+    let subjects: BTreeSet<_> = page
+        .items
         .iter()
         .filter_map(|node| node.get("node_id").and_then(Value::as_str))
         .collect();
@@ -2901,16 +2933,16 @@ fn scene_graph_success(
         "freshness": "current",
         "status": if partial_reasons.is_empty() { "exact" } else { "partial" },
         "scene": scene_view(scene),
-        "query": {"scene": scene.comparison_path, "limit": limit, "offset": offset},
-        "nodes": nodes,
+        "query": {"scene": scene.comparison_path, "limit": page.limit, "offset": page.offset},
+        "nodes": page.items,
         "project_context": project_context,
         "project_context_truncated": project_context_truncated,
         "diagnostics": diagnostics,
         "partial_reasons": partial_reasons,
-        "truncated": has_more,
-        "next_cursor": next_cursor,
-        "live_overlay": live_overlay,
-        "conflicts": live_conflicts,
+        "truncated": page.has_more,
+        "next_cursor": page.next_cursor,
+        "live_overlay": live.overlay,
+        "conflicts": live.conflicts,
         "validated_checkpoint": scene_checkpoint(generation),
         "evidence": {
             "source": "persistent_segment_index",
@@ -2923,13 +2955,8 @@ fn scene_graph_success(
 fn inspect_node_success(
     generation: &godot_codex_index_store::IndexGeneration,
     selected: &NodeSelection<'_>,
-    limit: usize,
-    offset: usize,
-    properties: Vec<Value>,
-    has_more: bool,
-    next_cursor: Option<String>,
-    live_overlay: Value,
-    live_conflicts: Vec<Value>,
+    page: ValuePage,
+    live: LiveComposition,
 ) -> CallToolResult {
     let occurrences: Vec<_> = generation
         .scene
@@ -3026,7 +3053,7 @@ fn inspect_node_success(
     let subjects: BTreeSet<_> = related_ids.into_iter().map(String::as_str).collect();
     let diagnostics = scene_diagnostics(generation, selected.scene, &subjects);
     let mut partial_reasons = diagnostic_codes(&diagnostics);
-    if properties.iter().any(|property| {
+    if page.items.iter().any(|property| {
         property
             .pointer("/value/truncated")
             .and_then(Value::as_bool)
@@ -3045,8 +3072,8 @@ fn inspect_node_success(
         "status": if partial_reasons.is_empty() { "exact" } else { "partial" },
         "scene": scene_view(selected.scene),
         "node": node,
-        "query": {"selector": selected.canonical_selector, "limit": limit, "offset": offset},
-        "properties": properties,
+        "query": {"selector": selected.canonical_selector, "limit": page.limit, "offset": page.offset},
+        "properties": page.items,
         "attached_script_resource_id": selected.definition.attached_script_entity_id,
         "resources": relations,
         "groups": groups,
@@ -3054,10 +3081,10 @@ fn inspect_node_success(
         "animation_references": animations,
         "diagnostics": diagnostics,
         "partial_reasons": partial_reasons,
-        "truncated": has_more,
-        "next_cursor": next_cursor,
-        "live_overlay": live_overlay,
-        "conflicts": live_conflicts,
+        "truncated": page.has_more,
+        "next_cursor": page.next_cursor,
+        "live_overlay": live.overlay,
+        "conflicts": live.conflicts,
         "validated_checkpoint": scene_checkpoint(generation),
         "evidence": {
             "source": "persistent_segment_index",
@@ -3916,7 +3943,7 @@ mod tests {
                 SceneProperty {
                     property_id: "property-health".to_owned(),
                     scene_entity_id: SCENE.to_owned(),
-                    subject_entity_id: CHILD_OCCURRENCE.to_owned(),
+                    subject_entity_id: CHILD.to_owned(),
                     name: "health".to_owned(),
                     value_type: "int".to_owned(),
                     value: json!(100),
@@ -3932,7 +3959,7 @@ mod tests {
                 SceneProperty {
                     property_id: "property-speed".to_owned(),
                     scene_entity_id: SCENE.to_owned(),
-                    subject_entity_id: CHILD_OCCURRENCE.to_owned(),
+                    subject_entity_id: CHILD.to_owned(),
                     name: "speed".to_owned(),
                     value_type: "float".to_owned(),
                     value: json!(275.0),
