@@ -14,15 +14,21 @@ func _enter_tree() -> void:
 		return
 	_remove(PHASE_PATH)
 	_remove(COMMAND_PATH)
-	set_process(true)
 	_prepare.call_deferred()
+	_watch_commands.call_deferred()
 
 
 func _exit_tree() -> void:
-	set_process(false)
+	pass
 
 
-func _process(_delta: float) -> void:
+func _watch_commands() -> void:
+	while is_inside_tree():
+		await get_tree().create_timer(0.05).timeout
+		_poll_command()
+
+
+func _poll_command() -> void:
 	if not FileAccess.file_exists(COMMAND_PATH):
 		return
 	var file := FileAccess.open(COMMAND_PATH, FileAccess.READ)
@@ -35,10 +41,16 @@ func _process(_delta: float) -> void:
 		return
 	match command.get("action", ""):
 		"undo":
-			EditorInterface.get_editor_undo_redo().undo()
+			var undo_manager := EditorInterface.get_editor_undo_redo()
+			var undo_history := undo_manager.get_history_undo_redo(undo_manager.get_object_history_id(_alpha))
+			undo_history.undo()
+			undo_manager.version_changed.emit()
 			_publish_phase("undo")
 		"redo":
-			EditorInterface.get_editor_undo_redo().redo()
+			var redo_manager := EditorInterface.get_editor_undo_redo()
+			var redo_history := redo_manager.get_history_undo_redo(redo_manager.get_object_history_id(_alpha))
+			redo_history.redo()
+			redo_manager.version_changed.emit()
 			_publish_phase("redo")
 		"opaque":
 			var undo_redo := EditorInterface.get_editor_undo_redo()
@@ -70,16 +82,7 @@ func _prepare() -> void:
 	if scene_root == null or scene_root.scene_file_path != "res://dirty.tscn":
 		_fail("dirty scene did not open")
 		return
-	var selection := EditorInterface.get_selection()
-	selection.clear()
-	for node_name in ["Alpha", "Beta", "Gamma"]:
-		var node := scene_root.get_node_or_null(node_name)
-		if node == null:
-			_fail("selection fixture node is missing")
-			return
-		selection.add_node(node)
 	_alpha = scene_root.get_node("Alpha")
-	EditorInterface.inspect_object(_alpha)
 	EditorInterface.edit_script(load("res://scripts/clean_actor.gd"), 1, 0, false)
 	EditorInterface.edit_script(load("res://scripts/live_actor.gd"), 6, 0, true)
 	var previous: Variant = _alpha.get("movement_speed")
@@ -89,6 +92,15 @@ func _prepare() -> void:
 	undo_redo.add_undo_property(_alpha, "movement_speed", previous)
 	undo_redo.commit_action()
 	EditorInterface.mark_scene_as_unsaved()
+	EditorInterface.inspect_object(_alpha)
+	var selection := EditorInterface.get_selection()
+	selection.clear()
+	for node_name in ["Alpha", "Beta", "Gamma"]:
+		var node := scene_root.get_node_or_null(node_name)
+		if node == null:
+			_fail("selection fixture node is missing")
+			return
+		selection.add_node(node)
 	print("Sprint 7 output info")
 	push_warning("Sprint 7 output warning repeated")
 	push_warning("Sprint 7 output warning repeated")
@@ -117,7 +129,6 @@ func _publish_phase(kind: String) -> void:
 
 func _fail(message: String) -> void:
 	push_error("Codex Sprint 7 live fixture failed: %s" % message)
-	set_process(false)
 
 
 func _remove(path: String) -> void:
