@@ -1,4 +1,5 @@
 mod cursor;
+mod live_overlay;
 
 use std::collections::BTreeSet;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -21,6 +22,7 @@ use godot_codex_resource_indexer::{
     SemanticPartialCode, SemanticPartialDomain, SemanticPartialReason, normalize_resource_path,
 };
 use godot_codex_semantic_model::SnapshotReplicator;
+use live_overlay::{LiveOverlay, overlay_metadata};
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -411,6 +413,20 @@ impl GodotMcpServer {
         }
     }
 
+    fn live_dirty_scripts(&self, project_id: &str) -> Result<Vec<Value>, CallToolResult> {
+        let Ok(snapshot) = self.replicator.read() else {
+            return Ok(Vec::new());
+        };
+        let composer = LiveOverlay::bind(&snapshot, project_id).map_err(|_| {
+            structured_error(
+                "editor_project_mismatch",
+                "live editor snapshot belongs to another project",
+                true,
+            )
+        })?;
+        Ok(composer.dirty_scripts())
+    }
+
     fn resource_query(&self, input: ResourceInput, tool: CursorTool) -> CallToolResult {
         if !(1..=MAX_RESOURCE_LIMIT).contains(&input.limit) {
             return structured_error("invalid_limit", "limit must be between 1 and 200", false);
@@ -562,7 +578,54 @@ impl GodotMcpServer {
                 .cmp(relation_path(right))
                 .then_with(|| left.source.cmp(&right.source))
         });
-        if offset > occurrences.len() || offset >= MAX_TOTAL_RESULTS {
+        let mut composed_nodes: Vec<_> = occurrences
+            .iter()
+            .map(|occurrence| scene_node_view(generation, scene, occurrence, &occurrences))
+            .collect();
+        let mut live_overlay = json!({"status": "unavailable"});
+        let mut live_conflicts = Vec::new();
+        if let Ok(live_snapshot) = self.replicator.read() {
+            let composer = match LiveOverlay::bind(&live_snapshot, &generation.project_id) {
+                Ok(composer) => composer,
+                Err(_) => {
+                    return structured_error(
+                        "editor_project_mismatch",
+                        "live editor snapshot belongs to another project",
+                        true,
+                    );
+                }
+            };
+            if let Some(composed) =
+                composer.compose_scene_nodes(&scene.comparison_path, composed_nodes.clone())
+            {
+                composed_nodes = composed.nodes;
+                live_conflicts = composed.conflicts;
+                live_overlay = overlay_metadata(composer.snapshot(), Some(&composed.live_scene));
+                if let Some(object) = live_overlay.as_object_mut() {
+                    object.insert("status".to_owned(), json!("composed"));
+                    object.insert(
+                        "coverage".to_owned(),
+                        json!(if composed.coverage_complete {
+                            "complete"
+                        } else {
+                            "partial"
+                        }),
+                    );
+                    object.insert(
+                        "suppressed_disk_nodes".to_owned(),
+                        json!(composed.suppressed_disk_nodes),
+                    );
+                    object.insert(
+                        "live_only_nodes".to_owned(),
+                        json!(composed.live_only_nodes),
+                    );
+                }
+            } else {
+                live_overlay = overlay_metadata(composer.snapshot(), None);
+                live_overlay["status"] = json!("scene_not_open");
+            }
+        }
+        if offset > composed_nodes.len() || offset >= MAX_TOTAL_RESULTS {
             return structured_error(
                 "stale_cursor",
                 "cursor offset is outside the current scene generation",
@@ -571,12 +634,12 @@ impl GodotMcpServer {
         }
         let has_more = offset
             .checked_add(input.limit)
-            .is_some_and(|end| end < occurrences.len());
-        let page: Vec<_> = occurrences
+            .is_some_and(|end| end < composed_nodes.len());
+        let page: Vec<_> = composed_nodes
             .iter()
             .skip(offset)
             .take(input.limit)
-            .map(|occurrence| scene_node_view(generation, scene, occurrence, &occurrences))
+            .cloned()
             .collect();
         let next_cursor = match next_cursor(
             has_more,
@@ -597,6 +660,8 @@ impl GodotMcpServer {
             page,
             has_more,
             next_cursor,
+            live_overlay,
+            live_conflicts,
         )
     }
 
@@ -661,7 +726,56 @@ impl GodotMcpServer {
                 .cmp(&right.name)
                 .then_with(|| left.property_id.cmp(&right.property_id))
         });
-        if offset > properties.len() || offset >= MAX_TOTAL_RESULTS {
+        let mut composed_properties: Vec<_> = properties
+            .iter()
+            .map(|property| property_view(property))
+            .collect();
+        let effective_node_path = selected
+            .occurrence
+            .map(relation_path)
+            .unwrap_or(&selected.definition.node_path);
+        let mut live_overlay = json!({"status": "unavailable"});
+        let mut live_conflicts = Vec::new();
+        if let Ok(live_snapshot) = self.replicator.read() {
+            let composer = match LiveOverlay::bind(&live_snapshot, &generation.project_id) {
+                Ok(composer) => composer,
+                Err(_) => {
+                    return structured_error(
+                        "editor_project_mismatch",
+                        "live editor snapshot belongs to another project",
+                        true,
+                    );
+                }
+            };
+            if let Some(composed) = composer.compose_node_properties(
+                &selected.scene.comparison_path,
+                effective_node_path,
+                composed_properties.clone(),
+            ) {
+                composed_properties = composed.properties;
+                live_conflicts = composed.conflicts;
+                live_overlay = overlay_metadata(composer.snapshot(), Some(&composed.live_scene));
+                if let Some(object) = live_overlay.as_object_mut() {
+                    object.insert("status".to_owned(), json!("composed"));
+                    object.insert("node".to_owned(), composed.live_node);
+                    object.insert(
+                        "properties_coverage".to_owned(),
+                        json!(if composed.properties_complete {
+                            "complete"
+                        } else {
+                            "partial"
+                        }),
+                    );
+                }
+            } else {
+                live_overlay = overlay_metadata(
+                    composer.snapshot(),
+                    composer.scene_for_path(&selected.scene.comparison_path),
+                );
+                live_overlay["status"] = json!("node_not_observed");
+            }
+        }
+        if offset > composed_properties.len() || offset >= MAX_TOTAL_RESULTS {
             return structured_error(
                 "stale_cursor",
                 "cursor offset is outside the current scene generation",
@@ -670,12 +784,12 @@ impl GodotMcpServer {
         }
         let has_more = offset
             .checked_add(input.limit)
-            .is_some_and(|end| end < properties.len());
-        let page: Vec<_> = properties
+            .is_some_and(|end| end < composed_properties.len());
+        let page: Vec<_> = composed_properties
             .iter()
             .skip(offset)
             .take(input.limit)
-            .map(|property| property_view(property))
+            .cloned()
             .collect();
         let next_cursor = match next_cursor(
             has_more,
@@ -696,6 +810,8 @@ impl GodotMcpServer {
             page,
             has_more,
             next_cursor,
+            live_overlay,
+            live_conflicts,
         )
     }
 
@@ -786,6 +902,10 @@ impl GodotMcpServer {
             Ok(cursor) => cursor,
             Err(result) => return result,
         };
+        let dirty_scripts = match self.live_dirty_scripts(&generation.project_id) {
+            Ok(scripts) => scripts,
+            Err(error) => return error,
+        };
         search_symbols_success(
             generation,
             &input,
@@ -793,6 +913,7 @@ impl GodotMcpServer {
             offset,
             result,
             next_cursor,
+            dirty_scripts,
         )
     }
 
@@ -892,6 +1013,10 @@ impl GodotMcpServer {
             Ok(cursor) => cursor,
             Err(result) => return result,
         };
+        let dirty_scripts = match self.live_dirty_scripts(&generation.project_id) {
+            Ok(scripts) => scripts,
+            Err(error) => return error,
+        };
         inspect_symbol_success(
             generation,
             &selector_binding,
@@ -899,6 +1024,7 @@ impl GodotMcpServer {
             offset,
             result,
             next_cursor,
+            dirty_scripts,
         )
     }
 
@@ -987,6 +1113,10 @@ impl GodotMcpServer {
             },
             None => None,
         };
+        let dirty_scripts = match self.live_dirty_scripts(&generation.project_id) {
+            Ok(scripts) => scripts,
+            Err(error) => return error,
+        };
         CallToolResult::structured(json!({
             "project_id": generation.project_id,
             "generation_id": query_index.generation_id(),
@@ -1009,6 +1139,8 @@ impl GodotMcpServer {
             "usages": result.usages,
             "conflicts": result.conflicts,
             "partial_reasons": snapshot.partial_reasons().iter().map(partial_reason_view).collect::<Vec<_>>(),
+            "may_be_stale_for_editor": !dirty_scripts.is_empty(),
+            "dirty_open_scripts": dirty_scripts,
             "next_cursor": next_cursor,
         }))
     }
@@ -1898,6 +2030,7 @@ fn search_symbols_success(
     offset: usize,
     result: ScriptSymbolQueryResult,
     next_cursor: Option<String>,
+    dirty_scripts: Vec<Value>,
 ) -> CallToolResult {
     let script_ids: BTreeSet<_> = script_filter
         .map(|(script_id, _, _)| std::iter::once(script_id.as_str()).collect())
@@ -1918,6 +2051,25 @@ fn search_symbols_success(
     partial_reasons.extend(diagnostic_codes(&diagnostics));
     if diagnostics_truncated {
         partial_reasons.insert("diagnostics_truncated".to_owned());
+    }
+    let relevant_paths: BTreeSet<_> = generation
+        .script
+        .documents
+        .iter()
+        .filter(|document| script_ids.contains(document.script_resource_id.as_str()))
+        .map(|document| document.path.as_str())
+        .collect();
+    let dirty_scripts = dirty_scripts
+        .into_iter()
+        .filter(|script| {
+            script
+                .get("path")
+                .and_then(Value::as_str)
+                .is_some_and(|path| relevant_paths.contains(path))
+        })
+        .collect::<Vec<_>>();
+    if !dirty_scripts.is_empty() {
+        partial_reasons.insert("dirty_open_script_not_parsed".to_owned());
     }
     let symbols = result
         .symbols
@@ -1949,6 +2101,8 @@ fn search_symbols_success(
         "partial_reasons": partial_reasons,
         "truncated": result.has_more,
         "next_cursor": next_cursor,
+        "may_be_stale_for_editor": !dirty_scripts.is_empty(),
+        "dirty_open_scripts": dirty_scripts,
         "validated_checkpoint": script_checkpoint(generation),
         "evidence": {
             "source": "persistent_segment_index",
@@ -1965,6 +2119,7 @@ fn inspect_symbol_success(
     offset: usize,
     result: ScriptSymbolInspectionResult,
     next_cursor: Option<String>,
+    dirty_scripts: Vec<Value>,
 ) -> CallToolResult {
     let script_ids = BTreeSet::from([result.document.script_resource_id.as_str()]);
     let mut diagnostics = result
@@ -1988,6 +2143,15 @@ fn inspect_symbol_success(
     partial_reasons.extend(diagnostic_codes(&diagnostics));
     if diagnostics_truncated {
         partial_reasons.insert("diagnostics_truncated".to_owned());
+    }
+    let dirty_scripts = dirty_scripts
+        .into_iter()
+        .filter(|script| {
+            script.get("path").and_then(Value::as_str) == Some(result.document.path.as_str())
+        })
+        .collect::<Vec<_>>();
+    if !dirty_scripts.is_empty() {
+        partial_reasons.insert("dirty_open_script_not_parsed".to_owned());
     }
     let (scene_attachments, outgoing_relations): (Vec<_>, Vec<_>) = result
         .relations
@@ -2022,6 +2186,8 @@ fn inspect_symbol_success(
         "partial_reasons": partial_reasons,
         "truncated": result.has_more,
         "next_cursor": next_cursor,
+        "may_be_stale_for_editor": !dirty_scripts.is_empty(),
+        "dirty_open_scripts": dirty_scripts,
         "validated_checkpoint": script_checkpoint(generation),
         "evidence": {
             "source": "persistent_segment_index",
@@ -2277,6 +2443,8 @@ fn scene_graph_success(
     nodes: Vec<Value>,
     has_more: bool,
     next_cursor: Option<String>,
+    live_overlay: Value,
+    live_conflicts: Vec<Value>,
 ) -> CallToolResult {
     let subjects: BTreeSet<_> = nodes
         .iter()
@@ -2327,6 +2495,8 @@ fn scene_graph_success(
         "partial_reasons": partial_reasons,
         "truncated": has_more,
         "next_cursor": next_cursor,
+        "live_overlay": live_overlay,
+        "conflicts": live_conflicts,
         "validated_checkpoint": scene_checkpoint(generation),
         "evidence": {
             "source": "persistent_segment_index",
@@ -2344,6 +2514,8 @@ fn inspect_node_success(
     properties: Vec<Value>,
     has_more: bool,
     next_cursor: Option<String>,
+    live_overlay: Value,
+    live_conflicts: Vec<Value>,
 ) -> CallToolResult {
     let occurrences: Vec<_> = generation
         .scene
@@ -2470,6 +2642,8 @@ fn inspect_node_success(
         "partial_reasons": partial_reasons,
         "truncated": has_more,
         "next_cursor": next_cursor,
+        "live_overlay": live_overlay,
+        "conflicts": live_conflicts,
         "validated_checkpoint": scene_checkpoint(generation),
         "evidence": {
             "source": "persistent_segment_index",
