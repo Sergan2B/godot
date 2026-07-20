@@ -463,7 +463,7 @@
         {"$ref": "rpc.schema.json#/$defs/request"},
         {
           "properties": {
-            "protocol_version": {"const": "1.4"},
+            "protocol_version": {"enum": ["1.4", "1.5"]},
             "method": {"const": "script.snapshot.get"},
             "params": {"$ref": "#/$defs/scriptSnapshotParams"}
           }
@@ -483,7 +483,7 @@
         {"$ref": "rpc.schema.json#/$defs/request"},
         {
           "properties": {
-            "protocol_version": {"const": "1.4"},
+            "protocol_version": {"enum": ["1.4", "1.5"]},
             "method": {"const": "script.delta.get"},
             "params": {"$ref": "#/$defs/scriptDeltaParams"}
           }
@@ -536,7 +536,7 @@
         {"$ref": "rpc.schema.json#/$defs/notification"},
         {
           "properties": {
-            "protocol_version": {"const": "1.4"},
+            "protocol_version": {"enum": ["1.4", "1.5"]},
             "method": {"const": "snapshot.begin"},
             "params": {"$ref": "#/$defs/scriptSnapshotBeginParams"}
           }
@@ -565,7 +565,7 @@
         {
           "required": ["domain", "payload_json"],
           "properties": {
-            "protocol_version": {"const": "1.4"},
+            "protocol_version": {"enum": ["1.4", "1.5"]},
             "domain": {"const": "script_graph"},
             "payload": {"$ref": "#/$defs/scriptSnapshotPayload"},
             "payload_json": {"type": "string", "minLength": 2, "maxLength": 262144}
@@ -602,7 +602,7 @@
         {"$ref": "rpc.schema.json#/$defs/notification"},
         {
           "properties": {
-            "protocol_version": {"const": "1.4"},
+            "protocol_version": {"enum": ["1.4", "1.5"]},
             "method": {"const": "snapshot.end"},
             "params": {"$ref": "#/$defs/scriptSnapshotEndParams"}
           }
@@ -624,7 +624,7 @@
         {"$ref": "rpc.schema.json#/$defs/ack"},
         {
           "properties": {
-            "protocol_version": {"const": "1.4"},
+            "protocol_version": {"enum": ["1.4", "1.5"]},
             "params": {"$ref": "#/$defs/scriptSnapshotAckParams"}
           }
         }
@@ -650,7 +650,7 @@
         {"$ref": "rpc.schema.json#/$defs/notification"},
         {
           "properties": {
-            "protocol_version": {"const": "1.4"},
+            "protocol_version": {"enum": ["1.4", "1.5"]},
             "method": {"const": "script_graph_changed"},
             "params": {"$ref": "#/$defs/scriptGraphChangedParams"}
           }
@@ -676,7 +676,7 @@
         {"$ref": "rpc.schema.json#/$defs/notification"},
         {
           "properties": {
-            "protocol_version": {"const": "1.4"},
+            "protocol_version": {"enum": ["1.4", "1.5"]},
             "method": {"const": "script_journal_gap"},
             "params": {"$ref": "#/$defs/scriptJournalGapParams"}
           }

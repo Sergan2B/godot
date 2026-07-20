@@ -176,6 +176,39 @@
         "container_items": {
           "const": 1000
         },
+        "editor_open_scenes": {
+          "const": 64
+        },
+        "editor_selected_nodes": {
+          "const": 256
+        },
+        "editor_inspector_properties": {
+          "const": 512
+        },
+        "editor_open_scripts": {
+          "const": 256
+        },
+        "editor_script_selections": {
+          "const": 32
+        },
+        "editor_history_records": {
+          "const": 128
+        },
+        "editor_diagnostics": {
+          "const": 200
+        },
+        "editor_diagnostic_message_bytes": {
+          "const": 16384
+        },
+        "editor_diagnostics_bytes": {
+          "const": 262144
+        },
+        "editor_viewports": {
+          "const": 16
+        },
+        "editor_projected_value_bytes": {
+          "const": 65536
+        },
         "resource_records": {
           "const": 250000
         },

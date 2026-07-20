@@ -783,7 +783,7 @@ fn validate_snapshot_chunk(
 ) -> Result<(), BridgeError> {
     let canonical_payload = canonical_serialized(&chunk.payload)?;
     let checksum_input = chunk.payload_json.as_deref().unwrap_or(&canonical_payload);
-    if !matches!(chunk.protocol_version.as_str(), "1.3" | "1.4")
+    if !matches!(chunk.protocol_version.as_str(), "1.3" | "1.4" | "1.5")
         || chunk.kind != "chunk"
         || chunk.domain != "scene_graph"
         || chunk.snapshot_id != accepted.snapshot_id
@@ -882,7 +882,7 @@ async fn receive_scene_snapshot<S: SceneSnapshotSink>(
         || accepted.revisions.resource_revision != accepted.resource_revision
         || accepted.revisions.scene_graph_revision != accepted.scene_graph_revision
         || match session.protocol_version() {
-            "1.4" => accepted
+            "1.4" | "1.5" => accepted
                 .revisions
                 .script_graph_revision
                 .is_none_or(|revision| revision > MAX_SAFE_REVISION),
@@ -1171,7 +1171,7 @@ pub(crate) async fn get_next_scene_delta(
 }
 
 fn require_scene_graph(session: &Session) -> Result<(), BridgeError> {
-    if !matches!(session.protocol_version(), "1.3" | "1.4")
+    if !matches!(session.protocol_version(), "1.3" | "1.4" | "1.5")
         || !session.capabilities().contains("scene.packed_state")
         || !session.capabilities().contains("scene.incremental_index")
         || !session.capabilities().contains("scene.project_context")

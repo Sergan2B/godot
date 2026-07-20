@@ -143,6 +143,22 @@ static bool is_client_name(const String &p_value) {
 	return true;
 }
 
+static bool has_editor_profile(const String &p_version) {
+	return p_version == "1.1" || p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5";
+}
+
+static bool has_resource_profile(const String &p_version) {
+	return p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5";
+}
+
+static bool has_scene_profile(const String &p_version) {
+	return p_version == "1.3" || p_version == "1.4" || p_version == "1.5";
+}
+
+static bool has_script_profile(const String &p_version) {
+	return p_version == "1.4" || p_version == "1.5";
+}
+
 } // namespace
 
 Dictionary BridgeRpcSession::_make_context() const {
@@ -199,7 +215,7 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 	transport["version"] = "1.0";
 	transport["readiness"] = "ready";
 	capabilities.push_back(transport);
-	if (protocol_version == "1.1" || protocol_version == "1.2" || protocol_version == "1.3" || protocol_version == "1.4") {
+	if (has_editor_profile(protocol_version)) {
 		const char *names[] = {
 			"editor.context",
 			"editor.inspector",
@@ -214,7 +230,23 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 			capabilities.push_back(capability);
 		}
 	}
-	if (protocol_version == "1.2" || protocol_version == "1.3" || protocol_version == "1.4") {
+	if (protocol_version == "1.5") {
+		const char *names[] = {
+			"editor.open_scenes",
+			"editor.open_scripts",
+			"editor.native_history",
+			"editor.diagnostics",
+			"editor.viewport_metadata",
+		};
+		for (const char *name : names) {
+			Dictionary capability;
+			capability["name"] = name;
+			capability["version"] = "1.0";
+			capability["readiness"] = "ready";
+			capabilities.push_back(capability);
+		}
+	}
+	if (has_resource_profile(protocol_version)) {
 		const char *names[] = {
 			"resource.uid_dependencies",
 			"resource.incremental_index",
@@ -227,7 +259,7 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 			capabilities.push_back(capability);
 		}
 	}
-	if (protocol_version == "1.3" || protocol_version == "1.4") {
+	if (has_scene_profile(protocol_version)) {
 		const char *names[] = {
 			"scene.packed_state",
 			"scene.incremental_index",
@@ -241,7 +273,7 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 			capabilities.push_back(capability);
 		}
 	}
-	if (protocol_version == "1.4") {
+	if (has_script_profile(protocol_version)) {
 		const char *names[] = {
 			"script.gdscript_semantics",
 			"script.incremental_index",
@@ -276,7 +308,7 @@ Dictionary BridgeRpcSession::_make_limits() const {
 	limits["main_thread_commands_per_frame"] = (int64_t)MainThreadDispatcher::MAX_COMMANDS_PER_FRAME;
 	limits["main_thread_budget_us"] = (int64_t)MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME;
 	limits["ping_echo_bytes"] = (int64_t)MAX_PING_ECHO_BYTES;
-	if (protocol_version == "1.1" || protocol_version == "1.2" || protocol_version == "1.3" || protocol_version == "1.4") {
+	if (has_editor_profile(protocol_version)) {
 		limits["hard_message_bytes"] = (int64_t)8388608;
 		limits["snapshot_chunk_bytes"] = (int64_t)524288;
 		limits["event_journal_entries"] = (int64_t)4096;
@@ -285,7 +317,20 @@ Dictionary BridgeRpcSession::_make_limits() const {
 		limits["variant_depth"] = (int64_t)8;
 		limits["container_items"] = (int64_t)1000;
 	}
-	if (protocol_version == "1.2" || protocol_version == "1.3" || protocol_version == "1.4") {
+	if (protocol_version == "1.5") {
+		limits["editor_open_scenes"] = (int64_t)64;
+		limits["editor_selected_nodes"] = (int64_t)256;
+		limits["editor_inspector_properties"] = (int64_t)512;
+		limits["editor_open_scripts"] = (int64_t)256;
+		limits["editor_script_selections"] = (int64_t)32;
+		limits["editor_history_records"] = (int64_t)128;
+		limits["editor_diagnostics"] = (int64_t)200;
+		limits["editor_diagnostic_message_bytes"] = (int64_t)16384;
+		limits["editor_diagnostics_bytes"] = (int64_t)262144;
+		limits["editor_viewports"] = (int64_t)16;
+		limits["editor_projected_value_bytes"] = (int64_t)65536;
+	}
+	if (has_resource_profile(protocol_version)) {
 		limits["resource_records"] = (int64_t)250000;
 		limits["resource_dependencies"] = (int64_t)2000000;
 		limits["resource_dependencies_per_record"] = (int64_t)4096;
@@ -297,7 +342,7 @@ Dictionary BridgeRpcSession::_make_limits() const {
 		limits["resource_snapshot_timeout_ms"] = (int64_t)120000;
 		limits["resource_snapshot_concurrency"] = (int64_t)1;
 	}
-	if (protocol_version == "1.3" || protocol_version == "1.4") {
+	if (has_scene_profile(protocol_version)) {
 		limits["scene_records"] = (int64_t)100000;
 		limits["scene_nodes"] = (int64_t)1000000;
 		limits["scene_properties"] = (int64_t)4000000;
@@ -310,7 +355,7 @@ Dictionary BridgeRpcSession::_make_limits() const {
 		limits["scene_snapshot_timeout_ms"] = (int64_t)120000;
 		limits["scene_snapshot_concurrency"] = (int64_t)1;
 	}
-	if (protocol_version == "1.4") {
+	if (has_script_profile(protocol_version)) {
 		limits["script_documents"] = (int64_t)250000;
 		limits["script_symbols"] = (int64_t)2000000;
 		limits["script_relations"] = (int64_t)4000000;
@@ -338,13 +383,13 @@ Dictionary BridgeRpcSession::_make_revisions() const {
 	revisions["event_seq"] = (int64_t)0;
 	revisions["project_revision"] = (int64_t)0;
 	revisions["operation_seq"] = (int64_t)0;
-	if (protocol_version == "1.2" || protocol_version == "1.3" || protocol_version == "1.4") {
+	if (has_resource_profile(protocol_version)) {
 		revisions["resource_revision"] = (int64_t)1;
 	}
-	if (protocol_version == "1.3" || protocol_version == "1.4") {
+	if (has_scene_profile(protocol_version)) {
 		revisions["scene_graph_revision"] = (int64_t)1;
 	}
-	if (protocol_version == "1.4") {
+	if (has_script_profile(protocol_version)) {
 		revisions["script_graph_revision"] = (int64_t)1;
 	}
 	revisions["scene_revisions"] = Dictionary();
@@ -406,9 +451,9 @@ bool BridgeRpcSession::_validate_ping_params(const Dictionary &p_params) const {
 
 bool BridgeRpcSession::_validate_snapshot_params(const Dictionary &p_params) const {
 	if (!p_params.has("domains")) {
-		return true;
+		return p_params.is_empty();
 	}
-	if (p_params["domains"].get_type() != Variant::ARRAY) {
+	if (p_params.size() != 1 || p_params["domains"].get_type() != Variant::ARRAY) {
 		return false;
 	}
 	const Array domains = p_params["domains"];
@@ -421,7 +466,9 @@ bool BridgeRpcSession::_validate_snapshot_params(const Dictionary &p_params) con
 			return false;
 		}
 		const String domain = domains[index];
-		if ((domain != "editor_context" && domain != "editor_inspector") || unique.has(domain)) {
+		const bool baseline_domain = domain == "editor_context" || domain == "editor_inspector";
+		const bool live_domain = protocol_version == "1.5" && (domain == "editor_scripts" || domain == "editor_history" || domain == "editor_diagnostics" || domain == "editor_viewports");
+		if ((!baseline_domain && !live_domain) || unique.has(domain)) {
 			return false;
 		}
 		unique.insert(domain);
@@ -543,14 +590,14 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 			method = METHOD_PING;
 		} else if (method_name == "bridge.capabilities") {
 			method = METHOD_CAPABILITIES;
-		} else if (method_name == "editor.snapshot.get" && (protocol_version == "1.1" || protocol_version == "1.2" || protocol_version == "1.3" || protocol_version == "1.4")) {
+		} else if (method_name == "editor.snapshot.get" && has_editor_profile(protocol_version)) {
 			if (!_validate_snapshot_params(params)) {
 				_set_error_outcome(request_id, "invalid_request", "The snapshot parameters are invalid.", false, r_outcome);
 				return OK;
 			}
 			method = METHOD_EDITOR_SNAPSHOT;
 		} else if (method_name == "resource.snapshot.get") {
-			if (protocol_version != "1.2" && protocol_version != "1.3" && protocol_version != "1.4") {
+			if (!has_resource_profile(protocol_version)) {
 				_set_error_outcome(request_id, "capability_unavailable", "Resource graph snapshots require Bridge RPC 1.2.", false, r_outcome);
 				return OK;
 			}
@@ -560,7 +607,7 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 			}
 			method = METHOD_RESOURCE_SNAPSHOT;
 		} else if (method_name == "resource.delta.get") {
-			if (protocol_version != "1.2" && protocol_version != "1.3" && protocol_version != "1.4") {
+			if (!has_resource_profile(protocol_version)) {
 				_set_error_outcome(request_id, "capability_unavailable", "Resource graph deltas require Bridge RPC 1.2.", false, r_outcome);
 				return OK;
 			}
@@ -570,7 +617,7 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 			}
 			method = METHOD_RESOURCE_DELTA;
 		} else if (method_name == "scene.snapshot.get") {
-			if (protocol_version != "1.3" && protocol_version != "1.4") {
+			if (!has_scene_profile(protocol_version)) {
 				_set_error_outcome(request_id, "capability_unavailable", "Scene graph snapshots require Bridge RPC 1.3.", false, r_outcome);
 				return OK;
 			}
@@ -580,7 +627,7 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 			}
 			method = METHOD_SCENE_SNAPSHOT;
 		} else if (method_name == "scene.delta.get") {
-			if (protocol_version != "1.3" && protocol_version != "1.4") {
+			if (!has_scene_profile(protocol_version)) {
 				_set_error_outcome(request_id, "capability_unavailable", "Scene graph deltas require Bridge RPC 1.3.", false, r_outcome);
 				return OK;
 			}
@@ -590,7 +637,7 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 			}
 			method = METHOD_SCENE_DELTA;
 		} else if (method_name == "script.snapshot.get") {
-			if (protocol_version != "1.4") {
+			if (!has_script_profile(protocol_version)) {
 				_set_error_outcome(request_id, "capability_unavailable", "Script graph snapshots require Bridge RPC 1.4.", false, r_outcome);
 				return OK;
 			}
@@ -600,7 +647,7 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 			}
 			method = METHOD_SCRIPT_SNAPSHOT;
 		} else if (method_name == "script.delta.get") {
-			if (protocol_version != "1.4") {
+			if (!has_script_profile(protocol_version)) {
 				_set_error_outcome(request_id, "capability_unavailable", "Script graph deltas require Bridge RPC 1.4.", false, r_outcome);
 				return OK;
 			}
@@ -675,7 +722,7 @@ Error BridgeRpcSession::_handle_cancel(const Dictionary &p_message, Outcome &r_o
 }
 
 Error BridgeRpcSession::_handle_ack(const Dictionary &p_message, Outcome &r_outcome) {
-	if ((protocol_version != "1.1" && protocol_version != "1.2" && protocol_version != "1.3" && protocol_version != "1.4") || !initialized || !_validate_common_envelope(p_message)) {
+	if (!has_editor_profile(protocol_version) || !initialized || !_validate_common_envelope(p_message)) {
 		return ERR_INVALID_DATA;
 	}
 	String ack_id;
@@ -693,9 +740,9 @@ Error BridgeRpcSession::_handle_ack(const Dictionary &p_message, Outcome &r_outc
 		if (params.size() != 3 || !get_string(params, "domain", domain)) {
 			return ERR_INVALID_DATA;
 		}
-		const bool valid_resource_domain = (protocol_version == "1.2" || protocol_version == "1.3" || protocol_version == "1.4") && domain == "resource_graph";
-		const bool valid_scene_domain = (protocol_version == "1.3" || protocol_version == "1.4") && domain == "scene_graph";
-		const bool valid_script_domain = protocol_version == "1.4" && domain == "script_graph";
+		const bool valid_resource_domain = has_resource_profile(protocol_version) && domain == "resource_graph";
+		const bool valid_scene_domain = has_scene_profile(protocol_version) && domain == "scene_graph";
+		const bool valid_script_domain = has_script_profile(protocol_version) && domain == "script_graph";
 		if (!valid_resource_domain && !valid_scene_domain && !valid_script_domain) {
 			return ERR_INVALID_DATA;
 		}
@@ -803,12 +850,12 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 		revisions.erase("resource_revision");
 		result["revisions"] = revisions;
 	}
-	if (protocol_version != "1.3" && protocol_version != "1.4" && result.has("revisions") && result["revisions"].get_type() == Variant::DICTIONARY) {
+	if (!has_scene_profile(protocol_version) && result.has("revisions") && result["revisions"].get_type() == Variant::DICTIONARY) {
 		Dictionary revisions = result["revisions"];
 		revisions.erase("scene_graph_revision");
 		result["revisions"] = revisions;
 	}
-	if (protocol_version != "1.4" && result.has("revisions") && result["revisions"].get_type() == Variant::DICTIONARY) {
+	if (!has_script_profile(protocol_version) && result.has("revisions") && result["revisions"].get_type() == Variant::DICTIONARY) {
 		Dictionary revisions = result["revisions"];
 		revisions.erase("script_graph_revision");
 		result["revisions"] = revisions;
@@ -879,7 +926,7 @@ bool BridgeRpcSession::is_initialized() const {
 
 void BridgeRpcSession::set_protocol_version(const String &p_protocol_version) {
 	ERR_FAIL_COND_MSG(initialized, "The negotiated protocol version cannot change after initialization.");
-	ERR_FAIL_COND_MSG(p_protocol_version != "1.0" && p_protocol_version != "1.1" && p_protocol_version != "1.2" && p_protocol_version != "1.3" && p_protocol_version != "1.4", "Unsupported Bridge RPC protocol version.");
+	ERR_FAIL_COND_MSG(p_protocol_version != "1.0" && !has_editor_profile(p_protocol_version), "Unsupported Bridge RPC protocol version.");
 	protocol_version = p_protocol_version;
 }
 

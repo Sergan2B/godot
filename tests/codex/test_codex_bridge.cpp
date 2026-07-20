@@ -820,7 +820,7 @@ TEST_CASE("[CodexBridge] Handshake negotiates the compatible 1.1 minor") {
 	CHECK(handshake.get_selected_protocol_version() == "1.1");
 }
 
-TEST_CASE("[CodexS5BridgeProfile] Handshake negotiates Bridge RPC 1.4 and caps future major-one minors") {
+TEST_CASE("[CodexS7BridgeProfile] Handshake negotiates Bridge RPC 1.5 and caps future major-one minors") {
 	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
 	const PackedByteArray token = bytes_from_range(0xa0, 32);
@@ -830,13 +830,13 @@ TEST_CASE("[CodexS5BridgeProfile] Handshake negotiates Bridge RPC 1.4 and caps f
 	BridgeHandshakeSession handshake(token, project_id, editor_session_id, 0);
 	BridgeHandshakeSession::Outcome challenge;
 	REQUIRE(handshake.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, "1.9"), 1, challenge) == OK);
-	CHECK(challenge.response["selected_protocol_version"] == "1.4");
-	CHECK(handshake.get_selected_protocol_version() == "1.4");
+	CHECK(challenge.response["selected_protocol_version"] == "1.5");
+	CHECK(handshake.get_selected_protocol_version() == "1.5");
 
 	BridgeHandshakeSession exact(token, project_id, editor_session_id, 0);
-	REQUIRE(exact.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, "1.4"), 1, challenge) == OK);
-	CHECK(challenge.response["selected_protocol_version"] == "1.4");
-	CHECK(exact.get_selected_protocol_version() == "1.4");
+	REQUIRE(exact.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, "1.5"), 1, challenge) == OK);
+	CHECK(challenge.response["selected_protocol_version"] == "1.5");
+	CHECK(exact.get_selected_protocol_version() == "1.5");
 }
 
 TEST_CASE("[CodexBridge] Handshake rejects binding, version, proof, replay, and timeout failures") {
@@ -1294,6 +1294,51 @@ TEST_CASE("[CodexS5BridgeProfile] RPC 1.3 downgrade omits every script field") {
 	CHECK(rpc_error_code(outcome) == "capability_unavailable");
 }
 
+TEST_CASE("[CodexS7BridgeProfile] RPC 1.5 exposes only the bounded live editor extension") {
+	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
+	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
+	BridgeRpcSession rpc(project_id, editor_session_id);
+	rpc.set_protocol_version("1.5");
+	BridgeRpcSession::Outcome outcome;
+
+	REQUIRE(rpc.handle_message(make_rpc_request("req:init-live-editor", "bridge.initialize", make_initialize_params(), project_id, editor_session_id, 5000, "1.5"), 0, 1, outcome) == OK);
+	REQUIRE(rpc.complete(1, 1, outcome) == OK);
+	const Dictionary initialize_result = outcome.response["result"];
+	CHECK(initialize_result["protocol_version"] == "1.5");
+	const Array capabilities = initialize_result["capabilities"];
+	CHECK(capabilities.size() == 20);
+	int live_capabilities = 0;
+	for (int index = 0; index < capabilities.size(); index++) {
+		const String name = Dictionary(capabilities[index])["name"];
+		if (name == "editor.open_scenes" || name == "editor.open_scripts" || name == "editor.native_history" || name == "editor.diagnostics" || name == "editor.viewport_metadata") {
+			live_capabilities++;
+			CHECK(Dictionary(capabilities[index])["readiness"] == "ready");
+		}
+	}
+	CHECK(live_capabilities == 5);
+	const Dictionary limits = initialize_result["limits"];
+	CHECK((int64_t)limits["editor_open_scenes"] == 64);
+	CHECK((int64_t)limits["editor_selected_nodes"] == 256);
+	CHECK((int64_t)limits["editor_inspector_properties"] == 512);
+	CHECK((int64_t)limits["editor_diagnostics_bytes"] == 262144);
+
+	Dictionary snapshot_params;
+	Array domains;
+	for (const char *domain : { "editor_context", "editor_inspector", "editor_scripts", "editor_history", "editor_diagnostics", "editor_viewports" }) {
+		domains.push_back(domain);
+	}
+	snapshot_params["domains"] = domains;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:live-editor-snapshot", "editor.snapshot.get", snapshot_params, project_id, editor_session_id, 5000, "1.5"), 2, 2, outcome) == OK);
+	CHECK(outcome.method == BridgeRpcSession::METHOD_EDITOR_SNAPSHOT);
+
+	BridgeRpcSession downgraded(project_id, editor_session_id);
+	downgraded.set_protocol_version("1.4");
+	REQUIRE(downgraded.handle_message(make_rpc_request("req:init-live-editor-old", "bridge.initialize", make_initialize_params(), project_id, editor_session_id, 5000, "1.4"), 0, 10, outcome) == OK);
+	REQUIRE(downgraded.complete(10, 1, outcome) == OK);
+	REQUIRE(downgraded.handle_message(make_rpc_request("req:no-live-editor-domain", "editor.snapshot.get", snapshot_params, project_id, editor_session_id, 5000, "1.4"), 2, 11, outcome) == OK);
+	CHECK(rpc_error_code(outcome) == "invalid_request");
+}
+
 TEST_CASE("[CodexBridge] Revision clock advances selection and scene domains monotonically") {
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
 	const String scene_id = "scene:0123456789abcdef0123456789abcdef";
@@ -1302,14 +1347,18 @@ TEST_CASE("[CodexBridge] Revision clock advances selection and scene domains mon
 	CHECK(revisions.record_selection_change() == 1);
 	CHECK(revisions.record_scene_change(scene_id) == 2);
 	CHECK(revisions.record_scene_change(scene_id) == 3);
-	CHECK(revisions.get_scene_revision(scene_id) == 2);
+	CHECK(revisions.record_native_operation(scene_id) == 1);
+	CHECK(revisions.get_scene_revision(scene_id) == 3);
 	const Dictionary vector = revisions.get_revision_vector();
 	CHECK(vector["editor_session_id"] == editor_session_id);
-	CHECK((int64_t)vector["event_seq"] == 3);
-	CHECK((int64_t)vector["project_revision"] == 2);
+	CHECK((int64_t)vector["event_seq"] == 4);
+	CHECK((int64_t)vector["project_revision"] == 3);
+	CHECK((int64_t)vector["operation_seq"] == 1);
 	CHECK((int64_t)vector["resource_revision"] == 1);
 	CHECK((int64_t)vector["scene_graph_revision"] == 1);
-	CHECK((int64_t)Dictionary(vector["scene_revisions"])[scene_id] == 2);
+	CHECK((int64_t)Dictionary(vector["scene_revisions"])[scene_id] == 3);
+	revisions.retire_scene(scene_id);
+	CHECK_FALSE(Dictionary(revisions.get_revision_vector()["scene_revisions"]).has(scene_id));
 	CHECK(revisions.record_resource_change() == 2);
 	CHECK(revisions.record_scene_graph_change() == 2);
 	CHECK(revisions.get_scene_graph_revision() == 2);

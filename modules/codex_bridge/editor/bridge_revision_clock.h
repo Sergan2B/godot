@@ -45,8 +45,11 @@ class BridgeRevisionClock {
 
 public:
 	void initialize(const String &p_editor_session_id);
+	uint64_t record_context_change();
 	uint64_t record_selection_change();
 	uint64_t record_scene_change(const String &p_scene_id);
+	uint64_t record_native_operation(const String &p_scene_id = String());
+	void retire_scene(const String &p_scene_id);
 	uint64_t record_resource_change();
 	uint64_t record_scene_graph_change();
 	uint64_t record_script_graph_change();

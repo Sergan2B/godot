@@ -380,7 +380,7 @@ impl Session {
         let mut stream = FrameStream::connect(&discovery.endpoint).await?;
         // Bridge negotiation advertises one highest supported minor per major;
         // the server selects the best 1.x fallback it implements.
-        let offered_versions = vec!["1.4".to_owned()];
+        let offered_versions = vec!["1.5".to_owned()];
         let mut client_nonce = [0_u8; 32];
         getrandom::fill(&mut client_nonce)
             .map_err(|error| BridgeError::Invalid(format!("client nonce failed: {error}")))?;
@@ -399,7 +399,7 @@ impl Session {
         if required_str(&challenge, "kind")? != "handshake.server_challenge"
             || !matches!(
                 selected_protocol_version.as_str(),
-                "1.0" | "1.1" | "1.2" | "1.3" | "1.4"
+                "1.0" | "1.1" | "1.2" | "1.3" | "1.4" | "1.5"
             )
             || required_str(&challenge, "project_id")? != discovery.project_id
             || required_str(&challenge, "editor_session_id")? != discovery.editor_session_id
@@ -462,16 +462,28 @@ impl Session {
         }
         if matches!(
             session.selected_protocol_version.as_str(),
-            "1.2" | "1.3" | "1.4"
+            "1.2" | "1.3" | "1.4" | "1.5"
         ) {
             requested_capabilities
                 .extend(["resource.uid_dependencies", "resource.incremental_index"]);
         }
-        if matches!(session.selected_protocol_version.as_str(), "1.3" | "1.4") {
+        if matches!(
+            session.selected_protocol_version.as_str(),
+            "1.3" | "1.4" | "1.5"
+        ) {
             requested_capabilities.extend([
                 "scene.packed_state",
                 "scene.incremental_index",
                 "scene.project_context",
+            ]);
+        }
+        if session.selected_protocol_version == "1.5" {
+            requested_capabilities.extend([
+                "editor.open_scenes",
+                "editor.open_scripts",
+                "editor.native_history",
+                "editor.diagnostics",
+                "editor.viewport_metadata",
             ]);
         }
         let initialize = session
@@ -668,7 +680,18 @@ impl Session {
         let response = self
             .request(
                 "editor.snapshot.get",
-                json!({"domains": ["editor_context", "editor_inspector"]}),
+                if self.selected_protocol_version == "1.5" {
+                    json!({"domains": [
+                        "editor_context",
+                        "editor_inspector",
+                        "editor_scripts",
+                        "editor_history",
+                        "editor_diagnostics",
+                        "editor_viewports"
+                    ]})
+                } else {
+                    json!({"domains": ["editor_context", "editor_inspector"]})
+                },
             )
             .await?;
         let result = response

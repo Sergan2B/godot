@@ -48,6 +48,7 @@ pub struct NegotiatedBridgeProfile {
     pub resource_graph_available: bool,
     pub scene_graph_available: bool,
     pub script_graph_available: bool,
+    pub live_editor_available: bool,
 }
 
 /// Backward-compatible short name for callers that adopted the Stage 3 spike API.
@@ -72,18 +73,24 @@ impl BridgeClient {
             protocol_version: self.session.protocol_version().to_owned(),
             resource_graph_available: matches!(
                 self.session.protocol_version(),
-                "1.2" | "1.3" | "1.4"
+                "1.2" | "1.3" | "1.4" | "1.5"
             ) && capabilities.contains("resource.uid_dependencies")
                 && capabilities.contains("resource.incremental_index"),
-            scene_graph_available: matches!(self.session.protocol_version(), "1.3" | "1.4")
+            scene_graph_available: matches!(self.session.protocol_version(), "1.3" | "1.4" | "1.5")
                 && capabilities.contains("scene.packed_state")
                 && capabilities.contains("scene.incremental_index")
                 && capabilities.contains("scene.project_context"),
-            script_graph_available: self.session.protocol_version() == "1.4"
+            script_graph_available: matches!(self.session.protocol_version(), "1.4" | "1.5")
                 && capabilities.contains("script.gdscript_semantics")
                 && capabilities.contains("script.incremental_index")
                 && capabilities.contains("script.diagnostics")
                 && capabilities.contains("script.csharp_discovery"),
+            live_editor_available: self.session.protocol_version() == "1.5"
+                && capabilities.contains("editor.open_scenes")
+                && capabilities.contains("editor.open_scripts")
+                && capabilities.contains("editor.native_history")
+                && capabilities.contains("editor.diagnostics")
+                && capabilities.contains("editor.viewport_metadata"),
             capabilities,
         }
     }

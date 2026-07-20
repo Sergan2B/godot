@@ -44,6 +44,10 @@ void BridgeRevisionClock::initialize(const String &p_editor_session_id) {
 }
 
 uint64_t BridgeRevisionClock::record_selection_change() {
+	return record_context_change();
+}
+
+uint64_t BridgeRevisionClock::record_context_change() {
 	return ++event_seq;
 }
 
@@ -57,6 +61,26 @@ uint64_t BridgeRevisionClock::record_scene_change(const String &p_scene_id) {
 		scene_revisions.insert(p_scene_id, 1);
 	}
 	return event_seq;
+}
+
+uint64_t BridgeRevisionClock::record_native_operation(const String &p_scene_id) {
+	++event_seq;
+	++project_revision;
+	++operation_seq;
+	if (!p_scene_id.is_empty()) {
+		uint64_t *scene_revision = scene_revisions.getptr(p_scene_id);
+		if (scene_revision) {
+			++(*scene_revision);
+		} else {
+			scene_revisions.insert(p_scene_id, 1);
+		}
+	}
+	return operation_seq;
+}
+
+void BridgeRevisionClock::retire_scene(const String &p_scene_id) {
+	scene_revisions.erase(p_scene_id);
+	++event_seq;
 }
 
 uint64_t BridgeRevisionClock::record_resource_change() {
