@@ -41,6 +41,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 35. [SPRINT-6-EVIDENCE.md](SPRINT-6-EVIDENCE.md) — source-bound local macOS acceptance, live rename phases, SLOs, and Semantic Alpha / M1 closeout.
 36. [SPRINT-7-PLAN.md](SPRINT-7-PLAN.md) — implementation-ready live editor overlay, history, MCP, and local macOS acceptance plan.
 37. [EDITOR-001-live-editor-context.md](EDITOR-001-live-editor-context.md) — authoritative open-scene, Inspector, script-tab, native-history, revision, and live-overlay contract.
+38. [SPRINT-7-EVIDENCE.md](SPRINT-7-EVIDENCE.md) — source-bound macOS live editor acceptance, lifecycle/revision conflicts, SLOs, and Live Editor Alpha closeout.
 
 ## Document status
 
@@ -52,7 +53,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | `RELEASE-001` | Draft for review 0.1 | `TEST-001` evidence manifest |
 | `ADR-000` | Accepted | Revisit only if fork topology changes |
 | `ADR-001` | Accepted and locally verified | Production sidecar boundary starts in Sprint 2 |
-| `PROTOCOL-001` | Bridge RPC 1.0–1.4 locally verified; additive Bridge RPC 1.5 live-editor profile specified | Implement and live-verify 1.5 in Sprint 7; Windows Sprint 5 qualification remains waived |
+| `PROTOCOL-001` | Bridge RPC 1.0–1.5 locally verified, including the live-editor snapshot profile | Extend only through a versioned post-Sprint-7 contract; Windows Sprint 5 qualification remains waived |
 | Sprint 0 local baseline | Passed | Remote CI is `not_run` until publication is authorized |
 | Sprint 1 Stage 2 local evidence | Passed | Superseded by Stage 3 evidence |
 | Sprint 1 Stage 3 local evidence | Passed | Superseded by Stage 4 evidence |
@@ -74,8 +75,9 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | Sprint 6 plan | Complete; `S6-01`–`S6-10` pass the source-bound local macOS gate | Begin Sprint 7 full live editor context |
 | `EVIDENCE-001` / `CONTEXT-001` | Accepted and locally verified; 7/7 oracle facts, zero false `exact`, bounded resources | Extend only through a versioned post-Sprint-6 contract |
 | Sprint 6 evidence | Final for the agreed macOS-only coordinate; Windows/Linux/remote CI are `not_run` | Semantic Alpha / M1 achieved; begin Sprint 7 |
-| Sprint 7 plan | Approved for implementation on baseline `9417794f930b` | Execute `S7-01` through `S7-10` locally on macOS arm64 |
-| `EDITOR-001` live editor contract | Approved 1.0 for Sprint 7 | Implement and verify through Bridge RPC 1.5 and the sixteen-tool MCP registry |
+| Sprint 7 plan | Complete; `S7-01`–`S7-10` pass the source-bound local macOS gate | Begin Sprint 8 Runtime and EditorDebugger |
+| `EDITOR-001` live editor contract | Accepted and locally verified through Bridge RPC 1.5 and the exact sixteen-tool MCP registry | Extend only through a versioned post-Sprint-7 contract |
+| Sprint 7 evidence | Final for the agreed macOS-only coordinate; Windows/Linux/remote CI and model-facing smoke are `not_run` | Live Editor Alpha achieved; begin Sprint 8 |
 
 ## Interim ownership
 

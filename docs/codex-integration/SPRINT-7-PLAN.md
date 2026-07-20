@@ -1,6 +1,6 @@
 # Sprint 7 plan — full live editor context
 
-**Status:** Approved for implementation
+**Status:** Complete on the local macOS arm64 acceptance coordinate
 
 **Milestone:** Live Editor Alpha
 
@@ -126,3 +126,16 @@ Runtime/remote trees, EditorDebugger, stack traces, game process controls,
 viewport pixels, screenshots, write tools, transactions, automatic Undo,
 unsaved-source semantic parsing, and persistence of live overlay state remain
 outside Sprint 7.
+
+## 7. Completion
+
+`S7-01` through `S7-10` are implemented. The qualifying acceptance run is
+source-bound by the manifest digest and recorded in
+[SPRINT-7-EVIDENCE](SPRINT-7-EVIDENCE.md). It covers the independent fixture and
+oracle, Python regressions, the Rust workspace, a tests-enabled Godot editor
+build, the complete Codex Bridge C++ test source, the release sidecar, and the
+model-free live editor lifecycle on macOS arm64.
+
+Windows, Linux, remote CI, and the model-facing Codex CLI smoke are explicitly
+`not_run` and do not block the agreed local gate. Live Editor Alpha is complete;
+the next implementation sprint is Sprint 8, Runtime and EditorDebugger.
