@@ -831,7 +831,7 @@ identity/revisions → bridge handshake → first live slice
 | Project fingerprint и revision persistence | PROTOCOL-001 / INDEX-001 | До S2 acceptance |
 | Storage engine/index migration | INDEX-001 | Первая половина S3 |
 | Persistent node/subresource identity | SCENE-001 | До завершения S4 |
-| Глубина native history observation | EDITOR-001 | До завершения S7 |
+| Глубина native history observation | [EDITOR-001](EDITOR-001-live-editor-context.md) | Закрыто 2026-07-20: summary observation only; native payload remains opaque |
 | Runtime-to-source mapping confidence | RUNTIME-001 | До завершения S8 |
 | Atomicity scene + script change | WRITE-001 | До начала S10 |
 | MCP resources/tools/approval annotations | MCP-001 | Alpha draft S6, freeze S11/S16 |

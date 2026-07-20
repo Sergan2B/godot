@@ -2,7 +2,7 @@
 
 **Status:** Sprint 2/3/4 tools live-verified on macOS arm64 and Windows x86_64;
 the Sprint 5 symbol tools and Sprint 6 find-usages/context surfaces pass their
-local macOS gates, with later Windows qualification explicitly waived/unverified
+local macOS gates; the additive Sprint 7 sixteen-tool live-editor surface is specified
 
 **MCP protocol:** `2025-11-25`
 
@@ -15,6 +15,8 @@ persistent resource/scene/script semantic index. The server is a project-scoped
 stdio MCP process and remains read-only through Sprint 6.
 It does not contain OpenAI credentials, call a model, mutate the project, or
 return cached editor state as current after the bridge becomes unavailable.
+Sprint 7 remains read-only and is governed by
+[EDITOR-001](EDITOR-001-live-editor-context.md).
 
 ## Lifecycle and project binding
 
@@ -117,17 +119,28 @@ filters. It returns deterministic reverse facts from one pinned generation,
 with complete evidence, conflicts, partial-domain reasons, bounded pagination,
 and signed cursors that bind every selector and filter.
 
+### Sprint 7 live editor tools
+
+`godot_get_open_scenes`, `godot_get_inspector_state`,
+`godot_get_open_scripts`, `godot_get_editor_history`,
+`godot_get_diagnostics`, and `godot_get_viewport_state` expose the focused
+read-only domains from `EDITOR-001`. Existing editor/scene/node/usage tools gain
+an additive disk/editor/effective overlay. Optional expected session, event, and
+scene-revision preconditions fail closed instead of returning stale content.
+
 ## Resources
 
 `godot://project/summary` is the fixed 4096-byte conservative context resource.
-`godot://scene/{scene_id}/summary` is the 2048-byte scene template. Both return
+`godot://editor/summary` is the fixed 4096-byte live editor context resource.
+`godot://scene/{scene_id}/summary` is the 2048-byte scene template. All three return
 canonical JSON with revision coordinates, truncation, and omitted counts. They
 are read-only snapshots; subscriptions and list-change notifications remain
 disabled.
 
 ## Security and limits
 
-All ten tools are annotated read-only and reject additional input properties.
+The Sprint 6 registry has ten tools; Sprint 7 adds six for an exact total of
+sixteen. All are annotated read-only and reject additional input properties.
 Index query limits default to 50 and accept 1–200. Signed cursors expire after five
 minutes and bind project, tool, normalized selector/filters, limit, generation,
 index revision, resource revision, and the applicable scene/script revisions.

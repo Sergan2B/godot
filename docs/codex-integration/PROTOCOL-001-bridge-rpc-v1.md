@@ -1,10 +1,10 @@
 # PROTOCOL-001 — Bridge RPC 1.x
 
-**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.4 extensions implemented and locally verified through Sprint 5 `S5-05`
+**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.4 extensions implemented and locally verified; additive 1.5 live-editor extension specified for Sprint 7
 
 **Date:** 2026-07-18
 
-**Protocol versions:** `1.0` baseline; `1.1`–`1.3` fallback; `1.4` current
+**Protocol versions:** `1.0` baseline; `1.1`–`1.4` fallback; `1.5` specified current
 
 **Decision owner:** `Sergan2B` (interim Sidecar/Protocol and Security owner)
 
@@ -33,7 +33,9 @@ Bridge RPC 1.1 adds capability-gated editor snapshots, event notifications,
 chunks, and acknowledgments on the same authenticated session. Bridge RPC 1.2
 adds the ResourceUID/dependency graph. Bridge RPC 1.3 adds authoritative
 `PackedScene`/`SceneState` observations and project context. Bridge RPC 1.4 adds
-the bounded saved-script semantic profile. MCP, persistent
+the bounded saved-script semantic profile. Bridge RPC 1.5 adds the full live
+editor snapshot domains, native-history summaries, and revision coordinates
+defined by [EDITOR-001](EDITOR-001-live-editor-context.md). MCP, persistent
 indexing, runtime observation, and transactions remain outside the bridge wire
 surface.
 
@@ -512,6 +514,8 @@ The authoritative bundle is [`schemas/codex_bridge/v1`](../../schemas/codex_brid
 - `scene.schema.json` — Bridge RPC 1.3 scene snapshot/delta and project-context projection;
 - `script.schema.json` — Bridge RPC 1.4 saved-script document, symbol, relation,
   diagnostic, adapter-status, snapshot, delta, and journal projection;
+- `editor.schema.json` — Bridge RPC 1.5 open-scene, selection, Inspector,
+  script-tab, native-history, diagnostic, Output, viewport, and live-overlay projection;
 - `fixture-manifest.schema.json` — conformance case manifest;
 - `fixtures/` — positive, negative, fragmentation, compatibility, project-ID, and proof vectors.
 
@@ -694,3 +698,32 @@ strict negatives for downgrade, unknown fields, absolute paths, raw source, and
 false dynamic targets, plus two explicit resource/scene compatibility cases for
 1.4. The local cross-language freeze is recorded in
 [`tests/codex/evidence/sprint-5-stage-3-bridge.json`](../../tests/codex/evidence/sprint-5-stage-3-bridge.json).
+
+## 21. Bridge RPC 1.5 full live editor context
+
+Bridge RPC 1.5 retains every lower-minor capability and expands the existing
+chunked `editor.snapshot.get` method with the closed domains
+`editor_context`, `editor_inspector`, `editor_scripts`, `editor_history`,
+`editor_diagnostics`, and `editor_viewports`. One accepted request produces one
+checksum-verified atomic revision cut; a consumer MUST NOT compose domains from
+different snapshot IDs.
+
+The 1.5 revision vector adds the actively maintained `operation_seq` and
+per-live-scene `scene_revisions` defined by `EDITOR-001`. Every `sync.event`
+includes `changed_domains` and the complete negotiated revision vector. Event
+gaps, reconnect, project invalidation, or editor-session changes retire the
+previous live snapshot and require a new full snapshot.
+
+The snapshot exposes all bounded open scene tabs, stable multi-selection,
+current Inspector state, open/active script metadata and selections, native
+history summaries, editor diagnostics and Output, and viewport metadata. It
+does not expose raw Object IDs, source buffers, operation payloads, pixels,
+runtime state, or write operations. Compound Variant values use bounded
+snapshot-local references so cycles cannot recurse indefinitely.
+
+Sessions negotiated at 1.0–1.4 retain the earlier editor snapshot shape and
+omit all 1.5-only domains, capabilities, limits, event fields, and entities.
+Unknown native history transitions are valid only as opaque summaries and MUST
+NOT acquire inferred targets or values. The authoritative merge, lifecycle,
+limits, stale-read, and history rules are in
+[EDITOR-001](EDITOR-001-live-editor-context.md).

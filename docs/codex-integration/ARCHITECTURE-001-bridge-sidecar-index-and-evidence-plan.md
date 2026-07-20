@@ -1062,7 +1062,7 @@ Task завершена, если:
 
 ## 18. Решения и дедлайны
 
-Foundation-решения `D-01`–`D-04` закрыты первым этапом Sprint 1. Остальные решения остаются открытыми до указанных gates.
+Foundation-решения `D-01`–`D-04` закрыты первым этапом Sprint 1. Последующие решения закрываются соответствующими доменными контрактами и evidence gates.
 
 | ID | Решение | Документ | Статус/срок | Блокирует |
 |---|---|---|---|---|
@@ -1073,7 +1073,7 @@ Foundation-решения `D-01`–`D-04` закрыты первым этапо
 | `D-05` | SQLite или directory/segment store | INDEX-001 | Первая половина S3 | Persistent index |
 | `D-06` | Persistent node/subresource identity | SCENE-001 | До конца S4 | Cross-revision node facts |
 | `D-07` | GDScript LSP cache reuse vs independent analyzer adapter | [SCRIPT-001](SCRIPT-001-gdscript-and-csharp-adapters.md) / [SPRINT-5-PLAN](SPRINT-5-PLAN.md) | Closed 2026-07-19: bridge-owned exact saved-content cache over Godot parser/analyzer | Symbol performance/correctness |
-| `D-08` | Native history observation depth | EDITOR-001 | До S7 acceptance | Operation summaries |
+| `D-08` | Native history observation depth | [EDITOR-001](EDITOR-001-live-editor-context.md) | Закрыто 2026-07-20: summaries only; payload opaque; commit/Undo/Redo/clear/unknown transitions | Operation summaries |
 | `D-09` | Runtime source mapping confidence | RUNTIME-001 | До S8 acceptance | Runtime evidence |
 | `D-10` | Scene+script transaction atomicity boundary | WRITE-001 | До S10 | Full Undo claim |
 | `D-11` | Windows Named Pipe adapter или secure loopback fallback | PLATFORM-001 | Spike после S2, freeze до S15 | Windows Beta |
