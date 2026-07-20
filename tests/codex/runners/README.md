@@ -1,5 +1,36 @@
 # Codex integration host runbooks
 
+## Sprint 7 live editor gate
+
+Sprint 7 qualification is local-only on native macOS arm64. From a clean
+`codex/integration` checkout with no existing Sprint 7 evidence artifact, run:
+
+```sh
+tests/codex/runners/sprint7_macos_arm64.sh
+```
+
+The wrapper rebuilds the tests-enabled Godot editor and release sidecar, runs
+the independent fixture/oracle, Python regressions, the full Rust workspace,
+formatting, clippy, all tests in `tests/codex/test_codex_bridge.cpp`, and the
+model-free live editor lifecycle. It then creates and validates:
+
+```text
+tests/codex/evidence/sprint-7-live-editor-macos.json
+```
+
+The producer refuses to overwrite an existing artifact and removes partial
+output after failure. To validate the committed artifact without rebuilding:
+
+```sh
+python3 tests/codex/sprint7_acceptance.py \
+  --validate tests/codex/evidence/sprint-7-live-editor-macos.json
+```
+
+The report is bound to the exact source manifest digest. Any change to a scoped
+contract, implementation, fixture, oracle, or validator requires a new clean
+source freeze and a newly generated artifact. Windows, Linux, remote CI, and
+the model-facing smoke remain explicit `not_run` gates for Sprint 7.
+
 ## Sprint 5 script semantics gate
 
 Sprint 5 acceptance is local-only on native macOS arm64 and Windows x86_64.
