@@ -1,12 +1,13 @@
 # INDEX-001 — semantic index contract, storage, and migrations
 
 **Status:** Resource/scene/script persistence contract implemented through logical
-schema 1.3 and `segment-v3`; local `D-05` selects the segment store
+schema 1.3 and `segment-v3`; Sprint 6 adds a verified generation-pinned derived
+semantic projection without a storage migration; local `D-05` selects the segment store
 
 **Version:** 0.1
 
-**Frozen scope:** Sprint 3 resources, Sprint 4 scene records, and Sprint 5 saved-script
-storage/recovery through `S5-06`
+**Frozen scope:** Sprint 3 resources, Sprint 4 scene records, Sprint 5 saved-script
+storage/recovery, and the Sprint 6 storage-neutral derived query view
 
 **Parent:** [SPRINT-3-PLAN.md](SPRINT-3-PLAN.md)
 

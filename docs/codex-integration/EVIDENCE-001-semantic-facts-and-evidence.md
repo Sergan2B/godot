@@ -1,6 +1,6 @@
 # EVIDENCE-001 — semantic facts and evidence
 
-**Status:** Sprint 6 contract freeze candidate
+**Status:** Accepted and locally verified in Sprint 6
 
 **Version:** 1.0
 

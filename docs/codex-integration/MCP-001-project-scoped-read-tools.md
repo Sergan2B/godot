@@ -1,8 +1,8 @@
 # MCP-001 — Project-scoped Godot read tools
 
 **Status:** Sprint 2/3/4 tools live-verified on macOS arm64 and Windows x86_64;
-Sprint 5 symbol tools pass the macOS live gate, with Windows qualification
-explicitly waived/unverified
+the Sprint 5 symbol tools and Sprint 6 find-usages/context surfaces pass their
+local macOS gates, with later Windows qualification explicitly waived/unverified
 
 **MCP protocol:** `2025-11-25`
 
@@ -12,7 +12,7 @@ explicitly waived/unverified
 
 This contract exposes model-facing projections of the live Godot editor and its
 persistent resource/scene/script semantic index. The server is a project-scoped
-stdio MCP process and remains read-only through Sprint 5.
+stdio MCP process and remains read-only through Sprint 6.
 It does not contain OpenAI credentials, call a model, mutate the project, or
 return cached editor state as current after the bridge becomes unavailable.
 
@@ -106,12 +106,28 @@ the public search surface.
 Accepts exactly one opaque `symbol_id`, or a script selector together with a
 canonical qualified name. It returns declaration, signature/type/visibility,
 owner, outgoing exact/dynamic relations, scene attachments, diagnostics, and
-content-hash-bound source ranges. It deliberately omits general reverse usages,
-which remain Sprint 6 scope.
+content-hash-bound source ranges. It deliberately keeps reverse lookup in the
+dedicated unified tool below.
+
+### `godot_find_usages`
+
+Accepts exactly one canonical entity/resource/scene/node/script-symbol/signal
+target plus optional source-kind, confidence, and project/scene/script scope
+filters. It returns deterministic reverse facts from one pinned generation,
+with complete evidence, conflicts, partial-domain reasons, bounded pagination,
+and signed cursors that bind every selector and filter.
+
+## Resources
+
+`godot://project/summary` is the fixed 4096-byte conservative context resource.
+`godot://scene/{scene_id}/summary` is the 2048-byte scene template. Both return
+canonical JSON with revision coordinates, truncation, and omitted counts. They
+are read-only snapshots; subscriptions and list-change notifications remain
+disabled.
 
 ## Security and limits
 
-All nine tools are annotated read-only and reject additional input properties.
+All ten tools are annotated read-only and reject additional input properties.
 Index query limits default to 50 and accept 1–200. Signed cursors expire after five
 minutes and bind project, tool, normalized selector/filters, limit, generation,
 index revision, resource revision, and the applicable scene/script revisions.

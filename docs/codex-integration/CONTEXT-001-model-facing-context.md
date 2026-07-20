@@ -1,6 +1,6 @@
 # CONTEXT-001 — model-facing Godot context
 
-**Status:** Sprint 6 contract freeze candidate
+**Status:** Accepted and locally verified in Sprint 6
 
 **Version:** 1.0
 

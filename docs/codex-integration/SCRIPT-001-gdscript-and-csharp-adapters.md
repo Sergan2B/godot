@@ -287,7 +287,9 @@ not relax resource targets or scene attachment joins.
 or prefix query with bounded language/kind/script filters.
 `godot_inspect_symbol` returns one declaration plus its owner, signature/type,
 inheritance/override, outgoing exact/dynamic relations, scene attachments,
-diagnostics, and evidence. Reverse project-wide usages remain Sprint 6 scope.
+diagnostics, and evidence. Reverse project-wide usages are supplied by the
+separate Sprint 6 generation-pinned `godot_find_usages` contract without
+changing these two Sprint 5 tools.
 
 Both tools pin one immutable generation and return project ID, generation ID,
 index revision, resource/scene revisions when used, script graph revision,

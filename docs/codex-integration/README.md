@@ -38,6 +38,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 32. [SPRINT-6-PLAN.md](SPRINT-6-PLAN.md) — executable find-usages, evidence aggregation, bounded context, and local acceptance plan.
 33. [EVIDENCE-001-semantic-facts-and-evidence.md](EVIDENCE-001-semantic-facts-and-evidence.md) — canonical fact/evidence identity, deduplication, confidence, conflict, and safety rules.
 34. [CONTEXT-001-model-facing-context.md](CONTEXT-001-model-facing-context.md) — unified find-usages and token-bounded MCP resource contract.
+35. [SPRINT-6-EVIDENCE.md](SPRINT-6-EVIDENCE.md) — source-bound local macOS acceptance, live rename phases, SLOs, and Semantic Alpha / M1 closeout.
 
 ## Document status
 
@@ -67,9 +68,10 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | Sprint 4 plan | Complete; `S4-01`–`S4-10` and all 12 acceptance criteria pass on one macOS/Windows freeze | Begin Sprint 5 script and symbol intelligence |
 | `SCENE-001` scene contract | D-06 implemented and live-verified through Bridge/MCP on macOS and Windows | Extend only through a versioned post-Sprint-4 contract |
 | `SCRIPT-001` script contract | D-07 through strict Bridge RPC 1.4 normalization, `segment-v3`, atomic cross-domain composition, and both symbol tools pass on macOS arm64 | Windows parity remains waived/unverified |
-| Sprint 5 plan | Closed with waiver; implementation and macOS live/accuracy/SLO gates pass, Windows and `S5-AC-12` remain unverified | Begin Sprint 6; retain the Windows release risk |
-| Sprint 6 plan | In progress; contracts and independent oracle freeze first | Execute `S6-01`–`S6-02` |
-| `EVIDENCE-001` / `CONTEXT-001` | Sprint 6 contract freeze candidates | Validate against the independent semantic-context oracle |
+| Sprint 5 plan | Closed with waiver; implementation and macOS live/accuracy/SLO gates pass, Windows and `S5-AC-12` remain unverified | Superseded by Sprint 6; retain the Windows release risk |
+| Sprint 6 plan | Complete; `S6-01`–`S6-10` pass the source-bound local macOS gate | Begin Sprint 7 full live editor context |
+| `EVIDENCE-001` / `CONTEXT-001` | Accepted and locally verified; 7/7 oracle facts, zero false `exact`, bounded resources | Extend only through a versioned post-Sprint-6 contract |
+| Sprint 6 evidence | Final for the agreed macOS-only coordinate; Windows/Linux/remote CI are `not_run` | Semantic Alpha / M1 achieved; begin Sprint 7 |
 
 ## Interim ownership
 

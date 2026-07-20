@@ -1,6 +1,6 @@
 # Sprint 6 plan — find usages, evidence, and Codex context
 
-**Status:** In progress — contract and oracle freeze first
+**Status:** Complete — locally accepted on macOS arm64
 
 **Milestone:** Semantic Alpha / M1
 
@@ -101,3 +101,17 @@ the deterministic gate.
 
 Each commit is independently reviewable. Closing evidence commits do not modify
 the frozen implementation or oracle source scopes.
+
+## 7. Closeout
+
+`S6-01`–`S6-10` are complete. The source-bound macOS arm64 gate passed the
+independent oracle (7/7 resolvable facts, zero false `exact`), evidence
+deduplication, signed-cursor probes, bounded resources, real resource-UID and
+symbol rename phases, full Rust tests/clippy, the C++ adapter test, and rebuilt
+Godot/sidecar artifacts. The qualifying report and exact measurements are in
+[SPRINT-6-EVIDENCE](SPRINT-6-EVIDENCE.md).
+
+Semantic Alpha / M1 is achieved for the agreed local macOS coordinate. Windows,
+Linux, and remote CI remain explicitly `not_run`; the deferred Sprint 5 Windows
+gate does not reopen or block Sprint 6. The next implementation sprint is
+Sprint 7, full live editor context.

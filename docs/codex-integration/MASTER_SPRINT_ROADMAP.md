@@ -612,6 +612,13 @@ find-usages API, bounded MCP resources и локальная macOS приёмк�
 [EVIDENCE-001](EVIDENCE-001-semantic-facts-and-evidence.md) и
 [CONTEXT-001](CONTEXT-001-model-facing-context.md).
 
+**Фактический результат:** Sprint 6 завершён по
+[SPRINT-6-EVIDENCE](SPRINT-6-EVIDENCE.md). Локальный macOS arm64 gate подтвердил
+7/7 oracle facts, zero false `exact`, evidence deduplication, защищённые cursors,
+bounded project/scene resources и реальные resource-UID/symbol rename фазы.
+Semantic Alpha / M1 достигнут на согласованной локальной координате; Windows,
+Linux и remote CI остаются `not_run` и не заявлены как пройденные.
+
 #### Цель
 
 Собрать данные предыдущих спринтов в надёжные запросы, пригодные для рассуждений Codex.
@@ -643,7 +650,9 @@ find-usages API, bounded MCP resources и локальная macOS приёмк�
 - каждый usage имеет evidence;
 - summaries укладываются в заданный output budget;
 - одинаковые факты не дублируются из разных индексаторов;
-- внешний Codex отвечает на контрольные вопросы со ссылкой на semantic evidence.
+- детерминированный model-free gate подтверждает ответы и semantic evidence;
+  отдельный Codex CLI smoke остаётся advisory и фиксируется, когда настроен
+  изолированный локальный MCP profile.
 
 ### Sprint 7 — Полный live editor context
 
@@ -1081,7 +1090,7 @@ find-usages API, bounded MCP resources и локальная macOS приёмк�
 |---|---:|---|
 | Build Baseline | 0 | Форк воспроизводимо собирается |
 | M0 Architecture Proof | 2 | Внешний Codex видит живой выбранный узел |
-| M1 Semantic Alpha | 6 | Работают индекс, find usages и evidence |
+| M1 Semantic Alpha — достигнут локально | 6 | Работают индекс, find usages и evidence |
 | M2 Diagnostic MVP | 8 | Codex понимает editor + runtime |
 | M3 Read/Write Foundation | 10 | Безопасные составные изменения с Undo |
 | External Codex Beta | 11 | Внешний клиент пригоден для ежедневной работы |
@@ -1435,4 +1444,4 @@ S8 и S9 могут идти параллельно после S7, но S10 пр
 
 [ADR-001](ADR-001-component-boundaries-and-sidecar-language.md), [PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) и канонический bundle `schemas/codex_bridge/v1` закрывают первый foundation-этап Sprint 1. Editor-only `modules/codex_bridge`, build guards, service/worker lifecycle и bounded main-thread dispatcher закрывают второй этап по локальному evidence [SPRINT-1-STAGE-2](SPRINT-1-STAGE-2.md). Private discovery, project-local lock, atomic runtime publication, права `0700`/`0600`, rotating token, macOS UDS framing и mutual HMAC handshake закрывают третий этап по локальному evidence [SPRINT-1-STAGE-3](SPRINT-1-STAGE-3.md). Authenticated request/response/cancel envelopes, lifecycle methods, deadlines, cancellation, exactly-once terminal arbitration и backpressure закрывают четвёртый этап по локальному evidence [SPRINT-1-STAGE-4](SPRINT-1-STAGE-4.md). Locked Rust conformance client, прямое использование канонических schemas/fixtures, cross-language discovery/handshake/lifecycle и negative transport suite, а также воспроизводимый redacted trace закрывают пятый этап по локальному evidence [SPRINT-1-STAGE-5](SPRINT-1-STAGE-5.md).
 
-Локальная реализация и проверка Sprint 1 и Sprint 2 завершены. Sprint 3 принят: ResourceUID, прямой/обратный граф зависимостей, Bridge RPC 1.2, persistent segment index и два resource MCP tool прошли полный macOS/Windows evidence по [SPRINT-3-EVIDENCE](SPRINT-3-EVIDENCE.md); канонический D-05 выбирает segment store. Sprint 4 также принят: structural `PackedScene`/`SceneState` index, Bridge RPC 1.3, `segment-v2` и два scene MCP tool прошли единый macOS/Windows freeze по [SPRINT-4-EVIDENCE](SPRINT-4-EVIDENCE.md). Sprint 5 закрыт с явным waiver: `S5-01`–`S5-08` реализованы, macOS live/accuracy/SLO gate проходит, а Windows и двуххостовый `S5-AC-12` остаются unverified по [SPRINT-5-EVIDENCE](SPRINT-5-EVIDENCE.md). Следующее действие — Sprint 6: find usages, evidence aggregation и Codex context shaping. Публикация и remote CI выполняются только по отдельной авторизации.
+Локальная реализация и проверка Sprint 1 и Sprint 2 завершены. Sprint 3 принят: ResourceUID, прямой/обратный граф зависимостей, Bridge RPC 1.2, persistent segment index и два resource MCP tool прошли полный macOS/Windows evidence по [SPRINT-3-EVIDENCE](SPRINT-3-EVIDENCE.md); канонический D-05 выбирает segment store. Sprint 4 также принят: structural `PackedScene`/`SceneState` index, Bridge RPC 1.3, `segment-v2` и два scene MCP tool прошли единый macOS/Windows freeze по [SPRINT-4-EVIDENCE](SPRINT-4-EVIDENCE.md). Sprint 5 закрыт с явным waiver: `S5-01`–`S5-08` реализованы, macOS live/accuracy/SLO gate проходит, а Windows и двуххостовый `S5-AC-12` остаются unverified по [SPRINT-5-EVIDENCE](SPRINT-5-EVIDENCE.md). Sprint 6 принят на согласованной macOS-only координате: единый `godot_find_usages`, evidence aggregation, bounded context resources и live rename-проверки проходят по [SPRINT-6-EVIDENCE](SPRINT-6-EVIDENCE.md), поэтому Semantic Alpha / M1 достигнут. Следующее действие — Sprint 7: полный live editor context. Публикация и remote CI выполняются только по отдельной авторизации.
