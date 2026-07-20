@@ -53,6 +53,7 @@ namespace {
 // headroom for JSON escaping under the 1 MiB frame limit.
 static constexpr int SNAPSHOT_CHUNK_BYTES = 262144;
 static constexpr int SNAPSHOT_ENTITY_LIMIT = 1000;
+static constexpr int EDITOR_SNAPSHOT_CHUNKS_PER_FRAME = 2;
 static_assert(
 		MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME >= SceneStateAdapter::FRAME_SAFETY_MARGIN_USEC + SceneStateAdapter::SCENE_BUDGET_USEC,
 		"Scene scheduling must leave a nonnegative dispatcher lane.");
@@ -756,22 +757,24 @@ void CodexBridgeService::_process_editor_snapshot() {
 		return;
 	}
 	if (pending.stage == PendingEditorSnapshot::STAGE_CHUNKS) {
-		Array chunk_entities;
-		if (!pending.entities.is_empty()) {
-			chunk_entities.push_back(pending.entities[pending.next_entity]);
+		for (int staged = 0; staged < EDITOR_SNAPSHOT_CHUNKS_PER_FRAME && pending.next_entity < chunk_count; staged++) {
+			Array chunk_entities;
+			if (!pending.entities.is_empty()) {
+				chunk_entities.push_back(pending.entities[pending.next_entity]);
+			}
+			Dictionary payload;
+			payload["entities"] = chunk_entities;
+			Dictionary chunk;
+			chunk["protocol_version"] = "1.5";
+			chunk["kind"] = "chunk";
+			chunk["domain"] = "editor_context";
+			chunk["snapshot_id"] = pending.snapshot_id;
+			chunk["chunk_index"] = pending.next_entity;
+			chunk["payload"] = payload;
+			chunk["context"] = _make_context();
+			transport_worker.stage_resource_snapshot_message(pending.request_id, chunk);
+			pending.next_entity++;
 		}
-		Dictionary payload;
-		payload["entities"] = chunk_entities;
-		Dictionary chunk;
-		chunk["protocol_version"] = "1.5";
-		chunk["kind"] = "chunk";
-		chunk["domain"] = "editor_context";
-		chunk["snapshot_id"] = pending.snapshot_id;
-		chunk["chunk_index"] = pending.next_entity;
-		chunk["payload"] = payload;
-		chunk["context"] = _make_context();
-		transport_worker.stage_resource_snapshot_message(pending.request_id, chunk);
-		pending.next_entity++;
 		if (pending.next_entity >= chunk_count) {
 			pending.stage = PendingEditorSnapshot::STAGE_END;
 		}
