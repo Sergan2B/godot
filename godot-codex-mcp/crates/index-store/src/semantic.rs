@@ -1,9 +1,10 @@
 //! Storage-neutral Sprint 6 semantic fact and evidence projection.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use thiserror::Error;
 
 use crate::{
     DependencyResolution, IndexGeneration, SceneAnimationResolution, ScriptConfidence,
@@ -14,6 +15,9 @@ const FACT_DOMAIN: &[u8] = b"godot-codex/semantic-fact/v1\0";
 const EVIDENCE_DOMAIN: &[u8] = b"godot-codex/semantic-evidence/v1\0";
 const CONFLICT_DOMAIN: &[u8] = b"godot-codex/semantic-conflict/v1\0";
 const SIGNAL_DOMAIN: &[u8] = b"godot-codex/signal-entity/v1\0";
+pub const FIND_USAGES_DEFAULT_LIMIT: usize = 50;
+pub const FIND_USAGES_MAX_LIMIT: usize = 200;
+pub const FIND_USAGES_MAX_WINDOW: usize = 250_000;
 
 /// Entity families exposed by the unified semantic query surface.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -140,6 +144,54 @@ pub struct ConflictDiagnostic {
     pub revisions: SemanticRevisionVector,
 }
 
+/// Closed source scope for a reverse semantic query.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind", deny_unknown_fields)]
+pub enum FindUsagesScope {
+    Project,
+    Scene { scene_entity_id: String },
+    Script { script_resource_id: String },
+}
+
+/// Storage-neutral normalized reverse query.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FindUsagesQuery {
+    pub target_entity_id: String,
+    #[serde(default)]
+    pub source_kinds: Vec<SemanticEntityKind>,
+    #[serde(default)]
+    pub confidence: Vec<SemanticConfidence>,
+    pub scope: FindUsagesScope,
+    pub offset: usize,
+    pub limit: usize,
+}
+
+/// One deterministic bounded page over the reverse semantic index.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FindUsagesQueryResult {
+    pub target_entity_id: String,
+    pub target_kind: SemanticEntityKind,
+    pub revisions: SemanticRevisionVector,
+    pub usages: Vec<SemanticFact>,
+    pub conflicts: Vec<ConflictDiagnostic>,
+    pub total_matches: usize,
+    pub truncated: bool,
+    pub next_offset: Option<usize>,
+}
+
+/// Closed validation errors for storage-neutral reverse queries.
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+pub enum FindUsagesQueryError {
+    #[error("target_not_found")]
+    TargetNotFound,
+    #[error("invalid_limit")]
+    InvalidLimit,
+    #[error("result_window_exceeded")]
+    ResultWindowExceeded,
+}
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 struct FactKey<'a> {
     domain: &'a str,
@@ -220,6 +272,16 @@ impl SemanticQueryIndex {
             entity_kinds.insert(node.node_entity_id.clone(), SemanticEntityKind::Node);
             entity_scenes.insert(node.node_entity_id.clone(), node.scene_entity_id.clone());
         }
+        for occurrence in generation.scene.relations.iter().filter(|relation| {
+            scene_current && relation.relation == "occurrence" && relation.scene_entity_id.is_some()
+        }) {
+            let scene_id = occurrence
+                .scene_entity_id
+                .as_ref()
+                .expect("filtered occurrence scene");
+            entity_kinds.insert(occurrence.source.clone(), SemanticEntityKind::Node);
+            entity_scenes.insert(occurrence.source.clone(), scene_id.clone());
+        }
         for symbol in generation.script.symbols.iter().filter(|_| script_current) {
             let kind = if symbol.kind == ScriptSymbolKind::Signal {
                 SemanticEntityKind::Signal
@@ -228,6 +290,13 @@ impl SemanticQueryIndex {
             };
             entity_kinds.insert(symbol.symbol_id.clone(), kind);
             entity_scripts.insert(symbol.symbol_id.clone(), symbol.script_resource_id.clone());
+        }
+        let signal_aliases = signal_aliases(generation, scene_current, script_current);
+        for aliases in signal_aliases.values() {
+            for (signal_id, scene_id) in aliases {
+                entity_kinds.insert(signal_id.clone(), SemanticEntityKind::Signal);
+                entity_scenes.insert(signal_id.clone(), scene_id.clone());
+            }
         }
 
         let mut facts = BTreeMap::<String, SemanticFact>::new();
@@ -390,7 +459,7 @@ impl SemanticQueryIndex {
             .iter()
             .filter(|_| script_current)
         {
-            let Some(target) = relation.target.as_ref().map(endpoint_id) else {
+            let Some(target_endpoint) = relation.target.as_ref() else {
                 continue;
             };
             let predicate = script_predicate(relation.predicate);
@@ -400,33 +469,36 @@ impl SemanticQueryIndex {
                 "script"
             };
             let source = endpoint_id(&relation.source);
-            add_fact(
-                &mut facts,
-                &entity_kinds,
-                revisions,
-                source,
-                (domain, predicate),
-                target,
-                EvidenceDraft {
-                    source: "script_relation".to_owned(),
-                    authority: script_authority(relation.authority).to_owned(),
-                    path: relation
-                        .evidence_range
-                        .as_ref()
-                        .map(|range| range.path.clone()),
-                    node_path: None,
-                    property: None,
-                    range: relation
-                        .evidence_range
-                        .as_ref()
-                        .map(SemanticSourceRange::from),
-                    content_sha256: relation
-                        .evidence_range
-                        .as_ref()
-                        .map(|range| range.content_sha256.clone()),
-                    confidence: script_confidence(relation.confidence),
-                },
-            );
+            let evidence = EvidenceDraft {
+                source: "script_relation".to_owned(),
+                authority: script_authority(relation.authority).to_owned(),
+                path: relation
+                    .evidence_range
+                    .as_ref()
+                    .map(|range| range.path.clone()),
+                node_path: None,
+                property: None,
+                range: relation
+                    .evidence_range
+                    .as_ref()
+                    .map(SemanticSourceRange::from),
+                content_sha256: relation
+                    .evidence_range
+                    .as_ref()
+                    .map(|range| range.content_sha256.clone()),
+                confidence: script_confidence(relation.confidence),
+            };
+            for target in endpoint_targets(target_endpoint, &signal_aliases) {
+                add_fact(
+                    &mut facts,
+                    &entity_kinds,
+                    revisions,
+                    source,
+                    (domain, predicate),
+                    &target,
+                    evidence.clone(),
+                );
+            }
         }
         for reference in generation
             .script
@@ -435,31 +507,34 @@ impl SemanticQueryIndex {
             .filter(|_| script_current)
         {
             let source = endpoint_id(&reference.source);
-            let target = endpoint_id(&reference.target);
+            let targets = endpoint_targets(&reference.target, &signal_aliases);
             let predicate = script_predicate(reference.predicate);
             let domain = if predicate == SemanticPredicate::AttachesScript {
                 "composition"
             } else {
                 "script"
             };
-            add_fact(
-                &mut facts,
-                &entity_kinds,
-                revisions,
-                source,
-                (domain, predicate),
-                target,
-                EvidenceDraft {
-                    source: "materialized_script_reference".to_owned(),
-                    authority: script_authority(reference.authority).to_owned(),
-                    path: None,
-                    node_path: None,
-                    property: None,
-                    range: None,
-                    content_sha256: None,
-                    confidence: SemanticConfidence::Exact,
-                },
-            );
+            let evidence = EvidenceDraft {
+                source: "materialized_script_reference".to_owned(),
+                authority: script_authority(reference.authority).to_owned(),
+                path: None,
+                node_path: None,
+                property: None,
+                range: None,
+                content_sha256: None,
+                confidence: SemanticConfidence::Exact,
+            };
+            for target in targets {
+                add_fact(
+                    &mut facts,
+                    &entity_kinds,
+                    revisions,
+                    source,
+                    (domain, predicate),
+                    &target,
+                    evidence.clone(),
+                );
+            }
         }
 
         let mut facts = facts.into_values().collect::<Vec<_>>();
@@ -520,6 +595,71 @@ impl SemanticQueryIndex {
             .collect()
     }
 
+    /// Executes one deterministic reverse lookup over the immutable projection.
+    pub fn find_usages(
+        &self,
+        query: &FindUsagesQuery,
+    ) -> Result<FindUsagesQueryResult, FindUsagesQueryError> {
+        let target_kind = self
+            .entity_kind(&query.target_entity_id)
+            .ok_or(FindUsagesQueryError::TargetNotFound)?;
+        if !(1..=FIND_USAGES_MAX_LIMIT).contains(&query.limit) {
+            return Err(FindUsagesQueryError::InvalidLimit);
+        }
+        if query.offset >= FIND_USAGES_MAX_WINDOW && query.offset != 0 {
+            return Err(FindUsagesQueryError::ResultWindowExceeded);
+        }
+        let matches = self
+            .facts_for_target(&query.target_entity_id)
+            .into_iter()
+            .filter(|fact| {
+                query.source_kinds.is_empty() || query.source_kinds.contains(&fact.source_kind)
+            })
+            .filter(|fact| {
+                query.confidence.is_empty() || query.confidence.contains(&fact.confidence)
+            })
+            .filter(|fact| self.fact_in_scope(fact, &query.scope))
+            .collect::<Vec<_>>();
+        let total_matches = matches.len();
+        let bounded_matches = total_matches.min(FIND_USAGES_MAX_WINDOW);
+        if query.offset > bounded_matches {
+            return Err(FindUsagesQueryError::ResultWindowExceeded);
+        }
+        let end = query
+            .offset
+            .saturating_add(query.limit)
+            .min(bounded_matches);
+        let usages = matches[query.offset..end]
+            .iter()
+            .map(|fact| (*fact).clone())
+            .collect::<Vec<_>>();
+        let page_fact_ids = usages
+            .iter()
+            .map(|fact| fact.fact_id.as_str())
+            .collect::<BTreeSet<_>>();
+        let conflicts = self
+            .conflicts
+            .iter()
+            .filter(|conflict| {
+                conflict
+                    .fact_ids
+                    .iter()
+                    .any(|fact_id| page_fact_ids.contains(fact_id.as_str()))
+            })
+            .cloned()
+            .collect();
+        Ok(FindUsagesQueryResult {
+            target_entity_id: query.target_entity_id.clone(),
+            target_kind,
+            revisions: self.revisions,
+            usages,
+            conflicts,
+            total_matches,
+            truncated: total_matches > FIND_USAGES_MAX_WINDOW,
+            next_offset: (end < bounded_matches).then_some(end),
+        })
+    }
+
     #[must_use]
     pub fn entity_kind(&self, entity_id: &str) -> Option<SemanticEntityKind> {
         self.entity_kinds.get(entity_id).copied()
@@ -533,6 +673,18 @@ impl SemanticQueryIndex {
     #[must_use]
     pub fn script_for_entity(&self, entity_id: &str) -> Option<&str> {
         self.entity_scripts.get(entity_id).map(String::as_str)
+    }
+
+    fn fact_in_scope(&self, fact: &SemanticFact, scope: &FindUsagesScope) -> bool {
+        match scope {
+            FindUsagesScope::Project => true,
+            FindUsagesScope::Scene { scene_entity_id } => self
+                .scene_for_entity(&fact.source_entity_id)
+                .is_some_and(|value| value == scene_entity_id),
+            FindUsagesScope::Script { script_resource_id } => self
+                .script_for_entity(&fact.source_entity_id)
+                .is_some_and(|value| value == script_resource_id),
+        }
     }
 }
 
@@ -695,6 +847,147 @@ fn scene_predicate(value: &str) -> Option<(SemanticPredicate, &'static str)> {
     }
 }
 
+fn signal_aliases(
+    generation: &IndexGeneration,
+    scene_current: bool,
+    script_current: bool,
+) -> BTreeMap<String, Vec<(String, String)>> {
+    if !scene_current || !script_current {
+        return BTreeMap::new();
+    }
+    let symbol_scripts = generation
+        .script
+        .symbols
+        .iter()
+        .map(|symbol| {
+            (
+                symbol.symbol_id.as_str(),
+                symbol.script_resource_id.as_str(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut parents = BTreeMap::<String, BTreeSet<String>>::new();
+    for relation in generation
+        .script
+        .relations
+        .iter()
+        .filter(|relation| relation.predicate == ScriptPredicate::Inherits)
+    {
+        let Some(target) = relation.target.as_ref() else {
+            continue;
+        };
+        let Some(source_script) = endpoint_script(&relation.source, &symbol_scripts) else {
+            continue;
+        };
+        let Some(target_script) = endpoint_script(target, &symbol_scripts) else {
+            continue;
+        };
+        if source_script != target_script {
+            parents
+                .entry(source_script.to_owned())
+                .or_default()
+                .insert(target_script.to_owned());
+        }
+    }
+
+    let mut aliases = BTreeMap::<String, Vec<(String, String)>>::new();
+    for symbol in generation
+        .script
+        .symbols
+        .iter()
+        .filter(|symbol| symbol.kind == ScriptSymbolKind::Signal)
+    {
+        let Some(name) = symbol.name.as_deref() else {
+            continue;
+        };
+        for node in generation
+            .scene
+            .nodes
+            .iter()
+            .filter(|node| node.attached_script_entity_id.is_some())
+        {
+            let attached = node
+                .attached_script_entity_id
+                .as_deref()
+                .expect("filtered attached script");
+            if script_reaches(attached, &symbol.script_resource_id, &parents) {
+                let mut emitters = vec![node.node_entity_id.as_str()];
+                emitters.extend(
+                    generation
+                        .scene
+                        .relations
+                        .iter()
+                        .filter(|relation| {
+                            relation.relation == "occurrence"
+                                && relation.scene_entity_id.as_deref()
+                                    == Some(node.scene_entity_id.as_str())
+                                && relation.target.as_deref() == Some(node.node_entity_id.as_str())
+                        })
+                        .map(|relation| relation.source.as_str()),
+                );
+                for emitter in emitters {
+                    aliases.entry(symbol.symbol_id.clone()).or_default().push((
+                        signal_entity_id(&node.scene_entity_id, emitter, name),
+                        node.scene_entity_id.clone(),
+                    ));
+                }
+            }
+        }
+    }
+    for values in aliases.values_mut() {
+        values.sort();
+        values.dedup();
+    }
+    aliases
+}
+
+fn endpoint_script<'a>(
+    endpoint: &'a ScriptEndpoint,
+    symbol_scripts: &BTreeMap<&str, &'a str>,
+) -> Option<&'a str> {
+    match endpoint {
+        ScriptEndpoint::Symbol { symbol_id } => symbol_scripts.get(symbol_id.as_str()).copied(),
+        ScriptEndpoint::Resource { resource_entity_id } => Some(resource_entity_id),
+        ScriptEndpoint::SceneNode { .. } => None,
+    }
+}
+
+fn script_reaches(
+    script: &str,
+    expected: &str,
+    parents: &BTreeMap<String, BTreeSet<String>>,
+) -> bool {
+    let mut pending = vec![script];
+    let mut visited = BTreeSet::new();
+    while let Some(current) = pending.pop() {
+        if current == expected {
+            return true;
+        }
+        if !visited.insert(current) {
+            continue;
+        }
+        if let Some(next) = parents.get(current) {
+            pending.extend(next.iter().map(String::as_str));
+        }
+    }
+    false
+}
+
+fn endpoint_targets(
+    endpoint: &ScriptEndpoint,
+    signal_aliases: &BTreeMap<String, Vec<(String, String)>>,
+) -> Vec<String> {
+    let mut targets = vec![endpoint_id(endpoint).to_owned()];
+    if let ScriptEndpoint::Symbol { symbol_id } = endpoint
+        && let Some(aliases) = signal_aliases.get(symbol_id)
+    {
+        targets.extend(aliases.iter().map(|(signal_id, _)| signal_id.clone()));
+    }
+    targets.sort();
+    targets.dedup();
+    targets
+}
+
 fn endpoint_id(endpoint: &ScriptEndpoint) -> &str {
     match endpoint {
         ScriptEndpoint::Symbol { symbol_id } => symbol_id,
@@ -836,5 +1129,53 @@ mod tests {
         let facts = index.facts_for_target("target");
         assert_eq!(facts.len(), 1);
         assert_eq!(facts[0].evidence.len(), 2);
+    }
+
+    #[test]
+    fn find_usages_filters_pages_and_rejects_invalid_windows() {
+        let mut value = generation();
+        let mut second = value.dependencies[0].clone();
+        second.edge_id = "edge-2".to_owned();
+        second.source_entity_id = "target".to_owned();
+        second.target_entity_id = Some("owner".to_owned());
+        second.target_uid = Some("uid://owner".to_owned());
+        second.target_comparison_path = Some("res://owner.tres".to_owned());
+        second.target_display_path = Some("res://owner.tres".to_owned());
+        second.resolved_target_path = Some("res://owner.tres".to_owned());
+        value.dependencies.push(second);
+        let index = SemanticQueryIndex::build(&value);
+        let result = index
+            .find_usages(&FindUsagesQuery {
+                target_entity_id: "target".to_owned(),
+                source_kinds: vec![SemanticEntityKind::Resource],
+                confidence: vec![SemanticConfidence::Exact],
+                scope: FindUsagesScope::Project,
+                offset: 0,
+                limit: 1,
+            })
+            .expect("valid query");
+        assert_eq!(result.total_matches, 1);
+        assert_eq!(result.usages.len(), 1);
+        assert_eq!(result.next_offset, None);
+
+        assert_eq!(
+            index.find_usages(&FindUsagesQuery {
+                target_entity_id: "target".to_owned(),
+                source_kinds: vec![],
+                confidence: vec![],
+                scope: FindUsagesScope::Project,
+                offset: FIND_USAGES_MAX_WINDOW,
+                limit: 1,
+            }),
+            Err(FindUsagesQueryError::ResultWindowExceeded)
+        );
+    }
+
+    #[test]
+    fn unavailable_semantic_domains_never_leak_stale_revisions() {
+        let index = SemanticQueryIndex::build_available(&generation(), false, false);
+        assert_eq!(index.revisions().scene_graph_revision, None);
+        assert_eq!(index.revisions().script_graph_revision, None);
+        assert!(index.facts().iter().all(|fact| fact.domain == "resource"));
     }
 }

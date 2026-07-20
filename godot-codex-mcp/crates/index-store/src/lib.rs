@@ -24,9 +24,10 @@ pub use segment::{
     SegmentFaultPoint, SegmentIndexReader, SegmentIndexStore, SegmentStore, SegmentTransaction,
 };
 pub use semantic::{
-    ConflictDiagnostic, EvidenceRecord, SemanticConfidence, SemanticEntityKind, SemanticFact,
-    SemanticPredicate, SemanticQueryIndex, SemanticRevisionVector, SemanticSourceRange,
-    signal_entity_id,
+    ConflictDiagnostic, EvidenceRecord, FIND_USAGES_DEFAULT_LIMIT, FIND_USAGES_MAX_LIMIT,
+    FIND_USAGES_MAX_WINDOW, FindUsagesQuery, FindUsagesQueryError, FindUsagesQueryResult,
+    FindUsagesScope, SemanticConfidence, SemanticEntityKind, SemanticFact, SemanticPredicate,
+    SemanticQueryIndex, SemanticRevisionVector, SemanticSourceRange, signal_entity_id,
 };
 
 use serde::{Deserialize, Serialize};

@@ -5,16 +5,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use cursor::{CursorBinding, CursorCodec, CursorTool};
 use godot_codex_index_store::{
-    DependencyEdge, IndexRead, IndexReadSnapshot, ResourceEntity, ResourceQuery, ResourceSelector,
+    DependencyEdge, FIND_USAGES_DEFAULT_LIMIT, FindUsagesQuery, FindUsagesQueryError,
+    FindUsagesScope, IndexRead, IndexReadSnapshot, ResourceEntity, ResourceQuery, ResourceSelector,
     SceneEntity, SceneNode, SceneProperty, SceneRelation, ScriptAdapterAvailability,
     ScriptCompleteness, ScriptDiagnostic, ScriptDocument, ScriptEndpoint, ScriptLanguage,
     ScriptPredicate, ScriptRelation, ScriptSourceRange, ScriptSymbol, ScriptSymbolInspectionQuery,
     ScriptSymbolInspectionResult, ScriptSymbolKind, ScriptSymbolMatch, ScriptSymbolQuery,
-    ScriptSymbolQueryResult, ScriptSymbolSelector, StoreError,
+    ScriptSymbolQueryResult, ScriptSymbolSelector, SemanticConfidence, SemanticEntityKind,
+    SemanticQueryIndex, StoreError, signal_entity_id,
 };
 use godot_codex_resource_indexer::{
     ResourceIndexReadError, ResourceIndexReader, SceneIndexReadError, SceneIndexReader,
-    ScriptIndexReadError, ScriptIndexReader, normalize_resource_path,
+    ScriptIndexReadError, ScriptIndexReader, SemanticIndexReadError, SemanticIndexReader,
+    SemanticPartialCode, SemanticPartialDomain, SemanticPartialReason, normalize_resource_path,
 };
 use godot_codex_semantic_model::SnapshotReplicator;
 use rmcp::{
@@ -32,6 +35,10 @@ const MAX_SCRIPT_DIAGNOSTICS: usize = 200;
 
 fn default_resource_limit() -> usize {
     DEFAULT_RESOURCE_LIMIT
+}
+
+fn default_find_usages_limit() -> usize {
+    FIND_USAGES_DEFAULT_LIMIT
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -168,6 +175,130 @@ struct InspectSymbolInput {
     cursor: Option<String>,
 }
 
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "kind", deny_unknown_fields)]
+enum FindUsagesTargetInput {
+    EntityId {
+        entity_id: String,
+    },
+    Resource {
+        selector: String,
+    },
+    Scene {
+        selector: String,
+    },
+    NodePath {
+        scene: String,
+        node_path: String,
+    },
+    ScriptSymbol {
+        script: String,
+        qualified_name: String,
+    },
+    Signal {
+        scene: String,
+        emitter_node_path: String,
+        signal: String,
+    },
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    serde::Deserialize,
+    serde::Serialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+enum SemanticEntityKindInput {
+    Project,
+    Resource,
+    Scene,
+    Node,
+    Script,
+    Symbol,
+    Signal,
+}
+
+impl From<SemanticEntityKindInput> for SemanticEntityKind {
+    fn from(value: SemanticEntityKindInput) -> Self {
+        match value {
+            SemanticEntityKindInput::Project => Self::Project,
+            SemanticEntityKindInput::Resource => Self::Resource,
+            SemanticEntityKindInput::Scene => Self::Scene,
+            SemanticEntityKindInput::Node => Self::Node,
+            SemanticEntityKindInput::Script => Self::Script,
+            SemanticEntityKindInput::Symbol => Self::Symbol,
+            SemanticEntityKindInput::Signal => Self::Signal,
+        }
+    }
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Ord,
+    PartialEq,
+    PartialOrd,
+    serde::Deserialize,
+    serde::Serialize,
+    schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+enum SemanticConfidenceInput {
+    Dynamic,
+    Probable,
+    RuntimeConfirmed,
+    Exact,
+}
+
+impl From<SemanticConfidenceInput> for SemanticConfidence {
+    fn from(value: SemanticConfidenceInput) -> Self {
+        match value {
+            SemanticConfidenceInput::Dynamic => Self::Dynamic,
+            SemanticConfidenceInput::Probable => Self::Probable,
+            SemanticConfidenceInput::RuntimeConfirmed => Self::RuntimeConfirmed,
+            SemanticConfidenceInput::Exact => Self::Exact,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "kind", deny_unknown_fields)]
+enum FindUsagesScopeInput {
+    #[default]
+    Project,
+    Scene {
+        scene: String,
+    },
+    Script {
+        script: String,
+    },
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct FindUsagesInput {
+    target: FindUsagesTargetInput,
+    #[serde(default)]
+    source_kinds: Vec<SemanticEntityKindInput>,
+    #[serde(default)]
+    confidence: Vec<SemanticConfidenceInput>,
+    #[serde(default)]
+    scope: FindUsagesScopeInput,
+    #[serde(default = "default_find_usages_limit")]
+    limit: usize,
+    #[serde(default)]
+    cursor: Option<String>,
+}
+
 #[derive(Clone, Copy)]
 enum Query {
     EditorState,
@@ -183,6 +314,7 @@ pub struct GodotMcpServer {
     resource_index: ResourceIndexReader,
     scene_index: SceneIndexReader,
     script_index: ScriptIndexReader,
+    semantic_index: SemanticIndexReader,
     cursor_codec: CursorCodec,
 }
 
@@ -233,12 +365,18 @@ impl GodotMcpServer {
         scene_index: SceneIndexReader,
         script_index: ScriptIndexReader,
     ) -> Self {
+        let semantic_index = SemanticIndexReader::new(
+            resource_index.clone(),
+            scene_index.clone(),
+            script_index.clone(),
+        );
         Self {
             tool_router: Self::tool_router(),
             replicator,
             resource_index,
             scene_index,
             script_index,
+            semantic_index,
             cursor_codec: CursorCodec::new(),
         }
     }
@@ -321,7 +459,8 @@ impl GodotMcpServer {
             CursorTool::SceneGraph
             | CursorTool::InspectNode
             | CursorTool::SearchSymbols
-            | CursorTool::InspectSymbol => unreachable!("resource tool"),
+            | CursorTool::InspectSymbol
+            | CursorTool::FindUsages => unreachable!("resource tool"),
         };
         let result = match result {
             Ok(result) => result,
@@ -752,6 +891,360 @@ impl GodotMcpServer {
             result,
             next_cursor,
         )
+    }
+
+    fn find_usages_query(&self, mut input: FindUsagesInput) -> CallToolResult {
+        if !(1..=MAX_RESOURCE_LIMIT).contains(&input.limit) {
+            return structured_error("invalid_limit", "limit must be between 1 and 200", false);
+        }
+        input.source_kinds.sort();
+        input.source_kinds.dedup();
+        input.confidence.sort();
+        input.confidence.dedup();
+        let snapshot = match self.semantic_index.pin_current() {
+            Ok(snapshot) => snapshot,
+            Err(error) => return semantic_index_error(error),
+        };
+        let generation = snapshot.generation();
+        let query_index = snapshot.query_index();
+        let (target_entity_id, target_binding) =
+            match resolve_find_usages_target(generation, query_index, &input.target) {
+                Ok(target) => target,
+                Err((code, message)) => return structured_error(code, message, false),
+            };
+        let (scope, scope_binding) =
+            match resolve_find_usages_scope(generation, query_index, &input.scope) {
+                Ok(scope) => scope,
+                Err((code, message)) => return structured_error(code, message, false),
+            };
+        let source_kinds = input
+            .source_kinds
+            .iter()
+            .copied()
+            .map(SemanticEntityKind::from)
+            .collect::<Vec<_>>();
+        let confidence = input
+            .confidence
+            .iter()
+            .copied()
+            .map(SemanticConfidence::from)
+            .collect::<Vec<_>>();
+        let selector_binding = json!({
+            "target": target_binding,
+            "source_kinds": input.source_kinds,
+            "confidence": input.confidence,
+            "scope": scope_binding,
+        })
+        .to_string();
+        let revisions = query_index.revisions();
+        let binding = CursorBinding {
+            project_id: &generation.project_id,
+            tool: CursorTool::FindUsages,
+            selector: &selector_binding,
+            limit: input.limit,
+            generation_id: query_index.generation_id(),
+            index_revision: revisions.index_revision,
+            resource_revision: revisions.resource_revision,
+            scene_graph_revision: revisions.scene_graph_revision,
+            script_graph_revision: revisions.script_graph_revision,
+        };
+        let now = unix_seconds();
+        let offset = match cursor_offset(input.cursor.as_deref(), &self.cursor_codec, &binding, now)
+        {
+            Ok(offset) => offset,
+            Err(result) => return result,
+        };
+        let result = match query_index.find_usages(&FindUsagesQuery {
+            target_entity_id,
+            source_kinds,
+            confidence,
+            scope,
+            offset,
+            limit: input.limit,
+        }) {
+            Ok(result) => result,
+            Err(error) => return find_usages_error(error),
+        };
+        let next_cursor = match result.next_offset {
+            Some(next_offset) => match self.cursor_codec.issue(&binding, next_offset, now) {
+                Ok(cursor) => Some(cursor),
+                Err(()) => {
+                    return structured_error(
+                        "index_not_current",
+                        "the current semantic index page could not be pinned",
+                        true,
+                    );
+                }
+            },
+            None => None,
+        };
+        CallToolResult::structured(json!({
+            "project_id": generation.project_id,
+            "generation_id": query_index.generation_id(),
+            "index_revision": revisions.index_revision,
+            "resource_revision": revisions.resource_revision,
+            "scene_graph_revision": revisions.scene_graph_revision,
+            "script_graph_revision": revisions.script_graph_revision,
+            "target": {
+                "entity_id": result.target_entity_id,
+                "kind": result.target_kind,
+                "selector": input.target,
+            },
+            "scope": input.scope,
+            "source_kinds": input.source_kinds,
+            "confidence": input.confidence,
+            "limit": input.limit,
+            "offset": offset,
+            "total_matches": result.total_matches,
+            "truncated": result.truncated,
+            "usages": result.usages,
+            "conflicts": result.conflicts,
+            "partial_reasons": snapshot.partial_reasons().iter().map(partial_reason_view).collect::<Vec<_>>(),
+            "next_cursor": next_cursor,
+        }))
+    }
+}
+
+fn resolve_find_usages_target(
+    generation: &godot_codex_index_store::IndexGeneration,
+    query_index: &SemanticQueryIndex,
+    target: &FindUsagesTargetInput,
+) -> Result<(String, String), (&'static str, &'static str)> {
+    match target {
+        FindUsagesTargetInput::EntityId { entity_id } => {
+            if entity_id.is_empty()
+                || entity_id.len() > 256
+                || entity_id.chars().any(char::is_control)
+                || query_index.entity_kind(entity_id).is_none()
+            {
+                return Err((
+                    "target_not_found",
+                    "entity ID was not found in the current semantic index",
+                ));
+            }
+            Ok((entity_id.clone(), format!("entity_id:{entity_id}")))
+        }
+        FindUsagesTargetInput::Resource { selector } => {
+            let (selector, canonical, _) = parse_selector(selector)?;
+            let resource = match &selector {
+                ResourceSelector::EntityId(entity_id) => generation
+                    .resources
+                    .iter()
+                    .find(|resource| resource.entity_id == *entity_id),
+                ResourceSelector::Uid(uid) => generation
+                    .resources
+                    .iter()
+                    .find(|resource| resource.uid.as_ref() == Some(uid)),
+                ResourceSelector::ComparisonPath(path) => generation
+                    .resources
+                    .iter()
+                    .find(|resource| resource.comparison_path == *path),
+            }
+            .ok_or((
+                "resource_not_found",
+                "resource was not found in the current index",
+            ))?;
+            Ok((resource.entity_id.clone(), format!("resource:{canonical}")))
+        }
+        FindUsagesTargetInput::Scene { selector } => {
+            require_semantic_scene(query_index)?;
+            let (scene, canonical) = resolve_scene(&generation.scene.scenes, selector)?;
+            Ok((scene.scene_entity_id.clone(), format!("scene:{canonical}")))
+        }
+        FindUsagesTargetInput::NodePath { scene, node_path } => {
+            require_semantic_scene(query_index)?;
+            if !valid_node_path(node_path) {
+                return Err(("invalid_query", "node_path is invalid or unsafe"));
+            }
+            let selected = resolve_node_selection(generation, None, Some(scene), Some(node_path))?;
+            Ok((
+                selected.subject_id,
+                format!("node_path:{}", selected.canonical_selector),
+            ))
+        }
+        FindUsagesTargetInput::ScriptSymbol {
+            script,
+            qualified_name,
+        } => {
+            require_semantic_script(query_index)?;
+            if !valid_qualified_name(qualified_name) {
+                return Err(("invalid_query", "qualified_name is invalid"));
+            }
+            let (document, canonical) = resolve_script(generation, script)?;
+            let symbol = generation
+                .script
+                .symbols
+                .iter()
+                .find(|symbol| {
+                    symbol.script_resource_id == document.script_resource_id
+                        && symbol.qualified_key == *qualified_name
+                })
+                .ok_or((
+                    "symbol_not_found",
+                    "symbol was not found in the current script index",
+                ))?;
+            Ok((
+                symbol.symbol_id.clone(),
+                format!("script_symbol:{canonical}\0qualified_name:{qualified_name}"),
+            ))
+        }
+        FindUsagesTargetInput::Signal {
+            scene,
+            emitter_node_path,
+            signal,
+        } => {
+            require_semantic_scene(query_index)?;
+            require_semantic_script(query_index)?;
+            if !valid_node_path(emitter_node_path) || !valid_signal_name(signal) {
+                return Err(("invalid_query", "signal selector is invalid or unsafe"));
+            }
+            let selected =
+                resolve_node_selection(generation, None, Some(scene), Some(emitter_node_path))?;
+            let occurrence_signal = signal_entity_id(
+                &selected.scene.scene_entity_id,
+                &selected.subject_id,
+                signal,
+            );
+            let definition_signal = signal_entity_id(
+                &selected.scene.scene_entity_id,
+                &selected.definition.node_entity_id,
+                signal,
+            );
+            let entity_id = [occurrence_signal, definition_signal]
+                .into_iter()
+                .find(|candidate| query_index.entity_kind(candidate).is_some())
+                .ok_or((
+                    "signal_not_found",
+                    "signal was not found in the current semantic index",
+                ))?;
+            Ok((
+                entity_id,
+                format!("signal:{}\0name:{signal}", selected.canonical_selector),
+            ))
+        }
+    }
+}
+
+fn resolve_find_usages_scope(
+    generation: &godot_codex_index_store::IndexGeneration,
+    query_index: &SemanticQueryIndex,
+    scope: &FindUsagesScopeInput,
+) -> Result<(FindUsagesScope, String), (&'static str, &'static str)> {
+    match scope {
+        FindUsagesScopeInput::Project => Ok((FindUsagesScope::Project, "project".to_owned())),
+        FindUsagesScopeInput::Scene { scene } => {
+            require_semantic_scene(query_index)?;
+            let (scene, canonical) = resolve_scene(&generation.scene.scenes, scene)?;
+            Ok((
+                FindUsagesScope::Scene {
+                    scene_entity_id: scene.scene_entity_id.clone(),
+                },
+                format!("scene:{canonical}"),
+            ))
+        }
+        FindUsagesScopeInput::Script { script } => {
+            require_semantic_script(query_index)?;
+            let (script, canonical) = resolve_script(generation, script)?;
+            Ok((
+                FindUsagesScope::Script {
+                    script_resource_id: script.script_resource_id.clone(),
+                },
+                format!("script:{canonical}"),
+            ))
+        }
+    }
+}
+
+fn require_semantic_scene(
+    query_index: &SemanticQueryIndex,
+) -> Result<(), (&'static str, &'static str)> {
+    query_index
+        .revisions()
+        .scene_graph_revision
+        .ok_or((
+            "scene_index_not_current",
+            "scene target or scope requires a current scene index",
+        ))
+        .map(|_| ())
+}
+
+fn require_semantic_script(
+    query_index: &SemanticQueryIndex,
+) -> Result<(), (&'static str, &'static str)> {
+    query_index
+        .revisions()
+        .script_graph_revision
+        .ok_or((
+            "script_index_not_current",
+            "script target or scope requires a current script index",
+        ))
+        .map(|_| ())
+}
+
+fn valid_signal_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value == value.trim()
+        && !value.chars().any(char::is_control)
+        && !value.contains(['/', '\\', ':'])
+}
+
+fn partial_reason_view(reason: &SemanticPartialReason) -> Value {
+    let domain = match reason.domain {
+        SemanticPartialDomain::Scene => "scene",
+        SemanticPartialDomain::Script => "script",
+    };
+    let code = match reason.code {
+        SemanticPartialCode::ProjectNotBound => "project_not_bound",
+        SemanticPartialCode::NotReady => "not_ready",
+        SemanticPartialCode::NotCurrent => "not_current",
+        SemanticPartialCode::CapabilityUnavailable => "capability_unavailable",
+    };
+    json!({"domain": domain, "code": code})
+}
+
+fn semantic_index_error(error: SemanticIndexReadError) -> CallToolResult {
+    match error {
+        SemanticIndexReadError::ProjectNotBound => structured_error(
+            "project_not_bound",
+            "no project is bound to the semantic index",
+            true,
+        ),
+        SemanticIndexReadError::NotReady => structured_error(
+            "index_not_ready",
+            "semantic index has no committed resource generation",
+            true,
+        ),
+        SemanticIndexReadError::CapabilityUnavailable => structured_error(
+            "capability_unavailable",
+            "semantic indexing is unavailable for this project",
+            false,
+        ),
+        SemanticIndexReadError::NotCurrent | SemanticIndexReadError::TornGeneration => {
+            structured_error(
+                "index_not_current",
+                "semantic domains could not be pinned to one immutable generation",
+                true,
+            )
+        }
+    }
+}
+
+fn find_usages_error(error: FindUsagesQueryError) -> CallToolResult {
+    match error {
+        FindUsagesQueryError::TargetNotFound => structured_error(
+            "target_not_found",
+            "target was not found in the current semantic index",
+            false,
+        ),
+        FindUsagesQueryError::InvalidLimit => {
+            structured_error("invalid_limit", "limit must be between 1 and 200", false)
+        }
+        FindUsagesQueryError::ResultWindowExceeded => structured_error(
+            "result_limit_exceeded",
+            "usage query exceeded the bounded result window",
+            false,
+        ),
     }
 }
 
@@ -1939,7 +2432,8 @@ fn resource_success(
             CursorTool::SceneGraph
             | CursorTool::InspectNode
             | CursorTool::SearchSymbols
-            | CursorTool::InspectSymbol => unreachable!("resource tool"),
+            | CursorTool::InspectSymbol
+            | CursorTool::FindUsages => unreachable!("resource tool"),
         })
         .collect();
     let mut response = json!({
@@ -1974,7 +2468,8 @@ fn resource_success(
         CursorTool::SceneGraph
         | CursorTool::InspectNode
         | CursorTool::SearchSymbols
-        | CursorTool::InspectSymbol => unreachable!("resource tool"),
+        | CursorTool::InspectSymbol
+        | CursorTool::FindUsages => unreachable!("resource tool"),
     }] = Value::Array(related);
     CallToolResult::structured(response)
 }
@@ -2317,6 +2812,20 @@ impl GodotMcpServer {
         Parameters(input): Parameters<InspectSymbolInput>,
     ) -> CallToolResult {
         self.inspect_symbol_query(input)
+    }
+
+    #[tool(
+        description = "Find evidence-backed resource, scene, and saved-script usages of one canonical Godot entity",
+        annotations(
+            title = "Godot find usages",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn godot_find_usages(&self, Parameters(input): Parameters<FindUsagesInput>) -> CallToolResult {
+        self.find_usages_query(input)
     }
 }
 
@@ -3141,15 +3650,16 @@ mod tests {
     }
 
     #[test]
-    fn exactly_nine_tools_are_declared_read_only_with_closed_schemas() {
+    fn exactly_ten_tools_are_declared_read_only_with_closed_schemas() {
         let server = GodotMcpServer::new(SnapshotReplicator::new());
         let tools = server.tool_router.list_all();
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
         let names: BTreeSet<_> = tools.iter().map(|tool| tool.name.as_ref()).collect();
         assert!(names.contains("godot_get_scene_graph"));
         assert!(names.contains("godot_inspect_node"));
         assert!(names.contains("godot_search_symbols"));
         assert!(names.contains("godot_inspect_symbol"));
+        assert!(names.contains("godot_find_usages"));
         for tool in tools {
             let annotations = tool.annotations.as_ref().expect("annotations");
             assert_eq!(annotations.read_only_hint, Some(true));
@@ -3194,6 +3704,133 @@ mod tests {
                 "signal"
             ])
         );
+        let find = tools
+            .iter()
+            .find(|tool| tool.name.as_ref() == "godot_find_usages")
+            .expect("find usages tool");
+        assert!(
+            find.input_schema["required"]
+                .as_array()
+                .is_some_and(|required| required.contains(&json!("target")))
+        );
+        assert_eq!(
+            find.input_schema["$defs"]["SemanticConfidenceInput"]["enum"],
+            json!(["dynamic", "probable", "runtime_confirmed", "exact"])
+        );
+    }
+
+    #[test]
+    fn find_usages_aggregates_evidence_pages_and_binds_filters() {
+        let server = indexed_script_server();
+        let first = server.godot_find_usages(Parameters(FindUsagesInput {
+            target: FindUsagesTargetInput::Resource {
+                selector: "uid://b".to_owned(),
+            },
+            source_kinds: vec![],
+            confidence: vec![SemanticConfidenceInput::Exact],
+            scope: FindUsagesScopeInput::Project,
+            limit: 1,
+            cursor: None,
+        }));
+        assert_ne!(first.is_error, Some(true));
+        let first = structured_content(&first).expect("first usage page");
+        assert!(
+            first["total_matches"]
+                .as_u64()
+                .is_some_and(|total| total >= 2)
+        );
+        assert_eq!(first["usages"].as_array().map(Vec::len), Some(1));
+        assert!(
+            first["usages"][0]["evidence"]
+                .as_array()
+                .is_some_and(|evidence| !evidence.is_empty())
+        );
+        assert_eq!(first["partial_reasons"], json!([]));
+        let cursor = first["next_cursor"].as_str().expect("next cursor");
+
+        let second = server.godot_find_usages(Parameters(FindUsagesInput {
+            target: FindUsagesTargetInput::Resource {
+                selector: "uid://b".to_owned(),
+            },
+            source_kinds: vec![],
+            confidence: vec![SemanticConfidenceInput::Exact],
+            scope: FindUsagesScopeInput::Project,
+            limit: 1,
+            cursor: Some(cursor.to_owned()),
+        }));
+        assert_ne!(second.is_error, Some(true));
+        assert_eq!(
+            structured_content(&second).and_then(|value| value["offset"].as_u64()),
+            Some(1)
+        );
+
+        let cross_filter = server.godot_find_usages(Parameters(FindUsagesInput {
+            target: FindUsagesTargetInput::Resource {
+                selector: "uid://b".to_owned(),
+            },
+            source_kinds: vec![SemanticEntityKindInput::Node],
+            confidence: vec![SemanticConfidenceInput::Exact],
+            scope: FindUsagesScopeInput::Project,
+            limit: 1,
+            cursor: Some(cursor.to_owned()),
+        }));
+        assert_eq!(cross_filter.is_error, Some(true));
+        assert_eq!(
+            structured_content(&cross_filter)
+                .and_then(|value| value.pointer("/error/code"))
+                .and_then(Value::as_str),
+            Some("stale_cursor")
+        );
+    }
+
+    #[test]
+    fn find_usages_reports_partial_domains_without_serving_stale_facts() {
+        let server = indexed_resource_server();
+        let result = server.godot_find_usages(Parameters(FindUsagesInput {
+            target: FindUsagesTargetInput::Resource {
+                selector: "uid://b".to_owned(),
+            },
+            source_kinds: vec![],
+            confidence: vec![],
+            scope: FindUsagesScopeInput::Project,
+            limit: 50,
+            cursor: None,
+        }));
+        assert_ne!(result.is_error, Some(true));
+        let result = structured_content(&result).expect("partial usage response");
+        assert_eq!(result["scene_graph_revision"], Value::Null);
+        assert_eq!(result["script_graph_revision"], Value::Null);
+        assert_eq!(result["partial_reasons"].as_array().map(Vec::len), Some(2));
+        assert!(
+            result["usages"]
+                .as_array()
+                .expect("usages")
+                .iter()
+                .all(|usage| usage["domain"] == "resource")
+        );
+    }
+
+    #[test]
+    fn find_usages_resolves_a_canonical_script_symbol() {
+        let server = indexed_script_server();
+        let result = server.godot_find_usages(Parameters(FindUsagesInput {
+            target: FindUsagesTargetInput::ScriptSymbol {
+                script: "res://scripts/player.gd".to_owned(),
+                qualified_name: "class:Player/method:attack_special".to_owned(),
+            },
+            source_kinds: vec![SemanticEntityKindInput::Symbol],
+            confidence: vec![SemanticConfidenceInput::Exact],
+            scope: FindUsagesScopeInput::Script {
+                script: "res://scripts/player.gd".to_owned(),
+            },
+            limit: 50,
+            cursor: None,
+        }));
+        assert_ne!(result.is_error, Some(true));
+        let usages = structured_content(&result)
+            .and_then(|value| value["usages"].as_array())
+            .expect("symbol usages");
+        assert!(usages.iter().any(|usage| usage["predicate"] == "calls"));
     }
 
     #[test]

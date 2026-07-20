@@ -16,6 +16,7 @@ pub(crate) enum CursorTool {
     InspectNode,
     SearchSymbols,
     InspectSymbol,
+    FindUsages,
 }
 
 impl CursorTool {
@@ -27,6 +28,7 @@ impl CursorTool {
             Self::InspectNode => "godot_inspect_node",
             Self::SearchSymbols => "godot_search_symbols",
             Self::InspectSymbol => "godot_inspect_symbol",
+            Self::FindUsages => "godot_find_usages",
         }
     }
 }
