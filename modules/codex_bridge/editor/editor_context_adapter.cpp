@@ -55,6 +55,12 @@
 
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
 
+// The transport chunk also contains the entity identity, property-array
+// envelope, and checksum metadata. Reserve bounded headroom so a property
+// projection that reaches its public per-node limit can still be framed under
+// the 256 KiB produced-payload target.
+static constexpr int INSPECTOR_ENTITY_ENVELOPE_BYTES = 32 * 1024;
+
 String EditorContextAdapter::_make_opaque_id(const String &p_prefix, const String &p_domain, const String &p_value) {
 	const CharString bytes = (p_domain + "\n" + p_value).utf8();
 	PackedByteArray digest;
@@ -147,7 +153,7 @@ Variant EditorContextAdapter::_project_variant(const Variant &p_value, int p_dep
 	return BoundedVariantProjector::project_raw(p_value, r_truncated, p_depth);
 }
 
-Array EditorContextAdapter::_capture_properties(Object *p_object, int p_limit, const String &p_scene_id, const Dictionary &p_revisions, bool &r_truncated, int &r_total_bytes) {
+Array EditorContextAdapter::_capture_properties(Object *p_object, int p_limit, const String &p_scene_id, const Dictionary &p_revisions, bool &r_truncated, int &r_total_bytes, bool p_script_variables_only) {
 	Array properties;
 	if (!p_object) {
 		return properties;
@@ -158,6 +164,9 @@ Array EditorContextAdapter::_capture_properties(Object *p_object, int p_limit, c
 	const Dictionary scene_revisions = p_revisions.get("scene_revisions", Dictionary());
 	for (const PropertyInfo &property : property_list) {
 		if (!(property.usage & PROPERTY_USAGE_EDITOR) || (property.usage & PROPERTY_USAGE_INTERNAL) || property.name == SNAME("script")) {
+			continue;
+		}
+		if (p_script_variables_only && !(property.usage & PROPERTY_USAGE_SCRIPT_VARIABLE)) {
 			continue;
 		}
 		if (properties.size() >= p_limit) {
@@ -193,7 +202,8 @@ Array EditorContextAdapter::_capture_properties(Object *p_object, int p_limit, c
 			projected_bytes = JSON::stringify(projected, "", true, true).utf8().length();
 			r_truncated = true;
 		}
-		if (property_bytes + projected_bytes > MAX_INSPECTOR_BYTES_PER_NODE || r_total_bytes + projected_bytes > MAX_TOTAL_INSPECTOR_BYTES) {
+		if (property_bytes + projected_bytes > MAX_INSPECTOR_BYTES_PER_NODE - INSPECTOR_ENTITY_ENVELOPE_BYTES ||
+				r_total_bytes + projected_bytes > MAX_TOTAL_INSPECTOR_BYTES) {
 			r_truncated = true;
 			break;
 		}
@@ -204,12 +214,20 @@ Array EditorContextAdapter::_capture_properties(Object *p_object, int p_limit, c
 	return properties;
 }
 
-Error EditorContextAdapter::capture(const String &p_project_id, const String &p_editor_session_id, const Dictionary &p_revisions, Dictionary &r_snapshot, bool p_full_live_context, const Dictionary &p_history_transitions) {
+Error EditorContextAdapter::capture(const String &p_project_id, const String &p_editor_session_id, const Dictionary &p_revisions, Dictionary &r_snapshot, bool p_full_live_context, const Dictionary &p_history_transitions, int p_domain_mask) {
 	ERR_FAIL_COND_V_MSG(!Thread::is_main_thread(), ERR_BUG, "Editor context must be captured on the main thread.");
 	EditorNode *editor = EditorNode::get_singleton();
 	ERR_FAIL_NULL_V(editor, ERR_UNCONFIGURED);
 	EditorData &editor_data = EditorNode::get_editor_data();
 	const int current_scene_index = editor_data.get_edited_scene();
+	const bool capture_context = !p_full_live_context || (p_domain_mask & CAPTURE_CONTEXT);
+	const bool capture_inspector = p_full_live_context && (p_domain_mask & CAPTURE_INSPECTOR);
+	const bool capture_scripts = p_full_live_context && (p_domain_mask & CAPTURE_SCRIPTS);
+	const bool capture_history = p_full_live_context && (p_domain_mask & CAPTURE_HISTORY);
+	const bool capture_diagnostics = p_full_live_context && (p_domain_mask & CAPTURE_DIAGNOSTICS);
+	const bool capture_viewport = p_full_live_context && (p_domain_mask & CAPTURE_VIEWPORT);
+	const bool scan_scene_nodes = capture_context || capture_inspector;
+	const bool scan_scenes = scan_scene_nodes || capture_history;
 
 	Array entities;
 	Dictionary editor_entity;
@@ -219,7 +237,9 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 	editor_entity["editor_session_id"] = p_editor_session_id;
 	editor_entity["open_scene_count"] = editor_data.get_edited_scene_count();
 	editor_entity["revisions"] = p_revisions;
-	entities.push_back(editor_entity);
+	if (capture_context) {
+		entities.push_back(editor_entity);
+	}
 
 	Array selected_node_ids;
 	Array open_scene_ids;
@@ -246,8 +266,8 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	const Dictionary scene_revisions = p_revisions.get("scene_revisions", Dictionary());
 	const int scene_count = editor_data.get_edited_scene_count();
-	const int first_scene = p_full_live_context ? 0 : current_scene_index;
-	const int last_scene = p_full_live_context ? MIN(scene_count, MAX_OPEN_SCENES) : (current_scene_index >= 0 ? current_scene_index + 1 : 0);
+	const int first_scene = scan_scenes ? (p_full_live_context ? 0 : current_scene_index) : 0;
+	const int last_scene = scan_scenes ? (p_full_live_context ? MIN(scene_count, MAX_OPEN_SCENES) : (current_scene_index >= 0 ? current_scene_index + 1 : 0)) : 0;
 	for (int scene_index = first_scene; scene_index >= 0 && scene_index < last_scene; scene_index++) {
 		Node *scene_root = editor_data.get_edited_scene_root(scene_index);
 		if (!scene_root) {
@@ -277,10 +297,14 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		scene_entity["history_id"] = _make_history_id(p_editor_session_id, native_history_id);
 		scene_entity["scene_revision"] = scene_revisions.get(scene_id, 0);
 		const int scene_entity_index = entities.size();
-		entities.push_back(scene_entity);
+		if (capture_context) {
+			entities.push_back(scene_entity);
+		}
 
 		List<Node *> pending;
-		pending.push_back(scene_root);
+		if (scan_scene_nodes) {
+			pending.push_back(scene_root);
+		}
 		int node_count = 0;
 		while (!pending.is_empty() && node_count < MAX_SCENE_NODES) {
 			Node *node = pending.front()->get();
@@ -302,9 +326,11 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 			entity["owner_path"] = _bounded_identity(owner_path, truncated);
 			const Ref<Script> script = node->get_script();
 			entity["script_path"] = _bounded_identity(script.is_valid() ? script->get_path() : String(), truncated);
-			const int entity_index = entities.size();
-			entities.push_back(entity);
-			node_entity_indices.insert(node->get_instance_id(), entity_index);
+			if (capture_context) {
+				const int entity_index = entities.size();
+				entities.push_back(entity);
+				node_entity_indices.insert(node->get_instance_id(), entity_index);
+			}
 			node_live_ids.insert(node->get_instance_id(), node_id);
 			node_scene_ids.insert(node->get_instance_id(), scene_id);
 			node_paths.insert(node->get_instance_id(), node_path);
@@ -315,12 +341,14 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		}
 		const bool nodes_truncated = !pending.is_empty();
 		truncated = truncated || nodes_truncated;
-		scene_entity = entities[scene_entity_index];
-		scene_entity["root_node_id"] = _make_node_id(p_editor_session_id, scene_id, ".");
-		scene_entity["node_count"] = node_count;
-		scene_entity["nodes_truncated"] = nodes_truncated;
-		scene_entity["coverage"] = nodes_truncated ? "partial" : "complete";
-		entities[scene_entity_index] = scene_entity;
+		if (capture_context) {
+			scene_entity = entities[scene_entity_index];
+			scene_entity["root_node_id"] = _make_node_id(p_editor_session_id, scene_id, ".");
+			scene_entity["node_count"] = node_count;
+			scene_entity["nodes_truncated"] = nodes_truncated;
+			scene_entity["coverage"] = nodes_truncated ? "partial" : "complete";
+			entities[scene_entity_index] = scene_entity;
+		}
 	}
 	if (p_full_live_context && scene_count > MAX_OPEN_SCENES) {
 		truncated = true;
@@ -329,6 +357,9 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 	Vector<String> sorted_selected_ids;
 	HashMap<String, ObjectID> selected_objects_by_live_id;
 	for (const ObjectID &selected_id : selected_ids) {
+		if (!capture_context) {
+			break;
+		}
 		const String *live_id = node_live_ids.getptr(selected_id);
 		if (live_id) {
 			sorted_selected_ids.push_back(*live_id);
@@ -351,13 +382,14 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		node_entity["selected"] = true;
 		node_entity["primary"] = inspected_object && inspected_object->get_instance_id() == *object_id;
 		bool properties_truncated = false;
-		node_entity["properties"] = _capture_properties(ObjectDB::get_instance(*object_id), MAX_INSPECTOR_PROPERTIES, node_scene_ids.get(*object_id), p_revisions, properties_truncated, total_inspector_bytes);
+		node_entity["properties"] = _capture_properties(ObjectDB::get_instance(*object_id), MAX_INSPECTOR_PROPERTIES, node_scene_ids.get(*object_id), p_revisions, properties_truncated, total_inspector_bytes, true);
+		node_entity["properties_coverage"] = "script_variables";
 		node_entity["properties_truncated"] = properties_truncated;
 		truncated = truncated || properties_truncated;
 		entities[*entity_index] = node_entity;
 		selected_node_ids.push_back(node_id);
 	}
-	if (projected_selection_count < total_selection_count) {
+	if (capture_context && projected_selection_count < total_selection_count) {
 		truncated = true;
 	}
 	for (int entity_index = 1; entity_index < entities.size(); entity_index++) {
@@ -369,7 +401,7 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		}
 	}
 
-	if (p_full_live_context) {
+	if (capture_inspector) {
 		Dictionary inspector_entity;
 		inspector_entity["kind"] = "inspector_state";
 		inspector_entity["entity_id"] = _make_opaque_id("inspector:", "godot-codex-inspector/v1", p_editor_session_id);
@@ -394,12 +426,16 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 			}
 			inspector_entity["godot_type"] = inspected_object->get_class();
 			bool inspector_truncated = false;
-			inspector_entity["properties"] = _capture_properties(inspected_object, MAX_INSPECTOR_PROPERTIES, inspector_entity.get("scene_id", String()), p_revisions, inspector_truncated, total_inspector_bytes);
+			const bool opaque_object = !Object::cast_to<Node>(inspected_object) && !Object::cast_to<Resource>(inspected_object);
+			inspector_entity["properties"] = _capture_properties(inspected_object, MAX_INSPECTOR_PROPERTIES, inspector_entity.get("scene_id", String()), p_revisions, inspector_truncated, total_inspector_bytes, opaque_object);
+			inspector_entity["properties_coverage"] = opaque_object ? "script_variables" : "editor_visible";
 			inspector_entity["properties_truncated"] = inspector_truncated;
 			truncated = truncated || inspector_truncated;
 		}
 		entities.push_back(inspector_entity);
+	}
 
+	if (capture_scripts) {
 		ScriptEditor *script_editor = ScriptEditor::get_singleton();
 		Array open_script_ids;
 		String active_script_id;
@@ -490,7 +526,9 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		script_state["active_script_id"] = active_script_id;
 		script_state["open_scripts_truncated"] = scripts_truncated;
 		entities.push_back(script_state);
+	}
 
+	if (capture_history) {
 		Dictionary history_state;
 		history_state["kind"] = "history_state";
 		history_state["entity_id"] = _make_opaque_id("histories:", "godot-codex-history-state/v1", p_editor_session_id);
@@ -556,7 +594,9 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		history_state["history_ids"] = history_ids;
 		history_state["last_operation_seq"] = p_revisions.get("operation_seq", 0);
 		entities.push_back(history_state);
+	}
 
+	if (capture_diagnostics) {
 		Array diagnostic_ids;
 		int diagnostic_bytes = 0;
 		int omitted_diagnostics = 0;
@@ -581,7 +621,10 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 				diagnostic["output_seq"] = output_seq;
 				diagnostic["redacted"] = redacted;
 				diagnostic["runtime_semantics_inferred"] = false;
-				const int encoded_bytes = JSON::stringify(diagnostic, "", true, true).utf8().length();
+				// Count a conservative fixed envelope above the bounded UTF-8 message
+				// instead of serializing every diagnostic on the editor thread. The
+				// transport worker performs the canonical serialization later.
+				const int encoded_bytes = message.utf8().length() * 6 + 512;
 				if (diagnostic_bytes + encoded_bytes > MAX_DIAGNOSTIC_BYTES) {
 					omitted_diagnostics += output_messages.size() - message_index;
 					truncated = true;
@@ -599,7 +642,9 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		diagnostic_state["omitted_count"] = omitted_diagnostics;
 		diagnostic_state["encoded_bytes"] = diagnostic_bytes;
 		entities.push_back(diagnostic_state);
+	}
 
+	if (capture_viewport) {
 		Dictionary viewport_entity;
 		viewport_entity["kind"] = "viewport_state";
 		viewport_entity["entity_id"] = _make_opaque_id("viewport:", "godot-codex-viewport/v1", p_editor_session_id);
@@ -635,15 +680,17 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		entities.push_back(viewport_entity);
 	}
 
-	editor_entity["current_scene_id"] = current_scene_id;
-	editor_entity["current_scene_dirty"] = current_scene_dirty;
-	editor_entity["selection_count"] = total_selection_count;
-	editor_entity["projected_selection_count"] = selected_node_ids.size();
-	editor_entity["selected_node_ids"] = selected_node_ids;
-	editor_entity["open_scene_ids"] = open_scene_ids;
-	editor_entity["open_scenes_truncated"] = p_full_live_context && scene_count > MAX_OPEN_SCENES;
-	editor_entity["inspector_object_id"] = inspected_object ? (node_live_ids.has(inspected_object->get_instance_id()) ? Variant(*node_live_ids.getptr(inspected_object->get_instance_id())) : Variant()) : Variant();
-	entities[0] = editor_entity;
+	if (capture_context) {
+		editor_entity["current_scene_id"] = current_scene_id;
+		editor_entity["current_scene_dirty"] = current_scene_dirty;
+		editor_entity["selection_count"] = total_selection_count;
+		editor_entity["projected_selection_count"] = selected_node_ids.size();
+		editor_entity["selected_node_ids"] = selected_node_ids;
+		editor_entity["open_scene_ids"] = open_scene_ids;
+		editor_entity["open_scenes_truncated"] = p_full_live_context && scene_count > MAX_OPEN_SCENES;
+		editor_entity["inspector_object_id"] = inspected_object ? (node_live_ids.has(inspected_object->get_instance_id()) ? Variant(*node_live_ids.getptr(inspected_object->get_instance_id())) : Variant()) : Variant();
+		entities[0] = editor_entity;
+	}
 	r_snapshot["project_id"] = p_project_id;
 	r_snapshot["editor_session_id"] = p_editor_session_id;
 	r_snapshot["revision_vector"] = p_revisions;

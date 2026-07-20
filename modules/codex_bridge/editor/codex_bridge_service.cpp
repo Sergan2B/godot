@@ -442,10 +442,18 @@ void CodexBridgeService::_flush_scene_change() {
 }
 
 void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Dictionary &p_params) {
-	Dictionary snapshot;
 	_refresh_open_scene_ids(true);
 	const Dictionary revisions = revision_clock.get_revision_vector();
 	const bool full_live_context = String(p_params.get("_protocol_version", "1.1")) == "1.5";
+	if (full_live_context) {
+		PendingEditorSnapshot pending;
+		pending.request_id = p_request_id;
+		pending.revisions = revisions;
+		pending.domains = p_params.get("domains", Array());
+		pending_editor_snapshots.push_back(pending);
+		return;
+	}
+	Dictionary snapshot;
 	if (EditorContextAdapter::capture(transport_worker.get_project_id(), transport_worker.get_editor_session_id(), revisions, snapshot, full_live_context, native_history_transitions) != OK) {
 		transport_worker.complete_request(p_request_id, Dictionary());
 		return;
@@ -454,25 +462,27 @@ void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Diction
 	const String snapshot_id = make_snapshot_id();
 	const Array entities = snapshot["entities"];
 	Vector<Array> chunks;
-	Array current;
-	for (int entity_index = 0; entity_index < entities.size(); entity_index++) {
-		current.push_back(entities[entity_index]);
-		Dictionary candidate;
-		candidate["entities"] = current;
-		if (JSON::stringify(candidate, "", true, true).utf8().length() > SNAPSHOT_CHUNK_BYTES && current.size() > 1) {
-			const Variant last = current[current.size() - 1];
-			current.resize(current.size() - 1);
-			chunks.push_back(current.duplicate());
-			current.clear();
-			current.push_back(last);
+	{
+		Array current;
+		for (int entity_index = 0; entity_index < entities.size(); entity_index++) {
+			current.push_back(entities[entity_index]);
+			Dictionary candidate;
+			candidate["entities"] = current;
+			if (JSON::stringify(candidate, "", true, true).utf8().length() > SNAPSHOT_CHUNK_BYTES && current.size() > 1) {
+				const Variant last = current[current.size() - 1];
+				current.resize(current.size() - 1);
+				chunks.push_back(current.duplicate());
+				current.clear();
+				current.push_back(last);
+			}
+			if (current.size() >= SNAPSHOT_ENTITY_LIMIT) {
+				chunks.push_back(current.duplicate());
+				current.clear();
+			}
 		}
-		if (current.size() >= SNAPSHOT_ENTITY_LIMIT) {
+		if (!current.is_empty()) {
 			chunks.push_back(current.duplicate());
-			current.clear();
 		}
-	}
-	if (!current.is_empty()) {
-		chunks.push_back(current.duplicate());
 	}
 	if (chunks.is_empty()) {
 		chunks.push_back(Array());
@@ -526,17 +536,19 @@ void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Diction
 	for (int chunk_index = 0; chunk_index < chunks.size(); chunk_index++) {
 		Dictionary payload;
 		payload["entities"] = chunks[chunk_index];
-		const String payload_json = JSON::stringify(payload, "", true, true);
-		const String checksum = sha256_hex_utf8(payload_json);
-		snapshot_checksum_input += checksum;
 		Dictionary chunk;
 		chunk["protocol_version"] = "1.1";
 		chunk["kind"] = "chunk";
 		chunk["snapshot_id"] = snapshot_id;
 		chunk["chunk_index"] = chunk_index;
 		chunk["payload"] = payload;
-		chunk["payload_json"] = payload_json;
-		chunk["checksum"] = checksum;
+		{
+			const String payload_json = JSON::stringify(payload, "", true, true);
+			const String checksum = sha256_hex_utf8(payload_json);
+			snapshot_checksum_input += checksum;
+			chunk["payload_json"] = payload_json;
+			chunk["checksum"] = checksum;
+		}
 		chunk["context"] = _make_context();
 		messages.push_back(chunk);
 	}
@@ -545,7 +557,9 @@ void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Diction
 	end_params["snapshot_id"] = snapshot_id;
 	end_params["chunk_count"] = chunks.size();
 	end_params["entity_count"] = entities.size();
-	end_params["checksum"] = sha256_hex_utf8(snapshot_checksum_input);
+	{
+		end_params["checksum"] = sha256_hex_utf8(snapshot_checksum_input);
+	}
 	end_params["revisions"] = revisions;
 	Dictionary end;
 	end["protocol_version"] = "1.1";
@@ -555,6 +569,127 @@ void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Diction
 	end["context"] = _make_context();
 	messages.push_back(end);
 	transport_worker.complete_request(p_request_id, result, messages);
+}
+
+void CodexBridgeService::_process_editor_snapshot() {
+	if (pending_editor_snapshots.is_empty()) {
+		return;
+	}
+	PendingEditorSnapshot &pending = pending_editor_snapshots.front()->get();
+	if (pending.stage == PendingEditorSnapshot::STAGE_CAPTURE) {
+		static const int capture_domains[] = {
+			EditorContextAdapter::CAPTURE_CONTEXT,
+			EditorContextAdapter::CAPTURE_INSPECTOR,
+			EditorContextAdapter::CAPTURE_SCRIPTS,
+			EditorContextAdapter::CAPTURE_HISTORY,
+			EditorContextAdapter::CAPTURE_DIAGNOSTICS,
+			EditorContextAdapter::CAPTURE_VIEWPORT,
+		};
+		Dictionary partial;
+		if (EditorContextAdapter::capture(
+					transport_worker.get_project_id(),
+					transport_worker.get_editor_session_id(),
+					pending.revisions,
+					partial,
+					true,
+					native_history_transitions,
+					capture_domains[pending.capture_domain]) != OK) {
+			transport_worker.complete_request(pending.request_id, Dictionary());
+			pending_editor_snapshots.pop_front();
+			return;
+		}
+		const Array captured_entities = partial.get("entities", Array());
+		pending.entities.append_array(captured_entities);
+		pending.truncated = pending.truncated || (bool)partial.get("truncated", false);
+		pending.capture_domain++;
+		if (pending.capture_domain < (int)(sizeof(capture_domains) / sizeof(capture_domains[0]))) {
+			return;
+		}
+		const Dictionary current_revisions = revision_clock.get_revision_vector();
+		if ((int64_t)current_revisions.get("event_seq", 0) != (int64_t)pending.revisions.get("event_seq", 0)) {
+			pending.revisions = current_revisions;
+			pending.entities.clear();
+			pending.capture_domain = 0;
+			pending.truncated = false;
+			return;
+		}
+		pending.snapshot_id = make_snapshot_id();
+		pending.result["snapshot_id"] = pending.snapshot_id;
+		pending.result["base_event_seq"] = pending.revisions["event_seq"];
+		pending.result["revisions"] = pending.revisions;
+		pending.result["domains"] = pending.domains;
+		Dictionary limits;
+		limits["snapshot_chunk_bytes"] = SNAPSHOT_CHUNK_BYTES;
+		limits["negotiated_snapshot_chunk_bytes"] = 524288;
+		limits["variant_depth"] = EditorContextAdapter::MAX_VARIANT_DEPTH;
+		limits["container_items"] = EditorContextAdapter::MAX_CONTAINER_ITEMS;
+		limits["identity_characters"] = EditorContextAdapter::MAX_IDENTITY_CHARACTERS;
+		limits["projected_value_bytes"] = EditorContextAdapter::MAX_PROJECTED_VALUE_BYTES;
+		limits["inspector_bytes_per_node"] = EditorContextAdapter::MAX_INSPECTOR_BYTES_PER_NODE;
+		limits["total_inspector_bytes"] = EditorContextAdapter::MAX_TOTAL_INSPECTOR_BYTES;
+		limits["open_scenes"] = EditorContextAdapter::MAX_OPEN_SCENES;
+		limits["scene_nodes"] = EditorContextAdapter::MAX_SCENE_NODES;
+		limits["selected_nodes"] = EditorContextAdapter::MAX_SELECTED_NODES;
+		limits["inspector_properties"] = EditorContextAdapter::MAX_INSPECTOR_PROPERTIES;
+		limits["truncated"] = pending.truncated;
+		pending.result["limits_applied"] = limits;
+		pending.stage = PendingEditorSnapshot::STAGE_BEGIN;
+		return;
+	}
+	const int chunk_count = MAX(1, pending.entities.size());
+	if (pending.stage == PendingEditorSnapshot::STAGE_BEGIN) {
+		Dictionary params;
+		params["domain"] = "editor_context";
+		params["snapshot_id"] = pending.snapshot_id;
+		params["base_event_seq"] = pending.revisions["event_seq"];
+		params["revisions"] = pending.revisions;
+		params["chunk_count"] = chunk_count;
+		Dictionary begin;
+		begin["protocol_version"] = "1.5";
+		begin["kind"] = "notification";
+		begin["method"] = "snapshot.begin";
+		begin["params"] = params;
+		begin["context"] = _make_context();
+		transport_worker.stage_resource_snapshot_message(pending.request_id, begin);
+		pending.stage = PendingEditorSnapshot::STAGE_CHUNKS;
+		return;
+	}
+	if (pending.stage == PendingEditorSnapshot::STAGE_CHUNKS) {
+		Array chunk_entities;
+		if (!pending.entities.is_empty()) {
+			chunk_entities.push_back(pending.entities[pending.next_entity]);
+		}
+		Dictionary payload;
+		payload["entities"] = chunk_entities;
+		Dictionary chunk;
+		chunk["protocol_version"] = "1.5";
+		chunk["kind"] = "chunk";
+		chunk["domain"] = "editor_context";
+		chunk["snapshot_id"] = pending.snapshot_id;
+		chunk["chunk_index"] = pending.next_entity;
+		chunk["payload"] = payload;
+		chunk["context"] = _make_context();
+		transport_worker.stage_resource_snapshot_message(pending.request_id, chunk);
+		pending.next_entity++;
+		if (pending.next_entity >= chunk_count) {
+			pending.stage = PendingEditorSnapshot::STAGE_END;
+		}
+		return;
+	}
+	Dictionary params;
+	params["domain"] = "editor_context";
+	params["snapshot_id"] = pending.snapshot_id;
+	params["chunk_count"] = chunk_count;
+	params["entity_count"] = pending.entities.size();
+	params["revisions"] = pending.revisions;
+	Dictionary end;
+	end["protocol_version"] = "1.5";
+	end["kind"] = "notification";
+	end["method"] = "snapshot.end";
+	end["params"] = params;
+	end["context"] = _make_context();
+	transport_worker.complete_resource_snapshot(pending.request_id, pending.result, end);
+	pending_editor_snapshots.pop_front();
 }
 
 void CodexBridgeService::_complete_resource_delta(uint64_t p_request_id, uint64_t p_after_resource_revision) {
@@ -824,7 +959,7 @@ void CodexBridgeService::_notification(int p_what) {
 				const bool resource_work = resource_graph_adapter.has_pending_work();
 				const bool scene_work = scene_state_adapter.has_pending_work();
 				const bool script_work = script_graph_adapter.has_pending_work();
-				const bool control_work = dispatcher.get_queue_size() > 0;
+				const bool control_work = dispatcher.get_queue_size() > 0 || !pending_editor_snapshots.is_empty();
 				bool run_resource_bulk = false;
 				bool run_scene_bulk = false;
 				bool run_script_bulk = false;
@@ -858,7 +993,12 @@ void CodexBridgeService::_notification(int p_what) {
 				if (dispatcher_budget > 0) {
 						dispatcher_stats = dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
 				}
-				const bool bulk_lane_available = dispatcher_stats.consumed == 0 || dispatcher_stats.elapsed_usec < dispatcher_budget;
+				bool editor_snapshot_step = false;
+				if (!pending_editor_snapshots.is_empty() && dispatcher_stats.consumed == 0) {
+					_process_editor_snapshot();
+					editor_snapshot_step = true;
+				}
+				const bool bulk_lane_available = !editor_snapshot_step && (dispatcher_stats.consumed == 0 || dispatcher_stats.elapsed_usec < dispatcher_budget);
 				// Resource, scene, script, and queued control work remain bounded.
 				// Script frames reserve a measured dispatcher slice; if it is consumed,
 				// bulk work waits for the next frame instead of crossing the 2 ms gate.
@@ -914,6 +1054,7 @@ Error CodexBridgeService::start() {
 	native_history_observations.clear();
 	native_history_transitions.clear();
 	observed_scene_ids.clear();
+	pending_editor_snapshots.clear();
 	_refresh_open_scene_ids(false);
 	_observe_native_histories(false);
 	_connect_editor_signals();
@@ -938,6 +1079,7 @@ void CodexBridgeService::stop() {
 	native_history_observations.clear();
 	native_history_transitions.clear();
 	observed_scene_ids.clear();
+	pending_editor_snapshots.clear();
 	pending_property.clear();
 	dispatcher.begin_shutdown();
 	const BridgeTransportWorker::StopResult stop_result = transport_worker.stop();

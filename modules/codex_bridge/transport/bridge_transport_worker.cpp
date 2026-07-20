@@ -146,6 +146,9 @@ static bool is_resource_protocol(const String &p_protocol_version) {
 }
 
 static bool is_snapshot_protocol(const String &p_protocol_version, const String &p_domain) {
+	if (p_domain == "editor_context") {
+		return p_protocol_version == "1.5";
+	}
 	if (p_domain == "resource_graph") {
 		return is_resource_protocol(p_protocol_version);
 	}
@@ -755,7 +758,10 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 					failure.request_id = event.request_id;
 					failure.is_error = true;
 					const String failed_domain = preparation_index >= 0 ? snapshot_preparations[preparation_index].domain : String();
-					if (failed_domain == "scene_graph") {
+					if (failed_domain == "editor_context") {
+						failure.error_code = "editor_limit_exceeded";
+						failure.error_message = "The editor snapshot could not be framed within the negotiated limits.";
+					} else if (failed_domain == "scene_graph") {
 						failure.error_code = "scene_limit_exceeded";
 						failure.error_message = "The scene graph snapshot could not be framed within the negotiated limits.";
 					} else if (failed_domain == "script_graph") {

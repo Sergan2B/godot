@@ -78,6 +78,25 @@ private:
 	HashMap<int, NativeHistoryObservation> native_history_observations;
 	Dictionary native_history_transitions;
 	HashSet<String> observed_scene_ids;
+	struct PendingEditorSnapshot {
+		enum Stage {
+			STAGE_CAPTURE,
+			STAGE_BEGIN,
+			STAGE_CHUNKS,
+			STAGE_END,
+		};
+		uint64_t request_id = 0;
+		String snapshot_id;
+		Dictionary revisions;
+		Dictionary result;
+		Array domains;
+		Array entities;
+		int capture_domain = 0;
+		int next_entity = 0;
+		bool truncated = false;
+		Stage stage = STAGE_CAPTURE;
+	};
+	List<PendingEditorSnapshot> pending_editor_snapshots;
 
 	static void _dispatch_command(const MainThreadDispatcher::Command &p_command, void *p_userdata);
 	Dictionary _make_context() const;
@@ -98,6 +117,7 @@ private:
 	void _on_project_settings_changed();
 	void _flush_scene_change();
 	void _complete_snapshot(uint64_t p_request_id, const Dictionary &p_params);
+	void _process_editor_snapshot();
 	void _complete_resource_delta(uint64_t p_request_id, uint64_t p_after_resource_revision);
 	void _complete_scene_delta(uint64_t p_request_id, uint64_t p_after_scene_graph_revision);
 	void _complete_script_delta(uint64_t p_request_id, uint64_t p_after_script_graph_revision);

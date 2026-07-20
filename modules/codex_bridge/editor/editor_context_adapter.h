@@ -37,6 +37,15 @@ class Object;
 
 class EditorContextAdapter {
 public:
+	enum CaptureDomain {
+		CAPTURE_CONTEXT = 1 << 0,
+		CAPTURE_INSPECTOR = 1 << 1,
+		CAPTURE_SCRIPTS = 1 << 2,
+		CAPTURE_HISTORY = 1 << 3,
+		CAPTURE_DIAGNOSTICS = 1 << 4,
+		CAPTURE_VIEWPORT = 1 << 5,
+		CAPTURE_ALL = (1 << 6) - 1,
+	};
 	static constexpr int MAX_VARIANT_DEPTH = 8;
 	static constexpr int MAX_CONTAINER_ITEMS = 1000;
 	static constexpr int MAX_SCENE_NODES = 1000;
@@ -54,7 +63,7 @@ public:
 	static constexpr int MAX_TOTAL_INSPECTOR_BYTES = 4194304;
 
 	static String make_scene_id(const String &p_editor_session_id, const Node *p_scene_root);
-	static Error capture(const String &p_project_id, const String &p_editor_session_id, const Dictionary &p_revisions, Dictionary &r_snapshot, bool p_full_live_context = false, const Dictionary &p_history_transitions = Dictionary());
+	static Error capture(const String &p_project_id, const String &p_editor_session_id, const Dictionary &p_revisions, Dictionary &r_snapshot, bool p_full_live_context = false, const Dictionary &p_history_transitions = Dictionary(), int p_domain_mask = CAPTURE_ALL);
 
 private:
 	static String _make_opaque_id(const String &p_prefix, const String &p_domain, const String &p_value);
@@ -64,5 +73,5 @@ private:
 	static String _make_history_id(const String &p_editor_session_id, int p_native_history_id);
 	static String _make_script_id(const String &p_editor_session_id, const String &p_identity);
 	static String _redact_output_message(const String &p_message, bool &r_redacted);
-	static Array _capture_properties(Object *p_object, int p_limit, const String &p_scene_id, const Dictionary &p_revisions, bool &r_truncated, int &r_total_bytes);
+	static Array _capture_properties(Object *p_object, int p_limit, const String &p_scene_id, const Dictionary &p_revisions, bool &r_truncated, int &r_total_bytes, bool p_script_variables_only = false);
 };
