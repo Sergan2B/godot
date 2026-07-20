@@ -585,6 +585,7 @@ void CodexBridgeService::_process_editor_snapshot() {
 			EditorContextAdapter::CAPTURE_DIAGNOSTICS,
 			EditorContextAdapter::CAPTURE_VIEWPORT,
 		};
+		const bool capture_context = capture_domains[pending.capture_domain] == EditorContextAdapter::CAPTURE_CONTEXT;
 		Dictionary partial;
 		if (EditorContextAdapter::capture(
 					transport_worker.get_project_id(),
@@ -593,13 +594,107 @@ void CodexBridgeService::_process_editor_snapshot() {
 					partial,
 					true,
 					native_history_transitions,
-					capture_domains[pending.capture_domain]) != OK) {
+					capture_domains[pending.capture_domain],
+					capture_context ? pending.context_scene_index : -1,
+					capture_context ? 1 : -1,
+					capture_context ? MAX(0, pending.context_node_index) : -1,
+					capture_context ? (pending.context_node_index < 0 ? 0 : 1) : -1,
+					!capture_context || pending.context_node_index < 0) != OK) {
 			transport_worker.complete_request(pending.request_id, Dictionary());
 			pending_editor_snapshots.pop_front();
 			return;
 		}
 		const Array captured_entities = partial.get("entities", Array());
-		pending.entities.append_array(captured_entities);
+		if (capture_context) {
+			for (const Variant &captured_variant : captured_entities) {
+				const Dictionary captured = captured_variant;
+				const String kind = captured.get("kind", String());
+				if (kind == "scene") {
+					pending.context_scene_entities.push_back(captured);
+					continue;
+				}
+				if (kind != "editor_state") {
+					if (kind == "node" && String(captured.get("node_path", String())) == ".") {
+						const String scene_id = captured.get("scene_id", String());
+						for (int scene_index = 0; scene_index < pending.context_scene_entities.size(); scene_index++) {
+							Dictionary scene_entity = pending.context_scene_entities[scene_index];
+							if (String(scene_entity.get("entity_id", String())) == scene_id) {
+								scene_entity["root_node_id"] = captured.get("entity_id", String());
+								pending.context_scene_entities[scene_index] = scene_entity;
+								break;
+							}
+						}
+					}
+					pending.entities.push_back(captured);
+					continue;
+				}
+				if (pending.editor_entity.is_empty()) {
+					pending.editor_entity = captured.duplicate(true);
+				} else {
+					Dictionary merged = pending.editor_entity;
+					for (const StringName &array_key : { SNAME("open_scene_ids"), SNAME("selected_node_ids") }) {
+						Array values = merged.get(array_key, Array());
+						const Array additions = captured.get(array_key, Array());
+						for (const Variant &addition : additions) {
+							if (!values.has(addition)) {
+								values.push_back(addition);
+							}
+						}
+						merged[array_key] = values;
+					}
+					const String captured_current_scene_id = captured.get("current_scene_id", String());
+					if (!captured_current_scene_id.is_empty()) {
+						merged["current_scene_id"] = captured_current_scene_id;
+						merged["current_scene_dirty"] = captured.get("current_scene_dirty", false);
+					}
+					const Variant inspector_object_id = captured.get("inspector_object_id", Variant());
+					if (inspector_object_id.get_type() != Variant::NIL) {
+						merged["inspector_object_id"] = inspector_object_id;
+					}
+					merged["projected_selection_count"] = Array(merged.get("selected_node_ids", Array())).size();
+					merged["open_scenes_truncated"] = (bool)merged.get("open_scenes_truncated", false) || (bool)captured.get("open_scenes_truncated", false);
+					pending.editor_entity = merged;
+				}
+			}
+			if (pending.context_scene_count < 0) {
+				pending.context_scene_count = MIN((int)pending.editor_entity.get("open_scene_count", 0), EditorContextAdapter::MAX_OPEN_SCENES);
+			}
+			if (pending.context_scene_count > 0) {
+				if (pending.context_node_index < 0) {
+					pending.context_node_count = !pending.context_scene_entities.is_empty() ? (int)Dictionary(pending.context_scene_entities[pending.context_scene_entities.size() - 1]).get("node_count", 0) : 0;
+					pending.context_node_index = 0;
+				} else {
+					pending.context_node_index++;
+				}
+				if (pending.context_node_index < pending.context_node_count) {
+					pending.truncated = pending.truncated || (bool)partial.get("truncated", false);
+					return;
+				}
+				pending.context_scene_index++;
+				pending.context_node_index = -1;
+				pending.context_node_count = -1;
+			}
+			if (pending.context_scene_index < pending.context_scene_count) {
+				pending.truncated = pending.truncated || (bool)partial.get("truncated", false);
+				return;
+			}
+			const String current_scene_id = pending.editor_entity.get("current_scene_id", String());
+			const Array selected_node_ids = pending.editor_entity.get("selected_node_ids", Array());
+			for (int scene_index = 0; scene_index < pending.context_scene_entities.size(); scene_index++) {
+				Dictionary scene_entity = pending.context_scene_entities[scene_index];
+				if (String(scene_entity.get("entity_id", String())) == current_scene_id) {
+					scene_entity["selected_node_ids"] = selected_node_ids;
+					pending.context_scene_entities[scene_index] = scene_entity;
+					break;
+				}
+			}
+			for (int scene_index = pending.context_scene_entities.size() - 1; scene_index >= 0; scene_index--) {
+				pending.entities.insert(0, pending.context_scene_entities[scene_index]);
+			}
+			pending.entities.insert(0, pending.editor_entity);
+		} else {
+			pending.entities.append_array(captured_entities);
+		}
 		pending.truncated = pending.truncated || (bool)partial.get("truncated", false);
 		pending.capture_domain++;
 		if (pending.capture_domain < (int)(sizeof(capture_domains) / sizeof(capture_domains[0]))) {
@@ -609,7 +704,13 @@ void CodexBridgeService::_process_editor_snapshot() {
 		if ((int64_t)current_revisions.get("event_seq", 0) != (int64_t)pending.revisions.get("event_seq", 0)) {
 			pending.revisions = current_revisions;
 			pending.entities.clear();
+			pending.editor_entity.clear();
+			pending.context_scene_entities.clear();
 			pending.capture_domain = 0;
+			pending.context_scene_index = 0;
+			pending.context_scene_count = -1;
+			pending.context_node_index = -1;
+			pending.context_node_count = -1;
 			pending.truncated = false;
 			return;
 		}

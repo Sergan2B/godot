@@ -560,7 +560,10 @@ def run_session(
             sidecar_process = None
             log.close()
             telemetry = parse_telemetry(log_path)
-            require(telemetry.get("over_budget_count") == 0, "restart dispatcher exceeded its budget")
+            require(
+                telemetry.get("over_budget_count") == 0,
+                f"restart dispatcher exceeded its budget: {telemetry}",
+            )
             require(not any(path.exists() for path in paths), "restart left Bridge runtime files")
             return {
                 "session_id_changed": True,
@@ -698,9 +701,9 @@ def run_session(
         )
         require(not any(path.exists() for path in paths), "editor left Bridge runtime files")
 
-        require(percentile(selection_samples, 95) <= 500, "selection p95 exceeded 500 ms")
-        require(percentile(visibility_samples, 95) <= 2000, "change visibility p95 exceeded 2 seconds")
-        require(percentile(control_samples, 95) <= 200, "control ping p95 exceeded 200 ms")
+        require(percentile(selection_samples, 95) <= 500, f"selection p95 exceeded 500 ms: {selection_samples}")
+        require(percentile(visibility_samples, 95) <= 2000, f"change visibility p95 exceeded 2 seconds: {visibility_samples}")
+        require(percentile(control_samples, 95) <= 200, f"control ping p95 exceeded 200 ms: {control_samples}")
         return {
             "contract": contract,
             "coordinates": {

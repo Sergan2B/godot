@@ -60,6 +60,8 @@
 // projection that reaches its public per-node limit can still be framed under
 // the 256 KiB produced-payload target.
 static constexpr int INSPECTOR_ENTITY_ENVELOPE_BYTES = 32 * 1024;
+static constexpr int DIAGNOSTIC_CAPTURE_RECORDS = 16;
+static constexpr uint64_t DIAGNOSTIC_CAPTURE_USEC = 500;
 
 String EditorContextAdapter::_make_opaque_id(const String &p_prefix, const String &p_domain, const String &p_value) {
 	const CharString bytes = (p_domain + "\n" + p_value).utf8();
@@ -94,35 +96,11 @@ String EditorContextAdapter::_make_script_id(const String &p_editor_session_id, 
 	return _make_opaque_id("script:", "godot-codex-live-script/v1\n" + p_editor_session_id, p_identity);
 }
 
-String EditorContextAdapter::_redact_output_message(const String &p_message, bool &r_redacted) {
+String EditorContextAdapter::_redact_output_message(const String &p_message, const String &p_project_root, const String &p_home, bool &r_redacted, bool &r_truncated) {
 	String message = p_message;
-	const String lowered = message.to_lower();
-	static const char *sensitive_markers[] = { "authorization:", "bearer ", "api_key", "apikey", "password=", "password:", "secret=", "secret:", "token=", "token:" };
-	for (const char *marker : sensitive_markers) {
-		if (lowered.contains(marker)) {
-			r_redacted = true;
-			return "<redacted sensitive output>";
-		}
-	}
-	const String project_root = ProjectSettings::get_singleton() ? ProjectSettings::get_singleton()->get_resource_path().replace("\\", "/").trim_suffix("/") : String();
-	if (!project_root.is_empty()) {
-		const String normalized = message.replace("\\", "/");
-		if (normalized.contains(project_root)) {
-			message = normalized.replace(project_root, "<project>");
-			r_redacted = true;
-		}
-	}
-	String home = OS::get_singleton()->get_environment("HOME");
-	if (home.is_empty()) {
-		home = OS::get_singleton()->get_environment("USERPROFILE");
-	}
-	home = home.replace("\\", "/").trim_suffix("/");
-	if (!home.is_empty()) {
-		const String normalized = message.replace("\\", "/");
-		if (normalized.contains(home)) {
-			message = normalized.replace(home, "<home>");
-			r_redacted = true;
-		}
+	if (message.length() > MAX_STRING_CHARACTERS) {
+		message = message.left(MAX_STRING_CHARACTERS);
+		r_truncated = true;
 	}
 	if (message.utf8().length() > MAX_STRING_CHARACTERS) {
 		int low = 0;
@@ -136,7 +114,29 @@ String EditorContextAdapter::_redact_output_message(const String &p_message, boo
 			}
 		}
 		message = message.left(low);
-		r_redacted = true;
+		r_truncated = true;
+	}
+	const String lowered = message.to_lower();
+	static const char *sensitive_markers[] = { "authorization:", "bearer ", "api_key", "apikey", "password=", "password:", "secret=", "secret:", "token=", "token:" };
+	for (const char *marker : sensitive_markers) {
+		if (lowered.contains(marker)) {
+			r_redacted = true;
+			return "<redacted sensitive output>";
+		}
+	}
+	if (!p_project_root.is_empty()) {
+		const String normalized = message.replace("\\", "/");
+		if (normalized.contains(p_project_root)) {
+			message = normalized.replace(p_project_root, "<project>");
+			r_redacted = true;
+		}
+	}
+	if (!p_home.is_empty()) {
+		const String normalized = message.replace("\\", "/");
+		if (normalized.contains(p_home)) {
+			message = normalized.replace(p_home, "<home>");
+			r_redacted = true;
+		}
 	}
 	return message;
 }
@@ -214,7 +214,7 @@ Array EditorContextAdapter::_capture_properties(Object *p_object, int p_limit, c
 	return properties;
 }
 
-Error EditorContextAdapter::capture(const String &p_project_id, const String &p_editor_session_id, const Dictionary &p_revisions, Dictionary &r_snapshot, bool p_full_live_context, const Dictionary &p_history_transitions, int p_domain_mask) {
+Error EditorContextAdapter::capture(const String &p_project_id, const String &p_editor_session_id, const Dictionary &p_revisions, Dictionary &r_snapshot, bool p_full_live_context, const Dictionary &p_history_transitions, int p_domain_mask, int p_scene_start, int p_scene_count, int p_node_start, int p_node_count, bool p_include_scene_entity) {
 	ERR_FAIL_COND_V_MSG(!Thread::is_main_thread(), ERR_BUG, "Editor context must be captured on the main thread.");
 	EditorNode *editor = EditorNode::get_singleton();
 	ERR_FAIL_NULL_V(editor, ERR_UNCONFIGURED);
@@ -226,8 +226,12 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 	const bool capture_history = p_full_live_context && (p_domain_mask & CAPTURE_HISTORY);
 	const bool capture_diagnostics = p_full_live_context && (p_domain_mask & CAPTURE_DIAGNOSTICS);
 	const bool capture_viewport = p_full_live_context && (p_domain_mask & CAPTURE_VIEWPORT);
-	const bool scan_scene_nodes = capture_context || capture_inspector;
-	const bool scan_scenes = scan_scene_nodes || capture_history;
+	Object *inspected_object = nullptr;
+	if ((capture_context || capture_inspector) && EditorInterface::get_singleton() && EditorInterface::get_singleton()->get_inspector()) {
+		inspected_object = EditorInterface::get_singleton()->get_inspector()->get_edited_object();
+	}
+	const bool scan_scene_nodes = capture_context || (capture_inspector && Object::cast_to<Node>(inspected_object));
+	const bool scan_scenes = scan_scene_nodes;
 
 	Array entities;
 	Dictionary editor_entity;
@@ -248,17 +252,15 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 	bool truncated = false;
 	int total_inspector_bytes = 0;
 	HashSet<ObjectID> selected_ids;
-	const List<Node *> selected_nodes = editor->get_editor_selection()->get_full_selected_node_list();
-	for (Node *selected : selected_nodes) {
-		if (selected) {
-			selected_ids.insert(selected->get_instance_id());
+	if (capture_context) {
+		const List<Node *> selected_nodes = editor->get_editor_selection()->get_full_selected_node_list();
+		for (Node *selected : selected_nodes) {
+			if (selected) {
+				selected_ids.insert(selected->get_instance_id());
+			}
 		}
 	}
 	const int total_selection_count = selected_ids.size();
-	Object *inspected_object = nullptr;
-	if (EditorInterface::get_singleton() && EditorInterface::get_singleton()->get_inspector()) {
-		inspected_object = EditorInterface::get_singleton()->get_inspector()->get_edited_object();
-	}
 	HashMap<ObjectID, int> node_entity_indices;
 	HashMap<ObjectID, String> node_live_ids;
 	HashMap<ObjectID, String> node_scene_ids;
@@ -266,8 +268,9 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	const Dictionary scene_revisions = p_revisions.get("scene_revisions", Dictionary());
 	const int scene_count = editor_data.get_edited_scene_count();
-	const int first_scene = scan_scenes ? (p_full_live_context ? 0 : current_scene_index) : 0;
-	const int last_scene = scan_scenes ? (p_full_live_context ? MIN(scene_count, MAX_OPEN_SCENES) : (current_scene_index >= 0 ? current_scene_index + 1 : 0)) : 0;
+	const int bounded_scene_count = MIN(scene_count, MAX_OPEN_SCENES);
+	const int first_scene = scan_scenes ? (p_full_live_context ? (p_scene_start >= 0 ? MIN(p_scene_start, bounded_scene_count) : 0) : current_scene_index) : 0;
+	const int last_scene = scan_scenes ? (p_full_live_context ? (p_scene_start >= 0 && p_scene_count >= 0 ? MIN(first_scene + p_scene_count, bounded_scene_count) : bounded_scene_count) : (current_scene_index >= 0 ? current_scene_index + 1 : 0)) : 0;
 	for (int scene_index = first_scene; scene_index >= 0 && scene_index < last_scene; scene_index++) {
 		Node *scene_root = editor_data.get_edited_scene_root(scene_index);
 		if (!scene_root) {
@@ -284,20 +287,21 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		}
 
 		Dictionary scene_entity;
-		scene_entity["kind"] = "scene";
-		scene_entity["entity_id"] = scene_id;
-		scene_entity["identity_scope"] = "editor_session";
-		scene_entity["tab_index"] = scene_index;
-		scene_entity["title"] = _bounded_identity(editor_data.get_scene_title(scene_index), truncated);
-		scene_entity["scene_type"] = _bounded_identity(editor_data.get_scene_type(scene_index), truncated);
-		scene_entity["path"] = _bounded_identity(editor_data.get_scene_path(scene_index), truncated);
-		scene_entity["root_node_path"] = ".";
-		scene_entity["current"] = current;
-		scene_entity["dirty"] = dirty;
-		scene_entity["history_id"] = _make_history_id(p_editor_session_id, native_history_id);
-		scene_entity["scene_revision"] = scene_revisions.get(scene_id, 0);
-		const int scene_entity_index = entities.size();
-		if (capture_context) {
+		int scene_entity_index = -1;
+		if (capture_context && p_include_scene_entity) {
+			scene_entity["kind"] = "scene";
+			scene_entity["entity_id"] = scene_id;
+			scene_entity["identity_scope"] = "editor_session";
+			scene_entity["tab_index"] = scene_index;
+			scene_entity["title"] = _bounded_identity(editor_data.get_scene_title(scene_index), truncated);
+			scene_entity["scene_type"] = _bounded_identity(editor_data.get_scene_type(scene_index), truncated);
+			scene_entity["path"] = _bounded_identity(editor_data.get_scene_path(scene_index), truncated);
+			scene_entity["root_node_path"] = ".";
+			scene_entity["current"] = current;
+			scene_entity["dirty"] = dirty;
+			scene_entity["history_id"] = _make_history_id(p_editor_session_id, native_history_id);
+			scene_entity["scene_revision"] = scene_revisions.get(scene_id, 0);
+			scene_entity_index = entities.size();
 			entities.push_back(scene_entity);
 		}
 
@@ -309,31 +313,34 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		while (!pending.is_empty() && node_count < MAX_SCENE_NODES) {
 			Node *node = pending.front()->get();
 			pending.pop_front();
-			const String node_path = String(scene_root->get_path_to(node));
-			const String node_id = _make_node_id(p_editor_session_id, scene_id, node_path);
-			Dictionary entity;
-			entity["kind"] = "node";
-			entity["entity_id"] = node_id;
-			entity["identity_scope"] = "editor_session";
-			entity["scene_id"] = scene_id;
-			entity["node_path"] = _bounded_identity(node_path, truncated);
-			entity["name"] = _bounded_identity(String(node->get_name()), truncated);
-			entity["godot_type"] = String(node->get_class());
-			entity["selected"] = false;
-			entity["primary"] = false;
-			Node *owner = node->get_owner();
-			const String owner_path = owner && (owner == scene_root || scene_root->is_ancestor_of(owner)) ? String(scene_root->get_path_to(owner)) : String();
-			entity["owner_path"] = _bounded_identity(owner_path, truncated);
-			const Ref<Script> script = node->get_script();
-			entity["script_path"] = _bounded_identity(script.is_valid() ? script->get_path() : String(), truncated);
-			if (capture_context) {
-				const int entity_index = entities.size();
-				entities.push_back(entity);
-				node_entity_indices.insert(node->get_instance_id(), entity_index);
+			const bool project_node = !capture_context || p_node_start < 0 || (node_count >= p_node_start && (p_node_count < 0 || node_count < p_node_start + p_node_count));
+			if (project_node) {
+				const String node_path = String(scene_root->get_path_to(node));
+				const String node_id = _make_node_id(p_editor_session_id, scene_id, node_path);
+				if (capture_context) {
+					Node *owner = node->get_owner();
+					const String owner_path = owner && (owner == scene_root || scene_root->is_ancestor_of(owner)) ? String(scene_root->get_path_to(owner)) : String();
+					const Ref<Script> script = node->get_script();
+					Dictionary entity;
+					entity["kind"] = "node";
+					entity["entity_id"] = node_id;
+					entity["identity_scope"] = "editor_session";
+					entity["scene_id"] = scene_id;
+					entity["node_path"] = _bounded_identity(node_path, truncated);
+					entity["name"] = _bounded_identity(String(node->get_name()), truncated);
+					entity["godot_type"] = String(node->get_class());
+					entity["selected"] = false;
+					entity["primary"] = false;
+					entity["owner_path"] = _bounded_identity(owner_path, truncated);
+					entity["script_path"] = _bounded_identity(script.is_valid() ? script->get_path() : String(), truncated);
+					const int entity_index = entities.size();
+					entities.push_back(entity);
+					node_entity_indices.insert(node->get_instance_id(), entity_index);
+				}
+				node_live_ids.insert(node->get_instance_id(), node_id);
+				node_scene_ids.insert(node->get_instance_id(), scene_id);
+				node_paths.insert(node->get_instance_id(), node_path);
 			}
-			node_live_ids.insert(node->get_instance_id(), node_id);
-			node_scene_ids.insert(node->get_instance_id(), scene_id);
-			node_paths.insert(node->get_instance_id(), node_path);
 			node_count++;
 			for (int child_index = 0; child_index < node->get_child_count(); child_index++) {
 				pending.push_back(node->get_child(child_index));
@@ -341,9 +348,11 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		}
 		const bool nodes_truncated = !pending.is_empty();
 		truncated = truncated || nodes_truncated;
-		if (capture_context) {
+		if (capture_context && p_include_scene_entity) {
 			scene_entity = entities[scene_entity_index];
-			scene_entity["root_node_id"] = _make_node_id(p_editor_session_id, scene_id, ".");
+			if (p_node_count != 0) {
+				scene_entity["root_node_id"] = _make_node_id(p_editor_session_id, scene_id, ".");
+			}
 			scene_entity["node_count"] = node_count;
 			scene_entity["nodes_truncated"] = nodes_truncated;
 			scene_entity["coverage"] = nodes_truncated ? "partial" : "complete";
@@ -427,8 +436,24 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 			inspector_entity["godot_type"] = inspected_object->get_class();
 			bool inspector_truncated = false;
 			const bool opaque_object = !Object::cast_to<Node>(inspected_object) && !Object::cast_to<Resource>(inspected_object);
-			inspector_entity["properties"] = _capture_properties(inspected_object, MAX_INSPECTOR_PROPERTIES, inspector_entity.get("scene_id", String()), p_revisions, inspector_truncated, total_inspector_bytes, opaque_object);
-			inspector_entity["properties_coverage"] = opaque_object ? "script_variables" : "editor_visible";
+			Object *property_source = inspected_object;
+			String properties_coverage = opaque_object ? "script_variables" : "editor_visible";
+			// MultiNodeEdit rebuilds its aggregate property list on every query. The
+			// native proxy exposes the primary selected node's current value, so use
+			// that node as the bounded projection source while retaining the opaque
+			// proxy identity in the Inspector entity.
+			if (opaque_object && inspected_object->is_class("MultiNodeEdit")) {
+				const List<Node *> selected_nodes = editor->get_editor_selection()->get_full_selected_node_list();
+				for (Node *selected_node : selected_nodes) {
+					if (selected_node) {
+						property_source = selected_node;
+						properties_coverage = "primary_selection_script_variables";
+						break;
+					}
+				}
+			}
+			inspector_entity["properties"] = _capture_properties(property_source, MAX_INSPECTOR_PROPERTIES, inspector_entity.get("scene_id", String()), p_revisions, inspector_truncated, total_inspector_bytes, opaque_object);
+			inspector_entity["properties_coverage"] = properties_coverage;
 			inspector_entity["properties_truncated"] = inspector_truncated;
 			truncated = truncated || inspector_truncated;
 		}
@@ -598,20 +623,38 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 
 	if (capture_diagnostics) {
 		Array diagnostic_ids;
+		Array captured_diagnostics;
+		Array captured_ids;
 		int diagnostic_bytes = 0;
 		int omitted_diagnostics = 0;
 		EditorLog *editor_log = EditorNode::get_log();
 		if (editor_log) {
-			const Array output_messages = editor_log->get_messages_snapshot(MAX_DIAGNOSTICS);
+			const Array output_messages = editor_log->get_messages_snapshot(MIN(MAX_DIAGNOSTICS, DIAGNOSTIC_CAPTURE_RECORDS));
 			omitted_diagnostics = MAX(0, editor_log->get_message_count() - output_messages.size());
-			for (int message_index = 0; message_index < output_messages.size(); message_index++) {
+			const String project_root = ProjectSettings::get_singleton() ? ProjectSettings::get_singleton()->get_resource_path().replace("\\", "/").trim_suffix("/") : String();
+			String home = OS::get_singleton()->get_environment("HOME");
+			if (home.is_empty()) {
+				home = OS::get_singleton()->get_environment("USERPROFILE");
+			}
+			home = home.replace("\\", "/").trim_suffix("/");
+			const uint64_t capture_started_usec = OS::get_singleton()->get_ticks_usec();
+			for (int message_index = output_messages.size() - 1; message_index >= 0; message_index--) {
+				if (!captured_diagnostics.is_empty() && OS::get_singleton()->get_ticks_usec() - capture_started_usec >= DIAGNOSTIC_CAPTURE_USEC) {
+					omitted_diagnostics += message_index + 1;
+					truncated = true;
+					break;
+				}
 				const Dictionary raw_message = output_messages[message_index];
 				bool redacted = false;
-				const String message = _redact_output_message(raw_message.get("text", String()), redacted);
+				bool message_truncated = false;
+				const String message = _redact_output_message(raw_message.get("text", String()), project_root, home, redacted, message_truncated);
+				truncated = truncated || message_truncated;
 				Dictionary diagnostic;
 				diagnostic["kind"] = "editor_diagnostic";
 				const int64_t output_seq = raw_message.get("output_seq", 0);
-				const String diagnostic_id = _make_opaque_id("diagnostic:", "godot-codex-output/v1\n" + p_editor_session_id, String::num_int64(output_seq));
+				const String session_component = p_editor_session_id.trim_prefix("editor:").left(16).rpad(16, "0");
+				const String sequence_component = String::num_uint64((uint64_t)MAX((int64_t)0, output_seq), 16).pad_zeros(16).right(16);
+				const String diagnostic_id = "diagnostic:" + session_component + sequence_component;
 				diagnostic["entity_id"] = diagnostic_id;
 				diagnostic["source"] = "editor_output";
 				const int message_type = raw_message.get("type", 0);
@@ -620,19 +663,24 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 				diagnostic["repeat_count"] = raw_message.get("count", 1);
 				diagnostic["output_seq"] = output_seq;
 				diagnostic["redacted"] = redacted;
+				diagnostic["message_truncated"] = message_truncated;
 				diagnostic["runtime_semantics_inferred"] = false;
 				// Count a conservative fixed envelope above the bounded UTF-8 message
 				// instead of serializing every diagnostic on the editor thread. The
 				// transport worker performs the canonical serialization later.
 				const int encoded_bytes = message.utf8().length() * 6 + 512;
 				if (diagnostic_bytes + encoded_bytes > MAX_DIAGNOSTIC_BYTES) {
-					omitted_diagnostics += output_messages.size() - message_index;
+					omitted_diagnostics += message_index + 1;
 					truncated = true;
 					break;
 				}
 				diagnostic_bytes += encoded_bytes;
-				diagnostic_ids.push_back(diagnostic_id);
-				entities.push_back(diagnostic);
+				captured_ids.push_back(diagnostic_id);
+				captured_diagnostics.push_back(diagnostic);
+			}
+			for (int captured_index = captured_diagnostics.size() - 1; captured_index >= 0; captured_index--) {
+				diagnostic_ids.push_back(captured_ids[captured_index]);
+				entities.push_back(captured_diagnostics[captured_index]);
 			}
 		}
 		Dictionary diagnostic_state;
@@ -658,14 +706,14 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 			viewport_entity["logical_size"] = Vector2i((int)logical_size.x, (int)logical_size.y);
 			viewport_entity["scale"] = MAX(1.0, (double)EDSCALE);
 		}
-		if (CanvasItemEditor::get_singleton()) {
+		if (selected_screen == 0 && CanvasItemEditor::get_singleton()) {
 			const Dictionary state_2d = CanvasItemEditor::get_singleton()->get_state();
 			Dictionary camera_2d;
 			camera_2d["zoom"] = state_2d.get("zoom", 1.0);
 			camera_2d["offset"] = state_2d.get("ofs", Vector2());
 			viewport_entity["camera_2d"] = _project_variant(camera_2d, 0, truncated);
 		}
-		if (Node3DEditor::get_singleton()) {
+		if (selected_screen == 1 && Node3DEditor::get_singleton()) {
 			const Dictionary state_3d = Node3DEditor::get_singleton()->get_state();
 			Dictionary projection_3d;
 			projection_3d["fov"] = state_3d.get("fov", 0.0);

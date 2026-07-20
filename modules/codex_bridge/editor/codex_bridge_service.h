@@ -91,7 +91,13 @@ private:
 		Dictionary result;
 		Array domains;
 		Array entities;
+		Dictionary editor_entity;
+		Array context_scene_entities;
 		int capture_domain = 0;
+		int context_scene_index = 0;
+		int context_scene_count = -1;
+		int context_node_index = -1;
+		int context_node_count = -1;
 		int next_entity = 0;
 		bool truncated = false;
 		Stage stage = STAGE_CAPTURE;

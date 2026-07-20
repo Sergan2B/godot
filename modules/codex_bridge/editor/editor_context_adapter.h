@@ -63,7 +63,7 @@ public:
 	static constexpr int MAX_TOTAL_INSPECTOR_BYTES = 4194304;
 
 	static String make_scene_id(const String &p_editor_session_id, const Node *p_scene_root);
-	static Error capture(const String &p_project_id, const String &p_editor_session_id, const Dictionary &p_revisions, Dictionary &r_snapshot, bool p_full_live_context = false, const Dictionary &p_history_transitions = Dictionary(), int p_domain_mask = CAPTURE_ALL);
+	static Error capture(const String &p_project_id, const String &p_editor_session_id, const Dictionary &p_revisions, Dictionary &r_snapshot, bool p_full_live_context = false, const Dictionary &p_history_transitions = Dictionary(), int p_domain_mask = CAPTURE_ALL, int p_scene_start = -1, int p_scene_count = -1, int p_node_start = -1, int p_node_count = -1, bool p_include_scene_entity = true);
 
 private:
 	static String _make_opaque_id(const String &p_prefix, const String &p_domain, const String &p_value);
@@ -72,6 +72,6 @@ private:
 	static String _make_node_id(const String &p_editor_session_id, const String &p_scene_id, const String &p_node_path);
 	static String _make_history_id(const String &p_editor_session_id, int p_native_history_id);
 	static String _make_script_id(const String &p_editor_session_id, const String &p_identity);
-	static String _redact_output_message(const String &p_message, bool &r_redacted);
+	static String _redact_output_message(const String &p_message, const String &p_project_root, const String &p_home, bool &r_redacted, bool &r_truncated);
 	static Array _capture_properties(Object *p_object, int p_limit, const String &p_scene_id, const Dictionary &p_revisions, bool &r_truncated, int &r_total_bytes, bool p_script_variables_only = false);
 };
