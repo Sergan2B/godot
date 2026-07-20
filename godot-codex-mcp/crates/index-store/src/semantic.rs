@@ -1062,7 +1062,7 @@ mod tests {
     use super::*;
     use crate::{
         DependencyEdge, GenerationState, IngestionCheckpoint, LOGICAL_SCHEMA_V1, RecordValidity,
-        ResourceEntity, SceneDomainGeneration, SceneEntity, SceneIdentityScope,
+        ResourceEntity, SceneDomainGeneration, SceneEntity, SceneIdentityScope, SceneRelation,
         ScriptDomainGeneration,
     };
 
@@ -1190,6 +1190,58 @@ mod tests {
                 .facts_for_target("target")
                 .len(),
             1
+        );
+    }
+
+    #[test]
+    fn conflicting_single_value_facts_are_retained_and_diagnosed() {
+        let mut value = generation();
+        let mut alternate = value.resources[1].clone();
+        alternate.entity_id = "alternate".to_owned();
+        alternate.identity_input = "alternate".to_owned();
+        alternate.uid = Some("uid://alternate".to_owned());
+        alternate.display_path = "res://alternate.gd".to_owned();
+        alternate.comparison_path = alternate.display_path.clone();
+        value.resources.push(alternate);
+        let relation = |id: &str, target: &str, authority: &str| SceneRelation {
+            relation_id: id.to_owned(),
+            scene_entity_id: Some("scene-owner".to_owned()),
+            relation: "attached_script".to_owned(),
+            source: "owner".to_owned(),
+            target: Some(target.to_owned()),
+            declaration_scope: Some("scene-owner".to_owned()),
+            attributes: BTreeMap::new(),
+            authority: authority.to_owned(),
+            resource_revision: 1,
+            scene_graph_revision: 1,
+        };
+        value.scene = SceneDomainGeneration {
+            editor_session_id: "editor-1".to_owned(),
+            resource_revision: 1,
+            scene_graph_revision: 1,
+            source_complete: true,
+            snapshot_checksum: format!("sha256:{}", "3".repeat(64)),
+            relations: vec![
+                relation("attachment-a", "target", "packed_scene_state"),
+                relation("attachment-b", "alternate", "synthetic_conflict_probe"),
+            ],
+            ..SceneDomainGeneration::default()
+        };
+
+        let index = SemanticQueryIndex::build_available(&value, true, false);
+        assert_eq!(index.conflicts().len(), 1);
+        assert_eq!(
+            index.conflicts()[0].predicate,
+            SemanticPredicate::AttachesScript
+        );
+        assert_eq!(index.conflicts()[0].fact_ids.len(), 2);
+        assert_eq!(
+            index
+                .facts()
+                .iter()
+                .filter(|fact| fact.predicate == SemanticPredicate::AttachesScript)
+                .count(),
+            2
         );
     }
 
