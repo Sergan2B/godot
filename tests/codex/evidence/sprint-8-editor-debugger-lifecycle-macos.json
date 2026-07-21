@@ -1,0 +1,167 @@
+{
+  "artifacts": {
+    "fixture_validator_sha256": "sha256:0e08db8b0300d2ece4493eff36b2aa518bdffc002c264555cce0791800b472dc",
+    "godot_sha256": "sha256:5e04b700f7eabb2f7ad5f929262d280b5e60807066b35a8d97ea59b03528ed14",
+    "live_runner_sha256": "sha256:db024cc6381446dfbda576aa6100a03022e202d4539d1f6a6ed0046cd52b645f",
+    "sidecar_sha256": "sha256:01264b7ee7fb94158985dbb893461447e9933a5e390ffa0d8ab94e3fe971fed1"
+  },
+  "checks": {
+    "active_run_rejected": true,
+    "bounded_properties": true,
+    "crash_retention_and_retirement": true,
+    "diagnostic_stack": true,
+    "disconnect_reconnect_policy": true,
+    "exact_25_tool_registry": true,
+    "fresh_session_per_run": true,
+    "hang_timeout_and_recovery": true,
+    "headless_capture_unavailable": true,
+    "large_tree_bounded": true,
+    "manual_editor_lifecycle_observed": true,
+    "pause_continue_stop_confirmed": true,
+    "runtime_cursor_invalidation": true,
+    "runtime_editor_mapping_evidence": true,
+    "runtime_only_unmapped": true,
+    "runtime_revisions_isolated": true,
+    "runtime_rpc_terminal_once": true,
+    "runtime_summary_bounded": true,
+    "runtime_tree_and_opaque_ids": true,
+    "source_content_unchanged": true,
+    "stale_runtime_state_rejected": true,
+    "stale_session_rejected": true,
+    "terminal_coordinates_retained": true,
+    "viewport_capture": true
+  },
+  "cleanup": {
+    "editor_processes_stopped": true,
+    "runtime_values_retired": true,
+    "sidecar_processes_stopped": true,
+    "temporary_workspace_removed": true
+  },
+  "external_gates": {
+    "linux": {
+      "reason": "no Linux system is available for this local milestone",
+      "status": "not_run"
+    },
+    "model_facing": {
+      "reason": "model-facing validation is outside the deterministic acceptance boundary",
+      "status": "not_run"
+    },
+    "remote_ci": {
+      "reason": "the agreed acceptance path is local and no Git CI is configured",
+      "status": "not_run"
+    },
+    "windows": {
+      "reason": "Sprint 8 qualifying coordinate is local macOS arm64",
+      "status": "not_run"
+    }
+  },
+  "local_gates": {
+    "cpp_runtime_tests": {
+      "duration_ms": 2698.334,
+      "status": "passed"
+    },
+    "fixture_oracle": {
+      "duration_ms": 35.224,
+      "status": "passed"
+    },
+    "godot_editor_build": {
+      "duration_ms": 11516.541,
+      "status": "passed"
+    },
+    "model_free_gui": {
+      "duration_ms": 23133.725,
+      "status": "passed"
+    },
+    "model_free_headless": {
+      "duration_ms": 31262.283,
+      "status": "passed"
+    },
+    "python_regressions": {
+      "duration_ms": 73.524,
+      "status": "passed"
+    },
+    "release_sidecar_build": {
+      "duration_ms": 15688.076,
+      "status": "passed"
+    },
+    "rust_clippy": {
+      "duration_ms": 120.463,
+      "status": "passed"
+    },
+    "rust_format": {
+      "duration_ms": 443.703,
+      "status": "passed"
+    },
+    "rust_workspace_tests": {
+      "duration_ms": 12123.767,
+      "status": "passed"
+    },
+    "schema_conformance": {
+      "duration_ms": 1029.581,
+      "status": "passed"
+    }
+  },
+  "observations": {
+    "diagnostics": 4,
+    "large_runtime_nodes": 10000,
+    "runtime_nodes": 9,
+    "stack_frames": 5
+  },
+  "performance": {
+    "hung_game_bridge_ping_p95_ms": 0.372,
+    "hung_game_stop_ms": 34.516,
+    "hung_tree_timeout_ms": 3009.326,
+    "large_tree_page_p95_ms": 26.297,
+    "transition_visibility_p95_ms": 47.982,
+    "transition_visibility_samples_ms": [
+      43.82,
+      47.982,
+      22.296
+    ],
+    "viewport_capture_ms": 92.534
+  },
+  "platform": "macos-arm64",
+  "profile": "qualifying_local_macos",
+  "redaction": {
+    "absolute_paths_absent": true,
+    "bridge_endpoints_absent": true,
+    "native_handles_absent": true,
+    "secret_material_absent": true
+  },
+  "schema_version": 1,
+  "sessions": [
+    "runtime:24c09226c93cccbd4828783a277ca247",
+    "runtime:b0a7d2d90f53c07a768c9a8c6c5d52dd",
+    "runtime:4fee5f984388ded523e4d97353b5e687",
+    "runtime:c36e7ad1512b1819274d2fade8491319",
+    "runtime:16683fdaf3a3bdd8bb1f68ce2f393c3d",
+    "runtime:4607922e174f27fa435803ef0bd2dfa4",
+    "runtime:87bd68ae795865d24e2b84a4a217815c",
+    "runtime:4b9b43f3fb97b18e0f050245cd2c5b76",
+    "runtime:991298255ab1440e01c43e3457404079",
+    "runtime:bcc96c941984322e61493752d595de2b",
+    "runtime:c12f621fea44800e4bc79ca900217991",
+    "runtime:394eddf07bff6a0df4dbc39f936d91e2"
+  ],
+  "source": {
+    "fixture_manifest_sha256": "sha256:02ab283ecbd70d1b65f6539493a3882951ee221c1ac539c9f2f4910c502c7bce",
+    "git_commit": "b9fcbd1cc33b1c2e96c936637825be00d47e56aa",
+    "golden_runtime_sha256": "sha256:b49e6cad3ead9a5340d8fc41fd7cbefd577366646c558e4f74265ec601d4c9b3",
+    "relevant_source_clean": true,
+    "relevant_source_sha256": "sha256:f057a88c63c9eeecec2f5857cb3e2ff81296e7e9f2faf5efa4ac1e53f194de4b",
+    "scope_manifest": "tests/codex/sprint8_source_scopes.txt",
+    "tracked_file_count": 235
+  },
+  "sprint": 8,
+  "status": "passed",
+  "versions": {
+    "bridge_rpc": "1.6",
+    "cargo": "cargo 1.94.1 (29ea6fb6a 2026-03-24)",
+    "godot": "4.8.dev.codex.b9fcbd1cc",
+    "mcp_protocol": "2025-11-25",
+    "python": "3.14.6",
+    "rust_target": "aarch64-apple-darwin",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)",
+    "sidecar": "godot-codex-mcp 0.1.0"
+  }
+}
