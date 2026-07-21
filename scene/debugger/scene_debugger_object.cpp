@@ -33,164 +33,43 @@
 #include "scene_debugger_object.h"
 
 #include "core/debugger/debugger_marshalls.h"
-#include "core/io/json.h"
 #include "core/io/marshalls.h"
 #include "core/object/script_language.h"
+#include "scene/debugger/codex_runtime_value_projector.h"
 #include "scene/main/node.h"
 
 namespace {
 
-struct CodexProjectionContext {
-	HashMap<const void *, String> arrays;
-	HashMap<const void *, String> dictionaries;
-	uint64_t next_reference = 1;
-};
-
-static Dictionary codex_omitted(const String &p_type, const String &p_reason) {
-	Dictionary omitted;
-	omitted["type"] = p_type;
-	omitted["omitted_reason"] = p_reason;
-	return omitted;
-}
-
-static Variant codex_project_raw(const Variant &p_value, int p_depth, CodexProjectionContext &r_context, bool &r_truncated) {
-	const String type = Variant::get_type_name(p_value.get_type());
-	if (p_depth > 8) {
-		r_truncated = true;
-		return codex_omitted(type, "max_depth");
+bool codex_safe_res_path(const String &p_path) {
+	if (!p_path.begins_with("res://") || p_path.contains("\\") || p_path.length() > CodexRuntimeLimits::NODE_STRING_CHARACTERS) {
+		return false;
 	}
-	switch (p_value.get_type()) {
-		case Variant::NIL:
-		case Variant::BOOL:
-		case Variant::INT:
-		case Variant::FLOAT:
-			return p_value;
-		case Variant::STRING:
-		case Variant::STRING_NAME:
-		case Variant::NODE_PATH: {
-			String value = p_value.stringify();
-			if (p_value.get_type() == Variant::STRING) {
-				value = p_value;
-			} else if (p_value.get_type() == Variant::STRING_NAME) {
-				value = String(StringName(p_value));
-			} else {
-				value = String(NodePath(p_value));
-			}
-			if (value.length() > 16384) {
-				value = value.left(16384);
-				r_truncated = true;
-			}
-			return value;
+	const PackedStringArray components = p_path.trim_prefix("res://").split("/", false);
+	for (const String &component : components) {
+		if (component == "..") {
+			return false;
 		}
-		case Variant::ARRAY: {
-			const Array source = p_value;
-			const void *identity = source.id();
-			if (const String *reference = r_context.arrays.getptr(identity)) {
-				Dictionary result;
-				result["type"] = "array";
-				result["reference_id"] = *reference;
-				result["reference"] = true;
-				return result;
-			}
-			const String reference = "ref:" + String::num_uint64(r_context.next_reference++);
-			r_context.arrays.insert(identity, reference);
-			Array items;
-			const int count = MIN(source.size(), 1000);
-			for (int index = 0; index < count; index++) {
-				items.push_back(codex_project_raw(source[index], p_depth + 1, r_context, r_truncated));
-			}
-			Dictionary result;
-			result["type"] = "array";
-			result["reference_id"] = reference;
-			result["items"] = items;
-			result["size"] = source.size();
-			if (source.size() > count) {
-				result["omitted_count"] = source.size() - count;
-				r_truncated = true;
-			}
-			return result;
-		}
-		case Variant::DICTIONARY: {
-			const Dictionary source = p_value;
-			const void *identity = source.id();
-			if (const String *reference = r_context.dictionaries.getptr(identity)) {
-				Dictionary result;
-				result["type"] = "dictionary";
-				result["reference_id"] = *reference;
-				result["reference"] = true;
-				return result;
-			}
-			const String reference = "ref:" + String::num_uint64(r_context.next_reference++);
-			r_context.dictionaries.insert(identity, reference);
-			Array keys = source.keys();
-			keys.sort();
-			Array entries;
-			const int count = MIN(keys.size(), 1000);
-			for (int index = 0; index < count; index++) {
-				String key = keys[index].stringify();
-				if (key.length() > 16384) {
-					key = key.left(16384);
-					r_truncated = true;
-				}
-				Dictionary entry;
-				entry["key"] = key;
-				entry["value"] = codex_project_raw(source[keys[index]], p_depth + 1, r_context, r_truncated);
-				entries.push_back(entry);
-			}
-			Dictionary result;
-			result["type"] = "dictionary";
-			result["reference_id"] = reference;
-			result["entries"] = entries;
-			result["size"] = keys.size();
-			if (keys.size() > count) {
-				result["omitted_count"] = keys.size() - count;
-				r_truncated = true;
-			}
-			return result;
-		}
-		case Variant::OBJECT:
-		case Variant::RID:
-		case Variant::CALLABLE:
-		case Variant::SIGNAL:
-			r_truncated = true;
-			return codex_omitted(type, "unsupported_handle");
-		case Variant::PACKED_BYTE_ARRAY:
-		case Variant::PACKED_INT32_ARRAY:
-		case Variant::PACKED_INT64_ARRAY:
-		case Variant::PACKED_FLOAT32_ARRAY:
-		case Variant::PACKED_FLOAT64_ARRAY:
-		case Variant::PACKED_STRING_ARRAY:
-		case Variant::PACKED_VECTOR2_ARRAY:
-		case Variant::PACKED_VECTOR3_ARRAY:
-		case Variant::PACKED_COLOR_ARRAY:
-		case Variant::PACKED_VECTOR4_ARRAY:
-			r_truncated = true;
-			return codex_omitted(type, "packed_array_omitted");
-		default:
-			return p_value.stringify().left(16384);
 	}
-}
-
-static Dictionary codex_project_typed(const Variant &p_value, bool &r_truncated) {
-	CodexProjectionContext context;
-	Dictionary result;
-	result["type"] = Variant::get_type_name(p_value.get_type());
-	result["value"] = codex_project_raw(p_value, 0, context, r_truncated);
-	result["truncated"] = r_truncated;
-	if (JSON::stringify(result, "", true, true).utf8().length() > 65536) {
-		result["value"] = codex_omitted(Variant::get_type_name(p_value.get_type()), "max_encoded_bytes");
-		result["truncated"] = true;
-		r_truncated = true;
-	}
-	return result;
+	return true;
 }
 
 } // namespace
 
-SceneDebuggerObject::SceneDebuggerObject(Object *p_obj) {
+bool SceneDebuggerObject::_has_property_capacity(int p_max_properties, bool *r_truncated) const {
+	if (properties.size() < p_max_properties) {
+		return true;
+	}
+	if (r_truncated) {
+		*r_truncated = true;
+	}
+	return false;
+}
+
+void SceneDebuggerObject::_capture(Object *p_obj, int p_max_properties, bool *r_truncated) {
 	if (!p_obj) {
 		return;
 	}
+	p_max_properties = MAX(1, p_max_properties);
 
 	id = p_obj->get_instance_id();
 	class_name = p_obj->get_class();
@@ -199,55 +78,85 @@ SceneDebuggerObject::SceneDebuggerObject(Object *p_obj) {
 		// Read script instance constants and variables.
 		if (!si->get_script().is_null()) {
 			Script *s = si->get_script().ptr();
-			_parse_script_properties(s, si);
+			_parse_script_properties(s, si, p_max_properties, r_truncated);
 		}
 	}
 
 	if (Node *node = Object::cast_to<Node>(p_obj)) {
-		{
+		if (_has_property_capacity(p_max_properties, r_truncated)) {
 			PropertyInfo pi(Variant::STRING_NAME, "name", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE);
 			properties.push_back(SceneDebuggerProperty(pi, node->get_name()));
 		}
 
 		// For debugging multiplayer.
-		{
+		if (_has_property_capacity(p_max_properties, r_truncated)) {
 			PropertyInfo pi(Variant::INT, String("Node/multiplayer_authority"), PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_READ_ONLY);
 			properties.push_back(SceneDebuggerProperty(pi, node->get_multiplayer_authority()));
 		}
 
 		// Add specialized NodePath info (if inside tree).
-		if (node->is_inside_tree()) {
-			PropertyInfo pi(Variant::NODE_PATH, String("Node/path"));
-			properties.push_back(SceneDebuggerProperty(pi, node->get_path()));
-		} else { // Can't ask for path if a node is not in tree.
-			PropertyInfo pi(Variant::STRING, String("Node/path"));
-			properties.push_back(SceneDebuggerProperty(pi, "[Orphan]"));
+		if (_has_property_capacity(p_max_properties, r_truncated)) {
+			if (node->is_inside_tree()) {
+				PropertyInfo pi(Variant::NODE_PATH, String("Node/path"));
+				properties.push_back(SceneDebuggerProperty(pi, node->get_path()));
+			} else { // Can't ask for path if a node is not in tree.
+				PropertyInfo pi(Variant::STRING, String("Node/path"));
+				properties.push_back(SceneDebuggerProperty(pi, "[Orphan]"));
+			}
 		}
 	} else if (Script *s = Object::cast_to<Script>(p_obj)) {
 		// Add script constants (no instance).
-		_parse_script_properties(s, nullptr);
+		_parse_script_properties(s, nullptr, p_max_properties, r_truncated);
 	}
 
 	// Add base object properties.
 	List<PropertyInfo> pinfo;
 	p_obj->get_property_list(&pinfo, true);
 	for (PropertyInfo &E : pinfo) {
-		const Variant &m = p_obj->get(E.name);
-
-		if (!m.is_null() && E.type == Variant::OBJECT && E.hint == PROPERTY_HINT_NODE_TYPE && E.usage & PROPERTY_USAGE_EDITOR) {
-			E.hint_string = DebuggerMarshalls::parse_type_from_variant(m);
+		if (!(E.usage & (PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP | PROPERTY_USAGE_CATEGORY))) {
+			continue;
+		}
+		if (!_has_property_capacity(p_max_properties, r_truncated)) {
+			break;
+		}
+		Variant value;
+		bool valid = true;
+		if (!(E.usage & (PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP | PROPERTY_USAGE_CATEGORY))) {
+			value = p_obj->get(E.name, &valid);
+		}
+		if (!valid) {
+			codex_getter_failures.insert(E.name);
+			if (r_truncated) {
+				*r_truncated = true;
+			}
 		}
 
-		if (E.usage & (PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP | PROPERTY_USAGE_CATEGORY)) {
-			properties.push_back(SceneDebuggerProperty(E, m));
+		if (valid && !value.is_null() && E.type == Variant::OBJECT && E.hint == PROPERTY_HINT_NODE_TYPE && E.usage & PROPERTY_USAGE_EDITOR) {
+			E.hint_string = DebuggerMarshalls::parse_type_from_variant(value);
 		}
+
+		properties.push_back(SceneDebuggerProperty(E, value));
 	}
 }
 
-void SceneDebuggerObject::_parse_script_properties(Script *p_script, ScriptInstance *p_instance) {
+SceneDebuggerObject::SceneDebuggerObject(Object *p_obj) {
+	_capture(p_obj, 2147483647, nullptr);
+}
+
+SceneDebuggerObject::SceneDebuggerObject(Object *p_obj, int p_max_properties, bool *r_truncated) {
+	_capture(p_obj, p_max_properties, r_truncated);
+}
+
+SceneDebuggerObject::SceneDebuggerObject(ObjectID p_id, int p_max_properties, bool *r_truncated) :
+		SceneDebuggerObject(ObjectDB::get_instance(p_id), p_max_properties, r_truncated) {
+}
+
+void SceneDebuggerObject::_parse_script_properties(Script *p_script, ScriptInstance *p_instance, int p_max_properties, bool *r_truncated) {
 	typedef HashMap<const Script *, HashSet<StringName>> ScriptMemberMap;
 	typedef HashMap<const Script *, HashMap<StringName, Variant>> ScriptConstantsMap;
 
+	Vector<const Script *> script_chain;
+	script_chain.push_back(p_script);
 	ScriptMemberMap members;
 	if (p_instance) {
 		members[p_script] = HashSet<StringName>();
@@ -260,6 +169,7 @@ void SceneDebuggerObject::_parse_script_properties(Script *p_script, ScriptInsta
 
 	Ref<Script> base = p_script->get_base_script();
 	while (base.is_valid()) {
+		script_chain.push_back(base.ptr());
 		if (p_instance) {
 			members[base.ptr()] = HashSet<StringName>();
 			base->get_members(&(members[base.ptr()]));
@@ -271,8 +181,9 @@ void SceneDebuggerObject::_parse_script_properties(Script *p_script, ScriptInsta
 		base = base->get_base_script();
 	}
 
-	HashSet<String> exported_members;
-	HashMap<String, PropertyInfo> non_exported_members;
+	HashSet<StringName> exported_members;
+	HashMap<StringName, PropertyInfo> non_exported_members;
+	Vector<PropertyInfo> ordered_non_exported;
 
 	if (p_instance) {
 		List<PropertyInfo> pinfo;
@@ -280,57 +191,114 @@ void SceneDebuggerObject::_parse_script_properties(Script *p_script, ScriptInsta
 		for (const PropertyInfo &E : pinfo) {
 			if (E.usage & (PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_CATEGORY)) {
 				exported_members.insert(E.name);
-			} else {
+			} else if (!(E.usage & (PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP))) {
 				PropertyInfo pi = E;
 				pi.usage |= PROPERTY_USAGE_EDITOR;
 				non_exported_members.insert(E.name, pi);
+				ordered_non_exported.push_back(pi);
 			}
 		}
 	}
 
-	// Members
-	for (KeyValue<const Script *, HashSet<StringName>> sm : members) {
-		for (const StringName &E : sm.value) {
-			if (exported_members.has(E)) {
-				continue; // Exported variables already show up in the inspector.
-			}
-			if (String(E).begins_with("@")) {
-				continue; // Skip groups.
-			}
-
-			Variant m;
-			if (p_instance->get(E, m)) {
-				const String script_path = sm.key == p_script ? "" : sm.key->get_path().get_file() + "/";
-				if (!m.is_null() && m.get_type() == Variant::OBJECT) {
-					PropertyInfo pi(m.get_type(), "Members/" + script_path + E, PROPERTY_HINT_OBJECT_ID, DebuggerMarshalls::parse_type_from_variant(m));
-					properties.push_back(SceneDebuggerProperty(pi, m));
-				} else {
-					PropertyInfo pi;
-					const PropertyInfo *pi_ptr = non_exported_members.getptr(E);
-					if (pi_ptr == nullptr) {
-						pi.type = m.get_type();
-					} else {
-						pi = *pi_ptr;
-					}
-					pi.name = "Members/" + script_path + E;
-
-					properties.push_back(SceneDebuggerProperty(pi, m));
-				}
+	auto script_member_path = [p_script](const Script *p_owner) {
+		return p_owner == p_script ? String() : p_owner->get_path().get_file() + "/";
+	};
+	auto member_owner = [&script_chain, &members, p_script](const StringName &p_name) -> const Script * {
+		for (const Script *script : script_chain) {
+			const HashSet<StringName> *script_members = members.getptr(script);
+			if (script_members && script_members->has(p_name)) {
+				return script;
 			}
 		}
+		return p_script;
+	};
+	auto append_member = [&](const StringName &p_name, PropertyInfo p_info, const Script *p_owner) -> bool {
+		if (!_has_property_capacity(p_max_properties, r_truncated)) {
+			return false;
+		}
+		Variant value;
+		const bool valid = p_instance->get(p_name, value);
+		p_info.name = "Members/" + script_member_path(p_owner) + p_name;
+		if (valid && !value.is_null() && value.get_type() == Variant::OBJECT) {
+			p_info.type = value.get_type();
+			p_info.hint = PROPERTY_HINT_OBJECT_ID;
+			p_info.hint_string = DebuggerMarshalls::parse_type_from_variant(value);
+		} else if (p_info.type == Variant::NIL && valid) {
+			p_info.type = value.get_type();
+		}
+		if (!valid) {
+			codex_getter_failures.insert(p_info.name);
+			if (r_truncated) {
+				*r_truncated = true;
+			}
+		}
+		properties.push_back(SceneDebuggerProperty(p_info, value));
+		return true;
+	};
+
+	HashSet<StringName> emitted_members;
+	for (const PropertyInfo &property : ordered_non_exported) {
+		if (String(property.name).begins_with("@")) {
+			continue;
+		}
+		if (!append_member(property.name, property, member_owner(property.name))) {
+			return;
+		}
+		emitted_members.insert(property.name);
 	}
-	// Constants
-	for (KeyValue<const Script *, HashMap<StringName, Variant>> &sc : constants) {
-		for (const KeyValue<StringName, Variant> &E : sc.value) {
-			const String script_path = sc.key == p_script ? "" : sc.key->get_path().get_file() + "/";
-			if (!E.value.is_null() && E.value.get_type() == Variant::OBJECT) {
-				PropertyInfo pi(E.value.get_type(), "Constants/" + E.key, PROPERTY_HINT_OBJECT_ID, DebuggerMarshalls::parse_type_from_variant(E.value), PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_READ_ONLY);
-				properties.push_back(SceneDebuggerProperty(pi, E.value));
+
+	// Some languages expose members outside ScriptInstance::get_property_list().
+	// Normalize those unordered sets by inheritance and name.
+	for (const Script *script : script_chain) {
+		const HashSet<StringName> *script_members = members.getptr(script);
+		if (!script_members) {
+			continue;
+		}
+		Vector<StringName> ordered_members;
+		for (const StringName &member : *script_members) {
+			ordered_members.push_back(member);
+		}
+		ordered_members.sort();
+		for (const StringName &member : ordered_members) {
+			if (exported_members.has(member) || emitted_members.has(member) || String(member).begins_with("@")) {
+				continue;
+			}
+			PropertyInfo info;
+			if (const PropertyInfo *known = non_exported_members.getptr(member)) {
+				info = *known;
+			}
+			if (!append_member(member, info, script)) {
+				return;
+			}
+			emitted_members.insert(member);
+		}
+	}
+
+	// Constants are not ordered by the Script API; use derived-to-base and
+	// lexical name order to keep repeated captures byte-identical.
+	for (const Script *script : script_chain) {
+		HashMap<StringName, Variant> *script_constants = constants.getptr(script);
+		if (!script_constants) {
+			continue;
+		}
+		Vector<StringName> ordered_constants;
+		for (const KeyValue<StringName, Variant> &constant : *script_constants) {
+			ordered_constants.push_back(constant.key);
+		}
+		ordered_constants.sort();
+		for (const StringName &constant_name : ordered_constants) {
+			if (!_has_property_capacity(p_max_properties, r_truncated)) {
+				return;
+			}
+			const Variant value = (*script_constants)[constant_name];
+			const String constant_path = script_member_path(script);
+			if (!value.is_null() && value.get_type() == Variant::OBJECT) {
+				PropertyInfo pi(value.get_type(), "Constants/" + constant_path + constant_name, PROPERTY_HINT_OBJECT_ID, DebuggerMarshalls::parse_type_from_variant(value), PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_READ_ONLY);
+				properties.push_back(SceneDebuggerProperty(pi, value));
 			} else {
-				PropertyInfo pi(E.value.get_type(), "Constants/" + script_path + E.key);
+				PropertyInfo pi(value.get_type(), "Constants/" + constant_path + constant_name);
 				pi.usage |= PROPERTY_USAGE_READ_ONLY;
-
-				properties.push_back(SceneDebuggerProperty(pi, E.value));
+				properties.push_back(SceneDebuggerProperty(pi, value));
 			}
 		}
 	}
@@ -404,32 +372,29 @@ void SceneDebuggerObject::serialize_codex(Array &r_arr, int p_max_size, int p_ma
 		Array prop = { pi.name, pi.type, pi.hint, pi.hint_string, pi.usage };
 		bool already_projected = true;
 		Variant projected;
-		if (source.get_type() == Variant::OBJECT) {
+		if (codex_getter_failures.has(pi.name)) {
+			projected = CodexRuntimeValueProjector::omitted_typed(pi.type, "getter_failed");
+			truncated = true;
+		} else if (source.get_type() == Variant::OBJECT) {
 			Object *object = source;
 			Resource *resource = Object::cast_to<Resource>(object);
-			if (resource && resource->get_path().begins_with("res://")) {
-				Dictionary value;
-				value["type"] = "resource";
-				Dictionary reference;
-				reference["path"] = resource->get_path().get_slice("::", 0).left(1024);
-				value["value"] = reference;
-				value["truncated"] = false;
-				projected = value;
+			if (resource) {
+				projected = CodexRuntimeValueProjector::project_typed(source);
+				truncated = truncated || (bool)Dictionary(projected)["truncated"];
 			} else if (object) {
 				projected = source;
 				already_projected = false;
 			} else {
-				projected = codex_project_typed(source, truncated);
+				projected = CodexRuntimeValueProjector::project_typed(source);
 			}
 		} else {
-			bool value_truncated = false;
-			projected = codex_project_typed(source, value_truncated);
-			truncated = truncated || value_truncated;
+			projected = CodexRuntimeValueProjector::project_typed(source);
+			truncated = truncated || (bool)Dictionary(projected)["truncated"];
 		}
 		int value_size = 0;
 		encode_variant(projected, nullptr, value_size);
 		if (value_size > p_max_size) {
-			projected = codex_omitted(Variant::get_type_name(source.get_type()), "max_encoded_bytes");
+			projected = CodexRuntimeValueProjector::omitted_typed(pi.type, "max_encoded_bytes");
 			already_projected = true;
 			truncated = true;
 		}
@@ -506,14 +471,16 @@ void SceneDebuggerObject::deserialize(uint64_t p_id, const String &p_class_name,
 
 SceneDebuggerTree::SceneDebuggerTree(Node *p_root, int p_max_nodes, int p_max_depth) {
 	ERR_FAIL_NULL(p_root);
-	p_max_nodes = CLAMP(p_max_nodes, 1, 10000);
-	p_max_depth = CLAMP(p_max_depth, 1, 256);
+	p_max_nodes = CLAMP(p_max_nodes, 1, CodexRuntimeLimits::TREE_NODES);
+	p_max_depth = CLAMP(p_max_depth, 1, CodexRuntimeLimits::TREE_DEPTH);
 	// Flatten a deterministic depth-first prefix without queuing or serializing
 	// nodes outside the negotiated runtime budgets.
 	struct PendingNode {
 		Node *node = nullptr;
 		int depth = 0;
 		int parent_index = -1;
+		int next_child = 0;
+		int captured_index = -1;
 	};
 	Vector<PendingNode> stack;
 	stack.push_back({ p_root, 0, -1 });
@@ -522,8 +489,24 @@ SceneDebuggerTree::SceneDebuggerTree(Node *p_root, int p_max_nodes, int p_max_de
 	const StringName &is_visible_in_tree_sn = SNAME("is_visible_in_tree");
 	while (!stack.is_empty() && captured.size() < p_max_nodes) {
 		const PendingNode pending = stack[stack.size() - 1];
-		stack.resize(stack.size() - 1);
 		Node *n = pending.node;
+		if (pending.captured_index >= 0) {
+			const int child_count = n->get_child_count();
+			if (pending.depth + 1 >= p_max_depth) {
+				if (child_count > 0) {
+					truncated = true;
+				}
+				stack.resize(stack.size() - 1);
+				continue;
+			}
+			if (pending.next_child < child_count) {
+				stack.write[stack.size() - 1].next_child++;
+				stack.push_back({ n->get_child(pending.next_child), pending.depth + 1, pending.captured_index, 0, -1 });
+			} else {
+				stack.resize(stack.size() - 1);
+			}
+			continue;
+		}
 		const int captured_index = captured.size();
 		if (pending.parent_index >= 0) {
 			captured.write[pending.parent_index].child_count++;
@@ -553,21 +536,29 @@ SceneDebuggerTree::SceneDebuggerTree(Node *p_root, int p_max_nodes, int p_max_de
 			if (script.is_valid()) {
 				class_name = script->get_global_name();
 
-				if (class_name.is_empty()) {
+				if (class_name.is_empty() && codex_safe_res_path(script->get_path().get_slice("::", 0))) {
 					// If there is no class_name in this script we just take the script path.
 					class_name = script->get_path();
 				}
 			}
 		}
-		captured.push_back(RemoteNode(0, n->get_name(), class_name.is_empty() ? n->get_class() : class_name, n->get_instance_id(), n->get_scene_file_path(), view_flags));
-		const int count = n->get_child_count();
-		if (pending.depth + 1 < p_max_depth) {
-			for (int i = count - 1; i >= 0; i--) {
-				stack.push_back({ n->get_child(i), pending.depth + 1, captured_index });
-			}
-		} else if (count > 0) {
+		String name = n->get_name();
+		if (name.length() > CodexRuntimeLimits::NODE_STRING_CHARACTERS) {
+			name = name.left(CodexRuntimeLimits::NODE_STRING_CHARACTERS);
 			truncated = true;
 		}
+		String type_name = class_name.is_empty() ? n->get_class() : class_name;
+		if (type_name.length() > CodexRuntimeLimits::NODE_STRING_CHARACTERS) {
+			type_name = type_name.left(CodexRuntimeLimits::NODE_STRING_CHARACTERS);
+			truncated = true;
+		}
+		String scene_file_path = n->get_scene_file_path().get_slice("::", 0);
+		if (!scene_file_path.is_empty() && !codex_safe_res_path(scene_file_path)) {
+			scene_file_path.clear();
+			truncated = true;
+		}
+		captured.push_back(RemoteNode(0, name, type_name, n->get_instance_id(), scene_file_path, view_flags));
+		stack.write[stack.size() - 1].captured_index = captured_index;
 	}
 	truncated = truncated || !stack.is_empty();
 	for (const RemoteNode &node : captured) {

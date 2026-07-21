@@ -34,15 +34,21 @@
 
 #include "core/object/object.h"
 #include "core/string/ustring.h"
+#include "core/templates/hash_set.h"
 #include "core/templates/list.h"
 #include "core/templates/pair.h"
+#include "scene/debugger/codex_runtime_limits.h"
 
 class Node;
 class Script;
 
 class SceneDebuggerObject {
 private:
-	void _parse_script_properties(Script *p_script, ScriptInstance *p_instance);
+	HashSet<StringName> codex_getter_failures;
+
+	bool _has_property_capacity(int p_max_properties, bool *r_truncated) const;
+	void _capture(Object *p_obj, int p_max_properties, bool *r_truncated);
+	void _parse_script_properties(Script *p_script, ScriptInstance *p_instance, int p_max_properties, bool *r_truncated);
 
 public:
 	typedef Pair<PropertyInfo, Variant> SceneDebuggerProperty;
@@ -52,6 +58,8 @@ public:
 
 	SceneDebuggerObject(ObjectID p_id);
 	SceneDebuggerObject(Object *p_obj);
+	SceneDebuggerObject(ObjectID p_id, int p_max_properties, bool *r_truncated);
+	SceneDebuggerObject(Object *p_obj, int p_max_properties, bool *r_truncated);
 	SceneDebuggerObject() {}
 
 	void serialize(Array &r_arr, int p_max_size = 1 << 20, int p_max_properties = 2147483647, int p_max_total_size = 2147483647, bool *r_truncated = nullptr);
@@ -94,7 +102,7 @@ public:
 
 	void serialize(Array &r_arr);
 	void deserialize(const Array &p_arr);
-	SceneDebuggerTree(Node *p_root, int p_max_nodes = 10000, int p_max_depth = 256);
+	SceneDebuggerTree(Node *p_root, int p_max_nodes = CodexRuntimeLimits::TREE_NODES, int p_max_depth = CodexRuntimeLimits::TREE_DEPTH);
 	SceneDebuggerTree() {}
 };
 #endif // DEBUG_ENABLED

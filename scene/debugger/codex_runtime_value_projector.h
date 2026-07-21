@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  bounded_variant_projector.h                                           */
+/*  codex_runtime_value_projector.h                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -30,16 +30,43 @@
 
 #pragma once
 
-#include "scene/debugger/codex_runtime_value_projector.h"
+#include "core/templates/hash_map.h"
+#include "core/variant/variant.h"
+#include "scene/debugger/codex_runtime_limits.h"
 
-class BoundedVariantProjector {
+class CodexRuntimeValueProjector {
+private:
+	struct ProjectionContext {
+		HashMap<const void *, String> array_references;
+		HashMap<const void *, String> dictionary_references;
+		uint64_t next_reference = 1;
+	};
+
+	struct DictionaryKey {
+		Variant value;
+		String label;
+		int original_index = 0;
+
+		bool operator<(const DictionaryKey &p_other) const {
+			return label == p_other.label ? original_index < p_other.original_index : label < p_other.label;
+		}
+	};
+
+	static Variant _project_raw(const Variant &p_value, bool &r_truncated, int p_depth, ProjectionContext &r_context);
+	static Dictionary _omitted(const String &p_type, const String &p_reason, int64_t p_size_hint = -1);
+	static String _next_reference(ProjectionContext &r_context);
+	static String _dictionary_key_label(const Variant &p_key, bool &r_truncated);
+	static bool _safe_resource_path(const String &p_path);
+	static bool _looks_like_absolute_path(const String &p_value);
+
 public:
-	static constexpr int MAX_DEPTH = CodexRuntimeValueProjector::MAX_DEPTH;
-	static constexpr int MAX_CONTAINER_ITEMS = CodexRuntimeValueProjector::MAX_CONTAINER_ITEMS;
-	static constexpr int MAX_STRING_CHARACTERS = CodexRuntimeValueProjector::MAX_STRING_CHARACTERS;
-	static constexpr int MAX_ENCODED_BYTES = CodexRuntimeValueProjector::MAX_ENCODED_BYTES;
+	static constexpr int MAX_DEPTH = CodexRuntimeLimits::VARIANT_DEPTH;
+	static constexpr int MAX_CONTAINER_ITEMS = CodexRuntimeLimits::CONTAINER_ITEMS;
+	static constexpr int MAX_STRING_CHARACTERS = CodexRuntimeLimits::STRING_CHARACTERS;
+	static constexpr int MAX_ENCODED_BYTES = CodexRuntimeLimits::PROJECTED_VALUE_BYTES;
 
 	static Variant project_raw(const Variant &p_value, bool &r_truncated, int p_depth = 0);
 	static Dictionary project_typed(const Variant &p_value);
+	static Dictionary omitted_typed(Variant::Type p_type, const String &p_reason);
 	static String type_token(Variant::Type p_type);
 };

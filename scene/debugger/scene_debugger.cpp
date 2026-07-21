@@ -189,7 +189,7 @@ Error SceneDebugger::_msg_codex_runtime_tree(const Array &p_args) {
 	const String correlation_id = p_args[0];
 	const int max_nodes = p_args[1];
 	const int max_depth = p_args[2];
-	ERR_FAIL_COND_V(correlation_id.is_empty() || correlation_id.length() > 128 || max_nodes < 1 || max_nodes > 10000 || max_depth < 1 || max_depth > 256, ERR_INVALID_DATA);
+	ERR_FAIL_COND_V(correlation_id.is_empty() || correlation_id.length() > CodexRuntimeLimits::CORRELATION_CHARACTERS || max_nodes < 1 || max_nodes > CodexRuntimeLimits::TREE_NODES || max_depth < 1 || max_depth > CodexRuntimeLimits::TREE_DEPTH, ERR_INVALID_DATA);
 	LiveEditor::get_singleton()->_send_tree(max_nodes, max_depth, correlation_id);
 	return OK;
 }
@@ -197,15 +197,17 @@ Error SceneDebugger::_msg_codex_runtime_tree(const Array &p_args) {
 Error SceneDebugger::_msg_codex_runtime_object(const Array &p_args) {
 	ERR_FAIL_COND_V(p_args.size() != 2 || p_args[0].get_type() != Variant::STRING || p_args[1].get_type() != Variant::INT, ERR_INVALID_DATA);
 	const String correlation_id = p_args[0];
-	ERR_FAIL_COND_V(correlation_id.is_empty() || correlation_id.length() > 128, ERR_INVALID_DATA);
-	SceneDebuggerObject object(ObjectID(p_args[1].operator uint64_t()));
+	ERR_FAIL_COND_V(correlation_id.is_empty() || correlation_id.length() > CodexRuntimeLimits::CORRELATION_CHARACTERS, ERR_INVALID_DATA);
+	bool truncated = false;
+	SceneDebuggerObject object(ObjectID(p_args[1].operator uint64_t()), CodexRuntimeLimits::PROPERTIES, &truncated);
 	Array response;
 	response.push_back(correlation_id);
 	response.push_back(object.id.is_valid());
-	bool truncated = false;
 	Array serialized;
 	if (object.id.is_valid()) {
-		object.serialize_codex(serialized, 65536, 512, 262144, &truncated);
+		bool serialization_truncated = false;
+		object.serialize_codex(serialized, CodexRuntimeLimits::PROJECTED_VALUE_BYTES, CodexRuntimeLimits::PROPERTIES, CodexRuntimeLimits::OBJECT_BYTES, &serialization_truncated);
+		truncated = truncated || serialization_truncated;
 	}
 	response.push_back(truncated);
 	response.push_back(serialized);
