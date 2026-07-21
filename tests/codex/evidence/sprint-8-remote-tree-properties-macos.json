@@ -1,0 +1,174 @@
+{
+  "artifacts": {
+    "fixture_validator_sha256": "sha256:a9bea366c56702046e182ca1e266be1f4f14ac9602e0167291a1c6c1a765851e",
+    "godot_sha256": "sha256:205dc85fdad30863cafab19b62ec8d5053555a8d3355ba9a0244a54058623a02",
+    "live_runner_sha256": "sha256:6f52b0f4cbbd0817f4fb49c347fe21eaad11ad55d088dc0a543a270ff6c125f6",
+    "sidecar_sha256": "sha256:bc24eae4e1a62e6be6e5ceb3c79a9b8654f23a50d40bc6b530d227394ae542ab"
+  },
+  "checks": {
+    "active_run_rejected": true,
+    "bounded_properties": true,
+    "crash_retention_and_retirement": true,
+    "deep_tree_bounded": true,
+    "diagnostic_stack": true,
+    "disconnect_reconnect_policy": true,
+    "exact_25_tool_registry": true,
+    "fresh_session_per_run": true,
+    "getter_limit_before_read": true,
+    "hang_timeout_and_recovery": true,
+    "headless_capture_unavailable": true,
+    "large_tree_bounded": true,
+    "manual_editor_lifecycle_observed": true,
+    "pause_continue_stop_confirmed": true,
+    "runtime_cursor_invalidation": true,
+    "runtime_editor_mapping_evidence": true,
+    "runtime_only_unmapped": true,
+    "runtime_revisions_isolated": true,
+    "runtime_rpc_terminal_once": true,
+    "runtime_summary_bounded": true,
+    "runtime_tree_and_opaque_ids": true,
+    "session_scoped_opaque_ids": true,
+    "snapshot_checksums_and_ack": true,
+    "source_content_unchanged": true,
+    "stable_resnapshot_revision": true,
+    "stale_object_rejected": true,
+    "stale_runtime_state_rejected": true,
+    "stale_session_rejected": true,
+    "terminal_coordinates_retained": true,
+    "unsafe_values_omitted": true,
+    "viewport_capture": true
+  },
+  "cleanup": {
+    "editor_processes_stopped": true,
+    "runtime_values_retired": true,
+    "sidecar_processes_stopped": true,
+    "temporary_workspace_removed": true
+  },
+  "external_gates": {
+    "linux": {
+      "reason": "no Linux system is available for this local milestone",
+      "status": "not_run"
+    },
+    "model_facing": {
+      "reason": "model-facing validation is outside the deterministic acceptance boundary",
+      "status": "not_run"
+    },
+    "remote_ci": {
+      "reason": "the agreed acceptance path is local and no Git CI is configured",
+      "status": "not_run"
+    },
+    "windows": {
+      "reason": "Sprint 8 qualifying coordinate is local macOS arm64",
+      "status": "not_run"
+    }
+  },
+  "local_gates": {
+    "cpp_runtime_tests": {
+      "duration_ms": 184.257,
+      "status": "passed"
+    },
+    "fixture_oracle": {
+      "duration_ms": 26.057,
+      "status": "passed"
+    },
+    "godot_editor_build": {
+      "duration_ms": 8231.3,
+      "status": "passed"
+    },
+    "model_free_gui": {
+      "duration_ms": 22482.094,
+      "status": "passed"
+    },
+    "model_free_headless": {
+      "duration_ms": 26348.88,
+      "status": "passed"
+    },
+    "python_regressions": {
+      "duration_ms": 50.401,
+      "status": "passed"
+    },
+    "release_sidecar_build": {
+      "duration_ms": 97.492,
+      "status": "passed"
+    },
+    "rust_clippy": {
+      "duration_ms": 160.364,
+      "status": "passed"
+    },
+    "rust_format": {
+      "duration_ms": 356.949,
+      "status": "passed"
+    },
+    "rust_workspace_tests": {
+      "duration_ms": 14805.147,
+      "status": "passed"
+    },
+    "schema_conformance": {
+      "duration_ms": 1121.587,
+      "status": "passed"
+    }
+  },
+  "observations": {
+    "diagnostics": 5,
+    "large_runtime_nodes": 10000,
+    "runtime_nodes": 10,
+    "stack_frames": 5
+  },
+  "performance": {
+    "hung_game_bridge_ping_p95_ms": 0.339,
+    "hung_game_stop_ms": 35.475,
+    "hung_tree_timeout_ms": 3012.877,
+    "large_tree_page_p95_ms": 27.439,
+    "transition_visibility_p95_ms": 87.653,
+    "transition_visibility_samples_ms": [
+      36.416,
+      87.653,
+      29.559
+    ],
+    "viewport_capture_ms": 85.935
+  },
+  "platform": "macos-arm64",
+  "profile": "qualifying_local_macos",
+  "redaction": {
+    "absolute_paths_absent": true,
+    "bridge_endpoints_absent": true,
+    "native_handles_absent": true,
+    "secret_material_absent": true
+  },
+  "schema_version": 1,
+  "sessions": [
+    "runtime:03687820ea3c5134a7722ba59af3dd2a",
+    "runtime:e2e128b7db6bc9d5499f827e2a7965dc",
+    "runtime:2ee9311c11b0af8af21aa5084340ab4f",
+    "runtime:0b77ee6b945ae8bcd8bad52b35f8866e",
+    "runtime:023aa8194d795ba966ccd4d1d0f1a93b",
+    "runtime:96e0dfbfe536c108cb51fbcac0b576f6",
+    "runtime:5679e6c09fe467744fc38beae535666f",
+    "runtime:735cb024d1fd3106adfd0d495827645b",
+    "runtime:c95736bd0e70b631886790c5de01d07c",
+    "runtime:53cd5cbdb34367473620d83644b78644",
+    "runtime:7d5253e6a7912d2d4804eb3410a26f23",
+    "runtime:8370f9f98f68489ad6bc8be27b05bfd0"
+  ],
+  "source": {
+    "fixture_manifest_sha256": "sha256:28c7a8a6ccc4d18eeadf6dfc6cf12e244a8261b77e0b88db0b797ec427c51fe0",
+    "git_commit": "d697698da37be15e86f6525473f5a7783cb102ab",
+    "golden_runtime_sha256": "sha256:4213fb13bdd64d197c9d40f45153ccc224eb05fa7aa1812348fce2fed6e2fa44",
+    "relevant_source_clean": true,
+    "relevant_source_sha256": "sha256:b809902574275b5a12d44b81483c7d9f6d9d39bd414bad3b7d261160427b306d",
+    "scope_manifest": "tests/codex/sprint8_source_scopes.txt",
+    "tracked_file_count": 245
+  },
+  "sprint": 8,
+  "status": "passed",
+  "versions": {
+    "bridge_rpc": "1.6",
+    "cargo": "cargo 1.94.1 (29ea6fb6a 2026-03-24)",
+    "godot": "4.8.dev.codex.d697698da",
+    "mcp_protocol": "2025-11-25",
+    "python": "3.14.6",
+    "rust_target": "aarch64-apple-darwin",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)",
+    "sidecar": "godot-codex-mcp 0.1.0"
+  }
+}
