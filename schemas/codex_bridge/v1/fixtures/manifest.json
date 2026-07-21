@@ -91,6 +91,34 @@
     },
     {
       "expect": "valid",
+      "fixture": "valid/runtime-diagnostic-warning.json",
+      "id": "schema.runtime.diagnostic-warning",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/runtimeDiagnostic"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-diagnostic-error.json",
+      "id": "schema.runtime.diagnostic-error-stack",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/runtimeDiagnostic"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-stack-pause.json",
+      "id": "schema.runtime.pause-stack",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/runtimeStack"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-state-paused.json",
+      "id": "schema.runtime.paused-active-stack",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/runtimeStateEntity"
+    },
+    {
+      "expect": "valid",
       "fixture": "valid/runtime-viewport-capture-request.json",
       "id": "schema.runtime.capture-request",
       "kind": "schema",
@@ -173,6 +201,41 @@
       "expect": "invalid_schema",
       "fixture": "invalid/runtime-stack-absolute-path.json",
       "id": "schema.runtime.absolute-stack-path",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/runtimeStack"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/runtime-stack-windows-path.json",
+      "id": "schema.runtime.windows-stack-path",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/runtimeStack"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/runtime-stack-zero-line.json",
+      "id": "schema.runtime.zero-stack-line",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/runtimeStack"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/runtime-stack-zero-column.json",
+      "id": "schema.runtime.zero-stack-column",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/runtimeStack"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/runtime-stack-too-many-frames.json",
+      "id": "schema.runtime.too-many-stack-frames",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/runtimeStack"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/runtime-stack-forbidden-thread.json",
+      "id": "schema.runtime.forbidden-stack-thread",
       "kind": "schema",
       "schema_ref": "runtime.schema.json#/$defs/runtimeStack"
     },

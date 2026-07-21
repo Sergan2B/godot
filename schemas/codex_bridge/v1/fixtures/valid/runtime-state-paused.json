@@ -1,0 +1,11 @@
+{
+  "kind": "runtime_state",
+  "entity_id": "runtime:22222222222222222222222222222222",
+  "runtime_session_id": "runtime:22222222222222222222222222222222",
+  "runtime_event_seq": 6,
+  "state": "paused",
+  "origin": "mcp",
+  "target": "project",
+  "scene_path": "res://main.tscn",
+  "active_stack_id": "runtime-stack:PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP"
+}

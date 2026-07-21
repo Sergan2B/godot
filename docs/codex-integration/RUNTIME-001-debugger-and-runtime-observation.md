@@ -136,14 +136,42 @@ bytes per message and 262144 bytes total. Records contain an opaque diagnostic
 ID, severity, source, redacted message, repeat count, runtime sequence,
 project-relative source location, and optional opaque stack ID.
 
+Messages are sanitized before they participate in an opaque identifier,
+checksum, retained record, or bridge log. Secret-bearing output is replaced,
+ANSI/control sequences and external endpoints are removed, project/home/temp
+roots are replaced with placeholders, and remaining host-absolute paths are
+not serialized. The UTF-8 byte limit includes the deterministic truncation
+marker. Public diagnostic and stack identifiers are allocated from
+session-local monotonic material and never hash unsanitized debugger payloads.
+
+Diagnostics with the same severity, source, sanitized message, safe location,
+and leading sanitized stack fingerprint coalesce. The retained record's repeat count
+and runtime sequence describe the most recent occurrence. Snapshot order is
+oldest retained occurrence first; presentation layers may reverse a frozen
+snapshot without changing its checksum.
+
 At most 64 stacks and 128 frames per stack are retained, with a 262144-byte
 aggregate limit. Frames use one-based line/column coordinates, project-relative
 script paths, and bounded function names. Non-project paths are removed.
 Source text, locals, raw thread IDs, and engine pointers are forbidden.
 
+Every stack records the runtime sequence at which it was captured. Frames with
+no safe `res://` source are omitted and the remaining frames are renumbered
+contiguously from zero. Function names are limited to 1024 UTF-8 bytes. An
+error and its optional callstack commit at one runtime sequence and publish
+one event whose changed domains include both diagnostics and stacks. A
+diagnostic snapshot never contains a dangling stack reference: stack eviction
+removes the older diagnostic link in the same revision.
+
 Errors received with a callstack retain that callstack without requiring a
 pause. A confirmed debugger break may publish an active pause stack. Terminal
 retention never upgrades a stack's freshness to current.
+
+Only the first correlated stack dump for the current confirmed break
+generation becomes `active_stack_id`. Continue, stop, crash, session
+replacement, and shutdown clear the active pointer; the bounded sanitized
+stack record itself may remain until normal retention retires it. Late stack
+dumps from an earlier debugger session or break generation are ignored.
 
 ## 7. D-09 runtime-to-source mapping
 
@@ -169,14 +197,21 @@ capture may be in flight and the minimum interval is 1000 ms.
 
 The callback path is treated as untrusted. It must resolve to a regular,
 non-symlink `scr-*.png` directly inside the canonical OS temporary directory.
-Input larger than 32 MiB is rejected. The bridge loads and deletes the file,
-fits the image within 1280x720, re-encodes PNG, and halves dimensions until the
-payload is at most 512 KiB or reaches 160x90. Failure at the minimum size is
-`runtime_capture_too_large`.
+Input larger than 32 MiB, 16384 pixels on either axis, or 67108864 pixels total
+is rejected. Before decoding, the bridge validates the PNG signature/IHDR and
+requires its dimensions to match the debugger callback. The callback file is
+deleted on success, decode/limit failure, cancellation, and late delivery. The
+bridge then fits the image within 1280x720, re-encodes PNG, and halves
+dimensions until the payload is at most 512 KiB or reaches 160x90. Failure at
+the minimum size is `runtime_capture_too_large`.
 
 Bridge RPC returns MIME type, dimensions, byte length, SHA-256, and base64url
 PNG bytes. MCP converts bytes to image content and does not duplicate them in
-text or structured metadata. Pixels are not retained after the tool result.
+text or structured metadata. The Rust boundary independently verifies MIME,
+base64url, byte length, SHA-256, PNG chunk structure/CRC, and actual IHDR
+dimensions before it emits exactly one image block. Pixels are not retained
+after the tool result. A successful capture advances `runtime_event_seq` and
+therefore invalidates older expected coordinates and cursors.
 
 ## 9. Wire methods, notifications, and errors
 
@@ -206,6 +241,11 @@ Stable runtime errors include `runtime_inactive`, `runtime_already_active`,
 `runtime_object_not_found`, `runtime_object_stale`, `runtime_data_retired`,
 `runtime_capture_unavailable`, `runtime_capture_rate_limited`, and
 `runtime_capture_too_large`.
+
+MCP exposes only stable lowercase error codes, `retryable`, and validated
+runtime session/sequence/state coordinates. Malformed transport errors become
+`runtime_unavailable`; arbitrary Bridge error data, paths, endpoints, and
+native identifiers are not projected.
 
 ## 10. Limits, timeout, and recovery
 

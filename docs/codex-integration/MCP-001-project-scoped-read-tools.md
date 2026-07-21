@@ -146,6 +146,13 @@ control, object, stack, and capture requests require the runtime session they
 target. Runtime tree pages use signed cursors bound to the project, runtime
 session/sequence, tree snapshot, filters, and page limit.
 
+Runtime session IDs, object/stack IDs, event sequences, limits, and capture
+dimensions are constrained in the closed input schemas before Bridge access.
+Runtime errors project only a stable code, retryability, and validated current
+runtime coordinates. Capture returns metadata in structured/text content and
+the verified PNG bytes exactly once as MCP image content; base64url, callback
+paths, and native handles are never part of the MCP result.
+
 ## Resources
 
 `godot://project/summary` is the fixed 4096-byte conservative context resource.

@@ -209,11 +209,11 @@
     },
     "stackFrame": {
       "type": "object",
-      "required": ["frame", "function", "line"],
+      "required": ["frame", "script_path", "function", "line"],
       "properties": {
         "frame": { "type": "integer", "minimum": 0, "maximum": 127 },
         "script_path": {
-          "type": ["string", "null"],
+          "type": "string",
           "maxLength": 1024,
           "pattern": "^res://(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
         },
@@ -225,11 +225,12 @@
     },
     "runtimeStack": {
       "type": "object",
-      "required": ["kind", "entity_id", "runtime_stack_id", "stack_kind", "frames", "truncated"],
+      "required": ["kind", "entity_id", "runtime_stack_id", "runtime_event_seq", "stack_kind", "frames", "truncated"],
       "properties": {
         "kind": { "const": "runtime_stack" },
         "entity_id": { "$ref": "#/$defs/runtimeStackId" },
         "runtime_stack_id": { "$ref": "#/$defs/runtimeStackId" },
+        "runtime_event_seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "stack_kind": { "enum": ["diagnostic", "pause"] },
         "frames": {
           "type": "array",

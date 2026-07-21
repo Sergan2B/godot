@@ -1,0 +1,17 @@
+{
+  "kind": "runtime_stack",
+  "entity_id": "runtime-stack:PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP",
+  "runtime_stack_id": "runtime-stack:PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP",
+  "runtime_event_seq": 6,
+  "stack_kind": "pause",
+  "frames": [
+    {
+      "frame": 0,
+      "script_path": "res://scripts/runtime_fixture.gd",
+      "function": "_process",
+      "line": 33,
+      "column": 1
+    }
+  ],
+  "truncated": false
+}

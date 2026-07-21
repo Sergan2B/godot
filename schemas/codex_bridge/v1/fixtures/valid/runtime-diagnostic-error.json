@@ -1,0 +1,15 @@
+{
+  "kind": "runtime_diagnostic",
+  "entity_id": "runtime-diagnostic:EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+  "runtime_diagnostic_id": "runtime-diagnostic:EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+  "severity": "error",
+  "source": "script",
+  "message": "RUNTIME_FIXTURE_ERROR",
+  "repeat_count": 2,
+  "runtime_event_seq": 5,
+  "script_path": "res://scripts/runtime_fixture.gd",
+  "line": 94,
+  "function": "_error_leaf",
+  "runtime_stack_id": "runtime-stack:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+  "redacted": false
+}

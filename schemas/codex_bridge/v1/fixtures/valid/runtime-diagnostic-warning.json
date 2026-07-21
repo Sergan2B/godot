@@ -1,0 +1,14 @@
+{
+  "kind": "runtime_diagnostic",
+  "entity_id": "runtime-diagnostic:DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+  "runtime_diagnostic_id": "runtime-diagnostic:DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+  "severity": "warning",
+  "source": "script",
+  "message": "RUNTIME_FIXTURE_WARNING",
+  "repeat_count": 1,
+  "runtime_event_seq": 4,
+  "script_path": "res://scripts/runtime_fixture.gd",
+  "line": 81,
+  "function": "_emit_warning_chain",
+  "redacted": false
+}

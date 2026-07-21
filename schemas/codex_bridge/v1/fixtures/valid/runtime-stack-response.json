@@ -11,6 +11,7 @@
       "kind": "runtime_stack",
       "entity_id": "runtime-stack:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
       "runtime_stack_id": "runtime-stack:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+      "runtime_event_seq": 4,
       "stack_kind": "diagnostic",
       "frames": [
         { "frame": 0, "script_path": "res://scripts/runtime_fixture.gd", "function": "fail_deliberately", "line": 42 }

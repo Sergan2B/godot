@@ -10,9 +10,9 @@
     "mime_type": "image/png",
     "width": 2,
     "height": 2,
-    "byte_length": 8,
-    "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-    "data_base64url": "iVBORw0K"
+    "byte_length": 77,
+    "sha256": "3284aa6a5e3d549ac8dfb390a557335b081a44c1adadee742d0f8b964ed9d2d8",
+    "data_base64url": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVR42mOQn_fh__9i-f8MMAYAXBwKeVWo4vsAAAAASUVORK5CYII"
   },
   "context": {
     "project_id": "project:sha256:0000000000000000000000000000000000000000000000000000000000000000",

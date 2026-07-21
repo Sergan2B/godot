@@ -5,7 +5,7 @@
   "runtime_event_seq": 4,
   "stack_kind": "diagnostic",
   "frames": [
-    { "frame": 0, "script_path": "/Users/example/private.gd", "function": "fail", "line": 1 }
+    { "frame": 0, "script_path": "res://safe.gd", "function": "fail", "line": 0 }
   ],
   "truncated": false
 }

@@ -112,9 +112,12 @@ depth, item, and time budgets before transport serialization.
 **Depends on:** S8-03.
 **Changes:** output/warning/error observation, redaction, repeat and byte
 limits, one-based project-relative frames, opaque diagnostic/stack IDs,
-pause-stack capture, and bounded terminal diagnostic retention.
+pause-stack capture, atomic diagnostic/stack revisions, capture sequences,
+referentially safe eviction, and bounded terminal diagnostic retention.
 **Tests:** deliberate three-function error chain, warning, project-relative
-paths, non-project frame removal, crash retention, next-session retirement.
+paths, non-project frame removal, UTF-8/redaction/flood boundaries, repeat
+coalescing, pause-stack activation, crash retention, and next-session
+retirement.
 **Done when:** an error stack is available without pausing and terminal state
 cannot make stale stack evidence appear current.
 
@@ -125,8 +128,11 @@ cannot make stale stack evidence appear current.
 regular-file and non-symlink checks, load-and-delete behavior, fit to 1280x720,
 iterative PNG byte limiting, digest metadata, and MCP image content without a
 second structured byte copy.
-**Tests:** GUI PNG signature/digest/size, unavailable headless viewport,
-oversized input, unsafe callback path, and forbidden handle/path scan.
+**Tests:** GUI PNG structure/CRC/digest/size and fixture visual-marker pixels,
+one-Hz rejection followed by a successful next-window capture, unavailable
+headless viewport with a responsive follow-up runtime query, oversized input,
+unsafe callback path, temp deletion on success/failure/late delivery, and
+forbidden handle/path scan.
 **Done when:** pixels leave only as bounded PNG bytes and no temporary path or
 native handle crosses either API boundary.
 
@@ -136,9 +142,11 @@ native handle crosses either API boundary.
 **Changes:** strict runtime DTO/client, notification watcher, memory-only
 overlay, full-resnapshot recovery, signed-cursor generation binding, terminal
 retention/retirement, and the three-source runtime-to-scene/editor join.
-**Tests:** fixture DTO parsing, screenshot verification, session/event gaps,
-cursor invalidation, unique mapping evidence, ambiguous/dynamic fail-closed
-mapping, and runtime revision-coordinate validation in persistent snapshots.
+**Tests:** fixture DTO parsing, strict screenshot verification, latched
+full-resnapshot recovery after gaps/reconnect/editor-session replacement,
+cursor invalidation across every runtime coordinate, unique mapping evidence,
+ambiguous/dynamic fail-closed mapping, and runtime revision-coordinate
+validation in persistent snapshots.
 **Done when:** stale runtime data cannot enter the persistent index or be
 served after a session/revision change.
 
@@ -148,8 +156,9 @@ served after a session/revision change.
 **Changes:** nine runtime tools, runtime diagnostics scope, editor-state
 runtime summary, `godot://runtime/summary`, closed schemas, annotations,
 session/sequence guards, pagination, and image output.
-**Tests:** exact 25-tool registry, annotation matrix, closed-world inputs,
-4096-byte summary, stale/tampered cursor rejection, error translation, and no
+**Tests:** exact 25-tool registry, annotation matrix, closed-world inputs with
+ID/range constraints, 4096-byte summary, stale/tampered cursor rejection,
+whitelisted safe error translation, single-copy image projection, and no
 subscription/write surface.
 **Done when:** Codex can complete the diagnostic workflow using only MCP and
 no runtime mutation method is reachable.
@@ -159,7 +168,7 @@ no runtime mutation method is reachable.
 **Depends on:** S8-03–S8-08.
 **Changes:** hashed fixture manifest, saved and instanced nodes, dynamic node,
 oversized/cyclic values, deterministic warning/error chain, visual marker,
-large-tree/crash/hang commands, manual editor commands, golden truth, strict
+large-tree/crash/hang/normal-quit commands, manual editor commands, golden truth, strict
 fixture validator, and model-free live runner.
 **Tests:** manifest closure, negative oracle tests, headless and GUI workflows,
 large-tree cached-page SLO, crash retirement, hang timeout and cleanup.
@@ -170,7 +179,8 @@ independently reject weakened limits or false mappings.
 
 **Depends on:** all previous tasks committed.
 **Changes:** no implementation changes; run the source-bound acceptance
-wrapper and add only `tests/codex/evidence/sprint-8-runtime-macos.json`.
+wrapper and add only `tests/codex/evidence/sprint-8-runtime-macos-v2.json`.
+The historical `sprint-8-runtime-macos.json` coordinate remains immutable.
 **Tests:** Python policy regressions, Rust fmt/test/clippy, schema conformance,
 tests-enabled editor build, S8 C++ profiles, release sidecar, headless live,
 GUI live, process cleanup, redaction scan, artifact/source hashes.
@@ -232,7 +242,8 @@ Sprint 8 passes only when:
 6. pause, continue, and stop are reported only after debugger confirmation;
 7. manual runs are observed and multi-session ambiguity fails closed;
 8. crash/disconnect retires tree and values but retains bounded diagnostics;
-9. a hung game times out without blocking bridge ping or stop;
+9. a normal runtime quit reaches `stopped`, and a hung game times out without
+   blocking bridge ping or stop;
 10. 10,001-node and oversized-value fixtures truncate deterministically;
 11. screenshot output is PNG at most 1280x720 and 512 KiB, with no path or handle;
 12. gaps, reconnect, and editor reset require a full runtime resnapshot; and
@@ -240,8 +251,8 @@ Sprint 8 passes only when:
 
 The local runner rebuilds the tests-enabled Godot editor and release sidecar,
 runs C++, Rust, Python, schema, lifecycle, cleanup, and redaction checks, and
-produces `tests/codex/evidence/sprint-8-runtime-macos.json` without overwriting
-an existing qualifying artifact.
+produces `tests/codex/evidence/sprint-8-runtime-macos-v2.json` without
+overwriting either that qualifying artifact or the historical v1 artifact.
 
 The qualifying command is:
 
@@ -266,7 +277,8 @@ path. It executes these stages in order:
 
 SLOs are cached runtime page/diagnostic query p95 at most 500 ms, transition
 visibility p95 at most 2 seconds, viewport capture at most 3 seconds, control
-ping during a hung game p95 at most 200 ms, and no unhandled editor stall
+ping during a hung game p95 at most 200 ms, hung tree timeout between 2.5 and
+5 seconds, hung-game stop at most 5 seconds, and no unhandled editor stall
 beyond the 2000 microsecond dispatcher budget.
 
 ## 6. Explicitly deferred
