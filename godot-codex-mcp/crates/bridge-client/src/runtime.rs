@@ -1097,7 +1097,7 @@ fn projected_value_is_safe(value: &Value) -> bool {
         Value::Object(object) => object.iter().all(|(key, child)| {
             let normalized = key.to_ascii_lowercase();
             !FORBIDDEN_KEYS.contains(&normalized.as_str())
-                && (key != "path" || child.as_str().is_some_and(|path| valid_res_path(path)))
+                && (key != "path" || child.as_str().is_some_and(valid_res_path))
                 && projected_value_is_safe(child)
         }),
         Value::Array(values) => values.iter().all(projected_value_is_safe),
