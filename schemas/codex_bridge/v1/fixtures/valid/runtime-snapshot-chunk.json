@@ -1,0 +1,29 @@
+{
+  "protocol_version": "1.6",
+  "kind": "chunk",
+  "snapshot_id": "snapshot:33333333333333333333333333333333",
+  "chunk_index": 0,
+  "payload": {
+    "domain": "runtime",
+    "runtime_session_id": "runtime:22222222222222222222222222222222",
+    "runtime_event_seq": 3,
+    "entities": [
+      {
+        "kind": "runtime_state",
+        "entity_id": "runtime:22222222222222222222222222222222",
+        "runtime_session_id": "runtime:22222222222222222222222222222222",
+        "runtime_event_seq": 3,
+        "state": "running",
+        "origin": "mcp",
+        "target": "project",
+        "scene_path": "res://main.tscn"
+      }
+    ]
+  },
+  "payload_json": "{\"domain\":\"runtime\",\"runtime_session_id\":\"runtime:22222222222222222222222222222222\",\"runtime_event_seq\":3,\"entities\":[{\"kind\":\"runtime_state\",\"entity_id\":\"runtime:22222222222222222222222222222222\",\"runtime_session_id\":\"runtime:22222222222222222222222222222222\",\"runtime_event_seq\":3,\"state\":\"running\",\"origin\":\"mcp\",\"target\":\"project\",\"scene_path\":\"res://main.tscn\"}]}",
+  "checksum": "99f026db64b0e33f4aea2918fca5e7fb711d9eb4d841f19574b2af606515fb09",
+  "context": {
+    "project_id": "project:sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "editor_session_id": "editor:11111111111111111111111111111111"
+  }
+}

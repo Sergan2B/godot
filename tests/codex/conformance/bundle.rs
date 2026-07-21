@@ -25,7 +25,7 @@ mod script_semantics_contract {
 }
 
 const SCHEMA_BASE_URI: &str = "https://godot-codex.local/schema/v1/";
-const SCHEMA_FILES: [&str; 10] = [
+const SCHEMA_FILES: [&str; 11] = [
     "common.schema.json",
     "discovery.schema.json",
     "fixture-manifest.schema.json",
@@ -36,6 +36,7 @@ const SCHEMA_FILES: [&str; 10] = [
     "resource.schema.json",
     "scene.schema.json",
     "script.schema.json",
+    "runtime.schema.json",
 ];
 
 fn bundle_root() -> PathBuf {
@@ -305,7 +306,7 @@ mod tests {
 
     #[test]
     fn canonical_schema_fixture_bundle_is_self_consistent() {
-        assert_eq!(validate_canonical_bundle().unwrap(), 101);
+        assert_eq!(validate_canonical_bundle().unwrap(), 121);
     }
 
     #[test]

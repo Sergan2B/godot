@@ -1,0 +1,12 @@
+{
+  "protocol_version": "1.6",
+  "kind": "request",
+  "request_id": "req:runtime-run",
+  "method": "runtime.run",
+  "deadline_ms": 15000,
+  "params": { "target": "project" },
+  "context": {
+    "project_id": "project:sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "editor_session_id": "editor:11111111111111111111111111111111"
+  }
+}

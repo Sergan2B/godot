@@ -1,0 +1,800 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Bridge RPC 1.6 runtime observation",
+  "oneOf": [
+    { "$ref": "#/$defs/runRequest" },
+    { "$ref": "#/$defs/stopRequest" },
+    { "$ref": "#/$defs/pauseRequest" },
+    { "$ref": "#/$defs/continueRequest" },
+    { "$ref": "#/$defs/runtimeSnapshotRequest" },
+    { "$ref": "#/$defs/runtimeSnapshotBegin" },
+    { "$ref": "#/$defs/runtimeSnapshotChunk" },
+    { "$ref": "#/$defs/runtimeSnapshotEnd" },
+    { "$ref": "#/$defs/runtimeSnapshotAck" },
+    { "$ref": "#/$defs/objectInspectRequest" },
+    { "$ref": "#/$defs/stackGetRequest" },
+    { "$ref": "#/$defs/viewportCaptureRequest" },
+    { "$ref": "#/$defs/runtimeEvent" },
+    { "$ref": "#/$defs/runtimeInvalidated" }
+  ],
+  "$defs": {
+    "runtimeState": {
+      "enum": [
+        "starting",
+        "running",
+        "paused",
+        "stopping",
+        "disconnected",
+        "stopped",
+        "crashed",
+        "failed",
+        "timed_out"
+      ]
+    },
+    "runtimeObjectId": {
+      "type": "string",
+      "pattern": "^runtime-object:[A-Za-z0-9_-]{43}$"
+    },
+    "runtimeDiagnosticId": {
+      "type": "string",
+      "pattern": "^runtime-diagnostic:[A-Za-z0-9_-]{43}$"
+    },
+    "runtimeStackId": {
+      "type": "string",
+      "pattern": "^runtime-stack:[A-Za-z0-9_-]{43}$"
+    },
+    "runtimeCoordinates": {
+      "type": "object",
+      "required": ["runtime_session_id", "runtime_event_seq", "state"],
+      "properties": {
+        "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+        "runtime_event_seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "state": { "$ref": "#/$defs/runtimeState" }
+      },
+      "additionalProperties": false
+    },
+    "guardParams": {
+      "type": "object",
+      "required": ["runtime_session_id"],
+      "properties": {
+        "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+        "expected_runtime_event_seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "runtimeLimits": {
+      "type": "object",
+      "required": [
+        "tree_nodes",
+        "tree_depth",
+        "snapshot_bytes",
+        "snapshot_chunk_bytes",
+        "snapshot_window_bytes",
+        "snapshot_timeout_ms",
+        "properties",
+        "variant_depth",
+        "container_items",
+        "string_characters",
+        "projected_value_bytes",
+        "object_bytes",
+        "diagnostics",
+        "diagnostic_message_bytes",
+        "diagnostics_bytes",
+        "stacks",
+        "stack_frames",
+        "stacks_bytes",
+        "truncated"
+      ],
+      "properties": {
+        "tree_nodes": { "const": 10000 },
+        "tree_depth": { "const": 256 },
+        "snapshot_bytes": { "const": 16777216 },
+        "snapshot_chunk_bytes": { "const": 524288 },
+        "snapshot_window_bytes": { "const": 33554432 },
+        "snapshot_timeout_ms": { "const": 10000 },
+        "properties": { "const": 512 },
+        "variant_depth": { "const": 8 },
+        "container_items": { "const": 1000 },
+        "string_characters": { "const": 16384 },
+        "projected_value_bytes": { "const": 65536 },
+        "object_bytes": { "const": 262144 },
+        "diagnostics": { "const": 200 },
+        "diagnostic_message_bytes": { "const": 16384 },
+        "diagnostics_bytes": { "const": 262144 },
+        "stacks": { "const": 64 },
+        "stack_frames": { "const": 128 },
+        "stacks_bytes": { "const": 262144 },
+        "truncated": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "sourceHint": {
+      "type": "object",
+      "properties": {
+        "scene_path": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 1024,
+          "pattern": "^res://(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        },
+        "relative_node_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "instance_scene_paths": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 7,
+            "maxLength": 1024,
+            "pattern": "^res://(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "runtimeNode": {
+      "type": "object",
+      "required": [
+        "kind",
+        "entity_id",
+        "runtime_object_id",
+        "name",
+        "godot_type",
+        "runtime_node_path",
+        "depth",
+        "child_count",
+        "visibility"
+      ],
+      "properties": {
+        "kind": { "const": "runtime_node" },
+        "entity_id": { "$ref": "#/$defs/runtimeObjectId" },
+        "runtime_object_id": { "$ref": "#/$defs/runtimeObjectId" },
+        "parent_runtime_object_id": {
+          "oneOf": [
+            { "$ref": "#/$defs/runtimeObjectId" },
+            { "type": "null" }
+          ]
+        },
+        "name": { "type": "string", "maxLength": 1024 },
+        "godot_type": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "runtime_node_path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "depth": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "child_count": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "visibility": {
+          "type": "object",
+          "required": ["available"],
+          "properties": {
+            "available": { "type": "boolean" },
+            "visible": { "type": "boolean" },
+            "visible_in_tree": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "source_hint": { "$ref": "#/$defs/sourceHint" }
+      },
+      "additionalProperties": false
+    },
+    "runtimeStateEntity": {
+      "type": "object",
+      "required": ["kind", "entity_id", "runtime_session_id", "runtime_event_seq", "state", "origin", "target"],
+      "properties": {
+        "kind": { "const": "runtime_state" },
+        "entity_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+        "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+        "runtime_event_seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "state": { "$ref": "#/$defs/runtimeState" },
+        "origin": { "enum": ["editor", "mcp"] },
+        "target": { "enum": ["project", "current_scene"] },
+        "scene_path": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 1024,
+          "pattern": "^res://(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        },
+        "terminal_reason": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "active_stack_id": { "$ref": "#/$defs/runtimeStackId" }
+      },
+      "additionalProperties": false
+    },
+    "stackFrame": {
+      "type": "object",
+      "required": ["frame", "function", "line"],
+      "properties": {
+        "frame": { "type": "integer", "minimum": 0, "maximum": 127 },
+        "script_path": {
+          "type": ["string", "null"],
+          "maxLength": 1024,
+          "pattern": "^res://(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        },
+        "function": { "type": "string", "maxLength": 1024 },
+        "line": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "column": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+      },
+      "additionalProperties": false
+    },
+    "runtimeStack": {
+      "type": "object",
+      "required": ["kind", "entity_id", "runtime_stack_id", "stack_kind", "frames", "truncated"],
+      "properties": {
+        "kind": { "const": "runtime_stack" },
+        "entity_id": { "$ref": "#/$defs/runtimeStackId" },
+        "runtime_stack_id": { "$ref": "#/$defs/runtimeStackId" },
+        "stack_kind": { "enum": ["diagnostic", "pause"] },
+        "frames": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/stackFrame" }
+        },
+        "truncated": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "runtimeDiagnostic": {
+      "type": "object",
+      "required": [
+        "kind",
+        "entity_id",
+        "runtime_diagnostic_id",
+        "severity",
+        "source",
+        "message",
+        "repeat_count",
+        "runtime_event_seq",
+        "redacted"
+      ],
+      "properties": {
+        "kind": { "const": "runtime_diagnostic" },
+        "entity_id": { "$ref": "#/$defs/runtimeDiagnosticId" },
+        "runtime_diagnostic_id": { "$ref": "#/$defs/runtimeDiagnosticId" },
+        "severity": { "enum": ["error", "warning", "info"] },
+        "source": { "enum": ["engine", "script", "output", "bridge"] },
+        "message": { "type": "string", "maxLength": 16384 },
+        "repeat_count": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "runtime_event_seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "script_path": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 1024,
+          "pattern": "^res://(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        },
+        "line": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "function": { "type": "string", "maxLength": 1024 },
+        "runtime_stack_id": { "$ref": "#/$defs/runtimeStackId" },
+        "redacted": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "runtimeEntity": {
+      "oneOf": [
+        { "$ref": "#/$defs/runtimeStateEntity" },
+        { "$ref": "#/$defs/runtimeNode" },
+        { "$ref": "#/$defs/runtimeDiagnostic" },
+        { "$ref": "#/$defs/runtimeStack" }
+      ]
+    },
+    "runParams": {
+      "type": "object",
+      "required": ["target"],
+      "properties": {
+        "target": { "enum": ["project", "current_scene"] }
+      },
+      "additionalProperties": false
+    },
+    "runRequest": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/request" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.6" },
+            "method": { "const": "runtime.run" },
+            "params": { "$ref": "#/$defs/runParams" }
+          }
+        }
+      ]
+    },
+    "controlRequest": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/request" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.6" },
+            "params": { "$ref": "#/$defs/guardParams" }
+          }
+        }
+      ]
+    },
+    "stopRequest": {
+      "allOf": [
+        { "$ref": "#/$defs/controlRequest" },
+        { "properties": { "method": { "const": "runtime.stop" } } }
+      ]
+    },
+    "pauseRequest": {
+      "allOf": [
+        { "$ref": "#/$defs/controlRequest" },
+        { "properties": { "method": { "const": "runtime.pause" } } }
+      ]
+    },
+    "continueRequest": {
+      "allOf": [
+        { "$ref": "#/$defs/controlRequest" },
+        { "properties": { "method": { "const": "runtime.continue" } } }
+      ]
+    },
+    "runtimeStateResult": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "project_id",
+        "editor_session_id",
+        "runtime_session_id",
+        "runtime_event_seq",
+        "state",
+        "origin",
+        "target"
+      ],
+      "properties": {
+        "schema_version": { "const": "runtime/1.0" },
+        "project_id": { "$ref": "common.schema.json#/$defs/projectId" },
+        "editor_session_id": { "$ref": "common.schema.json#/$defs/editorSessionId" },
+        "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+        "runtime_event_seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "state": { "$ref": "#/$defs/runtimeState" },
+        "origin": { "enum": ["editor", "mcp"] },
+        "target": { "enum": ["project", "current_scene"] },
+        "scene_path": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 1024,
+          "pattern": "^res://(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "runtimeSnapshotParams": {
+      "type": "object",
+      "required": ["runtime_session_id"],
+      "properties": {
+        "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+        "expected_runtime_event_seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "domains": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["runtime_state", "runtime_tree", "runtime_diagnostics", "runtime_stacks"]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "runtimeSnapshotRequest": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/request" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.6" },
+            "method": { "const": "runtime.snapshot.get" },
+            "params": { "$ref": "#/$defs/runtimeSnapshotParams" }
+          }
+        }
+      ]
+    },
+    "runtimeSnapshotAcceptedResult": {
+      "type": "object",
+      "required": [
+        "snapshot_id",
+        "runtime_session_id",
+        "runtime_event_seq",
+        "state",
+        "revisions",
+        "domains",
+        "limits_applied"
+      ],
+      "properties": {
+        "snapshot_id": { "$ref": "common.schema.json#/$defs/snapshotId" },
+        "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+        "runtime_event_seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "state": { "$ref": "#/$defs/runtimeState" },
+        "revisions": { "$ref": "common.schema.json#/$defs/revisionVector" },
+        "domains": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["runtime_state", "runtime_tree", "runtime_diagnostics", "runtime_stacks"]
+          }
+        },
+        "limits_applied": { "$ref": "#/$defs/runtimeLimits" }
+      },
+      "additionalProperties": false
+    },
+    "runtimeSnapshotBegin": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/notification" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.6" },
+            "method": { "const": "snapshot.begin" },
+            "params": {
+              "type": "object",
+              "required": ["snapshot_id", "domain", "runtime_session_id", "runtime_event_seq", "revisions", "chunk_count"],
+              "properties": {
+                "snapshot_id": { "$ref": "common.schema.json#/$defs/snapshotId" },
+                "domain": { "const": "runtime" },
+                "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+                "runtime_event_seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+                "revisions": { "$ref": "common.schema.json#/$defs/revisionVector" },
+                "chunk_count": { "type": "integer", "minimum": 1, "maximum": 65536 }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "runtimeSnapshotChunk": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/chunk" },
+        {
+          "required": ["payload_json"],
+          "properties": {
+            "protocol_version": { "const": "1.6" },
+            "payload_json": { "type": "string", "maxLength": 524288 },
+            "payload": {
+              "type": "object",
+              "required": ["domain", "runtime_session_id", "runtime_event_seq", "entities"],
+              "properties": {
+                "domain": { "const": "runtime" },
+                "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+                "runtime_event_seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+                "entities": {
+                  "type": "array",
+                  "maxItems": 1000,
+                  "items": { "$ref": "#/$defs/runtimeEntity" }
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "runtimeSnapshotEnd": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/notification" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.6" },
+            "method": { "const": "snapshot.end" },
+            "params": {
+              "type": "object",
+              "required": [
+                "snapshot_id",
+                "domain",
+                "runtime_session_id",
+                "runtime_event_seq",
+                "chunk_count",
+                "entity_count",
+                "checksum",
+                "revisions"
+              ],
+              "properties": {
+                "snapshot_id": { "$ref": "common.schema.json#/$defs/snapshotId" },
+                "domain": { "const": "runtime" },
+                "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+                "runtime_event_seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+                "chunk_count": { "type": "integer", "minimum": 1, "maximum": 65536 },
+                "entity_count": { "type": "integer", "minimum": 0, "maximum": 10265 },
+                "checksum": { "$ref": "common.schema.json#/$defs/sha256Hex" },
+                "revisions": { "$ref": "common.schema.json#/$defs/revisionVector" }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "runtimeSnapshotAck": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/ack" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.6" },
+            "params": {
+              "type": "object",
+              "required": ["snapshot_id", "domain", "through_chunk"],
+              "properties": {
+                "snapshot_id": { "$ref": "common.schema.json#/$defs/snapshotId" },
+                "domain": { "const": "runtime" },
+                "through_chunk": { "type": "integer", "minimum": 0, "maximum": 65535 }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "objectInspectParams": {
+      "type": "object",
+      "required": ["runtime_session_id", "runtime_object_id"],
+      "properties": {
+        "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+        "runtime_object_id": { "$ref": "#/$defs/runtimeObjectId" },
+        "expected_runtime_event_seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "objectInspectRequest": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/request" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.6" },
+            "method": { "const": "runtime.object.inspect" },
+            "params": { "$ref": "#/$defs/objectInspectParams" }
+          }
+        }
+      ]
+    },
+    "projectedValue": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "value": true,
+        "reference_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "runtime_object_id": { "$ref": "#/$defs/runtimeObjectId" },
+        "truncated": { "type": "boolean" },
+        "omitted_reason": { "type": "string", "minLength": 1, "maxLength": 64 }
+      },
+      "additionalProperties": false
+    },
+    "runtimeProperty": {
+      "type": "object",
+      "required": ["name", "variant_type", "read_only", "usage", "value"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 1024 },
+        "variant_type": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "read_only": { "const": true },
+        "usage": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "value": { "$ref": "#/$defs/projectedValue" }
+      },
+      "additionalProperties": false
+    },
+    "objectInspectResult": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "runtime_session_id",
+        "runtime_event_seq",
+        "state",
+        "runtime_object_id",
+        "properties",
+        "limits_applied"
+      ],
+      "properties": {
+        "schema_version": { "const": "runtime/1.0" },
+        "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+        "runtime_event_seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "state": { "$ref": "#/$defs/runtimeState" },
+        "runtime_object_id": { "$ref": "#/$defs/runtimeObjectId" },
+        "godot_type": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "properties": {
+          "type": "array",
+          "maxItems": 512,
+          "items": { "$ref": "#/$defs/runtimeProperty" }
+        },
+        "limits_applied": { "$ref": "#/$defs/runtimeLimits" }
+      },
+      "additionalProperties": false
+    },
+    "stackGetParams": {
+      "type": "object",
+      "required": ["runtime_session_id", "runtime_stack_id"],
+      "properties": {
+        "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+        "runtime_stack_id": { "$ref": "#/$defs/runtimeStackId" },
+        "expected_runtime_event_seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "stackGetRequest": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/request" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.6" },
+            "method": { "const": "runtime.stack.get" },
+            "params": { "$ref": "#/$defs/stackGetParams" }
+          }
+        }
+      ]
+    },
+    "stackGetResult": {
+      "type": "object",
+      "required": ["schema_version", "runtime_session_id", "runtime_event_seq", "state", "stack"],
+      "properties": {
+        "schema_version": { "const": "runtime/1.0" },
+        "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+        "runtime_event_seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "state": { "$ref": "#/$defs/runtimeState" },
+        "stack": { "$ref": "#/$defs/runtimeStack" }
+      },
+      "additionalProperties": false
+    },
+    "viewportCaptureParams": {
+      "type": "object",
+      "required": ["runtime_session_id"],
+      "properties": {
+        "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+        "expected_runtime_event_seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "max_width": { "type": "integer", "minimum": 1, "maximum": 1280, "default": 1280 },
+        "max_height": { "type": "integer", "minimum": 1, "maximum": 720, "default": 720 }
+      },
+      "additionalProperties": false
+    },
+    "viewportCaptureRequest": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/request" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.6" },
+            "method": { "const": "runtime.viewport.capture" },
+            "params": { "$ref": "#/$defs/viewportCaptureParams" }
+          }
+        }
+      ]
+    },
+    "viewportCaptureResult": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "runtime_session_id",
+        "runtime_event_seq",
+        "state",
+        "mime_type",
+        "width",
+        "height",
+        "byte_length",
+        "sha256",
+        "data_base64url"
+      ],
+      "properties": {
+        "schema_version": { "const": "runtime/1.0" },
+        "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+        "runtime_event_seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "state": { "$ref": "#/$defs/runtimeState" },
+        "mime_type": { "const": "image/png" },
+        "width": { "type": "integer", "minimum": 1, "maximum": 1280 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 720 },
+        "byte_length": { "type": "integer", "minimum": 1, "maximum": 524288 },
+        "sha256": { "$ref": "common.schema.json#/$defs/sha256Hex" },
+        "data_base64url": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 699051,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "runtimeEvent": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/notification" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.6" },
+            "method": { "const": "runtime.event" },
+            "params": {
+              "type": "object",
+              "required": [
+                "runtime_session_id",
+                "runtime_event_seq",
+                "event_type",
+                "state",
+                "changed_domains",
+                "revisions"
+              ],
+              "properties": {
+                "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+                "runtime_event_seq": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+                "event_type": {
+                  "enum": [
+                    "session_started",
+                    "debugger_connected",
+                    "paused",
+					"continued",
+					"stopping",
+                    "tree_changed",
+                    "diagnostic_added",
+                    "stack_changed",
+                    "object_observed",
+                    "viewport_captured",
+                    "disconnected",
+                    "stopped",
+                    "crashed",
+                    "failed",
+                    "timed_out"
+                  ]
+                },
+                "state": { "$ref": "#/$defs/runtimeState" },
+                "changed_domains": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 4,
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": ["runtime_state", "runtime_tree", "runtime_diagnostics", "runtime_stacks"]
+                  }
+                },
+                "revisions": { "$ref": "common.schema.json#/$defs/revisionVector" }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    },
+    "runtimeInvalidated": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/notification" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.6" },
+            "method": { "const": "runtime.invalidated" },
+            "params": {
+              "type": "object",
+              "required": ["runtime_session_id", "last_contiguous_runtime_event_seq", "reason"],
+              "properties": {
+                "runtime_session_id": { "$ref": "common.schema.json#/$defs/runtimeSessionId" },
+                "last_contiguous_runtime_event_seq": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "reason": {
+                  "enum": ["journal_gap", "journal_overflow", "session_replaced", "snapshot_cancelled", "recovery_failed"]
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        }
+      ]
+    }
+  }
+}

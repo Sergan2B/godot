@@ -1,8 +1,9 @@
 # MCP-001 — Project-scoped Godot read tools
 
 **Status:** Sprint 2/3/4 tools live-verified on macOS arm64 and Windows x86_64;
-the Sprint 5 symbol tools and Sprint 6 find-usages/context surfaces pass their
-local macOS gates; the additive Sprint 7 sixteen-tool live-editor surface is specified
+the Sprint 5 symbol tools, Sprint 6 find-usages/context surfaces, and Sprint 7
+sixteen-tool live-editor surface pass their local gates; the additive Sprint 8
+twenty-five-tool runtime surface is specified
 
 **MCP protocol:** `2025-11-25`
 
@@ -16,7 +17,9 @@ stdio MCP process and remains read-only through Sprint 6.
 It does not contain OpenAI credentials, call a model, mutate the project, or
 return cached editor state as current after the bridge becomes unavailable.
 Sprint 7 remains read-only and is governed by
-[EDITOR-001](EDITOR-001-live-editor-context.md).
+[EDITOR-001](EDITOR-001-live-editor-context.md). Sprint 8 adds local game
+process controls without adding project-content write tools and is governed by
+[RUNTIME-001](RUNTIME-001-debugger-and-runtime-observation.md).
 
 ## Lifecycle and project binding
 
@@ -128,19 +131,39 @@ read-only domains from `EDITOR-001`. Existing editor/scene/node/usage tools gain
 an additive disk/editor/effective overlay. Optional expected session, event, and
 scene-revision preconditions fail closed instead of returning stale content.
 
+### Sprint 8 runtime tools
+
+`godot_get_runtime_tree`, `godot_inspect_runtime_object`,
+`godot_get_stack_trace`, and `godot_capture_viewport` expose the bounded
+runtime projection. `godot_run_project`, `godot_run_current_scene`,
+`godot_stop_project`, `godot_pause_project`, and `godot_continue_project`
+control only the single local game owned by the bound editor.
+
+`godot_get_diagnostics` accepts additive `scope: editor|runtime` and defaults
+to `editor` for compatibility. `godot_get_editor_state` includes a bounded
+runtime summary. Read tools accept optional expected runtime coordinates;
+control, object, stack, and capture requests require the runtime session they
+target. Runtime tree pages use signed cursors bound to the project, runtime
+session/sequence, tree snapshot, filters, and page limit.
+
 ## Resources
 
 `godot://project/summary` is the fixed 4096-byte conservative context resource.
 `godot://editor/summary` is the fixed 4096-byte live editor context resource.
-`godot://scene/{scene_id}/summary` is the 2048-byte scene template. All three return
+`godot://runtime/summary` is the fixed 4096-byte runtime lifecycle and
+diagnostic summary resource. `godot://scene/{scene_id}/summary` is the
+2048-byte scene template. All four return
 canonical JSON with revision coordinates, truncation, and omitted counts. They
 are read-only snapshots; subscriptions and list-change notifications remain
 disabled.
 
 ## Security and limits
 
-The Sprint 6 registry has ten tools; Sprint 7 adds six for an exact total of
-sixteen. All are annotated read-only and reject additional input properties.
+The Sprint 6 registry has ten tools; Sprint 7 adds six and Sprint 8 adds nine
+for an exact total of twenty-five. Observation and capture tools are annotated
+read-only and non-destructive. Run, pause, and continue are non-read-only and
+non-destructive. Stop is non-read-only and destructive. All tools reject
+additional input properties.
 Index query limits default to 50 and accept 1–200. Signed cursors expire after five
 minutes and bind project, tool, normalized selector/filters, limit, generation,
 index revision, resource revision, and the applicable scene/script revisions.
@@ -154,6 +177,12 @@ message maximum, 512 KiB snapshot chunks, Variant depth 8, and 1000 container
 items. Inspector projection is limited to 256 KiB per selected node and 4 MiB
 per snapshot; identity fields are limited to 1024 characters. Truncation is
 explicit in `limits_applied` and diagnostics.
+
+Runtime limits additionally cap tree nodes/depth at 10000/256, object results
+at 512 properties and 256 KiB, diagnostics at 200 records and 256 KiB, stacks
+at 64 records and 128 frames each, and screenshots at 1280x720 and 512 KiB.
+Raw ObjectID, PID, RID, graphics handles, absolute paths, stack locals, and
+screenshot temp paths are forbidden in model-facing output.
 
 ## Sprint 2 acceptance
 

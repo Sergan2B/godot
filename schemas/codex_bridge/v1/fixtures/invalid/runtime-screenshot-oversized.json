@@ -1,0 +1,12 @@
+{
+  "schema_version": "runtime/1.0",
+  "runtime_session_id": "runtime:22222222222222222222222222222222",
+  "runtime_event_seq": 6,
+  "state": "running",
+  "mime_type": "image/png",
+  "width": 1281,
+  "height": 720,
+  "byte_length": 524289,
+  "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "data_base64url": "iVBORw0K"
+}

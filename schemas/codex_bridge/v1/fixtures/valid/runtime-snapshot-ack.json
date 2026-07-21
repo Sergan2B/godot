@@ -1,0 +1,14 @@
+{
+  "protocol_version": "1.6",
+  "kind": "ack",
+  "ack_id": "ack:runtime-snapshot",
+  "params": {
+    "snapshot_id": "snapshot:33333333333333333333333333333333",
+    "domain": "runtime",
+    "through_chunk": 0
+  },
+  "context": {
+    "project_id": "project:sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "editor_session_id": "editor:11111111111111111111111111111111"
+  }
+}

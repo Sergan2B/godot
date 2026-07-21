@@ -1,0 +1,14 @@
+{
+  "protocol_version": "1.6",
+  "kind": "request",
+  "request_id": "req:runtime-stack",
+  "method": "runtime.stack.get",
+  "params": {
+    "runtime_session_id": "runtime:22222222222222222222222222222222",
+    "runtime_stack_id": "runtime-stack:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+  },
+  "context": {
+    "project_id": "project:sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "editor_session_id": "editor:11111111111111111111111111111111"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "protocol_version": "1.6",
+  "kind": "notification",
+  "method": "snapshot.end",
+  "params": {
+    "snapshot_id": "snapshot:33333333333333333333333333333333",
+    "domain": "runtime",
+    "runtime_session_id": "runtime:22222222222222222222222222222222",
+    "runtime_event_seq": 3,
+    "chunk_count": 1,
+    "entity_count": 1,
+    "checksum": "1b068d2c9888bba9d58c79b6324390495eff32a063951b322a2d31ab4eda0914",
+    "revisions": {
+      "editor_session_id": "editor:11111111111111111111111111111111",
+      "event_seq": 10,
+      "project_revision": 4,
+      "operation_seq": 0,
+      "resource_revision": 2,
+      "scene_graph_revision": 2,
+      "script_graph_revision": 2,
+      "scene_revisions": {},
+      "runtime_session_id": "runtime:22222222222222222222222222222222",
+      "runtime_event_seq": 3
+    }
+  },
+  "context": {
+    "project_id": "project:sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "editor_session_id": "editor:11111111111111111111111111111111"
+  }
+}

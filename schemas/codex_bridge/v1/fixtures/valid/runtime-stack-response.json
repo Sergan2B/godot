@@ -1,0 +1,25 @@
+{
+  "protocol_version": "1.6",
+  "kind": "response",
+  "request_id": "req:runtime-stack",
+  "result": {
+    "schema_version": "runtime/1.0",
+    "runtime_session_id": "runtime:22222222222222222222222222222222",
+    "runtime_event_seq": 5,
+    "state": "paused",
+    "stack": {
+      "kind": "runtime_stack",
+      "entity_id": "runtime-stack:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+      "runtime_stack_id": "runtime-stack:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+      "stack_kind": "diagnostic",
+      "frames": [
+        { "frame": 0, "script_path": "res://scripts/runtime_fixture.gd", "function": "fail_deliberately", "line": 42 }
+      ],
+      "truncated": false
+    }
+  },
+  "context": {
+    "project_id": "project:sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "editor_session_id": "editor:11111111111111111111111111111111"
+  }
+}

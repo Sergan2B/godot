@@ -1,10 +1,10 @@
 # PROTOCOL-001 — Bridge RPC 1.x
 
-**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.4 extensions implemented and locally verified; additive 1.5 live-editor extension specified for Sprint 7
+**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.5 extensions implemented and locally verified; additive 1.6 runtime extension specified for Sprint 8
 
-**Date:** 2026-07-18
+**Date:** 2026-07-21
 
-**Protocol versions:** `1.0` baseline; `1.1`–`1.4` fallback; `1.5` specified current
+**Protocol versions:** `1.0` baseline; `1.1`–`1.5` fallback; `1.6` specified current
 
 **Decision owner:** `Sergan2B` (interim Sidecar/Protocol and Security owner)
 
@@ -35,9 +35,11 @@ adds the ResourceUID/dependency graph. Bridge RPC 1.3 adds authoritative
 `PackedScene`/`SceneState` observations and project context. Bridge RPC 1.4 adds
 the bounded saved-script semantic profile. Bridge RPC 1.5 adds the full live
 editor snapshot domains, native-history summaries, and revision coordinates
-defined by [EDITOR-001](EDITOR-001-live-editor-context.md). MCP, persistent
-indexing, runtime observation, and transactions remain outside the bridge wire
-surface.
+defined by [EDITOR-001](EDITOR-001-live-editor-context.md). Bridge RPC 1.6 adds
+the runtime lifecycle, remote observations, diagnostics, stacks, and bounded
+viewport capture defined by
+[RUNTIME-001](RUNTIME-001-debugger-and-runtime-observation.md). MCP,
+persistent indexing, and transactions remain outside the bridge wire surface.
 
 ## 2. Normative conventions
 
@@ -727,3 +729,40 @@ Unknown native history transitions are valid only as opaque summaries and MUST
 NOT acquire inferred targets or values. The authoritative merge, lifecycle,
 limits, stale-read, and history rules are in
 [EDITOR-001](EDITOR-001-live-editor-context.md).
+
+## 22. Bridge RPC 1.6 runtime observation
+
+Bridge RPC 1.6 retains every lower-minor capability and adds
+`runtime.debugger`, `runtime.process_control`, `runtime.remote_tree`,
+`runtime.bounded_properties`, `runtime.diagnostics`, and
+`runtime.viewport_capture`.
+
+The new methods are `runtime.run`, `runtime.stop`, `runtime.pause`,
+`runtime.continue`, `runtime.snapshot.get`, `runtime.object.inspect`,
+`runtime.stack.get`, and `runtime.viewport.capture`. Runtime state changes are
+published as `runtime.event`; an event gap, journal overflow, session
+replacement, or unrecoverable transfer is `runtime.invalidated`.
+
+The 1.6 revision vector adds optional `runtime_session_id` and
+`runtime_event_seq`. They are absent when no runtime session or retained
+terminal record exists. Runtime requests that can affect or target a running
+game require an expected session ID; optional expected sequence guards fail
+closed with the safe current coordinates.
+
+`runtime.snapshot.get` uses the existing checksum-verified chunk/ACK sequence
+for domains `runtime_state`, `runtime_tree`, `runtime_diagnostics`, and
+`runtime_stacks`. Tree and property budgets are enforced by the game-side
+debugger before serialization and independently revalidated by the bridge and
+client. Object, thread, diagnostic, stack, process, and graphics-native IDs do
+not cross the wire.
+
+Viewport capture is a direct bounded response rather than a retained snapshot.
+Its PNG is at most 512 KiB and fits an ordinary 1 MiB frame after base64url
+encoding. It includes dimensions, byte count, and SHA-256, but no path or
+native handle.
+
+Sessions negotiated at 1.0–1.5 omit every 1.6-only capability, limit, revision
+field, method, notification, and payload. A 1.6 client continues to validate
+and consume resource, scene, script, and live-editor profiles without changing
+their earlier DTO semantics. The authoritative identity, state, source
+mapping, retention, timeout, and safety rules are in RUNTIME-001.

@@ -1,0 +1,49 @@
+{
+  "protocol_version": "1.6",
+  "kind": "response",
+  "request_id": "req:runtime-snapshot",
+  "result": {
+    "snapshot_id": "snapshot:33333333333333333333333333333333",
+    "runtime_session_id": "runtime:22222222222222222222222222222222",
+    "runtime_event_seq": 3,
+    "state": "running",
+    "revisions": {
+      "editor_session_id": "editor:11111111111111111111111111111111",
+      "event_seq": 10,
+      "project_revision": 4,
+      "operation_seq": 0,
+      "resource_revision": 2,
+      "scene_graph_revision": 2,
+      "script_graph_revision": 2,
+      "scene_revisions": {},
+      "runtime_session_id": "runtime:22222222222222222222222222222222",
+      "runtime_event_seq": 3
+    },
+    "domains": ["runtime_state", "runtime_tree", "runtime_diagnostics", "runtime_stacks"],
+    "limits_applied": {
+      "tree_nodes": 10000,
+      "tree_depth": 256,
+      "snapshot_bytes": 16777216,
+      "snapshot_chunk_bytes": 524288,
+      "snapshot_window_bytes": 33554432,
+      "snapshot_timeout_ms": 10000,
+      "properties": 512,
+      "variant_depth": 8,
+      "container_items": 1000,
+      "string_characters": 16384,
+      "projected_value_bytes": 65536,
+      "object_bytes": 262144,
+      "diagnostics": 200,
+      "diagnostic_message_bytes": 16384,
+      "diagnostics_bytes": 262144,
+      "stacks": 64,
+      "stack_frames": 128,
+      "stacks_bytes": 262144,
+      "truncated": false
+    }
+  },
+  "context": {
+    "project_id": "project:sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "editor_session_id": "editor:11111111111111111111111111111111"
+  }
+}

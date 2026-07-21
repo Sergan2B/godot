@@ -48,6 +48,14 @@ public:
 		METHOD_SCENE_DELTA,
 		METHOD_SCRIPT_SNAPSHOT,
 		METHOD_SCRIPT_DELTA,
+		METHOD_RUNTIME_RUN,
+		METHOD_RUNTIME_STOP,
+		METHOD_RUNTIME_PAUSE,
+		METHOD_RUNTIME_CONTINUE,
+		METHOD_RUNTIME_SNAPSHOT,
+		METHOD_RUNTIME_OBJECT_INSPECT,
+		METHOD_RUNTIME_STACK_GET,
+		METHOD_RUNTIME_VIEWPORT_CAPTURE,
 		METHOD_SHUTDOWN,
 	};
 
@@ -110,9 +118,16 @@ private:
 	bool _validate_scene_delta_params(const Dictionary &p_params) const;
 	bool _validate_script_snapshot_params(const Dictionary &p_params) const;
 	bool _validate_script_delta_params(const Dictionary &p_params) const;
+	bool _validate_runtime_run_params(const Dictionary &p_params) const;
+	bool _validate_runtime_guard_params(const Dictionary &p_params) const;
+	bool _validate_runtime_snapshot_params(const Dictionary &p_params) const;
+	bool _validate_runtime_object_params(const Dictionary &p_params) const;
+	bool _validate_runtime_stack_params(const Dictionary &p_params) const;
+	bool _validate_runtime_capture_params(const Dictionary &p_params) const;
 	bool _validate_shutdown_params(const Dictionary &p_params) const;
 	void _remove_pending(uint64_t p_internal_request_id);
 	void _set_error_outcome(const String &p_request_id, const String &p_code, const String &p_message, bool p_retryable, Outcome &r_outcome) const;
+	void _set_deadline_outcome(const PendingRequest &p_pending, Outcome &r_outcome) const;
 	Error _handle_request(const Dictionary &p_message, uint64_t p_now_usec, uint64_t p_internal_request_id, Outcome &r_outcome);
 	Error _handle_cancel(const Dictionary &p_message, Outcome &r_outcome);
 	Error _handle_ack(const Dictionary &p_message, Outcome &r_outcome);

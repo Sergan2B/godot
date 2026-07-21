@@ -1,6 +1,151 @@
 {
-  "bundle_version": "1.4",
+  "bundle_version": "1.6",
   "cases": [
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-run-request.json",
+      "id": "schema.runtime.run-request",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-run-response.json",
+      "id": "schema.runtime.run-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/runtimeStateResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-snapshot-request.json",
+      "id": "schema.runtime.snapshot-request",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-snapshot-response.json",
+      "id": "schema.runtime.snapshot-accepted-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/runtimeSnapshotAcceptedResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-snapshot-begin.json",
+      "id": "schema.runtime.snapshot-begin",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-snapshot-chunk.json",
+      "id": "schema.runtime.snapshot-chunk",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-snapshot-end.json",
+      "id": "schema.runtime.snapshot-end",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-snapshot-ack.json",
+      "id": "schema.runtime.snapshot-ack",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-object-inspect-request.json",
+      "id": "schema.runtime.object-request",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-object-inspect-response.json",
+      "id": "schema.runtime.object-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/objectInspectResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-stack-request.json",
+      "id": "schema.runtime.stack-request",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-stack-response.json",
+      "id": "schema.runtime.stack-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/stackGetResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-viewport-capture-request.json",
+      "id": "schema.runtime.capture-request",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-viewport-capture-response.json",
+      "id": "schema.runtime.capture-result",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/viewportCaptureResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-event.json",
+      "id": "schema.runtime.event",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "valid/runtime-invalidated.json",
+      "id": "schema.runtime.invalidated",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/runtime-request-old-minor.json",
+      "id": "schema.runtime.old-minor",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/runtime-object-raw-id.json",
+      "id": "schema.runtime.raw-object-id",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/runtime-stack-absolute-path.json",
+      "id": "schema.runtime.absolute-stack-path",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/runtimeStack"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/runtime-screenshot-oversized.json",
+      "id": "schema.runtime.oversized-screenshot",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/viewportCaptureResult"
+    },
     {
       "expect": "valid",
       "fixture": "valid/script-snapshot-request.json",

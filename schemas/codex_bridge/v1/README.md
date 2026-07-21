@@ -1,6 +1,6 @@
 # Codex Bridge RPC v1 schemas
 
-This directory is the canonical machine-readable contract for Bridge RPC major version 1. The current protocol version is `1.4`; `1.0`–`1.3` remain supported capability-gated fallbacks. [PROTOCOL-001](../../../docs/codex-integration/PROTOCOL-001-bridge-rpc-v1.md) is the normative behavioral specification.
+This directory is the canonical machine-readable contract for Bridge RPC major version 1. The current protocol version is `1.6`; `1.0`–`1.5` remain supported capability-gated fallbacks. [PROTOCOL-001](../../../docs/codex-integration/PROTOCOL-001-bridge-rpc-v1.md) is the normative behavioral specification.
 
 ## Files
 
@@ -14,6 +14,9 @@ This directory is the canonical machine-readable contract for Bridge RPC major v
 - `resource.schema.json` — ResourceUID/dependency snapshot and delta observations added in Bridge RPC 1.2 and retained by later compatible minors.
 - `scene.schema.json` — strict PackedScene/SceneState snapshot, delta, project-context, and journal messages added in Bridge RPC 1.3 and retained by 1.4.
 - `script.schema.json` — strict saved-script documents, symbols, relations, diagnostics, adapter status, snapshot, delta, and journal messages added in Bridge RPC 1.4.
+- `runtime.schema.json` — strict runtime lifecycle, tree, diagnostics, stacks,
+  bounded object inspection, viewport capture, snapshot, and event messages
+  added in Bridge RPC 1.6.
 - `fixture-manifest.schema.json` — metadata for schema, framing, sequence, and cryptographic conformance cases.
 - `fixtures/manifest.json` — the ordered conformance case index.
 - `fixtures/valid` and `fixtures/invalid` — wire-message examples.

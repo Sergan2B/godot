@@ -104,6 +104,32 @@ static bool is_snapshot_id(const String &p_value) {
 	return true;
 }
 
+static bool is_prefixed_lower_hex_id(const String &p_value, const String &p_prefix, int p_hex_characters) {
+	if (!p_value.begins_with(p_prefix) || p_value.length() != p_prefix.length() + p_hex_characters) {
+		return false;
+	}
+	for (int index = p_prefix.length(); index < p_value.length(); index++) {
+		const char32_t character = p_value[index];
+		if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f'))) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool is_prefixed_base64url_id(const String &p_value, const String &p_prefix) {
+	if (!p_value.begins_with(p_prefix) || p_value.length() != p_prefix.length() + 43) {
+		return false;
+	}
+	for (int index = p_prefix.length(); index < p_value.length(); index++) {
+		const char32_t character = p_value[index];
+		if (!((character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') || (character >= '0' && character <= '9') || character == '_' || character == '-')) {
+			return false;
+		}
+	}
+	return true;
+}
+
 static bool is_method_name(const String &p_value) {
 	if (p_value.is_empty() || p_value.length() > 128 || p_value[0] < 'a' || p_value[0] > 'z') {
 		return false;
@@ -144,19 +170,27 @@ static bool is_client_name(const String &p_value) {
 }
 
 static bool has_editor_profile(const String &p_version) {
-	return p_version == "1.1" || p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5";
+	return p_version == "1.1" || p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6";
 }
 
 static bool has_resource_profile(const String &p_version) {
-	return p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5";
+	return p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6";
 }
 
 static bool has_scene_profile(const String &p_version) {
-	return p_version == "1.3" || p_version == "1.4" || p_version == "1.5";
+	return p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6";
 }
 
 static bool has_script_profile(const String &p_version) {
-	return p_version == "1.4" || p_version == "1.5";
+	return p_version == "1.4" || p_version == "1.5" || p_version == "1.6";
+}
+
+static bool has_live_editor_profile(const String &p_version) {
+	return p_version == "1.5" || p_version == "1.6";
+}
+
+static bool has_runtime_profile(const String &p_version) {
+	return p_version == "1.6";
 }
 
 } // namespace
@@ -230,13 +264,30 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 			capabilities.push_back(capability);
 		}
 	}
-	if (protocol_version == "1.5") {
+	if (has_live_editor_profile(protocol_version)) {
 		const char *names[] = {
 			"editor.open_scenes",
 			"editor.open_scripts",
 			"editor.native_history",
 			"editor.diagnostics",
 			"editor.viewport_metadata",
+		};
+		for (const char *name : names) {
+			Dictionary capability;
+			capability["name"] = name;
+			capability["version"] = "1.0";
+			capability["readiness"] = "ready";
+			capabilities.push_back(capability);
+		}
+	}
+	if (has_runtime_profile(protocol_version)) {
+		const char *names[] = {
+			"runtime.debugger",
+			"runtime.process_control",
+			"runtime.remote_tree",
+			"runtime.bounded_properties",
+			"runtime.diagnostics",
+			"runtime.viewport_capture",
 		};
 		for (const char *name : names) {
 			Dictionary capability;
@@ -317,7 +368,7 @@ Dictionary BridgeRpcSession::_make_limits() const {
 		limits["variant_depth"] = (int64_t)8;
 		limits["container_items"] = (int64_t)1000;
 	}
-	if (protocol_version == "1.5") {
+	if (has_live_editor_profile(protocol_version)) {
 		limits["editor_open_scenes"] = (int64_t)64;
 		limits["editor_selected_nodes"] = (int64_t)256;
 		limits["editor_inspector_properties"] = (int64_t)512;
@@ -329,6 +380,27 @@ Dictionary BridgeRpcSession::_make_limits() const {
 		limits["editor_diagnostics_bytes"] = (int64_t)262144;
 		limits["editor_viewports"] = (int64_t)16;
 		limits["editor_projected_value_bytes"] = (int64_t)65536;
+	}
+	if (has_runtime_profile(protocol_version)) {
+		limits["runtime_tree_nodes"] = (int64_t)10000;
+		limits["runtime_tree_depth"] = (int64_t)256;
+		limits["runtime_snapshot_bytes"] = (int64_t)16777216;
+		limits["runtime_snapshot_timeout_ms"] = (int64_t)10000;
+		limits["runtime_event_journal_entries"] = (int64_t)1024;
+		limits["runtime_event_journal_bytes"] = (int64_t)4194304;
+		limits["runtime_properties"] = (int64_t)512;
+		limits["runtime_object_bytes"] = (int64_t)262144;
+		limits["runtime_diagnostics"] = (int64_t)200;
+		limits["runtime_diagnostic_message_bytes"] = (int64_t)16384;
+		limits["runtime_diagnostics_bytes"] = (int64_t)262144;
+		limits["runtime_stacks"] = (int64_t)64;
+		limits["runtime_stack_frames"] = (int64_t)128;
+		limits["runtime_stacks_bytes"] = (int64_t)262144;
+		limits["runtime_screenshot_width"] = (int64_t)1280;
+		limits["runtime_screenshot_height"] = (int64_t)720;
+		limits["runtime_screenshot_bytes"] = (int64_t)524288;
+		limits["runtime_screenshot_source_bytes"] = (int64_t)33554432;
+		limits["runtime_screenshot_interval_ms"] = (int64_t)1000;
 	}
 	if (has_resource_profile(protocol_version)) {
 		limits["resource_records"] = (int64_t)250000;
@@ -467,7 +539,7 @@ bool BridgeRpcSession::_validate_snapshot_params(const Dictionary &p_params) con
 		}
 		const String domain = domains[index];
 		const bool baseline_domain = domain == "editor_context" || domain == "editor_inspector";
-		const bool live_domain = protocol_version == "1.5" && (domain == "editor_scripts" || domain == "editor_history" || domain == "editor_diagnostics" || domain == "editor_viewports");
+		const bool live_domain = has_live_editor_profile(protocol_version) && (domain == "editor_scripts" || domain == "editor_history" || domain == "editor_diagnostics" || domain == "editor_viewports");
 		if ((!baseline_domain && !live_domain) || unique.has(domain)) {
 			return false;
 		}
@@ -501,6 +573,113 @@ bool BridgeRpcSession::_validate_script_snapshot_params(const Dictionary &p_para
 bool BridgeRpcSession::_validate_script_delta_params(const Dictionary &p_params) const {
 	int64_t after_script_graph_revision = 0;
 	return p_params.size() == 1 && get_bounded_integer(p_params, "after_script_graph_revision", 0, 9007199254740991LL, after_script_graph_revision);
+}
+
+bool BridgeRpcSession::_validate_runtime_run_params(const Dictionary &p_params) const {
+	String target;
+	return p_params.size() == 1 && get_string(p_params, "target", target) && (target == "project" || target == "current_scene");
+}
+
+bool BridgeRpcSession::_validate_runtime_guard_params(const Dictionary &p_params) const {
+	String runtime_session_id;
+	if ((p_params.size() != 1 && p_params.size() != 2) || !get_string(p_params, "runtime_session_id", runtime_session_id) || !is_prefixed_lower_hex_id(runtime_session_id, "runtime:", 32)) {
+		return false;
+	}
+	if (p_params.size() == 1) {
+		return true;
+	}
+	int64_t expected_runtime_event_seq = 0;
+	return get_bounded_integer(p_params, "expected_runtime_event_seq", 1, 9007199254740991LL, expected_runtime_event_seq);
+}
+
+bool BridgeRpcSession::_validate_runtime_snapshot_params(const Dictionary &p_params) const {
+	if (p_params.size() < 1 || p_params.size() > 3) {
+		return false;
+	}
+	String runtime_session_id;
+	if (!get_string(p_params, "runtime_session_id", runtime_session_id) || !is_prefixed_lower_hex_id(runtime_session_id, "runtime:", 32)) {
+		return false;
+	}
+	if (p_params.has("expected_runtime_event_seq")) {
+		int64_t expected_runtime_event_seq = 0;
+		if (!get_bounded_integer(p_params, "expected_runtime_event_seq", 1, 9007199254740991LL, expected_runtime_event_seq)) {
+			return false;
+		}
+	}
+	if (!p_params.has("domains")) {
+		return true;
+	}
+	if (p_params["domains"].get_type() != Variant::ARRAY) {
+		return false;
+	}
+	const Array domains = p_params["domains"];
+	if (domains.is_empty() || domains.size() > 4) {
+		return false;
+	}
+	HashSet<String> unique;
+	for (int index = 0; index < domains.size(); index++) {
+		if (domains[index].get_type() != Variant::STRING) {
+			return false;
+		}
+		const String domain = domains[index];
+		if ((domain != "runtime_state" && domain != "runtime_tree" && domain != "runtime_diagnostics" && domain != "runtime_stacks") || unique.has(domain)) {
+			return false;
+		}
+		unique.insert(domain);
+	}
+	return true;
+}
+
+bool BridgeRpcSession::_validate_runtime_object_params(const Dictionary &p_params) const {
+	if (p_params.size() < 2 || p_params.size() > 3) {
+		return false;
+	}
+	String runtime_session_id;
+	if (!get_string(p_params, "runtime_session_id", runtime_session_id) || !is_prefixed_lower_hex_id(runtime_session_id, "runtime:", 32)) {
+		return false;
+	}
+	if (p_params.has("expected_runtime_event_seq")) {
+		int64_t expected_runtime_event_seq = 0;
+		if (!get_bounded_integer(p_params, "expected_runtime_event_seq", 1, 9007199254740991LL, expected_runtime_event_seq)) {
+			return false;
+		}
+	}
+	String runtime_object_id;
+	return get_string(p_params, "runtime_object_id", runtime_object_id) && is_prefixed_base64url_id(runtime_object_id, "runtime-object:");
+}
+
+bool BridgeRpcSession::_validate_runtime_stack_params(const Dictionary &p_params) const {
+	if (p_params.size() < 2 || p_params.size() > 3) {
+		return false;
+	}
+	String runtime_session_id;
+	String runtime_stack_id;
+	if (!get_string(p_params, "runtime_session_id", runtime_session_id) || !is_prefixed_lower_hex_id(runtime_session_id, "runtime:", 32) || !get_string(p_params, "runtime_stack_id", runtime_stack_id) || !is_prefixed_base64url_id(runtime_stack_id, "runtime-stack:")) {
+		return false;
+	}
+	if (p_params.has("expected_runtime_event_seq")) {
+		int64_t expected_runtime_event_seq = 0;
+		return get_bounded_integer(p_params, "expected_runtime_event_seq", 1, 9007199254740991LL, expected_runtime_event_seq);
+	}
+	return true;
+}
+
+bool BridgeRpcSession::_validate_runtime_capture_params(const Dictionary &p_params) const {
+	if (p_params.size() < 1 || p_params.size() > 4) {
+		return false;
+	}
+	String runtime_session_id;
+	if (!get_string(p_params, "runtime_session_id", runtime_session_id) || !is_prefixed_lower_hex_id(runtime_session_id, "runtime:", 32)) {
+		return false;
+	}
+	int64_t value = 0;
+	if (p_params.has("expected_runtime_event_seq") && !get_bounded_integer(p_params, "expected_runtime_event_seq", 1, 9007199254740991LL, value)) {
+		return false;
+	}
+	if (p_params.has("max_width") && !get_bounded_integer(p_params, "max_width", 1, 1280, value)) {
+		return false;
+	}
+	return !p_params.has("max_height") || get_bounded_integer(p_params, "max_height", 1, 720, value);
 }
 
 bool BridgeRpcSession::_validate_shutdown_params(const Dictionary &p_params) const {
@@ -656,6 +835,66 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 				return OK;
 			}
 			method = METHOD_SCRIPT_DELTA;
+		} else if (method_name == "runtime.run") {
+			if (!has_runtime_profile(protocol_version)) {
+				_set_error_outcome(request_id, "capability_unavailable", "Runtime observation requires Bridge RPC 1.6.", false, r_outcome);
+				return OK;
+			}
+			if (!_validate_runtime_run_params(params)) {
+				_set_error_outcome(request_id, "invalid_request", "The runtime run parameters are invalid.", false, r_outcome);
+				return OK;
+			}
+			method = METHOD_RUNTIME_RUN;
+		} else if (method_name == "runtime.stop" || method_name == "runtime.pause" || method_name == "runtime.continue") {
+			if (!has_runtime_profile(protocol_version)) {
+				_set_error_outcome(request_id, "capability_unavailable", "Runtime process control requires Bridge RPC 1.6.", false, r_outcome);
+				return OK;
+			}
+			if (!_validate_runtime_guard_params(params)) {
+				_set_error_outcome(request_id, "invalid_request", "The runtime control parameters are invalid.", false, r_outcome);
+				return OK;
+			}
+			method = method_name == "runtime.stop" ? METHOD_RUNTIME_STOP : (method_name == "runtime.pause" ? METHOD_RUNTIME_PAUSE : METHOD_RUNTIME_CONTINUE);
+		} else if (method_name == "runtime.snapshot.get") {
+			if (!has_runtime_profile(protocol_version)) {
+				_set_error_outcome(request_id, "capability_unavailable", "Runtime snapshots require Bridge RPC 1.6.", false, r_outcome);
+				return OK;
+			}
+			if (!_validate_runtime_snapshot_params(params)) {
+				_set_error_outcome(request_id, "invalid_request", "The runtime snapshot parameters are invalid.", false, r_outcome);
+				return OK;
+			}
+			method = METHOD_RUNTIME_SNAPSHOT;
+		} else if (method_name == "runtime.object.inspect") {
+			if (!has_runtime_profile(protocol_version)) {
+				_set_error_outcome(request_id, "capability_unavailable", "Runtime object inspection requires Bridge RPC 1.6.", false, r_outcome);
+				return OK;
+			}
+			if (!_validate_runtime_object_params(params)) {
+				_set_error_outcome(request_id, "invalid_request", "The runtime object parameters are invalid.", false, r_outcome);
+				return OK;
+			}
+			method = METHOD_RUNTIME_OBJECT_INSPECT;
+		} else if (method_name == "runtime.stack.get") {
+			if (!has_runtime_profile(protocol_version)) {
+				_set_error_outcome(request_id, "capability_unavailable", "Runtime stack inspection requires Bridge RPC 1.6.", false, r_outcome);
+				return OK;
+			}
+			if (!_validate_runtime_stack_params(params)) {
+				_set_error_outcome(request_id, "invalid_request", "The runtime stack parameters are invalid.", false, r_outcome);
+				return OK;
+			}
+			method = METHOD_RUNTIME_STACK_GET;
+		} else if (method_name == "runtime.viewport.capture") {
+			if (!has_runtime_profile(protocol_version)) {
+				_set_error_outcome(request_id, "capability_unavailable", "Runtime viewport capture requires Bridge RPC 1.6.", false, r_outcome);
+				return OK;
+			}
+			if (!_validate_runtime_capture_params(params)) {
+				_set_error_outcome(request_id, "invalid_request", "The runtime viewport parameters are invalid.", false, r_outcome);
+				return OK;
+			}
+			method = METHOD_RUNTIME_VIEWPORT_CAPTURE;
 		} else if (method_name == "bridge.shutdown") {
 			if (!_validate_shutdown_params(params)) {
 				_set_error_outcome(request_id, "invalid_request", "The shutdown parameters are invalid.", false, r_outcome);
@@ -674,6 +913,14 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 	}
 	if (method == METHOD_RESOURCE_SNAPSHOT || method == METHOD_SCENE_SNAPSHOT || method == METHOD_SCRIPT_SNAPSHOT) {
 		deadline_ms = 120000;
+	} else if (!p_message.has("deadline_ms")) {
+		if (method == METHOD_RUNTIME_RUN || method == METHOD_RUNTIME_SNAPSHOT) {
+			deadline_ms = 10000;
+		} else if (method == METHOD_RUNTIME_STOP) {
+			deadline_ms = 5000;
+		} else if (method == METHOD_RUNTIME_PAUSE || method == METHOD_RUNTIME_CONTINUE || method == METHOD_RUNTIME_OBJECT_INSPECT || method == METHOD_RUNTIME_STACK_GET || method == METHOD_RUNTIME_VIEWPORT_CAPTURE) {
+			deadline_ms = 3000;
+		}
 	}
 
 	PendingRequest pending;
@@ -743,7 +990,8 @@ Error BridgeRpcSession::_handle_ack(const Dictionary &p_message, Outcome &r_outc
 		const bool valid_resource_domain = has_resource_profile(protocol_version) && domain == "resource_graph";
 		const bool valid_scene_domain = has_scene_profile(protocol_version) && domain == "scene_graph";
 		const bool valid_script_domain = has_script_profile(protocol_version) && domain == "script_graph";
-		if (!valid_resource_domain && !valid_scene_domain && !valid_script_domain) {
+		const bool valid_runtime_domain = has_runtime_profile(protocol_version) && domain == "runtime";
+		if (!valid_resource_domain && !valid_scene_domain && !valid_script_domain && !valid_runtime_domain) {
 			return ERR_INVALID_DATA;
 		}
 	} else if (params.size() != 2) {
@@ -789,7 +1037,7 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 	}
 	const PendingRequest pending = *pending_pointer;
 	if (p_now_usec >= pending.deadline_usec) {
-		_set_error_outcome(pending.request_id, "deadline_exceeded", "The request deadline elapsed before completion.", true, r_outcome);
+		_set_deadline_outcome(pending, r_outcome);
 		_remove_pending(p_internal_request_id);
 		return OK;
 	}
@@ -825,9 +1073,17 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 		case METHOD_SCENE_SNAPSHOT:
 		case METHOD_SCENE_DELTA:
 		case METHOD_SCRIPT_SNAPSHOT:
-		case METHOD_SCRIPT_DELTA: {
+		case METHOD_SCRIPT_DELTA:
+		case METHOD_RUNTIME_RUN:
+		case METHOD_RUNTIME_STOP:
+		case METHOD_RUNTIME_PAUSE:
+		case METHOD_RUNTIME_CONTINUE:
+		case METHOD_RUNTIME_SNAPSHOT:
+		case METHOD_RUNTIME_OBJECT_INSPECT:
+		case METHOD_RUNTIME_STACK_GET:
+		case METHOD_RUNTIME_VIEWPORT_CAPTURE: {
 			if (p_result_override.is_empty()) {
-				_set_error_outcome(pending.request_id, "internal_error", "The graph response was not produced.", true, r_outcome);
+				_set_error_outcome(pending.request_id, "internal_error", "The requested observation response was not produced.", true, r_outcome);
 				_remove_pending(p_internal_request_id);
 				return OK;
 			}
@@ -839,7 +1095,7 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 			r_outcome.close_after_response = true;
 		} break;
 	}
-	if (pending.method != METHOD_EDITOR_SNAPSHOT && pending.method != METHOD_RESOURCE_SNAPSHOT && pending.method != METHOD_RESOURCE_DELTA && pending.method != METHOD_SCENE_SNAPSHOT && pending.method != METHOD_SCENE_DELTA && pending.method != METHOD_SCRIPT_SNAPSHOT && pending.method != METHOD_SCRIPT_DELTA && !p_result_override.is_empty()) {
+	if (pending.method != METHOD_EDITOR_SNAPSHOT && pending.method != METHOD_RESOURCE_SNAPSHOT && pending.method != METHOD_RESOURCE_DELTA && pending.method != METHOD_SCENE_SNAPSHOT && pending.method != METHOD_SCENE_DELTA && pending.method != METHOD_SCRIPT_SNAPSHOT && pending.method != METHOD_SCRIPT_DELTA && pending.method != METHOD_RUNTIME_RUN && pending.method != METHOD_RUNTIME_STOP && pending.method != METHOD_RUNTIME_PAUSE && pending.method != METHOD_RUNTIME_CONTINUE && pending.method != METHOD_RUNTIME_SNAPSHOT && pending.method != METHOD_RUNTIME_OBJECT_INSPECT && pending.method != METHOD_RUNTIME_STACK_GET && pending.method != METHOD_RUNTIME_VIEWPORT_CAPTURE && !p_result_override.is_empty()) {
 		const Array keys = p_result_override.keys();
 		for (int index = 0; index < keys.size(); index++) {
 			result[keys[index]] = p_result_override[keys[index]];
@@ -860,10 +1116,28 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 		revisions.erase("script_graph_revision");
 		result["revisions"] = revisions;
 	}
+	if (!has_runtime_profile(protocol_version) && result.has("revisions") && result["revisions"].get_type() == Variant::DICTIONARY) {
+		Dictionary revisions = result["revisions"];
+		revisions.erase("runtime_session_id");
+		revisions.erase("runtime_event_seq");
+		result["revisions"] = revisions;
+	}
 	r_outcome.has_response = true;
 	r_outcome.response = _make_result_response(pending.request_id, result);
 	_remove_pending(p_internal_request_id);
 	return OK;
+}
+
+void BridgeRpcSession::_set_deadline_outcome(const PendingRequest &p_pending, Outcome &r_outcome) const {
+	if (p_pending.method == METHOD_RUNTIME_RUN) {
+		_set_error_outcome(p_pending.request_id, "runtime_start_timeout", "The runtime did not start before the request deadline.", true, r_outcome);
+	} else if (p_pending.method == METHOD_RUNTIME_STOP || p_pending.method == METHOD_RUNTIME_PAUSE || p_pending.method == METHOD_RUNTIME_CONTINUE) {
+		_set_error_outcome(p_pending.request_id, "runtime_control_timeout", "The runtime control was not confirmed before the request deadline.", true, r_outcome);
+	} else if (p_pending.method == METHOD_RUNTIME_SNAPSHOT || p_pending.method == METHOD_RUNTIME_OBJECT_INSPECT || p_pending.method == METHOD_RUNTIME_STACK_GET || p_pending.method == METHOD_RUNTIME_VIEWPORT_CAPTURE) {
+		_set_error_outcome(p_pending.request_id, "runtime_request_timeout", "The runtime observation was not completed before the request deadline.", true, r_outcome);
+	} else {
+		_set_error_outcome(p_pending.request_id, "deadline_exceeded", "The request deadline elapsed before completion.", true, r_outcome);
+	}
 }
 
 Error BridgeRpcSession::complete_error(uint64_t p_internal_request_id, const String &p_code, const String &p_message, bool p_retryable, const Dictionary &p_data, Outcome &r_outcome) {
@@ -902,7 +1176,7 @@ void BridgeRpcSession::expire_requests(uint64_t p_now_usec, Vector<Outcome> &r_o
 			continue;
 		}
 		Outcome outcome;
-		_set_error_outcome(pending->request_id, "deadline_exceeded", "The request deadline elapsed before completion.", true, outcome);
+		_set_deadline_outcome(*pending, outcome);
 		outcome.cancel_dispatch = true;
 		outcome.internal_request_id = internal_id;
 		_remove_pending(internal_id);

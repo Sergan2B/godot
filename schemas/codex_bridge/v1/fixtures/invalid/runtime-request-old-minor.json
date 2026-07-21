@@ -1,0 +1,11 @@
+{
+  "protocol_version": "1.5",
+  "kind": "request",
+  "request_id": "req:runtime-old",
+  "method": "runtime.run",
+  "params": { "target": "project" },
+  "context": {
+    "project_id": "project:sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "editor_session_id": "editor:11111111111111111111111111111111"
+  }
+}

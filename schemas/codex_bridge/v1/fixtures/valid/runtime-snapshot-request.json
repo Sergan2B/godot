@@ -1,0 +1,16 @@
+{
+  "protocol_version": "1.6",
+  "kind": "request",
+  "request_id": "req:runtime-snapshot",
+  "method": "runtime.snapshot.get",
+  "deadline_ms": 10000,
+  "params": {
+    "runtime_session_id": "runtime:22222222222222222222222222222222",
+    "expected_runtime_event_seq": 3,
+    "domains": ["runtime_state", "runtime_tree", "runtime_diagnostics", "runtime_stacks"]
+  },
+  "context": {
+    "project_id": "project:sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "editor_session_id": "editor:11111111111111111111111111111111"
+  }
+}
