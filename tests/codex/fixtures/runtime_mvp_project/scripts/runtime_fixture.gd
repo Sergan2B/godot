@@ -13,6 +13,8 @@ var large_values: Array[int] = []
 var unsafe_absolute_path: String = "/Users/private/runtime.log"
 var unsafe_rid: RID = RID()
 var unsafe_callable: Callable
+var unsafe_signal: Signal
+var runtime_object_reference: Node
 var _command_elapsed := 0.0
 
 
@@ -21,12 +23,14 @@ func _ready() -> void:
 	cyclic_value.append(cyclic_value)
 	cyclic_dictionary["self"] = cyclic_dictionary
 	unsafe_callable = Callable(self, "_error_leaf")
+	unsafe_signal = tree_entered
 	for value in range(1200):
 		large_values.append(value)
 	var dynamic := Node2D.new()
 	dynamic.name = "RuntimeOnlyNode"
 	dynamic.position = Vector2(240, 128)
 	add_child(dynamic)
+	runtime_object_reference = dynamic
 	_publish_ack("ready")
 	print("CODEX_RUNTIME_FIXTURE_READY")
 

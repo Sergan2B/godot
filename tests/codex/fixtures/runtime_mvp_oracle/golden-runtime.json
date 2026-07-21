@@ -23,13 +23,16 @@
       "Members/large_values",
       "Members/unsafe_absolute_path",
       "Members/unsafe_rid",
-      "Members/unsafe_callable"
+      "Members/unsafe_callable",
+      "Members/unsafe_signal"
     ],
     "unsafe_reasons": {
       "Members/unsafe_absolute_path": "unsafe_absolute_path",
       "Members/unsafe_rid": "unsupported_handle",
-      "Members/unsafe_callable": "unsupported_handle"
+      "Members/unsafe_callable": "unsupported_handle",
+      "Members/unsafe_signal": "unsupported_handle"
     },
+    "object_reference": "Members/runtime_object_reference",
     "bounded_node": "BoundedPropertiesFixture",
     "bounded_first": "bounded_0000",
     "bounded_omitted": "bounded_0512",

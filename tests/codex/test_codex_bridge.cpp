@@ -1720,6 +1720,12 @@ TEST_CASE("[CodexS8Runtime][CodexRTPProperties] Property collection applies its 
 	const Dictionary rid_projection = CodexRuntimeValueProjector::project_typed(RID());
 	CHECK((bool)rid_projection["truncated"]);
 	CHECK(Dictionary(rid_projection["value"])["omitted_reason"] == "unsupported_handle");
+	const Dictionary callable_projection = CodexRuntimeValueProjector::project_typed(Callable());
+	CHECK((bool)callable_projection["truncated"]);
+	CHECK(Dictionary(callable_projection["value"])["omitted_reason"] == "unsupported_handle");
+	const Dictionary signal_projection = CodexRuntimeValueProjector::project_typed(Signal());
+	CHECK((bool)signal_projection["truncated"]);
+	CHECK(Dictionary(signal_projection["value"])["omitted_reason"] == "unsupported_handle");
 	const Dictionary path_projection = CodexRuntimeValueProjector::project_typed("/Users/private/runtime.log");
 	CHECK((bool)path_projection["truncated"]);
 	CHECK(Dictionary(path_projection["value"])["omitted_reason"] == "unsafe_absolute_path");

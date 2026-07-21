@@ -179,6 +179,7 @@ def validate_golden(golden: dict[str, Any]) -> None:
             "fixture_text",
             "truncated",
             "unsafe_reasons",
+            "object_reference",
             "bounded_node",
             "bounded_first",
             "bounded_omitted",
@@ -195,13 +196,16 @@ def validate_golden(golden: dict[str, Any]) -> None:
             "Members/unsafe_absolute_path",
             "Members/unsafe_rid",
             "Members/unsafe_callable",
+            "Members/unsafe_signal",
         }
         and properties.get("unsafe_reasons")
         == {
             "Members/unsafe_absolute_path": "unsafe_absolute_path",
             "Members/unsafe_rid": "unsupported_handle",
             "Members/unsafe_callable": "unsupported_handle",
+            "Members/unsafe_signal": "unsupported_handle",
         }
+        and properties.get("object_reference") == "Members/runtime_object_reference"
         and properties.get("bounded_node") == "BoundedPropertiesFixture"
         and properties.get("bounded_first") == "bounded_0000"
         and properties.get("bounded_omitted") == "bounded_0512"

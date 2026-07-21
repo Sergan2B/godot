@@ -16,6 +16,7 @@
 #include "core/io/file_access.h"
 #include "core/io/image.h"
 #include "core/io/json.h"
+#include "core/io/marshalls.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "editor/debugger/script_editor_debugger.h"
@@ -550,8 +551,21 @@ Dictionary RuntimeDebuggerAdapter::_project_object(const Array &p_serialized, bo
 		projected["read_only"] = true;
 		projected["usage"] = property[4];
 		Dictionary value;
-		if ((type == Variant::OBJECT || (int)property[2] == PROPERTY_HINT_OBJECT_ID) && property[5].get_type() == Variant::INT) {
-			const uint64_t referenced_raw_id = property[5];
+		uint64_t referenced_raw_id = 0;
+		bool has_object_reference = false;
+		if (type == Variant::OBJECT || (int)property[2] == PROPERTY_HINT_OBJECT_ID) {
+			if (property[5].get_type() == Variant::INT) {
+				referenced_raw_id = property[5];
+				has_object_reference = true;
+			} else if (property[5].get_type() == Variant::OBJECT) {
+				Object *encoded_object = property[5];
+				if (EncodedObjectAsID *encoded_id = Object::cast_to<EncodedObjectAsID>(encoded_object)) {
+					referenced_raw_id = encoded_id->get_object_id();
+					has_object_reference = true;
+				}
+			}
+		}
+		if (has_object_reference) {
 			const String *referenced_id = opaque_by_object_id.getptr(referenced_raw_id);
 			value["type"] = "object";
 			if (referenced_id) {

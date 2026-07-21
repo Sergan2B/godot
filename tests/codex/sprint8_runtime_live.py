@@ -518,6 +518,15 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                     == expected_reason,
                     f"{property_name} unsafe value was not omitted: {projected}",
                 )
+            object_reference = properties.get(
+                golden["properties"]["object_reference"], {}
+            ).get("value", {})
+            require(
+                object_reference.get("type") == "object"
+                and object_reference.get("runtime_object_id")
+                == dynamic["runtime_object_id"],
+                f"runtime Object was not linked through its opaque tree ID: {object_reference}",
+            )
             require(
                 "reference_id"
                 in recursive_keys(properties["Members/cyclic_dictionary"]["value"]),

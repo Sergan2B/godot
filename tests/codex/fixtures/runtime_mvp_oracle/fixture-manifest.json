@@ -2,7 +2,7 @@
   "schema_version": 1,
   "project": "../runtime_mvp_project",
   "golden": "golden-runtime.json",
-  "golden_sha256": "06b3a06a6788bcbfc088eda690afdc2b64d1df9006f7ee36c01398579456285c",
+  "golden_sha256": "4213fb13bdd64d197c9d40f45153ccc224eb05fa7aa1812348fce2fed6e2fa44",
   "main_scene": "res://main.tscn",
   "script": "res://scripts/runtime_fixture.gd",
   "files": [
@@ -44,7 +44,7 @@
     },
     {
       "path": "scripts/runtime_fixture.gd",
-      "sha256": "7674d8b6028879ad2581f5244d5eaf3f586d11bfd5382a8a6a5ad832f850af9b"
+      "sha256": "d20e2a15a3da8119ef8b7f34296a0a1abfc1a97e59c78652178c39540063c2d5"
     },
     {
       "path": "scripts/runtime_fixture.gd.uid",
