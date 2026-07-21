@@ -2,7 +2,7 @@
   "schema_version": 1,
   "project": "../runtime_mvp_project",
   "golden": "golden-runtime.json",
-  "golden_sha256": "4213fb13bdd64d197c9d40f45153ccc224eb05fa7aa1812348fce2fed6e2fa44",
+  "golden_sha256": "dd181d55a8efc37ffed4db1bb84dc87770977bc7bfffa0185061373304250af7",
   "main_scene": "res://main.tscn",
   "script": "res://scripts/runtime_fixture.gd",
   "files": [
@@ -44,7 +44,7 @@
     },
     {
       "path": "scripts/runtime_fixture.gd",
-      "sha256": "d20e2a15a3da8119ef8b7f34296a0a1abfc1a97e59c78652178c39540063c2d5"
+      "sha256": "a04a96cd923b90119c85845a3ce0dacce84e00a64bb316de3f63e68e6d805205"
     },
     {
       "path": "scripts/runtime_fixture.gd.uid",
@@ -55,11 +55,14 @@
     "bounded_properties",
     "crash",
     "deep_tree",
+    "diagnostic_bounds",
     "diagnostic_stack",
     "hang",
     "instanced_scene",
     "large_tree",
     "manual_lifecycle",
+    "normal_quit",
+    "pause_stack",
     "runtime_only_node",
     "source_mapping",
     "stale_object",

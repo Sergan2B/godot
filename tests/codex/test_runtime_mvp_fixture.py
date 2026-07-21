@@ -17,8 +17,10 @@ from runtime_mvp_fixture import (  # noqa: E402
     FixtureError,
     strict_json,
     validate,
+    validate_fixture_sources,
     validate_golden,
     validate_manifest,
+    validate_oracle_independence,
 )
 
 
@@ -40,6 +42,11 @@ class RuntimeMvpFixtureTests(unittest.TestCase):
         with self.assertRaises(FixtureError):
             validate_manifest(missing)
 
+        altered = copy.deepcopy(manifest)
+        altered["files"][0]["sha256"] = "0" * 64
+        with self.assertRaises(FixtureError):
+            validate_manifest(altered)
+
     def test_golden_rejects_weaker_limits_and_false_mapping(self) -> None:
         golden = strict_json(SCRIPT_DIR / "fixtures/runtime_mvp_oracle/golden-runtime.json")
         weakened = copy.deepcopy(golden)
@@ -51,6 +58,23 @@ class RuntimeMvpFixtureTests(unittest.TestCase):
         false_mapping["tree"]["runtime_only"] = "StaticNode"
         with self.assertRaises(FixtureError):
             validate_golden(false_mapping)
+
+        wrong_marker = copy.deepcopy(golden)
+        wrong_marker["viewport"]["marker_rgb"] = [0, 0, 0]
+        with self.assertRaises(FixtureError):
+            validate_golden(wrong_marker)
+
+    def test_fixture_requires_crash_hang_and_normal_quit_commands(self) -> None:
+        golden = strict_json(SCRIPT_DIR / "fixtures/runtime_mvp_oracle/golden-runtime.json")
+        script_path = SCRIPT_DIR / "fixtures/runtime_mvp_project/scripts/runtime_fixture.gd"
+        script = script_path.read_text(encoding="utf-8")
+        for command in ("crash", "hang", "quit"):
+            weakened = script.replace(f'"{command}"', f'"missing_{command}"')
+            with self.subTest(command=command), self.assertRaises(FixtureError):
+                validate_fixture_sources(golden, {"script": weakened})
+
+    def test_oracle_has_no_production_mapping_or_query_import(self) -> None:
+        validate_oracle_independence()
 
     def test_strict_loader_rejects_duplicate_and_non_finite_json(self) -> None:
         with tempfile.TemporaryDirectory(prefix="s8-fixture-test.") as directory:

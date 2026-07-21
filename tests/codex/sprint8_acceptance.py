@@ -23,7 +23,7 @@ LIVE_RUNNER = SCRIPT_DIR / "sprint8_runtime_live.py"
 FIXTURE_VALIDATOR = SCRIPT_DIR / "runtime_mvp_fixture.py"
 MANIFEST = SCRIPT_DIR / "fixtures" / "runtime_mvp_oracle" / "fixture-manifest.json"
 GOLDEN = SCRIPT_DIR / "fixtures" / "runtime_mvp_oracle" / "golden-runtime.json"
-EVIDENCE_PATH = SCRIPT_DIR / "evidence" / "sprint-8-runtime-macos.json"
+EVIDENCE_PATH = SCRIPT_DIR / "evidence" / "sprint-8-runtime-macos-v2.json"
 GODOT = REPOSITORY_ROOT / "bin" / "godot.macos.editor.dev.arm64"
 SIDECAR = REPOSITORY_ROOT / "godot-codex-mcp" / "target" / "release" / "godot-codex-mcp"
 
@@ -31,6 +31,8 @@ CHECK_FIELDS = {
     "active_run_rejected",
     "bounded_properties",
     "crash_retention_and_retirement",
+    "diagnostic_bounds_and_redaction",
+    "diagnostic_repeat_coalesced",
     "diagnostic_stack",
     "disconnect_reconnect_policy",
     "deep_tree_bounded",
@@ -41,7 +43,9 @@ CHECK_FIELDS = {
     "headless_capture_unavailable",
     "large_tree_bounded",
     "manual_editor_lifecycle_observed",
+    "normal_quit_observed",
     "pause_continue_stop_confirmed",
+    "pause_stack_active",
     "runtime_cursor_invalidation",
     "runtime_editor_mapping_evidence",
     "runtime_only_unmapped",
@@ -59,6 +63,8 @@ CHECK_FIELDS = {
     "terminal_coordinates_retained",
     "unsafe_values_omitted",
     "viewport_capture",
+    "viewport_capture_rate_limit",
+    "viewport_visual_marker",
 }
 LOCAL_GATES = {
     "cpp_runtime_tests",
@@ -347,6 +353,18 @@ def validate_report(report: dict[str, Any], check_checkout: bool = True) -> dict
         and performance["transition_visibility_p95_ms"] == percentile(samples, 95),
         "transition visibility samples differ",
     )
+    require(
+        isinstance(performance.get("hung_tree_timeout_ms"), (int, float))
+        and not isinstance(performance["hung_tree_timeout_ms"], bool)
+        and 2500 <= performance["hung_tree_timeout_ms"] <= 5000,
+        "hung runtime tree timeout window differs",
+    )
+    require(
+        isinstance(performance.get("hung_game_stop_ms"), (int, float))
+        and not isinstance(performance["hung_game_stop_ms"], bool)
+        and 0 <= performance["hung_game_stop_ms"] <= 5000,
+        "hung runtime stop bound differs",
+    )
 
     gates = report.get("local_gates")
     require(
@@ -475,7 +493,9 @@ def build_report(output: Path, timeout: float) -> dict[str, Any]:
         ["cargo", "build", "--manifest-path", "godot-codex-mcp/Cargo.toml", "--locked", "--offline", "--release", "-p", "godot-codex-mcp"],
     )
 
+    acceptance_workspace: Path | None = None
     with tempfile.TemporaryDirectory(prefix="s8-acceptance.", dir="/tmp") as directory:
+        acceptance_workspace = Path(directory)
         headless_path = Path(directory) / "headless.json"
         gui_path = Path(directory) / "gui.json"
         common = [sys.executable, str(LIVE_RUNNER), "--godot", str(GODOT), "--sidecar", str(SIDECAR), "--timeout", str(timeout)]
@@ -492,11 +512,52 @@ def build_report(output: Path, timeout: float) -> dict[str, Any]:
         headless = strict_json_load(headless_path)
         gui = strict_json_load(gui_path)
 
+    require(
+        acceptance_workspace is not None and not acceptance_workspace.exists(),
+        "acceptance workspace was not removed",
+    )
     require(source_is_clean(), "local gates changed relevant source")
     require(headless.get("status") == "passed" and headless.get("headless") is True, "headless live report did not pass")
     require(gui.get("status") == "passed" and gui.get("headless") is False, "GUI live report did not pass")
     require(headless["checks"]["viewport_capture"] == "unavailable_headless", "headless capture semantics differ")
     require(gui["checks"]["viewport_capture"] is True, "GUI capture did not pass")
+    require(gui["checks"]["viewport_capture_rate_limit"] is True, "GUI capture rate limit did not pass")
+    require(gui["checks"]["viewport_visual_marker"] is True, "GUI visual marker did not pass")
+    cleanup_fields = {
+        "editor_processes_stopped",
+        "sidecar_processes_stopped",
+        "temporary_workspace_removed",
+        "runtime_values_retired",
+    }
+    redaction_fields = {
+        "absolute_paths_absent",
+        "bridge_endpoints_absent",
+        "native_handles_absent",
+        "secret_material_absent",
+    }
+    for coordinate, live in (("headless", headless), ("GUI", gui)):
+        require(
+            isinstance(live.get("cleanup"), dict)
+            and set(live["cleanup"]) == cleanup_fields
+            and all(value is True for value in live["cleanup"].values()),
+            f"{coordinate} live cleanup proof differs",
+        )
+        require(
+            isinstance(live.get("redaction"), dict)
+            and set(live["redaction"]) == redaction_fields
+            and all(value is True for value in live["redaction"].values()),
+            f"{coordinate} live redaction proof differs",
+        )
+
+    cleanup = {
+        field: all(live["cleanup"][field] is True for live in (headless, gui))
+        for field in cleanup_fields
+    }
+    cleanup["temporary_workspace_removed"] &= not acceptance_workspace.exists()
+    redaction = {
+        field: all(live["redaction"][field] is True for live in (headless, gui))
+        for field in redaction_fields
+    }
 
     checks = dict(gui["checks"])
     checks["headless_capture_unavailable"] = True
@@ -557,18 +618,8 @@ def build_report(output: Path, timeout: float) -> dict[str, Any]:
         "observations": observations,
         "performance": performance,
         "local_gates": gates,
-        "cleanup": {
-            "editor_processes_stopped": True,
-            "sidecar_processes_stopped": True,
-            "temporary_workspace_removed": True,
-            "runtime_values_retired": True,
-        },
-        "redaction": {
-            "absolute_paths_absent": True,
-            "bridge_endpoints_absent": True,
-            "native_handles_absent": True,
-            "secret_material_absent": True,
-        },
+        "cleanup": cleanup,
+        "redaction": redaction,
         "external_gates": {
             "windows": {"status": "not_run", "reason": "Sprint 8 qualifying coordinate is local macOS arm64"},
             "linux": {"status": "not_run", "reason": "no Linux system is available for this local milestone"},

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 from pathlib import Path
@@ -18,11 +19,14 @@ EXPECTED_COVERAGE = {
     "bounded_properties",
     "crash",
     "deep_tree",
+    "diagnostic_bounds",
     "diagnostic_stack",
     "hang",
     "instanced_scene",
     "large_tree",
     "manual_lifecycle",
+    "normal_quit",
+    "pause_stack",
     "runtime_only_node",
     "source_mapping",
     "stale_object",
@@ -216,11 +220,32 @@ def validate_golden(golden: dict[str, Any]) -> None:
     diagnostics = golden.get("diagnostics")
     require(
         isinstance(diagnostics, dict)
+        and set(diagnostics)
+        == {
+            "warning",
+            "error",
+            "stack_functions",
+            "script_path",
+            "repeat_increment",
+            "redacted_message",
+            "utf8_prefix",
+            "diagnostic_flood_count",
+            "stack_flood_count",
+            "pause_stack_functions",
+        }
         and diagnostics.get("warning") == "CODEX_RUNTIME_FIXTURE_WARNING"
         and diagnostics.get("error") == "CODEX_RUNTIME_FIXTURE_ERROR"
         and diagnostics.get("stack_functions")
         == ["_error_leaf", "_error_middle", "_error_entry"]
-        and diagnostics.get("script_path") == "res://scripts/runtime_fixture.gd",
+        and diagnostics.get("script_path") == "res://scripts/runtime_fixture.gd"
+        and diagnostics.get("repeat_increment") == 3
+        and diagnostics.get("redacted_message")
+        == "<redacted sensitive runtime output>"
+        and diagnostics.get("utf8_prefix") == "CODEX_RUNTIME_UTF8_"
+        and diagnostics.get("diagnostic_flood_count") == 205
+        and diagnostics.get("stack_flood_count") == 65
+        and diagnostics.get("pause_stack_functions")
+        == ["_pause_stack_leaf", "_pause_stack_middle", "_pause_stack_entry"],
         "diagnostic oracle differs",
     )
 
@@ -232,6 +257,10 @@ def validate_golden(golden: dict[str, Any]) -> None:
             "max_width": 1280,
             "max_height": 720,
             "max_bytes": 524288,
+            "marker_rgb": [31, 158, 240],
+            "core_rgb": [255, 115, 31],
+            "color_tolerance": 12,
+            "min_color_pixels": 100,
         },
         "viewport limits differ",
     )
@@ -242,17 +271,34 @@ def validate_golden(golden: dict[str, Any]) -> None:
     )
 
 
-def validate_fixture_sources(golden: dict[str, Any]) -> None:
-    main_scene = (PROJECT_ROOT / "main.tscn").read_text(encoding="utf-8")
-    instance_scene = (PROJECT_ROOT / "instance.tscn").read_text(encoding="utf-8")
-    script = (PROJECT_ROOT / "scripts/runtime_fixture.gd").read_text(encoding="utf-8")
-    bounded_script = (
-        PROJECT_ROOT / "scripts/bounded_properties_fixture.gd"
-    ).read_text(encoding="utf-8")
-    plugin = (
-        PROJECT_ROOT
-        / "addons/codex_sprint8_runtime/codex_sprint8_runtime.gd"
-    ).read_text(encoding="utf-8")
+def validate_fixture_sources(
+    golden: dict[str, Any], source_overrides: dict[str, str] | None = None
+) -> None:
+    sources = {
+        "main_scene": (PROJECT_ROOT / "main.tscn").read_text(encoding="utf-8"),
+        "instance_scene": (PROJECT_ROOT / "instance.tscn").read_text(encoding="utf-8"),
+        "script": (PROJECT_ROOT / "scripts/runtime_fixture.gd").read_text(
+            encoding="utf-8"
+        ),
+        "bounded_script": (
+            PROJECT_ROOT / "scripts/bounded_properties_fixture.gd"
+        ).read_text(encoding="utf-8"),
+        "plugin": (
+            PROJECT_ROOT
+            / "addons/codex_sprint8_runtime/codex_sprint8_runtime.gd"
+        ).read_text(encoding="utf-8"),
+    }
+    if source_overrides:
+        require(
+            set(source_overrides) <= set(sources),
+            "fixture source override is unknown",
+        )
+        sources.update(source_overrides)
+    main_scene = sources["main_scene"]
+    instance_scene = sources["instance_scene"]
+    script = sources["script"]
+    bounded_script = sources["bounded_script"]
+    plugin = sources["plugin"]
 
     for name in golden["tree"]["required_names"]:
         if name == "RuntimeOnlyNode":
@@ -267,10 +313,18 @@ def validate_fixture_sources(golden: dict[str, Any]) -> None:
         "_error_entry",
         '"large_tree"',
         '"deep_tree"',
+        '"repeat_diagnostic"',
+        '"sensitive_diagnostic"',
+        '"diagnostic_flood"',
+        '"stack_flood"',
+        '"pause_stack"',
+        '"crash_after_diagnostic"',
         '"spawn_ephemeral"',
         '"free_ephemeral"',
         '"crash"',
         '"hang"',
+        '"quit"',
+        'EngineDebugger.send_message("request_quit", [])',
     ):
         require(token in script, f"fixture behavior is missing: {token}")
     for token in ("range(513)", '"bounded_%04d"', "getter_count += 1"):
@@ -279,12 +333,46 @@ def validate_fixture_sources(golden: dict[str, Any]) -> None:
         require(token in plugin, f"manual lifecycle command is missing: {token}")
 
 
+def validate_oracle_independence() -> None:
+    validator = Path(__file__).read_text(encoding="utf-8")
+    module = ast.parse(validator, filename=Path(__file__).name)
+    imported_roots: set[str] = set()
+    for node in ast.walk(module):
+        if isinstance(node, ast.Import):
+            imported_roots.update(alias.name.split(".", 1)[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported_roots.add(node.module.split(".", 1)[0])
+    require(
+        imported_roots
+        <= {"__future__", "ast", "hashlib", "json", "pathlib", "typing"},
+        "fixture oracle imports production code",
+    )
+    fixture_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in PROJECT_ROOT.rglob("*")
+        if path.is_file() and path.suffix in {".gd", ".tscn", ".godot"}
+    )
+    require(
+        not any(
+            token in fixture_text
+            for token in (
+                "modules/codex_bridge",
+                "godot-codex-mcp",
+                "runtime_node_view",
+                "RuntimeSourceContext",
+            )
+        ),
+        "fixture imports production mapping/query code",
+    )
+
+
 def validate() -> dict[str, Any]:
     manifest = strict_json(MANIFEST_PATH)
     golden = strict_json(GOLDEN_PATH)
     validate_manifest(manifest)
     validate_golden(golden)
     validate_fixture_sources(golden)
+    validate_oracle_independence()
     return {
         "schema_version": 1,
         "sprint": 8,

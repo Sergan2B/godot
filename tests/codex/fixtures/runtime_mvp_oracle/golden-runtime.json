@@ -42,13 +42,23 @@
     "warning": "CODEX_RUNTIME_FIXTURE_WARNING",
     "error": "CODEX_RUNTIME_FIXTURE_ERROR",
     "stack_functions": ["_error_leaf", "_error_middle", "_error_entry"],
-    "script_path": "res://scripts/runtime_fixture.gd"
+    "script_path": "res://scripts/runtime_fixture.gd",
+    "repeat_increment": 3,
+    "redacted_message": "<redacted sensitive runtime output>",
+    "utf8_prefix": "CODEX_RUNTIME_UTF8_",
+    "diagnostic_flood_count": 205,
+    "stack_flood_count": 65,
+    "pause_stack_functions": ["_pause_stack_leaf", "_pause_stack_middle", "_pause_stack_entry"]
   },
   "viewport": {
     "mime_type": "image/png",
     "max_width": 1280,
     "max_height": 720,
-    "max_bytes": 524288
+    "max_bytes": 524288,
+    "marker_rgb": [31, 158, 240],
+    "core_rgb": [255, 115, 31],
+    "color_tolerance": 12,
+    "min_color_pixels": 100
   },
   "limits": {
     "tree_nodes": 10000,

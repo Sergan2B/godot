@@ -11,9 +11,11 @@ import json
 import os
 import signal
 import shutil
+import struct
 import subprocess
 import tempfile
 import time
+import zlib
 from pathlib import Path
 from typing import Any, cast
 
@@ -65,9 +67,78 @@ FORBIDDEN_KEYS = {
     "path_absolute",
 }
 
+ABSOLUTE_PATH_PREFIXES = (
+    "/Users/",
+    "/home/",
+    "/private/",
+    "/tmp/",
+    "file://",
+)
+BRIDGE_ENDPOINT_MARKERS = (
+    "127.0.0.1",
+    "http://",
+    "https://",
+    "tcp://",
+    "udp://",
+    "ws://",
+    "wss://",
+)
+SECRET_MARKERS = (
+    "Authorization:",
+    "Bearer ",
+    "CODEX_RUNTIME_SECRET_SENTINEL",
+    "session.token",
+)
+
 
 class RuntimeGateError(RuntimeError):
     """Raised when the live Runtime MVP path violates its frozen contract."""
+
+
+class RuntimeSafetyAudit:
+    """Accumulate evidence that every model-facing runtime result stayed safe."""
+
+    def __init__(self) -> None:
+        self.flags = {
+            "absolute_paths_absent": True,
+            "bridge_endpoints_absent": True,
+            "native_handles_absent": True,
+            "secret_material_absent": True,
+        }
+
+    def observe(
+        self, structured: dict[str, Any], content: list[dict[str, Any]]
+    ) -> None:
+        strings = recursive_strings(structured)
+        strings.extend(
+            cast(str, block["text"])
+            for block in content
+            if block.get("type") == "text" and isinstance(block.get("text"), str)
+        )
+        self.flags["native_handles_absent"] &= not bool(
+            recursive_keys(structured) & FORBIDDEN_KEYS
+        )
+        self.flags["absolute_paths_absent"] &= not any(
+            any(prefix in value for prefix in ABSOLUTE_PATH_PREFIXES)
+            or (
+                len(value) >= 3
+                and value[0].isalpha()
+                and value[1] == ":"
+                and value[2] in {"/", "\\"}
+            )
+            for value in strings
+        )
+        self.flags["bridge_endpoints_absent"] &= not any(
+            marker in value for marker in BRIDGE_ENDPOINT_MARKERS for value in strings
+        )
+        self.flags["secret_material_absent"] &= not any(
+            marker in value for marker in SECRET_MARKERS for value in strings
+        )
+        failed = sorted(field for field, passed in self.flags.items() if not passed)
+        require(not failed, f"runtime MCP output failed safety fields: {failed}")
+
+    def result(self) -> dict[str, bool]:
+        return dict(self.flags)
 
 
 def require(condition: bool, message: str) -> None:
@@ -89,6 +160,118 @@ def recursive_strings(value: Any) -> list[str]:
     if isinstance(value, list):
         return [item for child in value for item in recursive_strings(child)]
     return [value] if isinstance(value, str) else []
+
+
+def decode_png_rgb(png: bytes) -> tuple[int, int, bytes]:
+    """Decode the bounded 8-bit RGB/RGBA PNG subset emitted by Godot."""
+    require(png.startswith(b"\x89PNG\r\n\x1a\n"), "runtime capture is not PNG")
+    offset = 8
+    width = height = color_type = bit_depth = -1
+    compressed = bytearray()
+    saw_iend = False
+    while offset < len(png):
+        require(offset + 12 <= len(png), "runtime PNG has a truncated chunk")
+        length = struct.unpack(">I", png[offset : offset + 4])[0]
+        chunk_type = png[offset + 4 : offset + 8]
+        data_start = offset + 8
+        data_end = data_start + length
+        require(data_end + 4 <= len(png), "runtime PNG chunk exceeds its byte length")
+        data = png[data_start:data_end]
+        expected_crc = struct.unpack(">I", png[data_end : data_end + 4])[0]
+        require(
+            zlib.crc32(chunk_type + data) & 0xFFFFFFFF == expected_crc,
+            "runtime PNG chunk CRC differs",
+        )
+        if chunk_type == b"IHDR":
+            require(width == -1 and length == 13, "runtime PNG IHDR differs")
+            width, height, bit_depth, color_type, compression, filtering, interlace = struct.unpack(
+                ">IIBBBBB", data
+            )
+            require(
+                width > 0
+                and height > 0
+                and bit_depth == 8
+                and color_type in {2, 6}
+                and compression == 0
+                and filtering == 0
+                and interlace == 0,
+                "runtime PNG format is outside the accepted RGB/RGBA subset",
+            )
+        elif chunk_type == b"IDAT":
+            require(width > 0 and not saw_iend, "runtime PNG IDAT precedes IHDR")
+            compressed.extend(data)
+        elif chunk_type == b"IEND":
+            require(length == 0 and not saw_iend, "runtime PNG IEND differs")
+            saw_iend = True
+        offset = data_end + 4
+        if saw_iend:
+            break
+    require(saw_iend and offset == len(png) and compressed, "runtime PNG structure differs")
+
+    channels = 3 if color_type == 2 else 4
+    stride = width * channels
+    require(
+        width <= 1280 and height <= 720 and stride <= 1280 * 4,
+        "runtime PNG dimensions exceed the viewport policy",
+    )
+    try:
+        filtered = zlib.decompress(bytes(compressed))
+    except zlib.error as error:
+        raise RuntimeGateError("runtime PNG IDAT cannot be decompressed") from error
+    require(
+        len(filtered) == height * (stride + 1),
+        "runtime PNG decompressed byte length differs",
+    )
+
+    decoded = bytearray(height * stride)
+    source = 0
+    for row in range(height):
+        filter_type = filtered[source]
+        source += 1
+        require(filter_type <= 4, "runtime PNG uses an unsupported scanline filter")
+        row_start = row * stride
+        previous_start = row_start - stride
+        for column in range(stride):
+            raw = filtered[source]
+            source += 1
+            left = decoded[row_start + column - channels] if column >= channels else 0
+            above = decoded[previous_start + column] if row > 0 else 0
+            upper_left = (
+                decoded[previous_start + column - channels]
+                if row > 0 and column >= channels
+                else 0
+            )
+            if filter_type == 1:
+                raw += left
+            elif filter_type == 2:
+                raw += above
+            elif filter_type == 3:
+                raw += (left + above) // 2
+            elif filter_type == 4:
+                estimate = left + above - upper_left
+                distances = (
+                    abs(estimate - left),
+                    abs(estimate - above),
+                    abs(estimate - upper_left),
+                )
+                raw += (left, above, upper_left)[distances.index(min(distances))]
+            decoded[row_start + column] = raw & 0xFF
+
+    if channels == 3:
+        return width, height, bytes(decoded)
+    rgb = bytearray(width * height * 3)
+    for pixel in range(width * height):
+        rgb[pixel * 3 : pixel * 3 + 3] = decoded[pixel * 4 : pixel * 4 + 3]
+    return width, height, bytes(rgb)
+
+
+def count_rgb_pixels(pixels: bytes, target: list[int], tolerance: int) -> int:
+    require(len(target) == 3, "viewport marker color must contain RGB coordinates")
+    return sum(
+        1
+        for offset in range(0, len(pixels), 3)
+        if all(abs(pixels[offset + channel] - target[channel]) <= tolerance for channel in range(3))
+    )
 
 
 def tree_structure(nodes: list[dict[str, Any]]) -> list[tuple[Any, ...]]:
@@ -167,8 +350,8 @@ def terminate_process_group(process: subprocess.Popen[str]) -> None:
         process.wait(timeout=5)
 
 
-def retire_fixture_processes(project: Path) -> None:
-    """Stop detached Godot game children that still target this temporary fixture."""
+def fixture_process_ids(project: Path) -> set[int]:
+    """Return only processes whose argv targets this exact temporary fixture."""
     completed = subprocess.run(
         ["ps", "-axo", "pid=,command="],
         check=True,
@@ -176,23 +359,27 @@ def retire_fixture_processes(project: Path) -> None:
         text=True,
     )
     markers = {f"--path {project} ", f"--path {project.resolve()} "}
-    pids = []
+    pids: set[int] = set()
     for row in completed.stdout.splitlines():
         columns = row.strip().split(maxsplit=1)
         if len(columns) != 2 or not any(marker in columns[1] for marker in markers):
             continue
-        pids.append(int(columns[0]))
+        pids.add(int(columns[0]))
+    return pids
+
+
+def retire_fixture_processes(project: Path) -> bool:
+    """Stop detached Godot game children and prove no exact match remains."""
+    pids = fixture_process_ids(project)
     for pid in pids:
         try:
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
     deadline = time.monotonic() + 5
-    remaining = set(pids)
+    remaining = fixture_process_ids(project)
     while remaining and time.monotonic() < deadline:
-        remaining = {pid for pid in remaining if Path(f"/proc/{pid}").exists()} if Path("/proc").exists() else {
-            pid for pid in remaining if subprocess.run(["kill", "-0", str(pid)], capture_output=True).returncode == 0
-        }
+        remaining = fixture_process_ids(project)
         if remaining:
             time.sleep(0.05)
     for pid in remaining:
@@ -200,6 +387,15 @@ def retire_fixture_processes(project: Path) -> None:
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+    kill_deadline = time.monotonic() + 5
+    while time.monotonic() < kill_deadline:
+        remaining = fixture_process_ids(project)
+        if not remaining:
+            return True
+        time.sleep(0.05)
+    return not fixture_process_ids(project)
+
+
 def initialize_sidecar(sidecar: Path, project: Path, timeout: float) -> tuple[LineProcess, McpClient]:
     environment = os.environ.copy()
     environment["GODOT_CODEX_DEBUG_ERRORS"] = "1"
@@ -207,6 +403,7 @@ def initialize_sidecar(sidecar: Path, project: Path, timeout: float) -> tuple[Li
         [str(sidecar), "--project-root", str(project)], cwd=project, env=environment
     )
     client = McpClient(process, timeout=min(timeout, 20.0))
+    client.runtime_safety_audit = RuntimeSafetyAudit()
     initialized = client.request(
         "initialize",
         {
@@ -249,6 +446,9 @@ def tool_call(
     require(not (recursive_keys(structured) & FORBIDDEN_KEYS), f"{name} leaked a raw/native key")
     content = result.get("content")
     require(isinstance(content, list), f"{name} omitted content")
+    client.runtime_safety_audit.observe(
+        cast(dict[str, Any], structured), cast(list[dict[str, Any]], content)
+    )
     return cast(dict[str, Any], structured), result.get("isError") is True, cast(list[dict[str, Any]], content), elapsed
 
 
@@ -329,6 +529,9 @@ def read_runtime_summary(client: McpClient) -> dict[str, Any]:
     require(isinstance(text, str) and len(text.encode()) <= 4096, "runtime summary bound differs")
     value = json.loads(text)
     require(isinstance(value, dict), "runtime summary is not an object")
+    client.runtime_safety_audit.observe(
+        cast(dict[str, Any], value), [{"type": "text", "text": text}]
+    )
     return cast(dict[str, Any], value)
 
 
@@ -383,6 +586,8 @@ def wait_runtime_state(
 
 def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict[str, Any]:
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
+    report: dict[str, Any] | None = None
+    primary_failure = False
     with tempfile.TemporaryDirectory(prefix="s8-", dir="/tmp") as temporary:
         project = Path(temporary) / "p"
         shutil.copytree(PROJECT_SOURCE, project, ignore=shutil.ignore_patterns(".godot"))
@@ -499,6 +704,34 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                     "expected_runtime_event_seq": tree_meta["runtime_event_seq"],
                 },
             )
+            for _attempt in range(2):
+                if not inspect_error or inspected.get("error", {}).get("code") not in {
+                    "runtime_unavailable",
+                    "runtime_request_timeout",
+                    "runtime_object_stale",
+                }:
+                    break
+                refreshed_meta, refreshed_nodes, refreshed_timings = runtime_tree(
+                    client, first_session
+                )
+                tree_timings.extend(refreshed_timings)
+                root = next(
+                    node
+                    for node in refreshed_nodes
+                    if node.get("name") == "RuntimeFixture"
+                )
+                inspected, inspect_error, _, retry_inspect_ms = tool_call(
+                    client,
+                    "godot_inspect_runtime_object",
+                    {
+                        "runtime_session_id": first_session,
+                        "runtime_object_id": root["runtime_object_id"],
+                        "expected_runtime_event_seq": refreshed_meta[
+                            "runtime_event_seq"
+                        ],
+                    },
+                )
+                inspect_ms += retry_inspect_ms
             require(not inspect_error, f"runtime object inspection failed: {inspected}")
             properties = {item.get("name"): item for item in inspected.get("properties", [])}
             require("fixture_number" in properties, "fixture_number property is absent")
@@ -560,17 +793,39 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 for node in nodes
                 if node.get("name") == golden["properties"]["bounded_node"]
             )
-            write_game_command(project, "reset_bounded_properties")
-            wait_game_ack(project, "reset_bounded_properties", timeout)
-            bounded, bounded_error, _, _ = tool_call(
-                client,
-                "godot_inspect_runtime_object",
-                {
-                    "runtime_session_id": first_session,
-                    "runtime_object_id": bounded_node["runtime_object_id"],
-                    "expected_runtime_event_seq": inspected["runtime_event_seq"],
-                },
-            )
+            bounded_event_seq = inspected["runtime_event_seq"]
+            for bounded_attempt in range(4):
+                # A timed-out attempt may still have exercised its bounded getter
+                # prefix before cancellation. Measure each retry independently.
+                write_game_command(project, "reset_bounded_properties")
+                wait_game_ack(project, "reset_bounded_properties", timeout)
+                bounded, bounded_error, _, _ = tool_call(
+                    client,
+                    "godot_inspect_runtime_object",
+                    {
+                        "runtime_session_id": first_session,
+                        "runtime_object_id": bounded_node["runtime_object_id"],
+                        "expected_runtime_event_seq": bounded_event_seq,
+                    },
+                )
+                if not bounded_error or bounded.get("error", {}).get("code") not in {
+                    "runtime_unavailable",
+                    "runtime_request_timeout",
+                    "runtime_object_stale",
+                }:
+                    break
+                if bounded_attempt == 3:
+                    continue
+                refreshed_meta, refreshed_nodes, refreshed_timings = runtime_tree(
+                    client, first_session
+                )
+                tree_timings.extend(refreshed_timings)
+                bounded_node = next(
+                    node
+                    for node in refreshed_nodes
+                    if node.get("name") == golden["properties"]["bounded_node"]
+                )
+                bounded_event_seq = refreshed_meta["runtime_event_seq"]
             require(not bounded_error, f"bounded runtime object inspection failed: {bounded}")
             bounded_names = {
                 property_value.get("name")
@@ -685,6 +940,11 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
             )
             require(not stack_error, f"runtime stack failed: {stack}")
             frames = stack.get("stack", {}).get("frames", [])
+            require(
+                isinstance(stack.get("stack", {}).get("runtime_event_seq"), int)
+                and stack["stack"]["runtime_event_seq"] <= stack["runtime_event_seq"],
+                "runtime stack omitted or advanced its capture sequence",
+            )
             functions = [frame.get("function") for frame in frames]
             require(
                 all(function in functions for function in golden["diagnostics"]["stack_functions"]),
@@ -700,6 +960,174 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 "runtime stack leaked a path or zero-based line",
             )
 
+            initial_repeat_count = error_record.get("repeat_count")
+            require(isinstance(initial_repeat_count, int), "runtime diagnostic omitted repeat count")
+            write_game_command(project, "repeat_diagnostic")
+            wait_game_ack(project, "repeat_diagnostic", timeout)
+            repeat_deadline = time.monotonic() + timeout
+            repeated_error: dict[str, Any] = {}
+            while time.monotonic() < repeat_deadline:
+                repeated, repeated_error_flag, _, _ = tool_call(
+                    client,
+                    "godot_get_diagnostics",
+                    {"scope": "runtime", "runtime_session_id": first_session, "limit": 200},
+                )
+                matching = [
+                    item
+                    for item in repeated.get("diagnostics", [])
+                    if golden["diagnostics"]["error"] in item.get("message", "")
+                ]
+                if (
+                    not repeated_error_flag
+                    and matching
+                    and matching[0].get("repeat_count")
+                    == initial_repeat_count + golden["diagnostics"]["repeat_increment"]
+                ):
+                    repeated_error = matching[0]
+                    break
+                time.sleep(0.05)
+            require(bool(repeated_error), "repeated runtime error did not coalesce")
+            require(
+                repeated_error.get("runtime_stack_id") == stack_id,
+                "repeated runtime error replaced its identical stack",
+            )
+
+            write_game_command(project, "sensitive_diagnostic")
+            wait_game_ack(project, "sensitive_diagnostic", timeout)
+            sensitive_deadline = time.monotonic() + timeout
+            sensitive_diagnostics: dict[str, Any] = {}
+            while time.monotonic() < sensitive_deadline:
+                sensitive_diagnostics, sensitive_error, _, _ = tool_call(
+                    client,
+                    "godot_get_diagnostics",
+                    {"scope": "runtime", "runtime_session_id": first_session, "limit": 200},
+                )
+                sensitive_messages = [
+                    item.get("message", "")
+                    for item in sensitive_diagnostics.get("diagnostics", [])
+                ]
+                if (
+                    not sensitive_error
+                    and golden["diagnostics"]["redacted_message"] in sensitive_messages
+                    and any(
+                        message.startswith(golden["diagnostics"]["utf8_prefix"])
+                        for message in sensitive_messages
+                    )
+                ):
+                    break
+                time.sleep(0.05)
+            else:
+                raise RuntimeGateError(
+                    "sensitive runtime diagnostics did not arrive: "
+                    f"{sensitive_diagnostics}"
+                )
+            serialized_sensitive = json.dumps(sensitive_diagnostics, ensure_ascii=False)
+            for forbidden in (
+                "CODEX_RUNTIME_SECRET_SENTINEL",
+                "/Users/private",
+                "127.0.0.1",
+                "\u001b",
+                "\u0001",
+            ):
+                require(forbidden not in serialized_sensitive, f"runtime diagnostic leaked {forbidden}")
+            path_message = next(
+                message
+                for message in sensitive_messages
+                if "CODEX_RUNTIME_SENSITIVE_PATH" in message
+            )
+            require(
+                "<path>" in path_message and "<endpoint>" in path_message,
+                "runtime diagnostic did not redact path and endpoint independently",
+            )
+            utf8_message = next(
+                message
+                for message in sensitive_messages
+                if message.startswith(golden["diagnostics"]["utf8_prefix"])
+            )
+            require(
+                len(utf8_message.encode("utf-8")) <= 16384
+                and utf8_message.endswith(" [truncated]"),
+                "runtime diagnostic UTF-8 byte bound differs",
+            )
+
+            write_game_command(project, "stack_flood")
+            wait_game_ack(project, "stack_flood", timeout)
+            stack_flood_deadline = time.monotonic() + timeout
+            stack_flood_diagnostics: dict[str, Any] = {}
+            while time.monotonic() < stack_flood_deadline:
+                stack_flood_diagnostics, stack_flood_error, _, _ = tool_call(
+                    client,
+                    "godot_get_diagnostics",
+                    {"scope": "runtime", "runtime_session_id": first_session, "limit": 200},
+                )
+                flood_errors = [
+                    item
+                    for item in stack_flood_diagnostics.get("diagnostics", [])
+                    if "CODEX_RUNTIME_STACK_FLOOD_" in item.get("message", "")
+                ]
+                if (
+                    not stack_flood_error
+                    and len(flood_errors) == golden["diagnostics"]["stack_flood_count"]
+                ):
+                    break
+                time.sleep(0.05)
+            else:
+                raise RuntimeGateError("runtime stack flood did not arrive")
+            linked_stack_ids = {
+                item["runtime_stack_id"]
+                for item in flood_errors
+                if isinstance(item.get("runtime_stack_id"), str)
+            }
+            require(len(linked_stack_ids) <= 64, "runtime retained more than 64 stacks")
+            require(
+                any("runtime_stack_id" not in item for item in flood_errors),
+                "runtime stack eviction did not retire an older diagnostic link",
+            )
+
+            write_game_command(project, "diagnostic_flood")
+            wait_game_ack(project, "diagnostic_flood", timeout)
+            diagnostic_flood_deadline = time.monotonic() + timeout
+            bounded_diagnostics: dict[str, Any] = {}
+            while time.monotonic() < diagnostic_flood_deadline:
+                bounded_diagnostics, bounded_error, _, _ = tool_call(
+                    client,
+                    "godot_get_diagnostics",
+                    {"scope": "runtime", "runtime_session_id": first_session, "limit": 200},
+                )
+                flood_outputs = [
+                    item
+                    for item in bounded_diagnostics.get("diagnostics", [])
+                    if "CODEX_RUNTIME_FLOOD_OUTPUT_" in item.get("message", "")
+                ]
+                if not bounded_error and any(
+                    "CODEX_RUNTIME_FLOOD_OUTPUT_204" in item.get("message", "")
+                    for item in flood_outputs
+                ):
+                    break
+                time.sleep(0.05)
+            else:
+                raise RuntimeGateError("runtime diagnostic flood did not arrive")
+            require(
+                isinstance(bounded_diagnostics.get("total"), int)
+                and 1 <= bounded_diagnostics["total"] <= 200
+                and len(bounded_diagnostics.get("diagnostics", []))
+                == bounded_diagnostics["total"]
+                and len(
+                    json.dumps(
+                        bounded_diagnostics.get("diagnostics", []),
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                )
+                <= 262144
+                and all(
+                    len(item.get("message", "").encode("utf-8")) <= 16384
+                    for item in bounded_diagnostics.get("diagnostics", [])
+                )
+                and bounded_diagnostics.get("truncated") is True,
+                f"runtime diagnostic journal count/byte/truncation bound differs: {bounded_diagnostics.get('total')}",
+            )
+
             capture_ok = False
             capture_ms = 0.0
             capture, capture_error, capture_content, capture_ms = tool_call(
@@ -708,23 +1136,121 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 {"runtime_session_id": first_session, "max_width": 1280, "max_height": 720},
             )
             if headless:
-                require(capture_error, "headless capture unexpectedly bypassed viewport availability")
+                require(
+                    capture_error
+                    and capture.get("error", {}).get("code") == "runtime_capture_unavailable"
+                    and capture.get("error", {}).get("retryable") is True,
+                    f"headless capture semantics differ: {capture}",
+                )
+                post_capture_tree, post_capture_tree_error, _, _ = tool_call(
+                    client,
+                    "godot_get_runtime_tree",
+                    {"runtime_session_id": first_session, "limit": 1},
+                )
+                require(
+                    not post_capture_tree_error and post_capture_tree.get("nodes"),
+                    "headless capture failure blocked the Bridge runtime workflow",
+                )
             else:
                 require(not capture_error, f"runtime viewport capture failed: {capture}")
-                image = next((item for item in capture_content if item.get("type") == "image"), None)
-                require(isinstance(image, dict), "runtime capture omitted MCP image content")
+                images = [item for item in capture_content if item.get("type") == "image"]
+                require(
+                    len(capture_content) == 2 and len(images) == 1,
+                    "runtime capture did not return one metadata and one image content block",
+                )
+                image = images[0]
                 png = base64.b64decode(image["data"], validate=True)
-                require(png.startswith(b"\x89PNG\r\n\x1a\n"), "runtime capture is not PNG")
                 require(len(png) == capture["byte_length"] <= 524288, "runtime PNG byte bound differs")
                 require(hashlib.sha256(png).hexdigest() == capture["sha256"], "runtime PNG digest differs")
-                require("data_base64url" not in capture, "structured capture duplicated image bytes")
+                width, height, pixels = decode_png_rgb(png)
+                require(
+                    width == capture.get("width")
+                    and height == capture.get("height")
+                    and width <= golden["viewport"]["max_width"]
+                    and height <= golden["viewport"]["max_height"],
+                    "runtime PNG dimensions differ from structured metadata",
+                )
+                tolerance = golden["viewport"]["color_tolerance"]
+                minimum = golden["viewport"]["min_color_pixels"]
+                for field in ("marker_rgb", "core_rgb"):
+                    require(
+                        count_rgb_pixels(pixels, golden["viewport"][field], tolerance)
+                        >= minimum,
+                        f"runtime viewport omitted fixture color: {field}",
+                    )
+                require(
+                    "data_base64url" not in capture
+                    and not (recursive_keys(capture) & FORBIDDEN_KEYS),
+                    "structured capture duplicated bytes or leaked native coordinates",
+                )
+
+                first_capture_seq = cast(int, capture["runtime_event_seq"])
+                rate_limited, rate_limited_error, _, _ = tool_call(
+                    client,
+                    "godot_capture_viewport",
+                    {
+                        "runtime_session_id": first_session,
+                        "expected_runtime_event_seq": first_capture_seq,
+                        "max_width": 320,
+                        "max_height": 180,
+                    },
+                )
+                require(
+                    rate_limited_error
+                    and rate_limited.get("error", {}).get("code")
+                    == "runtime_capture_rate_limited"
+                    and rate_limited.get("error", {}).get("retryable") is True
+                    and rate_limited.get("error", {}).get("current", {}).get(
+                        "runtime_event_seq"
+                    )
+                    == first_capture_seq,
+                    f"runtime capture rate limit differs: {rate_limited}",
+                )
+                time.sleep(1.05)
+                second_capture, second_capture_error, second_content, second_capture_ms = tool_call(
+                    client,
+                    "godot_capture_viewport",
+                    {
+                        "runtime_session_id": first_session,
+                        "expected_runtime_event_seq": first_capture_seq,
+                        "max_width": 320,
+                        "max_height": 180,
+                    },
+                )
+                require(
+                    not second_capture_error
+                    and second_capture.get("runtime_event_seq", 0) > first_capture_seq,
+                    f"runtime capture did not recover after its rate window: {second_capture}",
+                )
+                second_images = [item for item in second_content if item.get("type") == "image"]
+                require(len(second_content) == 2 and len(second_images) == 1, "second capture content differs")
+                second_png = base64.b64decode(second_images[0]["data"], validate=True)
+                second_width, second_height, second_pixels = decode_png_rgb(second_png)
+                require(
+                    second_width == second_capture.get("width") <= 320
+                    and second_height == second_capture.get("height") <= 180
+                    and len(second_png) == second_capture.get("byte_length") <= 524288
+                    and hashlib.sha256(second_png).hexdigest() == second_capture.get("sha256"),
+                    "second runtime capture metadata differs",
+                )
+                for field in ("marker_rgb", "core_rgb"):
+                    require(
+                        count_rgb_pixels(second_pixels, golden["viewport"][field], tolerance)
+                        >= minimum,
+                        f"second runtime viewport omitted fixture color: {field}",
+                    )
+                capture = second_capture
+                capture_ms = max(capture_ms, second_capture_ms)
                 capture_ok = True
 
             # A successful viewport capture is itself an observable runtime event.
             # Continue from its returned coordinate instead of racing the strict
             # expected-sequence guard with the preceding diagnostics snapshot.
             current_seq = cast(
-                int, capture.get("runtime_event_seq", diagnostics["runtime_event_seq"])
+                int,
+                capture.get(
+                    "runtime_event_seq", bounded_diagnostics["runtime_event_seq"]
+                ),
             )
             stale_pause, stale_pause_error, _, _ = tool_call(
                 client,
@@ -753,13 +1279,111 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
             continued, continue_error, _, continue_ms = tool_call(
                 client,
                 "godot_continue_project",
-                {"runtime_session_id": first_session},
+                {
+                    "runtime_session_id": first_session,
+                    "expected_runtime_event_seq": paused["runtime_event_seq"],
+                },
             )
-            require(not continue_error and continued.get("state") == "running", f"continue failed: {continued}")
+            require(
+                not continue_error and continued.get("state") == "running",
+                f"continue failed: {continued}",
+            )
+            control_snapshot, control_snapshot_error, _, _ = tool_call(
+                client,
+                "godot_get_diagnostics",
+                {"scope": "runtime", "runtime_session_id": first_session, "limit": 200},
+            )
+            require(
+                not control_snapshot_error
+                and control_snapshot.get("state") == "running"
+                and control_snapshot.get("active_stack_id") is None,
+                "continue did not clear the control-pause stack",
+            )
+
+            write_game_command(project, "pause_stack")
+            wait_game_ack(project, "pause_stack", timeout)
+            pause_stack_deadline = time.monotonic() + timeout
+            pause_snapshot: dict[str, Any] = {}
+            while time.monotonic() < pause_stack_deadline:
+                pause_snapshot, pause_snapshot_error, _, _ = tool_call(
+                    client,
+                    "godot_get_diagnostics",
+                    {"scope": "runtime", "runtime_session_id": first_session, "limit": 200},
+                )
+                if (
+                    not pause_snapshot_error
+                    and pause_snapshot.get("state") == "paused"
+                    and isinstance(pause_snapshot.get("active_stack_id"), str)
+                ):
+                    break
+                time.sleep(0.05)
+            else:
+                raise RuntimeGateError(
+                    "confirmed pause did not publish an active stack: "
+                    f"{pause_snapshot}"
+                )
+            pause_stack_id = cast(str, pause_snapshot["active_stack_id"])
+            pause_stack, pause_stack_error, _, _ = tool_call(
+                client,
+                "godot_get_stack_trace",
+                {
+                    "runtime_session_id": first_session,
+                    "runtime_stack_id": pause_stack_id,
+                    "expected_runtime_event_seq": pause_snapshot["runtime_event_seq"],
+                },
+            )
+            require(
+                not pause_stack_error
+                and pause_stack.get("stack", {}).get("stack_kind") == "pause"
+                and pause_stack.get("stack", {}).get("frames"),
+                f"active pause stack was unavailable: {pause_stack}",
+            )
+            pause_functions = {
+                frame.get("function")
+                for frame in pause_stack.get("stack", {}).get("frames", [])
+            }
+            require(
+                all(
+                    function in pause_functions
+                    for function in golden["diagnostics"]["pause_stack_functions"]
+                ),
+                f"pause stack differs: {pause_functions}",
+            )
+            breakpoint_continued, breakpoint_continue_error, _, _ = tool_call(
+                client,
+                "godot_continue_project",
+                {
+                    "runtime_session_id": first_session,
+                    "expected_runtime_event_seq": pause_snapshot[
+                        "runtime_event_seq"
+                    ],
+                },
+            )
+            require(
+                not breakpoint_continue_error
+                and breakpoint_continued.get("state") == "running",
+                f"breakpoint continue failed: {breakpoint_continued}",
+            )
+            continued_snapshot, continued_snapshot_error, _, _ = tool_call(
+                client,
+                "godot_get_diagnostics",
+                {"scope": "runtime", "runtime_session_id": first_session, "limit": 200},
+            )
+            require(
+                not continued_snapshot_error
+                and continued_snapshot.get("state") == "running"
+                and continued_snapshot.get("active_stack_id") is None,
+                "continue did not clear active pause stack",
+            )
             stopped, stop_error, _, stop_ms = tool_call(
                 client,
                 "godot_stop_project",
-                {"runtime_session_id": first_session},
+                {
+                    "runtime_session_id": first_session,
+                    "expected_runtime_event_seq": continued_snapshot[
+                        "runtime_event_seq"
+                    ],
+                },
             )
             require(not stop_error and stopped.get("state") == "stopped", f"stop failed: {stopped}")
             terminal, terminal_error, _, _ = tool_call(
@@ -808,12 +1432,13 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 second_roots[0]["runtime_object_id"] != root["runtime_object_id"],
                 "opaque runtime object identity was reused across sessions",
             )
-            second_stop, second_stop_error, _, _ = tool_call(
-                client,
-                "godot_stop_project",
-                {"runtime_session_id": second_session},
+            write_game_command(project, "quit")
+            wait_game_ack(project, "quit", timeout)
+            second_stop = wait_runtime_state(client, second_session, "stopped", timeout)
+            require(
+                second_stop.get("runtime_session_id") == second_session,
+                "normal runtime quit lost its session coordinates",
             )
-            require(not second_stop_error and second_stop.get("state") == "stopped", "second stop failed")
 
             large_run, large_run_error, _, _ = tool_call(client, "godot_run_project", {})
             require(not large_run_error, f"large-tree run failed: {large_run}")
@@ -930,10 +1555,15 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 {"runtime_session_id": crash_session, "runtime_stack_id": retained_stack_id},
             )
             require(not retained_stack_error, f"terminal stack was not retained: {retained_stack}")
+            wait_editor_ready(client, timeout)
 
             hang_run, hang_run_error, _, _ = tool_call(client, "godot_run_project", {})
             require(not hang_run_error, f"hang run failed: {hang_run}")
             hang_session = cast(str, hang_run["runtime_session_id"])
+            require(
+                hang_session != crash_session,
+                "post-crash run reused the terminal runtime session",
+            )
             hang_ready_deadline = time.monotonic() + timeout
             while True:
                 hang_meta, hang_nodes, _ = runtime_tree(client, hang_session)
@@ -965,17 +1595,49 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
             )
             require(
                 hung_tree_error
-                and hung_tree.get("error", {}).get("code") == "runtime_request_timeout",
+                and hung_tree.get("error", {}).get("code") == "runtime_request_timeout"
+                and hung_tree.get("error", {}).get("retryable") is True
+                and isinstance(hung_tree.get("error", {}).get("current"), dict)
+                and set(hung_tree["error"]["current"])
+                <= {"runtime_session_id", "runtime_event_seq", "state"}
+                and 2500 <= hung_tree_ms <= 5000,
                 f"hung runtime tree did not time out safely: {hung_tree}",
             )
             hang_stop, hang_stop_error, _, hang_stop_ms = tool_call(
                 client,
                 "godot_stop_project",
-                {"runtime_session_id": hang_session},
+                {
+                    "runtime_session_id": hang_session,
+                    "expected_runtime_event_seq": hang_meta["runtime_event_seq"],
+                },
             )
             require(
                 not hang_stop_error and hang_stop.get("state") == "stopped" and hang_stop_ms <= 5000,
                 f"hung runtime did not stop within its bound: {hang_stop}",
+            )
+            time.sleep(0.25)
+            hang_terminal, hang_terminal_error, _, _ = tool_call(
+                client,
+                "godot_get_diagnostics",
+                {
+                    "scope": "runtime",
+                    "runtime_session_id": hang_session,
+                    "limit": 200,
+                },
+            )
+            hang_tree, hang_nodes, _ = runtime_tree(
+                client, hang_session, hang_stop["runtime_event_seq"]
+            )
+            require(
+                not hang_terminal_error
+                and hang_terminal.get("state") == "stopped"
+                and hang_terminal.get("runtime_event_seq")
+                == hang_stop.get("runtime_event_seq")
+                and hang_tree.get("state") == "stopped"
+                and hang_tree.get("runtime_event_seq")
+                == hang_stop.get("runtime_event_seq")
+                and not hang_nodes,
+                "a late hung-runtime callback revived retired data or coordinates",
             )
 
             atomic_json(project / ".godot/codex-sprint8-editor-command.json", {"action": "manual_run"})
@@ -992,6 +1654,10 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
             else:
                 raise RuntimeGateError(f"manual editor run was not observed: {manual_summary}")
             manual_session = cast(str, manual_summary["runtime_session_id"])
+            require(
+                manual_session not in {crash_session, hang_session},
+                "manual recovery run reused a terminal runtime session",
+            )
             manual_tree_deadline = time.monotonic() + timeout
             while True:
                 _, manual_nodes, _ = runtime_tree(client, manual_session)
@@ -1046,7 +1712,7 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 f"{source_changes}; diff={source_change_detail}",
             )
 
-            return {
+            report = {
                 "schema_version": 1,
                 "sprint": 8,
                 "status": "passed",
@@ -1068,9 +1734,13 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                     "runtime_only_unmapped": True,
                     "bounded_properties": True,
                     "deep_tree_bounded": True,
+                    "diagnostic_bounds_and_redaction": True,
+                    "diagnostic_repeat_coalesced": True,
                     "diagnostic_stack": True,
                     "pause_continue_stop_confirmed": True,
+                    "pause_stack_active": True,
                     "fresh_session_per_run": True,
+                    "normal_quit_observed": True,
                     "stale_session_rejected": True,
                     "stale_runtime_state_rejected": True,
                     "terminal_coordinates_retained": True,
@@ -1087,6 +1757,8 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                     "manual_editor_lifecycle_observed": True,
                     "runtime_summary_bounded": True,
                     "viewport_capture": capture_ok if not headless else "unavailable_headless",
+                    "viewport_capture_rate_limit": True if not headless else "unavailable_headless",
+                    "viewport_visual_marker": True if not headless else "unavailable_headless",
                 },
                 "observations": {
                     "runtime_nodes": len(nodes),
@@ -1110,30 +1782,103 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                     "hung_game_bridge_ping_p95": percentile_95(bridge_ping_timings),
                     "hung_game_stop": hang_stop_ms,
                 },
+                "cleanup": {
+                    "editor_processes_stopped": False,
+                    "sidecar_processes_stopped": False,
+                    "temporary_workspace_removed": False,
+                    "runtime_values_retired": bool(
+                        retired_tree.get("state") == "crashed"
+                        and not retired_nodes
+                        and hang_tree.get("state") == "stopped"
+                        and not hang_nodes
+                    ),
+                },
+                "redaction": client.runtime_safety_audit.result(),
+                "_temporary_workspace": temporary,
             }
+            return report
         except Exception as error:
+            primary_failure = True
             tail = list(sidecar_process.tail[-20:]) if sidecar_process is not None else []
-            raise RuntimeGateError(f"{error}; sidecar_tail={tail}") from error
+            log.flush()
+            try:
+                editor_tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]
+            except OSError:
+                editor_tail = []
+            raise RuntimeGateError(
+                f"{error}; sidecar_tail={tail}; editor_tail={editor_tail}"
+            ) from error
         finally:
+            cleanup_errors: list[str] = []
             if sidecar_process is not None:
-                close_sidecar(sidecar_process)
-            if editor.poll() is None:
-                atomic_json(project / ".godot/codex-sprint8-editor-command.json", {"action": "done"})
                 try:
-                    editor.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    terminate_process_group(editor)
+                    close_sidecar(sidecar_process)
+                except Exception as error:
+                    cleanup_errors.append(f"sidecar cleanup failed: {error}")
+            sidecar_stopped = (
+                sidecar_process is None
+                or sidecar_process.process.poll() is not None
+            )
+            if editor.poll() is None:
+                try:
+                    atomic_json(
+                        project / ".godot/codex-sprint8-editor-command.json",
+                        {"action": "done"},
+                    )
+                    try:
+                        editor.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        terminate_process_group(editor)
+                except Exception as error:
+                    cleanup_errors.append(f"editor cleanup failed: {error}")
+                    if editor.poll() is None:
+                        try:
+                            terminate_process_group(editor)
+                        except Exception as terminate_error:
+                            cleanup_errors.append(
+                                f"editor process-group cleanup failed: {terminate_error}"
+                            )
             # A normally closed or crashed editor can leave its game child alive;
             # the dedicated process group keeps this exact and unrelated-process safe.
             try:
                 os.killpg(editor.pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
-            retire_fixture_processes(project)
+            try:
+                fixture_processes_stopped = retire_fixture_processes(project)
+            except Exception as error:
+                fixture_processes_stopped = False
+                cleanup_errors.append(f"fixture process cleanup failed: {error}")
+            editor_stopped = editor.poll() is not None and fixture_processes_stopped
+            if report is not None:
+                report["cleanup"]["editor_processes_stopped"] = editor_stopped
+                report["cleanup"]["sidecar_processes_stopped"] = sidecar_stopped
             log.close()
             if editor.returncode != 0:
                 tail = log_path.read_text(encoding="utf-8", errors="replace")[-8000:]
-                raise RuntimeGateError(f"Godot editor exited with {editor.returncode}: {tail}")
+                cleanup_errors.append(
+                    f"Godot editor exited with {editor.returncode}: {tail}"
+                )
+            if not sidecar_stopped:
+                cleanup_errors.append("sidecar process remained alive")
+            if not editor_stopped:
+                cleanup_errors.append("editor or fixture process remained alive")
+            if cleanup_errors and not primary_failure:
+                raise RuntimeGateError("; ".join(cleanup_errors))
+
+
+def finalize_live_report(report: dict[str, Any]) -> dict[str, Any]:
+    """Verify post-context cleanup immediately before serializing evidence."""
+    temporary = report.pop("_temporary_workspace", None)
+    require(isinstance(temporary, str), "live report omitted its temporary workspace")
+    cleanup = report.get("cleanup")
+    require(isinstance(cleanup, dict), "live report omitted cleanup results")
+    cleanup["temporary_workspace_removed"] = not Path(temporary).exists()
+    require(all(value is True for value in cleanup.values()), "live cleanup proof failed")
+    redaction = report.get("redaction")
+    require(isinstance(redaction, dict), "live report omitted redaction results")
+    require(all(value is True for value in redaction.values()), "live redaction proof failed")
+    return report
 
 
 def main() -> int:
@@ -1144,11 +1889,13 @@ def main() -> int:
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--output", type=Path)
     arguments = parser.parse_args()
-    report = run_live(
-        arguments.godot.resolve(),
-        arguments.sidecar.resolve(),
-        arguments.timeout,
-        arguments.headless,
+    report = finalize_live_report(
+        run_live(
+            arguments.godot.resolve(),
+            arguments.sidecar.resolve(),
+            arguments.timeout,
+            arguments.headless,
+        )
     )
     encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if arguments.output:
