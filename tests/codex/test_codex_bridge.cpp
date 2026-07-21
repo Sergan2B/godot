@@ -47,6 +47,7 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "core/templates/local_vector.h"
 #include "core/templates/safe_refcount.h"
 #include "editor/file_system/editor_file_system.h"
+#include "editor/editor_log.h"
 #include "scene/debugger/scene_debugger_object.h"
 #include "scene/debugger/codex_runtime_value_projector.h"
 #include "scene/main/node.h"
@@ -1616,6 +1617,137 @@ TEST_CASE("[CodexS8Runtime][CodexEDRLifecycle] Lifecycle policy classifies stop,
 	CHECK(RuntimeLifecyclePolicy::classify_process_exit("disconnected", true) == "stopped");
 	CHECK(RuntimeLifecyclePolicy::is_reconnect("disconnected"));
 	CHECK_FALSE(RuntimeLifecyclePolicy::is_reconnect("running"));
+}
+
+TEST_CASE("[CodexS8Runtime][CodexRTDiagnostics] Diagnostic policy sanitizes before UTF-8 bounding") {
+	bool redacted = false;
+	bool truncated = false;
+	const String sensitive = RuntimeDiagnosticPolicy::sanitize_message(
+			"Authorization: Bearer fixture-secret",
+			"/project", "/Users/fixture", "/tmp/fixture", redacted, truncated);
+	CHECK(redacted);
+	CHECK_FALSE(truncated);
+	CHECK(sensitive == "<redacted sensitive runtime output>");
+
+	redacted = false;
+	truncated = false;
+	const String unsafe = String::chr(0x1b) + "[31mfailed at /Users/private/runtime.gd:42 https://127.0.0.1:6007/session\x01";
+	const String scrubbed = RuntimeDiagnosticPolicy::sanitize_message(unsafe, "/project", "/Users/fixture", "/tmp/fixture", redacted, truncated);
+	CHECK(redacted);
+	CHECK_FALSE(scrubbed.contains("/Users/"));
+	CHECK_FALSE(scrubbed.contains("127.0.0.1"));
+	CHECK_FALSE(scrubbed.contains_char(0x1b));
+	CHECK(scrubbed.contains("<path>"));
+	CHECK(scrubbed.contains("<endpoint>"));
+
+	redacted = false;
+	truncated = false;
+	const String embedded_paths = RuntimeDiagnosticPolicy::sanitize_message(
+			"project=res://safe/runtime.gd host_path:/var/log/runtime.log windows:C:/private/runtime.log",
+			"/project", "/Users/fixture", "/tmp/fixture", redacted, truncated);
+	CHECK(redacted);
+	CHECK(embedded_paths.contains("res://safe/runtime.gd"));
+	CHECK_FALSE(embedded_paths.contains("/var/log"));
+	CHECK_FALSE(embedded_paths.contains("C:/private"));
+
+	redacted = false;
+	truncated = false;
+	const String multibyte = String::chr(0x1f642).repeat(6000);
+	const String bounded = RuntimeDiagnosticPolicy::sanitize_message(multibyte, "/project", "/Users/fixture", "/tmp/fixture", redacted, truncated);
+	CHECK(truncated);
+	CHECK(bounded.utf8().length() <= 16384);
+	CHECK(bounded.ends_with(" [truncated]"));
+	CHECK(RuntimeDiagnosticPolicy::normalize_output_severity(EditorLog::MSG_TYPE_ERROR) == "error");
+	CHECK(RuntimeDiagnosticPolicy::normalize_output_severity(EditorLog::MSG_TYPE_WARNING) == "warning");
+	CHECK(RuntimeDiagnosticPolicy::normalize_output_severity(EditorLog::MSG_TYPE_STD) == "info");
+}
+
+TEST_CASE("[CodexS8Runtime][CodexRTDiagnostics] Stack projection removes foreign frames and preserves one-based coordinates") {
+	Array raw_frames;
+	Dictionary foreign;
+	foreign["file"] = "/Users/private/native.cpp";
+	foreign["function"] = "native_frame";
+	foreign["line"] = 0;
+	raw_frames.push_back(foreign);
+	for (int index = 0; index < 130; index++) {
+		Dictionary frame;
+		frame["file"] = "res://scripts/runtime_fixture.gd";
+		frame["function"] = "frame_" + String::num_int64(index);
+		frame["line"] = index + 1;
+		if (index == 0) {
+			frame["column"] = 3;
+		}
+		raw_frames.push_back(frame);
+	}
+	bool truncated = false;
+	const Array frames = RuntimeDiagnosticPolicy::sanitize_frames(raw_frames, 128, truncated);
+	CHECK(truncated);
+	REQUIRE(frames.size() == 128);
+	for (int index = 0; index < frames.size(); index++) {
+		const Dictionary frame = frames[index];
+		CHECK((int64_t)frame["frame"] == index);
+		CHECK(String(frame["script_path"]).begins_with("res://"));
+		CHECK((int64_t)frame["line"] >= 1);
+		CHECK(String(frame["function"]).utf8().length() <= 1024);
+	}
+	CHECK((int64_t)Dictionary(frames[0])["column"] == 3);
+}
+
+TEST_CASE("[CodexS8Runtime][CodexRTScreenshot] Screenshot policy validates callback paths, PNG headers, and source budgets") {
+	const String temp_root = OS::get_singleton()->get_temp_path().simplify_path();
+	String safe_path;
+	CHECK(RuntimeScreenshotPolicy::normalize_callback_path(temp_root.path_join("scr-codex-runtime.png"), temp_root, safe_path));
+	CHECK(safe_path == temp_root.path_join("scr-codex-runtime.png"));
+	CHECK_FALSE(RuntimeScreenshotPolicy::normalize_callback_path(temp_root.path_join("capture.png"), temp_root, safe_path));
+	CHECK_FALSE(RuntimeScreenshotPolicy::normalize_callback_path(temp_root.path_join("nested/scr-codex-runtime.png"), temp_root, safe_path));
+	CHECK_FALSE(RuntimeScreenshotPolicy::normalize_callback_path("/private/scr-codex-runtime.png", temp_root, safe_path));
+	const String cleanup_path = temp_root.path_join("scr-codex-policy-" + String::num_uint64(OS::get_singleton()->get_ticks_usec()) + ".png");
+	Ref<FileAccess> cleanup_fixture = FileAccess::open(cleanup_path, FileAccess::WRITE);
+	REQUIRE(cleanup_fixture.is_valid());
+	cleanup_fixture->store_8(0);
+	cleanup_fixture.unref();
+	CHECK(FileAccess::exists(cleanup_path));
+	String regular_path;
+	CHECK(RuntimeScreenshotPolicy::is_regular_callback_file(cleanup_path, temp_root, regular_path));
+	CHECK(RuntimeScreenshotPolicy::cleanup_callback_path(cleanup_path, temp_root));
+	CHECK_FALSE(FileAccess::exists(cleanup_path));
+	CHECK_FALSE(RuntimeScreenshotPolicy::cleanup_callback_path(cleanup_path, temp_root));
+
+	const String link_suffix = String::num_uint64(OS::get_singleton()->get_ticks_usec());
+	const String link_target = temp_root.path_join("codex-policy-target-" + link_suffix);
+	Ref<FileAccess> link_fixture = FileAccess::open(link_target, FileAccess::WRITE);
+	REQUIRE(link_fixture.is_valid());
+	link_fixture->store_8(0);
+	link_fixture.unref();
+	const String link_path = temp_root.path_join("scr-codex-policy-link-" + link_suffix + ".png");
+	DirAccess::remove_absolute(link_path);
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	REQUIRE(filesystem.is_valid());
+	REQUIRE(filesystem->create_link(link_target, link_path) == OK);
+	CHECK(filesystem->is_link(link_path));
+	CHECK_FALSE(RuntimeScreenshotPolicy::is_regular_callback_file(link_path, temp_root, regular_path));
+	CHECK(RuntimeScreenshotPolicy::cleanup_callback_path(link_path, temp_root));
+	CHECK(FileAccess::exists(link_target));
+	CHECK(DirAccess::remove_absolute(link_target) == OK);
+
+	PackedByteArray header;
+	header.resize(24);
+	const uint8_t valid_header[] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 0x00, 0x00, 0x0d, 'I', 'H', 'D', 'R', 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x02, 0xd0 };
+	for (int index = 0; index < 24; index++) {
+		header.set(index, valid_header[index]);
+	}
+	int width = 0;
+	int height = 0;
+	CHECK(RuntimeScreenshotPolicy::parse_png_header(header, width, height));
+	CHECK(width == 1280);
+	CHECK(height == 720);
+	CHECK(RuntimeScreenshotPolicy::source_is_bounded(width, height, 1024));
+	CHECK_FALSE(RuntimeScreenshotPolicy::source_is_bounded(0, height, 1024));
+	CHECK_FALSE(RuntimeScreenshotPolicy::source_is_bounded(16385, 1, 1024));
+	CHECK_FALSE(RuntimeScreenshotPolicy::source_is_bounded(16384, 16384, 1024));
+	CHECK_FALSE(RuntimeScreenshotPolicy::source_is_bounded(width, height, 33554433));
+	header.set(12, 'X');
+	CHECK_FALSE(RuntimeScreenshotPolicy::parse_png_header(header, width, height));
 }
 
 TEST_CASE("[CodexS8Runtime] Game-side tree and cyclic properties are bounded before debugger serialization") {

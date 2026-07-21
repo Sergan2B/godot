@@ -20,6 +20,7 @@
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
 #include "editor/debugger/script_editor_debugger.h"
+#include "editor/editor_log.h"
 #include "editor/editor_node.h"
 #include "editor/run/editor_run.h"
 #include "editor/run/editor_run_bar.h"
@@ -58,6 +59,66 @@ static String sha256_hex_utf8(const String &p_value) {
 	return BridgeCrypto::bytes_to_lower_hex(digest);
 }
 
+static bool token_has_absolute_path(const String &p_token) {
+	const String normalized = p_token.replace("\\", "/");
+	const String lower = normalized.to_lower();
+	if (lower.contains("user://")) {
+		return true;
+	}
+	for (int index = 0; index < normalized.length(); index++) {
+		const char32_t current = normalized[index];
+		const bool boundary = index == 0 || String("=:;,([{\"'").contains_char(normalized[index - 1]);
+		if (current == '/' && index >= 4 && lower.substr(index - 4, 6) == "res://") {
+			continue;
+		}
+		if (current == '/' && boundary) {
+			return true;
+		}
+		if (index + 2 < normalized.length() && boundary && ((current >= 'A' && current <= 'Z') || (current >= 'a' && current <= 'z')) && normalized[index + 1] == ':' && normalized[index + 2] == '/') {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool token_has_endpoint(const String &p_token) {
+	const String lower = p_token.to_lower();
+	for (const char *scheme : { "http://", "https://", "ws://", "wss://", "tcp://", "udp://" }) {
+		if (lower.contains(scheme)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static String scrub_message_tokens(const String &p_message, bool &r_redacted) {
+	String result;
+	int start = 0;
+	while (start < p_message.length()) {
+		if (p_message[start] <= 0x20) {
+			result += String::chr(p_message[start]);
+			start++;
+			continue;
+		}
+		int end = start + 1;
+		while (end < p_message.length() && p_message[end] > 0x20) {
+			end++;
+		}
+		const String token = p_message.substr(start, end - start);
+		if (token_has_endpoint(token)) {
+			result += "<endpoint>";
+			r_redacted = true;
+		} else if (token_has_absolute_path(token)) {
+			result += "<path>";
+			r_redacted = true;
+		} else {
+			result += token;
+		}
+		start = end;
+	}
+	return result;
+}
+
 } // namespace
 
 bool RuntimeLifecyclePolicy::is_terminal(const String &p_state) {
@@ -77,6 +138,193 @@ String RuntimeLifecyclePolicy::classify_debugger_stop(const String &p_state, boo
 
 String RuntimeLifecyclePolicy::classify_process_exit(const String &p_state, bool p_normal_quit_requested) {
 	return p_state == "stopping" || p_normal_quit_requested ? "stopped" : "crashed";
+}
+
+String RuntimeDiagnosticPolicy::bound_utf8(const String &p_value, int p_max_bytes, bool &r_truncated, bool p_add_marker) {
+	ERR_FAIL_COND_V(p_max_bytes < 0, String());
+	if (p_value.utf8().length() <= p_max_bytes) {
+		return p_value;
+	}
+	r_truncated = true;
+	const String marker = p_add_marker ? " [truncated]" : String();
+	const int marker_bytes = marker.utf8().length();
+	const int content_limit = MAX(0, p_max_bytes - marker_bytes);
+	int low = 0;
+	int high = p_value.length();
+	while (low < high) {
+		const int middle = low + (high - low + 1) / 2;
+		if (p_value.left(middle).utf8().length() <= content_limit) {
+			low = middle;
+		} else {
+			high = middle - 1;
+		}
+	}
+	String bounded = p_value.left(low);
+	if (p_add_marker && marker_bytes <= p_max_bytes) {
+		bounded += marker;
+	}
+	return bounded;
+}
+
+String RuntimeDiagnosticPolicy::sanitize_message(const String &p_message, const String &p_project_root, const String &p_home_root, const String &p_temp_root, bool &r_redacted, bool &r_truncated) {
+	r_redacted = false;
+	r_truncated = false;
+	String input = p_message;
+	if (input.length() > 65536) {
+		input = input.left(65536);
+		r_truncated = true;
+	}
+	String cleaned;
+	for (int index = 0; index < input.length(); index++) {
+		const char32_t character = input[index];
+		if (character == 0x1b) {
+			r_redacted = true;
+			if (index + 1 < input.length() && input[index + 1] == '[') {
+				index += 2;
+				while (index < input.length() && !(input[index] >= 0x40 && input[index] <= 0x7e)) {
+					index++;
+				}
+			}
+			continue;
+		}
+		if (character == '\r') {
+			if (index + 1 < input.length() && input[index + 1] == '\n') {
+				continue;
+			}
+			cleaned += "\n";
+			continue;
+		}
+		if ((character < 0x20 && character != '\n' && character != '\t') || character == 0x7f) {
+			cleaned += " ";
+			r_redacted = true;
+			continue;
+		}
+		cleaned += String::chr(character);
+	}
+
+	const String lower = cleaned.to_lower();
+	for (const char *marker : { "authorization:", "bearer ", "api_key", "api-key", "apikey", "password=", "password:", "secret=", "secret:", "token=", "token:", "access_token", "private_key" }) {
+		if (lower.contains(marker)) {
+			r_redacted = true;
+			return "<redacted sensitive runtime output>";
+		}
+	}
+
+	String normalized = cleaned.replace("\\", "/");
+	const String roots[] = { p_project_root.replace("\\", "/"), p_home_root.replace("\\", "/"), p_temp_root.replace("\\", "/") };
+	const String placeholders[] = { "<project>", "<home>", "<temp>" };
+	for (int index = 0; index < 3; index++) {
+		if (!roots[index].is_empty() && normalized.contains(roots[index])) {
+			normalized = normalized.replace(roots[index], placeholders[index]);
+			r_redacted = true;
+		}
+	}
+	normalized = scrub_message_tokens(normalized, r_redacted);
+	bool byte_truncated = false;
+	normalized = bound_utf8(normalized, 16384, byte_truncated, true);
+	r_truncated = r_truncated || byte_truncated;
+	return normalized;
+}
+
+Array RuntimeDiagnosticPolicy::sanitize_frames(const Array &p_frames, int p_max_frames, bool &r_truncated) {
+	Array frames;
+	for (int index = 0; index < p_frames.size(); index++) {
+		if (frames.size() >= p_max_frames) {
+			r_truncated = true;
+			break;
+		}
+		if (p_frames[index].get_type() != Variant::DICTIONARY) {
+			r_truncated = true;
+			continue;
+		}
+		const Dictionary source = p_frames[index];
+		const String path = source.get("script_path", source.get("file", String()));
+		if (!safe_res_path(path)) {
+			r_truncated = true;
+			continue;
+		}
+		Dictionary frame;
+		frame["frame"] = frames.size();
+		bool field_truncated = false;
+		frame["script_path"] = bound_utf8(path, 1024, field_truncated);
+		frame["function"] = bound_utf8(String(source.get("function", String())), 1024, field_truncated);
+		frame["line"] = MAX(1, (int)source.get("line", 1));
+		const int column = source.get("column", 0);
+		if (column > 0) {
+			frame["column"] = column;
+		}
+		r_truncated = r_truncated || field_truncated;
+		frames.push_back(frame);
+	}
+	return frames;
+}
+
+String RuntimeDiagnosticPolicy::normalize_output_severity(int p_level) {
+	if (p_level == EditorLog::MSG_TYPE_ERROR) {
+		return "error";
+	}
+	if (p_level == EditorLog::MSG_TYPE_WARNING) {
+		return "warning";
+	}
+	return "info";
+}
+
+bool RuntimeScreenshotPolicy::normalize_callback_path(const String &p_path, const String &p_temp_root, String &r_safe_path) {
+	r_safe_path.clear();
+	const String temp_root = p_temp_root.simplify_path();
+	const String candidate = p_path.simplify_path();
+	const String filename = candidate.get_file();
+	if (temp_root.is_empty() || candidate.get_base_dir() != temp_root || !filename.begins_with("scr-") || filename.length() <= 8 || candidate.get_extension().to_lower() != "png") {
+		return false;
+	}
+	r_safe_path = candidate;
+	return true;
+}
+
+bool RuntimeScreenshotPolicy::cleanup_callback_path(const String &p_path, const String &p_temp_root) {
+	String safe_path;
+	if (!normalize_callback_path(p_path, p_temp_root, safe_path)) {
+		return false;
+	}
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null() || (!filesystem->file_exists(safe_path) && !filesystem->is_link(safe_path))) {
+		return false;
+	}
+	return DirAccess::remove_absolute(safe_path) == OK;
+}
+
+bool RuntimeScreenshotPolicy::is_regular_callback_file(const String &p_path, const String &p_temp_root, String &r_safe_path) {
+	if (!normalize_callback_path(p_path, p_temp_root, r_safe_path)) {
+		return false;
+	}
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	return filesystem.is_valid() && filesystem->file_exists(r_safe_path) && FileAccess::exists(r_safe_path) && !filesystem->is_link(r_safe_path);
+}
+
+bool RuntimeScreenshotPolicy::parse_png_header(const PackedByteArray &p_header, int &r_width, int &r_height) {
+	r_width = 0;
+	r_height = 0;
+	static constexpr uint8_t PNG_PREFIX[] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00, 0x00, 0x00, 0x0d, 'I', 'H', 'D', 'R' };
+	if (p_header.size() < 24) {
+		return false;
+	}
+	for (int index = 0; index < 16; index++) {
+		if (p_header[index] != PNG_PREFIX[index]) {
+			return false;
+		}
+	}
+	const uint32_t width = ((uint32_t)p_header[16] << 24) | ((uint32_t)p_header[17] << 16) | ((uint32_t)p_header[18] << 8) | (uint32_t)p_header[19];
+	const uint32_t height = ((uint32_t)p_header[20] << 24) | ((uint32_t)p_header[21] << 16) | ((uint32_t)p_header[22] << 8) | (uint32_t)p_header[23];
+	if (width == 0 || height == 0 || width > INT32_MAX || height > INT32_MAX) {
+		return false;
+	}
+	r_width = (int)width;
+	r_height = (int)height;
+	return true;
+}
+
+bool RuntimeScreenshotPolicy::source_is_bounded(int p_width, int p_height, uint64_t p_bytes) {
+	return p_width > 0 && p_height > 0 && p_width <= MAX_SOURCE_DIMENSION && p_height <= MAX_SOURCE_DIMENSION && (int64_t)p_width * p_height <= MAX_SOURCE_PIXELS && p_bytes > 0 && p_bytes <= MAX_SOURCE_BYTES;
 }
 
 ScriptEditorDebugger *RuntimeDebuggerAdapter::_get_debugger(int p_session_id) const {
@@ -211,9 +459,20 @@ void RuntimeDebuggerAdapter::_begin_session(const String &p_origin, const String
 	_retire_live_data();
 	diagnostics.clear();
 	diagnostic_bytes = 0;
+	diagnostic_by_fingerprint.clear();
+	diagnostic_fingerprint_by_id.clear();
+	diagnostic_id_seq = 0;
+	diagnostics_truncated = false;
 	stacks.clear();
 	stack_order.clear();
 	stack_bytes = 0;
+	stack_by_fingerprint.clear();
+	stack_fingerprint_by_id.clear();
+	stack_id_seq = 0;
+	stacks_truncated = false;
+	active_stack_id.clear();
+	pause_generation = 0;
+	expecting_pause_stack = false;
 	revisions->begin_runtime_session(runtime_session_id);
 	_publish_event("session_started", changed_domain("runtime_state"));
 }
@@ -230,6 +489,10 @@ bool RuntimeDebuggerAdapter::_transition(const String &p_state, const String &p_
 	state = p_state;
 	terminal_reason = p_reason;
 	state_since_usec = OS::get_singleton()->get_ticks_usec();
+	if (_is_terminal() || state == "disconnected" || state == "stopping") {
+		active_stack_id.clear();
+		expecting_pause_stack = false;
+	}
 	if (p_advance) {
 		revisions->record_runtime_change();
 	}
@@ -316,102 +579,198 @@ void RuntimeDebuggerAdapter::_complete_pending_controls(const String &p_confirme
 }
 
 String RuntimeDebuggerAdapter::_redact_message(const String &p_message, bool &r_redacted, bool &r_truncated) const {
-	String message = bounded_string(p_message, 16384, r_truncated);
-	const String lower = message.to_lower();
-	for (const char *marker : { "authorization:", "bearer ", "api_key", "apikey", "password=", "password:", "secret=", "secret:", "token=", "token:" }) {
-		if (lower.contains(marker)) {
-			r_redacted = true;
-			return "<redacted sensitive runtime output>";
-		}
-	}
-	for (const String &sensitive_root : { ProjectSettings::get_singleton()->get_resource_path().replace("\\", "/"), OS::get_singleton()->get_environment("HOME").replace("\\", "/") }) {
-		if (!sensitive_root.is_empty() && message.replace("\\", "/").contains(sensitive_root)) {
-			message = message.replace("\\", "/").replace(sensitive_root, sensitive_root == ProjectSettings::get_singleton()->get_resource_path().replace("\\", "/") ? "<project>" : "<home>");
-			r_redacted = true;
-		}
-	}
-	return message;
+	return RuntimeDiagnosticPolicy::sanitize_message(p_message, ProjectSettings::get_singleton()->get_resource_path(), OS::get_singleton()->get_environment("HOME"), OS::get_singleton()->get_temp_path(), r_redacted, r_truncated);
 }
 
-void RuntimeDebuggerAdapter::_append_diagnostic(const String &p_severity, const String &p_source, const String &p_message, const String &p_script_path, int p_line, const String &p_function, const String &p_stack_id) {
-	bool redacted = false;
-	bool truncated = false;
-	Dictionary diagnostic;
-	const uint64_t next_seq = revisions->get_runtime_event_seq() + 1;
-	diagnostic["kind"] = "runtime_diagnostic";
-	const String id = _make_opaque_id("runtime-diagnostic:", "godot-codex-runtime-diagnostic/v1", String::num_uint64(next_seq) + "\n" + p_message);
-	diagnostic["entity_id"] = id;
-	diagnostic["runtime_diagnostic_id"] = id;
-	diagnostic["severity"] = p_severity;
-	diagnostic["source"] = p_source;
-	diagnostic["message"] = _redact_message(p_message, redacted, truncated);
-	diagnostic["repeat_count"] = (int64_t)1;
-	diagnostic["runtime_event_seq"] = (int64_t)next_seq;
-	if (safe_res_path(p_script_path)) {
-		diagnostic["script_path"] = bounded_string(p_script_path, 1024, truncated);
-		if (p_line > 0) {
-			diagnostic["line"] = p_line;
-		}
+void RuntimeDebuggerAdapter::_remove_diagnostic_at(int p_index) {
+	ERR_FAIL_INDEX(p_index, diagnostics.size());
+	const Dictionary diagnostic = diagnostics[p_index];
+	const String id = diagnostic.get("runtime_diagnostic_id", String());
+	const String *fingerprint = diagnostic_fingerprint_by_id.getptr(id);
+	if (fingerprint) {
+		diagnostic_by_fingerprint.erase(*fingerprint);
+		diagnostic_fingerprint_by_id.erase(id);
 	}
-	if (!p_function.is_empty()) {
-		diagnostic["function"] = bounded_string(p_function, 1024, truncated);
-	}
-	if (!p_stack_id.is_empty()) {
-		diagnostic["runtime_stack_id"] = p_stack_id;
-	}
-	diagnostic["redacted"] = redacted;
-	const int bytes = JSON::stringify(diagnostic, "", true, true).utf8().length();
-	while (!diagnostics.is_empty() && (diagnostics.size() >= MAX_DIAGNOSTICS || diagnostic_bytes + bytes > MAX_DIAGNOSTIC_BYTES)) {
-		diagnostic_bytes -= JSON::stringify(diagnostics[0], "", true, true).utf8().length();
-		diagnostics.remove_at(0);
-	}
-	if (bytes <= MAX_DIAGNOSTIC_BYTES) {
-		diagnostics.push_back(diagnostic);
-		diagnostic_bytes += bytes;
-	}
+	diagnostic_bytes -= JSON::stringify(diagnostic, "", true, true).utf8().length();
+	diagnostics.remove_at(p_index);
 }
 
-String RuntimeDebuggerAdapter::_append_stack(const String &p_kind, const Array &p_frames, const String &p_identity) {
-	bool truncated = false;
-	Array frames;
-	for (int index = 0; index < MIN(p_frames.size(), MAX_STACK_FRAMES); index++) {
-		if (p_frames[index].get_type() != Variant::DICTIONARY) {
-			truncated = true;
+bool RuntimeDebuggerAdapter::_clear_stack_references(const String &p_stack_id) {
+	bool changed = false;
+	for (int index = 0; index < diagnostics.size(); index++) {
+		Dictionary diagnostic = diagnostics[index];
+		if (String(diagnostic.get("runtime_stack_id", String())) != p_stack_id) {
 			continue;
 		}
-		const Dictionary source = p_frames[index];
-		Dictionary frame;
-		frame["frame"] = frames.size();
-		const String path = source.get("script_path", source.get("file", String()));
-		if (safe_res_path(path)) {
-			frame["script_path"] = bounded_string(path, 1024, truncated);
-		}
-		frame["function"] = bounded_string(String(source.get("function", String())), 1024, truncated);
-		frame["line"] = MAX(1, (int)source.get("line", 1));
-		frames.push_back(frame);
+		diagnostic_bytes -= JSON::stringify(diagnostic, "", true, true).utf8().length();
+		diagnostic.erase("runtime_stack_id");
+		diagnostics[index] = diagnostic;
+		diagnostic_bytes += JSON::stringify(diagnostic, "", true, true).utf8().length();
+		changed = true;
 	}
-	truncated = truncated || p_frames.size() > MAX_STACK_FRAMES;
-	const String id = _make_opaque_id("runtime-stack:", "godot-codex-runtime-stack/v1", p_kind + "\n" + p_identity + "\n" + String::num_uint64(revisions->get_runtime_event_seq() + 1));
+	return changed;
+}
+
+bool RuntimeDebuggerAdapter::_retire_stack(const String &p_stack_id) {
+	if (!stacks.has(p_stack_id)) {
+		return false;
+	}
+	stack_bytes -= JSON::stringify(stacks[p_stack_id], "", true, true).utf8().length();
+	stacks.erase(p_stack_id);
+	stack_order.erase(p_stack_id);
+	const String *fingerprint = stack_fingerprint_by_id.getptr(p_stack_id);
+	if (fingerprint) {
+		stack_by_fingerprint.erase(*fingerprint);
+		stack_fingerprint_by_id.erase(p_stack_id);
+	}
+	return _clear_stack_references(p_stack_id);
+}
+
+bool RuntimeDebuggerAdapter::_append_diagnostic(const String &p_severity, const String &p_source, const String &p_message, uint64_t p_event_seq, const String &p_script_path, int p_line, const String &p_function, const String &p_stack_id) {
+	bool redacted = false;
+	bool truncated = false;
+	const String message = _redact_message(p_message, redacted, truncated);
+	String script_path;
+	if (safe_res_path(p_script_path)) {
+		script_path = RuntimeDiagnosticPolicy::bound_utf8(p_script_path, 1024, truncated);
+	}
+	const String function = RuntimeDiagnosticPolicy::bound_utf8(p_function, 1024, truncated);
+	const String fingerprint = sha256_hex_utf8(p_severity + "\n" + p_source + "\n" + message + "\n" + script_path + "\n" + String::num_int64(p_line) + "\n" + function + "\n" + p_stack_id);
+	if (fingerprint.is_empty()) {
+		return false;
+	}
+
+	Dictionary diagnostic;
+	const String *existing_id = diagnostic_by_fingerprint.getptr(fingerprint);
+	if (existing_id) {
+		for (int index = 0; index < diagnostics.size(); index++) {
+			const Dictionary existing = diagnostics[index];
+			if (String(existing.get("runtime_diagnostic_id", String())) != *existing_id) {
+				continue;
+			}
+			diagnostic = existing;
+			const int64_t repeat_count = diagnostic.get("repeat_count", 1);
+			diagnostic["repeat_count"] = MIN(repeat_count + 1, (int64_t)9007199254740991LL);
+			diagnostic["runtime_event_seq"] = (int64_t)p_event_seq;
+			diagnostic["redacted"] = (bool)diagnostic.get("redacted", false) || redacted;
+			_remove_diagnostic_at(index);
+			break;
+		}
+	}
+
+	if (diagnostic.is_empty()) {
+		diagnostic_id_seq++;
+		diagnostic["kind"] = "runtime_diagnostic";
+		const String id = _make_opaque_id("runtime-diagnostic:", "godot-codex-runtime-diagnostic/v1", String::num_uint64(diagnostic_id_seq));
+		if (id.is_empty()) {
+			return false;
+		}
+		diagnostic["entity_id"] = id;
+		diagnostic["runtime_diagnostic_id"] = id;
+		diagnostic["severity"] = p_severity;
+		diagnostic["source"] = p_source;
+		diagnostic["message"] = message;
+		diagnostic["repeat_count"] = (int64_t)1;
+		diagnostic["runtime_event_seq"] = (int64_t)p_event_seq;
+		if (!script_path.is_empty()) {
+			diagnostic["script_path"] = script_path;
+			if (p_line > 0) {
+				diagnostic["line"] = p_line;
+			}
+		}
+		if (!function.is_empty()) {
+			diagnostic["function"] = function;
+		}
+		if (!p_stack_id.is_empty() && stacks.has(p_stack_id)) {
+			diagnostic["runtime_stack_id"] = p_stack_id;
+		}
+		diagnostic["redacted"] = redacted;
+	}
+
+	const int bytes = JSON::stringify(diagnostic, "", true, true).utf8().length();
+	while (!diagnostics.is_empty() && (diagnostics.size() >= MAX_DIAGNOSTICS || diagnostic_bytes + bytes > MAX_DIAGNOSTIC_BYTES)) {
+		_remove_diagnostic_at(0);
+		diagnostics_truncated = true;
+	}
+	if (bytes > MAX_DIAGNOSTIC_BYTES) {
+		diagnostics_truncated = true;
+		return false;
+	}
+	const String id = diagnostic["runtime_diagnostic_id"];
+	diagnostics.push_back(diagnostic);
+	diagnostic_bytes += bytes;
+	diagnostic_by_fingerprint[fingerprint] = id;
+	diagnostic_fingerprint_by_id[id] = fingerprint;
+	diagnostics_truncated = diagnostics_truncated || truncated;
+	return true;
+}
+
+String RuntimeDebuggerAdapter::_append_stack(const String &p_kind, const Array &p_frames, uint64_t p_event_seq, bool p_deduplicate, const String &p_dedup_identity, bool &r_added, bool &r_diagnostic_links_changed) {
+	r_added = false;
+	r_diagnostic_links_changed = false;
+	bool truncated = false;
+	const Array frames = RuntimeDiagnosticPolicy::sanitize_frames(p_frames, MAX_STACK_FRAMES, truncated);
+	if (frames.is_empty()) {
+		stacks_truncated = stacks_truncated || truncated || !p_frames.is_empty();
+		return String();
+	}
+	Array fingerprint_frames = frames;
+	if (p_deduplicate && fingerprint_frames.size() > 3) {
+		fingerprint_frames.resize(3);
+	}
+	const String fingerprint = sha256_hex_utf8(p_kind + "\n" + p_dedup_identity + "\n" + (truncated ? "truncated\n" : "complete\n") + JSON::stringify(fingerprint_frames, "", true, true));
+	if (fingerprint.is_empty()) {
+		return String();
+	}
+	if (p_deduplicate) {
+		const String *existing_id = stack_by_fingerprint.getptr(fingerprint);
+		if (existing_id && stacks.has(*existing_id)) {
+			stacks_truncated = stacks_truncated || truncated;
+			return *existing_id;
+		}
+	}
+
+	stack_id_seq++;
+	const String id = _make_opaque_id("runtime-stack:", "godot-codex-runtime-stack/v1", String::num_uint64(stack_id_seq));
+	if (id.is_empty()) {
+		return String();
+	}
 	Dictionary stack;
 	stack["kind"] = "runtime_stack";
 	stack["entity_id"] = id;
 	stack["runtime_stack_id"] = id;
+	stack["runtime_event_seq"] = (int64_t)p_event_seq;
 	stack["stack_kind"] = p_kind;
 	stack["frames"] = frames;
 	stack["truncated"] = truncated;
 	const int bytes = JSON::stringify(stack, "", true, true).utf8().length();
-	while (!stack_order.is_empty() && (stack_order.size() >= MAX_STACKS || stack_bytes + bytes > MAX_STACK_BYTES)) {
-		const String retired_id = stack_order[0];
-		stack_bytes -= JSON::stringify(stacks[retired_id], "", true, true).utf8().length();
-		stacks.erase(retired_id);
-		stack_order.remove_at(0);
-	}
 	if (bytes > MAX_STACK_BYTES) {
+		stacks_truncated = true;
 		return String();
+	}
+	while (!stack_order.is_empty() && (stack_order.size() >= MAX_STACKS || stack_bytes + bytes > MAX_STACK_BYTES)) {
+		int retire_index = -1;
+		for (int index = 0; index < stack_order.size(); index++) {
+			if (String(stack_order[index]) != active_stack_id) {
+				retire_index = index;
+				break;
+			}
+		}
+		if (retire_index < 0) {
+			stacks_truncated = true;
+			return String();
+		}
+		const String retired_id = stack_order[retire_index];
+		r_diagnostic_links_changed = _retire_stack(retired_id) || r_diagnostic_links_changed;
+		stacks_truncated = true;
 	}
 	stacks[id] = stack;
 	stack_order.push_back(id);
 	stack_bytes += bytes;
+	stack_by_fingerprint[fingerprint] = id;
+	stack_fingerprint_by_id[id] = fingerprint;
+	stacks_truncated = stacks_truncated || truncated;
+	r_added = true;
 	return id;
 }
 
@@ -619,6 +978,9 @@ void RuntimeDebuggerAdapter::_complete_snapshot(const Array &p_tree, bool p_tree
 		if (!terminal_reason.is_empty()) {
 			runtime_state["terminal_reason"] = terminal_reason.left(128);
 		}
+		if (state == "paused" && !active_stack_id.is_empty() && stacks.has(active_stack_id)) {
+			runtime_state["active_stack_id"] = active_stack_id;
+		}
 		entities.push_back(runtime_state);
 	}
 	if (domains.has("runtime_tree")) {
@@ -632,7 +994,7 @@ void RuntimeDebuggerAdapter::_complete_snapshot(const Array &p_tree, bool p_tree
 			entities.push_back(stacks[id]);
 		}
 	}
-	bool truncated = p_tree_truncated;
+	bool truncated = p_tree_truncated || (domains.has("runtime_diagnostics") && diagnostics_truncated) || (domains.has("runtime_stacks") && stacks_truncated);
 	Array bounded_entities;
 	int total_bytes = 0;
 	for (const Variant &entity : entities) {
@@ -813,9 +1175,17 @@ void RuntimeDebuggerAdapter::_on_breaked(bool p_really_did, bool p_can_debug, co
 		return;
 	}
 	if (p_really_did) {
+		pause_generation++;
+		active_stack_id.clear();
+		// ScriptEditorDebugger requests get_stack_dump immediately after this
+		// synchronous signal. `has_stackdump` describes the enter packet, not
+		// whether the correlated response will be delivered.
+		expecting_pause_stack = true;
 		_transition("paused", "paused", changed_domain("runtime_state"));
 		_complete_pending_controls("paused");
 	} else {
+		active_stack_id.clear();
+		expecting_pause_stack = false;
 		_transition("running", "continued", changed_domain("runtime_state"));
 		_complete_pending_controls("running");
 	}
@@ -825,62 +1195,103 @@ void RuntimeDebuggerAdapter::_on_output(const String &p_message, int p_level, in
 	if (p_session_id != active_debugger_session || runtime_session_id.is_empty() || _is_terminal()) {
 		return;
 	}
-	_append_diagnostic("info", "output", p_message);
-	_transition(state, "diagnostic_added", changed_domain("runtime_diagnostics"));
+	const uint64_t event_seq = revisions->get_runtime_event_seq() + 1;
+	if (_append_diagnostic(RuntimeDiagnosticPolicy::normalize_output_severity(p_level), "output", p_message, event_seq)) {
+		_transition(state, "diagnostic_added", changed_domain("runtime_diagnostics"));
+	}
 }
 
 void RuntimeDebuggerAdapter::_on_runtime_error(const Dictionary &p_error, int p_session_id) {
 	if (p_session_id != active_debugger_session || runtime_session_id.is_empty() || _is_terminal()) {
 		return;
 	}
+	const uint64_t event_seq = revisions->get_runtime_event_seq() + 1;
 	String stack_id;
+	bool stack_added = false;
+	bool diagnostic_links_changed = false;
 	const Array frames = p_error.get("frames", Array());
+	const String script_path = p_error.get("script_path", String());
+	bool identity_redacted = false;
+	bool identity_truncated = false;
+	const String safe_message = _redact_message(p_error.get("message", String()), identity_redacted, identity_truncated);
+	const String stack_identity = sha256_hex_utf8(safe_message + "\n" + (safe_res_path(script_path) ? script_path : String()) + "\n" + String::num_int64((int64_t)p_error.get("line", 0)) + "\n" + String(p_error.get("function", String())));
 	if (!frames.is_empty()) {
-		stack_id = _append_stack("diagnostic", frames, String::num_uint64(revisions->get_runtime_event_seq() + 1));
-		if (!stack_id.is_empty()) {
-			_transition(state, "stack_changed", changed_domain("runtime_stacks"));
-		}
+		stack_id = _append_stack("diagnostic", frames, event_seq, true, stack_identity, stack_added, diagnostic_links_changed);
 	}
-	_append_diagnostic((bool)p_error.get("warning", false) ? "warning" : "error", "script", p_error.get("message", String()), p_error.get("script_path", String()), p_error.get("line", 0), p_error.get("function", String()), stack_id);
-	_transition(state, "diagnostic_added", changed_domain("runtime_diagnostics"));
+	const String source = safe_res_path(script_path) || !stack_id.is_empty() ? "script" : "engine";
+	const bool diagnostic_added = _append_diagnostic((bool)p_error.get("warning", false) ? "warning" : "error", source, p_error.get("message", String()), event_seq, script_path, p_error.get("line", 0), p_error.get("function", String()), stack_id);
+	if (diagnostic_added || stack_added || diagnostic_links_changed) {
+		Array domains = changed_domain("runtime_diagnostics");
+		if (stack_added || diagnostic_links_changed) {
+			domains.push_back("runtime_stacks");
+		}
+		_transition(state, "diagnostic_added", domains);
+	}
 }
 
 void RuntimeDebuggerAdapter::_on_runtime_stack(int64_t p_thread_id, const Array &p_frames, int p_session_id) {
-	if (p_session_id != active_debugger_session || runtime_session_id.is_empty() || state != "paused") {
+	if (p_session_id != active_debugger_session || runtime_session_id.is_empty() || state != "paused" || !expecting_pause_stack) {
 		return;
 	}
-	if (!_append_stack("pause", p_frames, String::num_int64(p_thread_id)).is_empty()) {
-		_transition(state, "stack_changed", changed_domain("runtime_stacks"));
+	(void)p_thread_id;
+	expecting_pause_stack = false;
+	const uint64_t event_seq = revisions->get_runtime_event_seq() + 1;
+	bool stack_added = false;
+	bool diagnostic_links_changed = false;
+	const String stack_id = _append_stack("pause", p_frames, event_seq, false, String::num_uint64(pause_generation), stack_added, diagnostic_links_changed);
+	if (stack_added) {
+		active_stack_id = stack_id;
+		Array domains = changed_domain("runtime_state");
+		domains.push_back("runtime_stacks");
+		if (diagnostic_links_changed) {
+			domains.push_back("runtime_diagnostics");
+		}
+		_transition(state, "stack_changed", domains);
+	} else if (_append_diagnostic("warning", "bridge", "Runtime pause stack contained no safe project frames.", event_seq)) {
+		_transition(state, "diagnostic_added", changed_domain("runtime_diagnostics"));
 	}
 }
 
 void RuntimeDebuggerAdapter::_on_screenshot(int p_width, int p_height, const String &p_path, const Rect2i &p_rect) {
+	(void)p_rect;
+	String safe_path;
+	auto cleanup_callback_file = [&]() {
+		RuntimeScreenshotPolicy::cleanup_callback_path(p_path, OS::get_singleton()->get_temp_path());
+	};
 	if (!pending_capture) {
+		cleanup_callback_file();
 		return;
 	}
 	const uint64_t request_id = pending_capture;
+	const int max_width = pending_capture_params.get("max_width", MAX_SCREENSHOT_WIDTH);
+	const int max_height = pending_capture_params.get("max_height", MAX_SCREENSHOT_HEIGHT);
 	pending_capture = 0;
-	const String temp_root = OS::get_singleton()->get_temp_path().simplify_path();
-	const String safe_path = p_path.simplify_path();
-	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	const bool path_valid = safe_path.get_base_dir() == temp_root && safe_path.get_file().begins_with("scr-") && safe_path.get_extension().to_lower() == "png" && filesystem.is_valid() && !filesystem->is_link(safe_path);
-	if (!path_valid || p_width < 1 || p_height < 1 || p_width > 16384 || p_height > 16384 || (int64_t)p_width * p_height > 67108864 || !FileAccess::exists(safe_path) || FileAccess::get_size(safe_path) > MAX_SCREENSHOT_SOURCE_BYTES) {
-		if (path_valid && FileAccess::exists(safe_path)) {
-			DirAccess::remove_absolute(safe_path);
-		}
-		transport->complete_request_error(request_id, "runtime_capture_too_large", "The runtime screenshot source exceeded a safety limit.", false);
+	pending_capture_params.clear();
+	const bool source_file_valid = RuntimeScreenshotPolicy::is_regular_callback_file(p_path, OS::get_singleton()->get_temp_path(), safe_path);
+	const uint64_t source_bytes = source_file_valid ? FileAccess::get_size(safe_path) : 0;
+	if (!source_file_valid || !RuntimeScreenshotPolicy::source_is_bounded(p_width, p_height, source_bytes)) {
+		cleanup_callback_file();
+		transport->complete_request_error(request_id, "runtime_capture_too_large", "The runtime screenshot source exceeded a safety limit.", false, _safe_coordinates());
+		return;
+	}
+	Ref<FileAccess> source = FileAccess::open(safe_path, FileAccess::READ);
+	int header_width = 0;
+	int header_height = 0;
+	const PackedByteArray header = source.is_valid() ? source->get_buffer(24) : PackedByteArray();
+	source.unref();
+	if (!RuntimeScreenshotPolicy::parse_png_header(header, header_width, header_height) || header_width != p_width || header_height != p_height || !RuntimeScreenshotPolicy::source_is_bounded(header_width, header_height, source_bytes)) {
+		cleanup_callback_file();
+		transport->complete_request_error(request_id, "runtime_capture_unavailable", "The runtime screenshot header was invalid.", true, _safe_coordinates());
 		return;
 	}
 	Ref<Image> image;
 	image.instantiate();
 	const Error load_error = image->load(safe_path);
-	DirAccess::remove_absolute(safe_path);
-	if (load_error != OK || image->is_empty()) {
-		transport->complete_request_error(request_id, "runtime_capture_unavailable", "The runtime screenshot could not be decoded.", true);
+	cleanup_callback_file();
+	if (load_error != OK || image->is_empty() || image->get_width() != header_width || image->get_height() != header_height) {
+		transport->complete_request_error(request_id, "runtime_capture_unavailable", "The runtime screenshot could not be decoded.", true, _safe_coordinates());
 		return;
 	}
-	const int max_width = pending_capture_params.get("max_width", MAX_SCREENSHOT_WIDTH);
-	const int max_height = pending_capture_params.get("max_height", MAX_SCREENSHOT_HEIGHT);
 	const float scale = MIN(1.0f, MIN((float)max_width / image->get_width(), (float)max_height / image->get_height()));
 	if (scale < 1.0f) {
 		image->resize(MAX(1, (int)(image->get_width() * scale)), MAX(1, (int)(image->get_height() * scale)), Image::INTERPOLATE_LANCZOS);
@@ -891,13 +1302,13 @@ void RuntimeDebuggerAdapter::_on_screenshot(int p_width, int p_height, const Str
 		png = image->save_png_to_buffer();
 	}
 	if (png.is_empty() || png.size() > MAX_SCREENSHOT_BYTES) {
-		transport->complete_request_error(request_id, "runtime_capture_too_large", "The bounded runtime screenshot still exceeds 512 KiB.", false);
+		transport->complete_request_error(request_id, "runtime_capture_too_large", "The bounded runtime screenshot still exceeds 512 KiB.", false, _safe_coordinates());
 		return;
 	}
 	PackedByteArray digest;
 	digest.resize(32);
 	if (CryptoCore::sha256(png.ptr(), png.size(), digest.ptrw()) != OK) {
-		transport->complete_request_error(request_id, "runtime_capture_unavailable", "The runtime screenshot digest failed.", true);
+		transport->complete_request_error(request_id, "runtime_capture_unavailable", "The runtime screenshot digest failed.", true, _safe_coordinates());
 		return;
 	}
 	String encoded = CryptoCore::b64_encode_str(png.ptr(), png.size()).replace("+", "-").replace("/", "_");
@@ -917,7 +1328,6 @@ void RuntimeDebuggerAdapter::_on_screenshot(int p_width, int p_height, const Str
 	result["sha256"] = BridgeCrypto::bytes_to_lower_hex(digest);
 	result["data_base64url"] = encoded;
 	transport->complete_request(request_id, result);
-	pending_capture_params.clear();
 }
 
 void RuntimeDebuggerAdapter::initialize(BridgeTransportWorker *p_transport, BridgeRevisionClock *p_revisions) {
@@ -954,9 +1364,20 @@ void RuntimeDebuggerAdapter::shutdown() {
 	_retire_live_data();
 	diagnostics.clear();
 	diagnostic_bytes = 0;
+	diagnostic_by_fingerprint.clear();
+	diagnostic_fingerprint_by_id.clear();
+	diagnostic_id_seq = 0;
+	diagnostics_truncated = false;
 	stacks.clear();
 	stack_order.clear();
 	stack_bytes = 0;
+	stack_by_fingerprint.clear();
+	stack_fingerprint_by_id.clear();
+	stack_id_seq = 0;
+	stacks_truncated = false;
+	active_stack_id.clear();
+	pause_generation = 0;
+	expecting_pause_stack = false;
 	pending_snapshot_params.clear();
 	pending_object_params.clear();
 	pending_capture_params.clear();
@@ -1228,6 +1649,7 @@ void RuntimeDebuggerAdapter::capture_viewport(uint64_t p_request_id, const Dicti
 	last_capture_usec = now;
 	if (!EditorRun::request_screenshot(callable_mp(this, &RuntimeDebuggerAdapter::_on_screenshot))) {
 		pending_capture = 0;
+		pending_capture_params.clear();
 		transport->complete_request_error(p_request_id, "runtime_capture_unavailable", "The runtime viewport cannot provide a screenshot.", true, _safe_coordinates());
 	}
 }
