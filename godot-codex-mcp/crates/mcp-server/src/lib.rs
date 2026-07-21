@@ -1,11 +1,17 @@
 mod cursor;
 mod live_overlay;
+mod runtime_overlay;
 
 use std::collections::BTreeSet;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use base64::Engine as _;
 use cursor::{CursorBinding, CursorCodec, CursorTool};
+use godot_codex_bridge_client::{
+    BridgeError, RuntimeDomain, RuntimeEntity, RuntimeNode, RuntimeTarget,
+};
 use godot_codex_index_store::{
     ContextSummaryError, DependencyEdge, FIND_USAGES_DEFAULT_LIMIT, FindUsagesQuery,
     FindUsagesQueryError, FindUsagesScope, IndexRead, IndexReadSnapshot, ResourceEntity,
@@ -28,13 +34,14 @@ use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{
-        CallToolResult, ListResourceTemplatesResult, ListResourcesResult, PaginatedRequestParams,
-        ProtocolVersion, ReadResourceRequestParams, ReadResourceResult, Resource, ResourceContents,
-        ResourceTemplate, ServerCapabilities, ServerInfo,
+        CallToolResult, ContentBlock, ListResourceTemplatesResult, ListResourcesResult,
+        PaginatedRequestParams, ProtocolVersion, ReadResourceRequestParams, ReadResourceResult,
+        Resource, ResourceContents, ResourceTemplate, ServerCapabilities, ServerInfo,
     },
     service::RequestContext,
     tool, tool_handler, tool_router,
 };
+use runtime_overlay::{CachedRuntimeSnapshot, RuntimeOverlay};
 use serde_json::{Value, json};
 
 const DEFAULT_RESOURCE_LIMIT: usize = 50;
@@ -44,6 +51,7 @@ const MAX_SCRIPT_DIAGNOSTICS: usize = 200;
 const EDITOR_SUMMARY_MAX_BYTES: usize = 4096;
 const PROJECT_SUMMARY_URI: &str = "godot://project/summary";
 const EDITOR_SUMMARY_URI: &str = "godot://editor/summary";
+const RUNTIME_SUMMARY_URI: &str = "godot://runtime/summary";
 const SCENE_SUMMARY_PREFIX: &str = "godot://scene/";
 const SCENE_SUMMARY_SUFFIX: &str = "/summary";
 
@@ -79,6 +87,97 @@ struct LiveListInput {
     expected_event_seq: Option<u64>,
     #[serde(default)]
     expected_scene_revision: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum DiagnosticScopeInput {
+    #[default]
+    Editor,
+    Runtime,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DiagnosticInput {
+    #[serde(default)]
+    scope: DiagnosticScopeInput,
+    #[serde(default = "default_resource_limit")]
+    limit: usize,
+    #[serde(default)]
+    cursor: Option<String>,
+    #[serde(default)]
+    expected_editor_session_id: Option<String>,
+    #[serde(default)]
+    expected_event_seq: Option<u64>,
+    #[serde(default)]
+    expected_scene_revision: Option<u64>,
+    #[serde(default)]
+    runtime_session_id: Option<String>,
+    #[serde(default)]
+    expected_runtime_event_seq: Option<u64>,
+}
+
+#[derive(Debug, Default, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RuntimeRunInput {}
+
+#[derive(Clone, Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RuntimeGuardInput {
+    runtime_session_id: String,
+    #[serde(default)]
+    expected_runtime_event_seq: Option<u64>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RuntimeTreeInput {
+    runtime_session_id: String,
+    #[serde(default)]
+    expected_runtime_event_seq: Option<u64>,
+    #[serde(default = "default_resource_limit")]
+    limit: usize,
+    #[serde(default)]
+    cursor: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RuntimeObjectInput {
+    runtime_session_id: String,
+    runtime_object_id: String,
+    #[serde(default)]
+    expected_runtime_event_seq: Option<u64>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RuntimeStackInput {
+    runtime_session_id: String,
+    runtime_stack_id: String,
+    #[serde(default)]
+    expected_runtime_event_seq: Option<u64>,
+}
+
+fn default_capture_width() -> u32 {
+    1_280
+}
+
+fn default_capture_height() -> u32 {
+    720
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct RuntimeCaptureInput {
+    runtime_session_id: String,
+    #[serde(default)]
+    expected_runtime_event_seq: Option<u64>,
+    #[serde(default = "default_capture_width")]
+    max_width: u32,
+    #[serde(default = "default_capture_height")]
+    max_height: u32,
 }
 
 impl From<&LiveListInput> for LiveGuardInput {
@@ -347,7 +446,6 @@ struct FindUsagesInput {
 
 #[derive(Clone, Copy)]
 enum Query {
-    EditorState,
     CurrentScene,
     SelectedNodes,
 }
@@ -360,6 +458,14 @@ enum LiveListQuery {
     Diagnostics,
 }
 
+#[derive(Clone, Copy)]
+enum RuntimeControl {
+    Run(RuntimeTarget),
+    Stop,
+    Pause,
+    Continue,
+}
+
 #[derive(Clone)]
 pub struct GodotMcpServer {
     #[allow(dead_code, reason = "tool_handler macro accesses this router field")]
@@ -370,6 +476,7 @@ pub struct GodotMcpServer {
     script_index: ScriptIndexReader,
     semantic_index: SemanticIndexReader,
     cursor_codec: CursorCodec,
+    runtime_overlay: RuntimeOverlay,
 }
 
 impl std::fmt::Debug for GodotMcpServer {
@@ -380,6 +487,7 @@ impl std::fmt::Debug for GodotMcpServer {
             .field("resource_index_status", &self.resource_index.status())
             .field("scene_index_status", &self.scene_index.status())
             .field("script_index_status", &self.script_index.status())
+            .field("runtime_summary", &self.runtime_overlay.summary())
             .finish_non_exhaustive()
     }
 }
@@ -419,6 +527,38 @@ impl GodotMcpServer {
         scene_index: SceneIndexReader,
         script_index: ScriptIndexReader,
     ) -> Self {
+        Self::with_all_indexes_and_runtime(
+            replicator,
+            resource_index,
+            scene_index,
+            script_index,
+            RuntimeOverlay::unavailable(),
+        )
+    }
+
+    pub fn with_all_indexes_and_project_root(
+        replicator: SnapshotReplicator,
+        resource_index: ResourceIndexReader,
+        scene_index: SceneIndexReader,
+        script_index: ScriptIndexReader,
+        project_root: PathBuf,
+    ) -> Self {
+        Self::with_all_indexes_and_runtime(
+            replicator,
+            resource_index,
+            scene_index,
+            script_index,
+            RuntimeOverlay::for_project(project_root),
+        )
+    }
+
+    fn with_all_indexes_and_runtime(
+        replicator: SnapshotReplicator,
+        resource_index: ResourceIndexReader,
+        scene_index: SceneIndexReader,
+        script_index: ScriptIndexReader,
+        runtime_overlay: RuntimeOverlay,
+    ) -> Self {
         let semantic_index = SemanticIndexReader::new(
             resource_index.clone(),
             scene_index.clone(),
@@ -432,6 +572,7 @@ impl GodotMcpServer {
             script_index,
             semantic_index,
             cursor_codec: CursorCodec::new(),
+            runtime_overlay,
         }
     }
 
@@ -479,11 +620,426 @@ impl GodotMcpServer {
             Err(error) => return error,
         };
         let value = match query {
-            Query::EditorState => snapshot.editor_state_result(),
             Query::CurrentScene => snapshot.current_scene_result(),
             Query::SelectedNodes => snapshot.selected_nodes_result(),
         };
         CallToolResult::structured(value)
+    }
+
+    fn editor_state_query(&self, guard: &LiveGuardInput) -> CallToolResult {
+        let snapshot = match self.live_snapshot(guard) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return error,
+        };
+        let mut value = snapshot.editor_state_result();
+        if let Some(object) = value.as_object_mut() {
+            object.insert("runtime".to_owned(), self.runtime_overlay.summary());
+        }
+        CallToolResult::structured(value)
+    }
+
+    async fn runtime_snapshot(
+        &self,
+        runtime_session_id: &str,
+        expected_runtime_event_seq: Option<u64>,
+        domains: Vec<RuntimeDomain>,
+    ) -> Result<Arc<CachedRuntimeSnapshot>, CallToolResult> {
+        let mut client = self
+            .runtime_overlay
+            .connect()
+            .await
+            .map_err(runtime_bridge_error)?;
+        let project_id = client.project_id().to_owned();
+        let editor_session_id = client.editor_session_id().to_owned();
+        let snapshot = client
+            .get_runtime_snapshot(
+                runtime_session_id,
+                expected_runtime_event_seq,
+                Some(domains),
+            )
+            .await
+            .map_err(runtime_bridge_error)?;
+        Ok(self
+            .runtime_overlay
+            .record_snapshot(project_id, editor_session_id, snapshot))
+    }
+
+    async fn runtime_tree_query(&self, input: RuntimeTreeInput) -> CallToolResult {
+        if !(1..=MAX_RESOURCE_LIMIT).contains(&input.limit) {
+            return structured_error("invalid_limit", "limit must be between 1 and 200", false);
+        }
+        let cached = if input.cursor.is_some() {
+            match self.runtime_overlay.snapshot() {
+                Some(cached)
+                    if cached.snapshot.accepted.runtime_session_id == input.runtime_session_id
+                        && input.expected_runtime_event_seq.is_none_or(|expected| {
+                            expected == cached.snapshot.accepted.runtime_event_seq
+                        }) =>
+                {
+                    cached
+                }
+                _ => {
+                    return structured_error(
+                        "stale_cursor",
+                        "runtime tree cursor no longer has its memory-only snapshot",
+                        false,
+                    );
+                }
+            }
+        } else {
+            match self
+                .runtime_snapshot(
+                    &input.runtime_session_id,
+                    input.expected_runtime_event_seq,
+                    vec![RuntimeDomain::RuntimeState, RuntimeDomain::RuntimeTree],
+                )
+                .await
+            {
+                Ok(snapshot) => snapshot,
+                Err(error) => return error,
+            }
+        };
+        if input.cursor.is_some()
+            && !self
+                .runtime_cursor_is_current(
+                    &cached.snapshot.accepted.runtime_session_id,
+                    cached.snapshot.accepted.runtime_event_seq,
+                )
+                .await
+        {
+            return structured_error(
+                "stale_cursor",
+                "runtime changed after the cursor snapshot was created",
+                false,
+            );
+        }
+        let accepted = &cached.snapshot.accepted;
+        let binding = CursorBinding {
+            project_id: &cached.project_id,
+            tool: CursorTool::RuntimeTree,
+            selector: &accepted.runtime_session_id,
+            limit: input.limit,
+            generation_id: &accepted.snapshot_id,
+            index_revision: 0,
+            resource_revision: 0,
+            scene_graph_revision: None,
+            script_graph_revision: None,
+            editor_session_id: Some(&cached.editor_session_id),
+            snapshot_id: Some(&accepted.snapshot_id),
+            event_seq: Some(accepted.runtime_event_seq),
+            scene_revision: None,
+        };
+        let now = unix_seconds();
+        let offset = match cursor_offset(input.cursor.as_deref(), &self.cursor_codec, &binding, now)
+        {
+            Ok(offset) => offset,
+            Err(error) => return error,
+        };
+        let nodes = cached
+            .snapshot
+            .entities
+            .iter()
+            .filter_map(|entity| match entity {
+                RuntimeEntity::RuntimeNode(node) => Some(node),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if offset > nodes.len() {
+            return structured_error(
+                "stale_cursor",
+                "runtime tree cursor offset is outside the retained snapshot",
+                false,
+            );
+        }
+        let live_snapshot = self
+            .replicator
+            .read()
+            .ok()
+            .filter(|snapshot| snapshot.project_id == cached.project_id);
+        let launched_scene_path = cached
+            .snapshot
+            .entities
+            .iter()
+            .find_map(|entity| match entity {
+                RuntimeEntity::RuntimeState(state) => state.scene_path.as_deref(),
+                _ => None,
+            });
+        let runtime_root_path = launched_scene_path.and_then(|scene_path| {
+            nodes
+                .iter()
+                .filter(|node| {
+                    node.source_hint.as_ref().is_some_and(|hint| {
+                        hint.scene_path.as_deref() == Some(scene_path)
+                            && hint.relative_node_path.as_deref() == Some(".")
+                    })
+                })
+                .min_by_key(|node| node.depth)
+                .map(|node| node.runtime_node_path.as_str())
+        });
+        let persistent_snapshot = self.scene_index.pin_current().ok().filter(|snapshot| {
+            snapshot.generation().project_id == cached.project_id
+                && snapshot.generation().scene.source_complete
+        });
+        let source_context = match (
+            persistent_snapshot.as_ref(),
+            live_snapshot.as_deref(),
+            launched_scene_path,
+            runtime_root_path,
+        ) {
+            (Some(persistent), Some(live), Some(scene_path), Some(root_path))
+                if !accepted.limits_applied.truncated =>
+            {
+                Some(RuntimeSourceContext {
+                    generation: persistent.generation(),
+                    live,
+                    launched_scene_path: scene_path,
+                    runtime_root_path: root_path,
+                })
+            }
+            _ => None,
+        };
+        let source_unavailable_reason = if accepted.limits_applied.truncated {
+            "runtime_tree_truncated"
+        } else if persistent_snapshot.is_none() {
+            "persistent_scene_state_unavailable"
+        } else if live_snapshot.is_none() {
+            "live_editor_snapshot_unavailable"
+        } else if launched_scene_path.is_none() || runtime_root_path.is_none() {
+            "runtime_root_unresolved"
+        } else {
+            "source_mapping_unavailable"
+        };
+        let page = nodes
+            .iter()
+            .skip(offset)
+            .take(input.limit)
+            .map(|node| runtime_node_view(node, source_context.as_ref(), source_unavailable_reason))
+            .collect::<Vec<_>>();
+        let has_more = offset
+            .checked_add(page.len())
+            .is_some_and(|end| end < nodes.len());
+        let next_cursor = match next_cursor(
+            has_more,
+            offset,
+            page.len(),
+            &self.cursor_codec,
+            &binding,
+            now,
+        ) {
+            Ok(cursor) => cursor,
+            Err(error) => return error,
+        };
+        CallToolResult::structured(json!({
+            "schema_version": "runtime/1.0",
+            "project_id": cached.project_id,
+            "editor_session_id": cached.editor_session_id,
+            "runtime_session_id": accepted.runtime_session_id,
+            "runtime_event_seq": accepted.runtime_event_seq,
+            "state": accepted.state,
+            "snapshot_id": accepted.snapshot_id,
+            "limit": input.limit,
+            "offset": offset,
+            "total": nodes.len(),
+            "nodes": page,
+            "truncated": accepted.limits_applied.truncated || has_more,
+            "limits_applied": accepted.limits_applied,
+            "next_cursor": next_cursor,
+            "evidence": [{"source": "checksum_verified_runtime_snapshot", "snapshot_id": accepted.snapshot_id}],
+        }))
+    }
+
+    async fn runtime_diagnostics_query(&self, input: DiagnosticInput) -> CallToolResult {
+        if !(1..=MAX_RESOURCE_LIMIT).contains(&input.limit) {
+            return structured_error("invalid_limit", "limit must be between 1 and 200", false);
+        }
+        let Some(runtime_session_id) = input.runtime_session_id.as_deref() else {
+            return structured_error(
+                "invalid_query",
+                "runtime_session_id is required when diagnostics scope is runtime",
+                false,
+            );
+        };
+        let cached = if input.cursor.is_some() {
+            match self.runtime_overlay.snapshot() {
+                Some(cached)
+                    if cached.snapshot.accepted.runtime_session_id == runtime_session_id
+                        && input.expected_runtime_event_seq.is_none_or(|expected| {
+                            expected == cached.snapshot.accepted.runtime_event_seq
+                        }) =>
+                {
+                    cached
+                }
+                _ => {
+                    return structured_error(
+                        "stale_cursor",
+                        "runtime diagnostics cursor no longer has its memory-only snapshot",
+                        false,
+                    );
+                }
+            }
+        } else {
+            match self
+                .runtime_snapshot(
+                    runtime_session_id,
+                    input.expected_runtime_event_seq,
+                    vec![RuntimeDomain::RuntimeDiagnostics],
+                )
+                .await
+            {
+                Ok(snapshot) => snapshot,
+                Err(error) => return error,
+            }
+        };
+        if input.cursor.is_some()
+            && !self
+                .runtime_cursor_is_current(
+                    &cached.snapshot.accepted.runtime_session_id,
+                    cached.snapshot.accepted.runtime_event_seq,
+                )
+                .await
+        {
+            return structured_error(
+                "stale_cursor",
+                "runtime changed after the cursor snapshot was created",
+                false,
+            );
+        }
+        let accepted = &cached.snapshot.accepted;
+        let binding = CursorBinding {
+            project_id: &cached.project_id,
+            tool: CursorTool::Diagnostics,
+            selector: &accepted.runtime_session_id,
+            limit: input.limit,
+            generation_id: &accepted.snapshot_id,
+            index_revision: 0,
+            resource_revision: 0,
+            scene_graph_revision: None,
+            script_graph_revision: None,
+            editor_session_id: Some(&cached.editor_session_id),
+            snapshot_id: Some(&accepted.snapshot_id),
+            event_seq: Some(accepted.runtime_event_seq),
+            scene_revision: None,
+        };
+        let now = unix_seconds();
+        let offset = match cursor_offset(input.cursor.as_deref(), &self.cursor_codec, &binding, now)
+        {
+            Ok(offset) => offset,
+            Err(error) => return error,
+        };
+        let diagnostics = cached
+            .snapshot
+            .entities
+            .iter()
+            .filter_map(|entity| match entity {
+                RuntimeEntity::RuntimeDiagnostic(diagnostic) => Some(diagnostic),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if offset > diagnostics.len() {
+            return structured_error(
+                "stale_cursor",
+                "runtime diagnostics cursor offset is outside the retained snapshot",
+                false,
+            );
+        }
+        let page = diagnostics
+            .iter()
+            .skip(offset)
+            .take(input.limit)
+            .copied()
+            .collect::<Vec<_>>();
+        let has_more = offset
+            .checked_add(page.len())
+            .is_some_and(|end| end < diagnostics.len());
+        let next_cursor = match next_cursor(
+            has_more,
+            offset,
+            page.len(),
+            &self.cursor_codec,
+            &binding,
+            now,
+        ) {
+            Ok(cursor) => cursor,
+            Err(error) => return error,
+        };
+        CallToolResult::structured(json!({
+            "schema_version": "runtime/1.0",
+            "project_id": cached.project_id,
+            "editor_session_id": cached.editor_session_id,
+            "runtime_session_id": accepted.runtime_session_id,
+            "runtime_event_seq": accepted.runtime_event_seq,
+            "state": accepted.state,
+            "snapshot_id": accepted.snapshot_id,
+            "diagnostics": page,
+            "limit": input.limit,
+            "offset": offset,
+            "total": diagnostics.len(),
+            "truncated": accepted.limits_applied.truncated || has_more,
+            "limits_applied": accepted.limits_applied,
+            "next_cursor": next_cursor,
+        }))
+    }
+
+    async fn runtime_control(
+        &self,
+        operation: RuntimeControl,
+        guard: Option<&RuntimeGuardInput>,
+    ) -> CallToolResult {
+        let mut client = match self.runtime_overlay.connect().await {
+            Ok(client) => client,
+            Err(error) => return runtime_bridge_error(error),
+        };
+        let result = match operation {
+            RuntimeControl::Run(target) => client.run_runtime(target).await,
+            RuntimeControl::Stop => {
+                let guard = guard.expect("guarded runtime control");
+                client
+                    .stop_runtime(&guard.runtime_session_id, guard.expected_runtime_event_seq)
+                    .await
+            }
+            RuntimeControl::Pause => {
+                let guard = guard.expect("guarded runtime control");
+                client
+                    .pause_runtime(&guard.runtime_session_id, guard.expected_runtime_event_seq)
+                    .await
+            }
+            RuntimeControl::Continue => {
+                let guard = guard.expect("guarded runtime control");
+                client
+                    .continue_runtime(&guard.runtime_session_id, guard.expected_runtime_event_seq)
+                    .await
+            }
+        };
+        match result {
+            Ok(state) => {
+                self.runtime_overlay.record_state(&state);
+                CallToolResult::structured(json!(state))
+            }
+            Err(error) => runtime_bridge_error(error),
+        }
+    }
+
+    async fn runtime_cursor_is_current(&self, runtime_session_id: &str, event_seq: u64) -> bool {
+        let result = match self.runtime_overlay.connect().await {
+            Ok(mut client) => {
+                client
+                    .get_runtime_snapshot(
+                        runtime_session_id,
+                        Some(event_seq),
+                        Some(vec![RuntimeDomain::RuntimeState]),
+                    )
+                    .await
+            }
+            Err(_) => {
+                self.runtime_overlay.invalidate("bridge_unavailable");
+                return false;
+            }
+        };
+        if result.is_err() {
+            self.runtime_overlay.invalidate("runtime_changed");
+            return false;
+        }
+        true
     }
 
     fn live_list_query(&self, input: LiveListInput, query: LiveListQuery) -> CallToolResult {
@@ -700,7 +1256,8 @@ impl GodotMcpServer {
             | CursorTool::OpenScenes
             | CursorTool::OpenScripts
             | CursorTool::EditorHistory
-            | CursorTool::Diagnostics => unreachable!("resource tool"),
+            | CursorTool::Diagnostics
+            | CursorTool::RuntimeTree => unreachable!("resource tool"),
         };
         let result = match result {
             Ok(result) => result,
@@ -1452,6 +2009,12 @@ impl GodotMcpServer {
                     "Deterministic bounded live editor context including dirty and revision state",
                 )
                 .with_mime_type("application/json"),
+            Resource::new(RUNTIME_SUMMARY_URI, "godot_runtime_summary")
+                .with_title("Godot runtime diagnostic summary")
+                .with_description(
+                    "Bounded memory-only lifecycle and diagnostic summary for the local game",
+                )
+                .with_mime_type("application/json"),
         ]
     }
 
@@ -1467,6 +2030,23 @@ impl GodotMcpServer {
     }
 
     fn read_summary_resource(&self, uri: &str) -> Result<ReadResourceResult, McpError> {
+        if uri == RUNTIME_SUMMARY_URI {
+            let text = serde_json::to_string(&self.runtime_overlay.summary()).map_err(|_| {
+                McpError::internal_error(
+                    "runtime summary could not be serialized",
+                    Some(json!({"code": "summary_unavailable"})),
+                )
+            })?;
+            if text.len() > EDITOR_SUMMARY_MAX_BYTES {
+                return Err(McpError::internal_error(
+                    "runtime summary exceeded its byte budget",
+                    Some(json!({"code": "summary_unavailable"})),
+                ));
+            }
+            return Ok(ReadResourceResult::new(vec![
+                ResourceContents::text(text, uri).with_mime_type("application/json"),
+            ]));
+        }
         if uri == EDITOR_SUMMARY_URI {
             let snapshot = self.replicator.read().map_err(|error| {
                 McpError::resource_not_found(
@@ -3198,7 +3778,8 @@ fn resource_success(
             | CursorTool::OpenScenes
             | CursorTool::OpenScripts
             | CursorTool::EditorHistory
-            | CursorTool::Diagnostics => unreachable!("resource tool"),
+            | CursorTool::Diagnostics
+            | CursorTool::RuntimeTree => unreachable!("resource tool"),
         })
         .collect();
     let mut response = json!({
@@ -3238,7 +3819,8 @@ fn resource_success(
         | CursorTool::OpenScenes
         | CursorTool::OpenScripts
         | CursorTool::EditorHistory
-        | CursorTool::Diagnostics => unreachable!("resource tool"),
+        | CursorTool::Diagnostics
+        | CursorTool::RuntimeTree => unreachable!("resource tool"),
     }] = Value::Array(related);
     CallToolResult::structured(response)
 }
@@ -3422,6 +4004,201 @@ fn structured_error(code: &str, message: &str, retryable: bool) -> CallToolResul
     }))
 }
 
+fn runtime_bridge_error(error: BridgeError) -> CallToolResult {
+    eprintln!("[godot-codex-runtime] {error}");
+    match error {
+        BridgeError::Rpc {
+            code,
+            retryable,
+            data,
+            ..
+        } => CallToolResult::structured_error(json!({
+            "error": {
+                "code": code,
+                "message": "Godot runtime request failed",
+                "retryable": retryable,
+                "current": data,
+            }
+        })),
+        error => CallToolResult::structured_error(json!({
+            "error": {
+                "code": "runtime_unavailable",
+                "message": error.safe_summary(),
+                "retryable": true,
+            }
+        })),
+    }
+}
+
+struct RuntimeSourceContext<'a> {
+    generation: &'a godot_codex_index_store::IndexGeneration,
+    live: &'a SemanticSnapshot,
+    launched_scene_path: &'a str,
+    runtime_root_path: &'a str,
+}
+
+fn runtime_node_view(
+    node: &RuntimeNode,
+    context: Option<&RuntimeSourceContext<'_>>,
+    unavailable_reason: &str,
+) -> Value {
+    let mut value = json!(node);
+    let mapping = if let Some(context) = context {
+        runtime_source_mapping(node, context)
+    } else {
+        json!({
+            "confidence": "unmapped",
+            "diagnostic": unavailable_reason,
+            "evidence": [{"source": "runtime_debugger_tree", "runtime_object_id": node.runtime_object_id}],
+        })
+    };
+    if let Some(object) = value.as_object_mut() {
+        object.insert("source_mapping".to_owned(), mapping);
+    }
+    value
+}
+
+fn runtime_source_mapping(node: &RuntimeNode, context: &RuntimeSourceContext<'_>) -> Value {
+    let Some(source_hint) = &node.source_hint else {
+        return unmapped_runtime_node(node, "runtime_source_hint_absent");
+    };
+    let Some(observed_scene_path) = source_hint.scene_path.as_deref() else {
+        return unmapped_runtime_node(node, "runtime_source_scene_absent");
+    };
+    let effective_path = if node.runtime_node_path == context.runtime_root_path {
+        "."
+    } else {
+        let Some(relative) = node
+            .runtime_node_path
+            .strip_prefix(&format!("{}/", context.runtime_root_path))
+        else {
+            return unmapped_runtime_node(node, "runtime_path_outside_launched_root");
+        };
+        relative
+    };
+    let Some(scene) = context
+        .generation
+        .scene
+        .scenes
+        .iter()
+        .find(|scene| scene.comparison_path == context.launched_scene_path)
+    else {
+        return unmapped_runtime_node(node, "launched_scene_not_indexed");
+    };
+    let persistent_matches = context
+        .generation
+        .scene
+        .relations
+        .iter()
+        .filter(|relation| {
+            relation.relation == "occurrence"
+                && relation.scene_entity_id.as_deref() == Some(&scene.scene_entity_id)
+                && relation_path(relation) == effective_path
+        })
+        .filter_map(|occurrence| {
+            let definition = occurrence.target.as_ref().and_then(|definition_id| {
+                context
+                    .generation
+                    .scene
+                    .nodes
+                    .iter()
+                    .find(|candidate| candidate.node_entity_id == *definition_id)
+            })?;
+            let defining_scene_path = context
+                .generation
+                .scene
+                .scenes
+                .iter()
+                .find(|candidate| candidate.scene_entity_id == definition.scene_entity_id)
+                .map(|candidate| candidate.comparison_path.as_str())?;
+            (definition.name == node.name
+                && definition.godot_type == node.godot_type
+                && defining_scene_path == observed_scene_path)
+                .then_some((occurrence, definition))
+        })
+        .collect::<Vec<_>>();
+    if persistent_matches.len() != 1 {
+        return unmapped_runtime_node(
+            node,
+            if persistent_matches.is_empty() {
+                "persistent_node_occurrence_not_observed"
+            } else {
+                "ambiguous_persistent_node_occurrence"
+            },
+        );
+    }
+    let live_scenes = context
+        .live
+        .scenes
+        .values()
+        .filter(|candidate| {
+            candidate.get("path").and_then(Value::as_str) == Some(context.launched_scene_path)
+                && candidate.get("coverage").and_then(Value::as_str) == Some("complete")
+                && candidate.get("nodes_truncated").and_then(Value::as_bool) != Some(true)
+        })
+        .collect::<Vec<_>>();
+    if context.live.truncated || live_scenes.len() != 1 {
+        return unmapped_runtime_node(node, "live_editor_scene_incomplete");
+    }
+    let Some(live_scene_id) = live_scenes[0].get("entity_id").and_then(Value::as_str) else {
+        return unmapped_runtime_node(node, "live_editor_scene_invalid");
+    };
+    let live_matches = context
+        .live
+        .nodes
+        .values()
+        .filter(|candidate| {
+            candidate.get("scene_id").and_then(Value::as_str) == Some(live_scene_id)
+                && candidate.get("node_path").and_then(Value::as_str) == Some(effective_path)
+                && candidate.get("name").and_then(Value::as_str) == Some(node.name.as_str())
+                && candidate.get("godot_type").and_then(Value::as_str)
+                    == Some(node.godot_type.as_str())
+        })
+        .collect::<Vec<_>>();
+    if live_matches.len() != 1 {
+        return unmapped_runtime_node(
+            node,
+            if live_matches.is_empty() {
+                "live_editor_node_not_observed"
+            } else {
+                "ambiguous_live_editor_node"
+            },
+        );
+    }
+    let (occurrence, _) = persistent_matches[0];
+    json!({
+        "scene_path": context.launched_scene_path,
+        "relative_node_path": effective_path,
+        "node_occurrence_id": occurrence.source,
+        "editor_node_id": live_matches[0].get("entity_id"),
+        "confidence": "runtime_confirmed",
+        "evidence": [
+            {"source": "runtime_debugger_tree", "runtime_object_id": node.runtime_object_id},
+            {
+                "source": "persistent_scene_state",
+                "generation_id": context.generation.generation_id,
+                "scene_graph_revision": context.generation.scene.scene_graph_revision,
+                "scene_id": scene.scene_entity_id,
+                "node_occurrence_id": occurrence.source,
+            },
+            {
+                "source": "live_editor_scene_state",
+                "snapshot_id": context.live.snapshot_id,
+                "editor_node_id": live_matches[0].get("entity_id"),
+                "event_seq": context.live.revisions.event_seq,
+            }
+        ],
+    })
+}
+
+fn unmapped_runtime_node(node: &RuntimeNode, diagnostic: &str) -> Value {
+    json!({
+        "confidence": "unmapped",
+        "diagnostic": diagnostic,
+        "evidence": [{"source": "runtime_debugger_tree", "runtime_object_id": node.runtime_object_id}],
+    })
+}
+
 fn stale_live_error(code: &str, snapshot: &SemanticSnapshot) -> CallToolResult {
     let current_scene_revision = snapshot
         .current_scene_id
@@ -3466,7 +4243,7 @@ impl GodotMcpServer {
         &self,
         Parameters(input): Parameters<LiveGuardInput>,
     ) -> CallToolResult {
-        self.query(Query::EditorState, &input)
+        self.editor_state_query(&input)
     }
 
     #[tool(
@@ -3585,11 +4362,23 @@ impl GodotMcpServer {
             open_world_hint = false
         )
     )]
-    fn godot_get_diagnostics(
+    async fn godot_get_diagnostics(
         &self,
-        Parameters(input): Parameters<LiveListInput>,
+        Parameters(input): Parameters<DiagnosticInput>,
     ) -> CallToolResult {
-        self.live_list_query(input, LiveListQuery::Diagnostics)
+        match input.scope {
+            DiagnosticScopeInput::Editor => self.live_list_query(
+                LiveListInput {
+                    limit: input.limit,
+                    cursor: input.cursor,
+                    expected_editor_session_id: input.expected_editor_session_id,
+                    expected_event_seq: input.expected_event_seq,
+                    expected_scene_revision: input.expected_scene_revision,
+                },
+                LiveListQuery::Diagnostics,
+            ),
+            DiagnosticScopeInput::Runtime => self.runtime_diagnostics_query(input).await,
+        }
     }
 
     #[tool(
@@ -3611,6 +4400,231 @@ impl GodotMcpServer {
             Err(error) => return error,
         };
         CallToolResult::structured(snapshot.viewport_state_result())
+    }
+
+    #[tool(
+        description = "Run the saved Godot project through the bound editor debugger without modifying scenes or scripts",
+        annotations(
+            title = "Run Godot project",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_run_project(
+        &self,
+        Parameters(_input): Parameters<RuntimeRunInput>,
+    ) -> CallToolResult {
+        self.runtime_control(RuntimeControl::Run(RuntimeTarget::Project), None)
+            .await
+    }
+
+    #[tool(
+        description = "Run the saved current Godot scene through the bound editor debugger without modifying scenes or scripts",
+        annotations(
+            title = "Run current Godot scene",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_run_current_scene(
+        &self,
+        Parameters(_input): Parameters<RuntimeRunInput>,
+    ) -> CallToolResult {
+        self.runtime_control(RuntimeControl::Run(RuntimeTarget::CurrentScene), None)
+            .await
+    }
+
+    #[tool(
+        description = "Stop exactly the guarded local Godot runtime session",
+        annotations(
+            title = "Stop Godot runtime",
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_stop_project(
+        &self,
+        Parameters(input): Parameters<RuntimeGuardInput>,
+    ) -> CallToolResult {
+        self.runtime_control(RuntimeControl::Stop, Some(&input))
+            .await
+    }
+
+    #[tool(
+        description = "Pause exactly the guarded local Godot runtime session",
+        annotations(
+            title = "Pause Godot runtime",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_pause_project(
+        &self,
+        Parameters(input): Parameters<RuntimeGuardInput>,
+    ) -> CallToolResult {
+        self.runtime_control(RuntimeControl::Pause, Some(&input))
+            .await
+    }
+
+    #[tool(
+        description = "Continue exactly the guarded paused local Godot runtime session",
+        annotations(
+            title = "Continue Godot runtime",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_continue_project(
+        &self,
+        Parameters(input): Parameters<RuntimeGuardInput>,
+    ) -> CallToolResult {
+        self.runtime_control(RuntimeControl::Continue, Some(&input))
+            .await
+    }
+
+    #[tool(
+        description = "Return a signed, bounded page from the checksum-verified remote runtime scene tree",
+        annotations(
+            title = "Godot runtime tree",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_get_runtime_tree(
+        &self,
+        Parameters(input): Parameters<RuntimeTreeInput>,
+    ) -> CallToolResult {
+        self.runtime_tree_query(input).await
+    }
+
+    #[tool(
+        description = "Inspect bounded read-only properties of one opaque object from the current runtime tree snapshot",
+        annotations(
+            title = "Inspect Godot runtime object",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_inspect_runtime_object(
+        &self,
+        Parameters(input): Parameters<RuntimeObjectInput>,
+    ) -> CallToolResult {
+        let mut client = match self.runtime_overlay.connect().await {
+            Ok(client) => client,
+            Err(error) => return runtime_bridge_error(error),
+        };
+        match client
+            .inspect_runtime_object(
+                &input.runtime_session_id,
+                &input.runtime_object_id,
+                input.expected_runtime_event_seq,
+            )
+            .await
+        {
+            Ok(result) => CallToolResult::structured(json!(result)),
+            Err(error) => runtime_bridge_error(error),
+        }
+    }
+
+    #[tool(
+        description = "Return one bounded runtime stack trace by its opaque stack ID",
+        annotations(
+            title = "Godot runtime stack trace",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_get_stack_trace(
+        &self,
+        Parameters(input): Parameters<RuntimeStackInput>,
+    ) -> CallToolResult {
+        let mut client = match self.runtime_overlay.connect().await {
+            Ok(client) => client,
+            Err(error) => return runtime_bridge_error(error),
+        };
+        match client
+            .get_runtime_stack(
+                &input.runtime_session_id,
+                &input.runtime_stack_id,
+                input.expected_runtime_event_seq,
+            )
+            .await
+        {
+            Ok(result) => CallToolResult::structured(json!(result)),
+            Err(error) => runtime_bridge_error(error),
+        }
+    }
+
+    #[tool(
+        description = "Capture a bounded PNG from the running game viewport without exposing native handles or filesystem paths",
+        annotations(
+            title = "Capture Godot runtime viewport",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_capture_viewport(
+        &self,
+        Parameters(input): Parameters<RuntimeCaptureInput>,
+    ) -> CallToolResult {
+        let mut client = match self.runtime_overlay.connect().await {
+            Ok(client) => client,
+            Err(error) => return runtime_bridge_error(error),
+        };
+        let capture = match client
+            .capture_runtime_viewport(
+                &input.runtime_session_id,
+                input.expected_runtime_event_seq,
+                input.max_width,
+                input.max_height,
+            )
+            .await
+        {
+            Ok(capture) => capture,
+            Err(error) => return runtime_bridge_error(error),
+        };
+        let png = match capture.decode_png() {
+            Ok(png) => png,
+            Err(error) => return runtime_bridge_error(error),
+        };
+        let metadata = json!({
+            "schema_version": capture.schema_version,
+            "runtime_session_id": capture.runtime_session_id,
+            "runtime_event_seq": capture.runtime_event_seq,
+            "state": capture.state,
+            "mime_type": capture.mime_type,
+            "width": capture.width,
+            "height": capture.height,
+            "byte_length": capture.byte_length,
+            "sha256": capture.sha256,
+        });
+        let mut result = CallToolResult::success(vec![
+            ContentBlock::text(metadata.to_string()),
+            ContentBlock::image(
+                base64::engine::general_purpose::STANDARD.encode(png),
+                "image/png",
+            ),
+        ]);
+        result.structured_content = Some(metadata);
+        result
     }
 
     #[tool(
@@ -3769,7 +4783,7 @@ impl ServerHandler for GodotMcpServer {
         )
             .with_protocol_version(ProtocolVersion::V_2025_11_25)
             .with_instructions(
-                "Read-only, project-scoped Godot context. Read godot://project/summary for saved-project questions, godot://editor/summary for current editor questions, and a godot://scene/{scene_id}/summary resource for indexed scene questions. Use the focused live-editor tools for unsaved tabs, Inspector, scripts, history, diagnostics, and viewport metadata; pass expected revision coordinates when consistency matters. Use godot_find_usages for impact questions and cite evidence IDs. Distinguish editor state from disk state and exact, dynamic, partial, stale, and unavailable results. All results come from checksum-verified snapshots and immutable index generations.",
+                "Project-scoped Godot diagnostics. Read godot://project/summary for saved-project questions, godot://editor/summary for current editor questions, godot://runtime/summary for the local game lifecycle, and a godot://scene/{scene_id}/summary resource for indexed scene questions. Runtime controls affect only the ephemeral local game and never write scenes or scripts; always pass the returned runtime_session_id and expected sequence to guarded operations. Use the focused editor/runtime tools, cite evidence IDs, and distinguish disk, editor, and runtime state. Snapshot-backed results are checksum verified and bounded.",
             )
     }
 }
@@ -4653,10 +5667,10 @@ mod tests {
     }
 
     #[test]
-    fn exactly_sixteen_tools_are_declared_read_only_with_closed_schemas() {
+    fn exactly_twenty_five_tools_have_closed_schemas_and_runtime_annotations() {
         let server = GodotMcpServer::new(SnapshotReplicator::new());
         let tools = server.tool_router.list_all();
-        assert_eq!(tools.len(), 16);
+        assert_eq!(tools.len(), 25);
         let names: BTreeSet<_> = tools.iter().map(|tool| tool.name.as_ref()).collect();
         assert!(names.contains("godot_get_scene_graph"));
         assert!(names.contains("godot_inspect_node"));
@@ -4669,10 +5683,17 @@ mod tests {
         assert!(names.contains("godot_get_editor_history"));
         assert!(names.contains("godot_get_diagnostics"));
         assert!(names.contains("godot_get_viewport_state"));
-        for tool in tools {
+        assert!(names.contains("godot_run_project"));
+        assert!(names.contains("godot_run_current_scene"));
+        assert!(names.contains("godot_stop_project"));
+        assert!(names.contains("godot_pause_project"));
+        assert!(names.contains("godot_continue_project"));
+        assert!(names.contains("godot_get_runtime_tree"));
+        assert!(names.contains("godot_inspect_runtime_object"));
+        assert!(names.contains("godot_get_stack_trace"));
+        assert!(names.contains("godot_capture_viewport"));
+        for tool in &tools {
             let annotations = tool.annotations.as_ref().expect("annotations");
-            assert_eq!(annotations.read_only_hint, Some(true));
-            assert_eq!(annotations.destructive_hint, Some(false));
             assert_eq!(annotations.open_world_hint, Some(false));
             assert_eq!(
                 tool.input_schema.get("type").and_then(Value::as_str),
@@ -4685,7 +5706,49 @@ mod tests {
                 Some(false)
             );
         }
-        let tools = server.tool_router.list_all();
+        for name in [
+            "godot_run_project",
+            "godot_run_current_scene",
+            "godot_stop_project",
+            "godot_pause_project",
+            "godot_continue_project",
+        ] {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.name.as_ref() == name)
+                .expect("runtime control tool");
+            assert_eq!(
+                tool.annotations.as_ref().unwrap().read_only_hint,
+                Some(false)
+            );
+        }
+        let stop = tools
+            .iter()
+            .find(|tool| tool.name.as_ref() == "godot_stop_project")
+            .unwrap();
+        assert_eq!(
+            stop.annotations.as_ref().unwrap().destructive_hint,
+            Some(true)
+        );
+        for name in [
+            "godot_get_runtime_tree",
+            "godot_inspect_runtime_object",
+            "godot_get_stack_trace",
+            "godot_capture_viewport",
+        ] {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.name.as_ref() == name)
+                .expect("runtime observation tool");
+            assert_eq!(
+                tool.annotations.as_ref().unwrap().read_only_hint,
+                Some(true)
+            );
+            assert_eq!(
+                tool.annotations.as_ref().unwrap().destructive_hint,
+                Some(false)
+            );
+        }
         let search = tools
             .iter()
             .find(|tool| tool.name.as_ref() == "godot_search_symbols")
@@ -4849,7 +5912,7 @@ mod tests {
         let resources = info.capabilities.resources.expect("resources capability");
         assert_eq!(resources.subscribe, None);
         assert_eq!(resources.list_changed, None);
-        assert_eq!(GodotMcpServer::summary_resources().len(), 2);
+        assert_eq!(GodotMcpServer::summary_resources().len(), 3);
         assert_eq!(
             GodotMcpServer::summary_resources()[0].uri,
             PROJECT_SUMMARY_URI
@@ -4857,6 +5920,10 @@ mod tests {
         assert_eq!(
             GodotMcpServer::summary_resources()[1].uri,
             EDITOR_SUMMARY_URI
+        );
+        assert_eq!(
+            GodotMcpServer::summary_resources()[2].uri,
+            RUNTIME_SUMMARY_URI
         );
         assert_eq!(GodotMcpServer::summary_resource_templates().len(), 1);
         assert_eq!(
@@ -4891,6 +5958,16 @@ mod tests {
         let value: Value = serde_json::from_str(text).expect("editor summary JSON");
         assert_eq!(value["schema_version"], "editor/1.0");
         assert!(value["revision_vector"].is_object());
+
+        let runtime = live_server
+            .read_summary_resource(RUNTIME_SUMMARY_URI)
+            .expect("runtime summary");
+        let ResourceContents::TextResourceContents { text, .. } = &runtime.contents[0] else {
+            panic!("runtime summary must be text");
+        };
+        assert!(text.len() <= EDITOR_SUMMARY_MAX_BYTES);
+        let value: Value = serde_json::from_str(text).expect("runtime summary JSON");
+        assert_eq!(value["schema_version"], "runtime-summary/1.0");
 
         let scene_id = "godot:scene:uid:v1:testscene";
         let uri = format!(

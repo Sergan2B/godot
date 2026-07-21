@@ -921,7 +921,11 @@ impl ResourceIndexCoordinator {
                 _ = shutdown.changed() => break,
             };
             if let Err(error) = result {
-                eprintln!("[godot-codex-index] sync failed: {}", error.safe_code());
+                if std::env::var_os("GODOT_CODEX_DEBUG_ERRORS").is_some() {
+                    eprintln!("[godot-codex-index] sync failed: {error:?}");
+                } else {
+                    eprintln!("[godot-codex-index] sync failed: {}", error.safe_code());
+                }
                 self.mark_disconnected(&store);
                 if wait_or_shutdown(retry, &mut shutdown).await {
                     break;

@@ -19,6 +19,21 @@ const MAX_SAFE_REVISION: u64 = 9_007_199_254_740_991;
 const SCENE_SNAPSHOT_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const SCENE_SNAPSHOT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
+fn valid_runtime_coordinates(session_id: &Option<String>, event_seq: Option<u64>) -> bool {
+    match (session_id.as_deref(), event_seq) {
+        (None, None) => true,
+        (Some(id), Some(seq)) => {
+            id.strip_prefix("runtime:").is_some_and(|tail| {
+                tail.len() == 32
+                    && tail
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            }) && (1..=MAX_SAFE_REVISION).contains(&seq)
+        }
+        _ => false,
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SceneRevisionVector {
@@ -30,6 +45,10 @@ pub struct SceneRevisionVector {
     pub scene_graph_revision: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script_graph_revision: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_event_seq: Option<u64>,
     pub scene_revisions: BTreeMap<String, u64>,
 }
 
@@ -783,8 +802,10 @@ fn validate_snapshot_chunk(
 ) -> Result<(), BridgeError> {
     let canonical_payload = canonical_serialized(&chunk.payload)?;
     let checksum_input = chunk.payload_json.as_deref().unwrap_or(&canonical_payload);
-    if !matches!(chunk.protocol_version.as_str(), "1.3" | "1.4" | "1.5")
-        || chunk.kind != "chunk"
+    if !matches!(
+        chunk.protocol_version.as_str(),
+        "1.3" | "1.4" | "1.5" | "1.6"
+    ) || chunk.kind != "chunk"
         || chunk.domain != "scene_graph"
         || chunk.snapshot_id != accepted.snapshot_id
         || chunk.chunk_index != expected_index
@@ -882,7 +903,7 @@ async fn receive_scene_snapshot<S: SceneSnapshotSink>(
         || accepted.revisions.resource_revision != accepted.resource_revision
         || accepted.revisions.scene_graph_revision != accepted.scene_graph_revision
         || match session.protocol_version() {
-            "1.4" | "1.5" => accepted
+            "1.4" | "1.5" | "1.6" => accepted
                 .revisions
                 .script_graph_revision
                 .is_none_or(|revision| revision > MAX_SAFE_REVISION),
@@ -890,6 +911,13 @@ async fn receive_scene_snapshot<S: SceneSnapshotSink>(
         }
         || accepted.resource_revision > MAX_SAFE_REVISION
         || accepted.scene_graph_revision > MAX_SAFE_REVISION
+        || !valid_runtime_coordinates(
+            &accepted.revisions.runtime_session_id,
+            accepted.revisions.runtime_event_seq,
+        )
+        || (session.protocol_version() != "1.6"
+            && (accepted.revisions.runtime_session_id.is_some()
+                || accepted.revisions.runtime_event_seq.is_some()))
         || !accepted.snapshot_id.starts_with("snapshot:")
     {
         return Err(BridgeError::Invalid(
@@ -1059,6 +1087,8 @@ fn validate_delta_batch(
             resource_revision: batch.resource_revision,
             scene_graph_revision: batch.scene_graph_revision,
             script_graph_revision: None,
+            runtime_session_id: None,
+            runtime_event_seq: None,
             scene_revisions: BTreeMap::new(),
         },
         limits_applied: SceneSnapshotLimits {
@@ -1171,7 +1201,7 @@ pub(crate) async fn get_next_scene_delta(
 }
 
 fn require_scene_graph(session: &Session) -> Result<(), BridgeError> {
-    if !matches!(session.protocol_version(), "1.3" | "1.4" | "1.5")
+    if !matches!(session.protocol_version(), "1.3" | "1.4" | "1.5" | "1.6")
         || !session.capabilities().contains("scene.packed_state")
         || !session.capabilities().contains("scene.incremental_index")
         || !session.capabilities().contains("scene.project_context")

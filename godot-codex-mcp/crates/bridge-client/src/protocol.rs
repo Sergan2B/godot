@@ -214,6 +214,41 @@ fn is_script_notification(value: &Value) -> Result<bool, BridgeError> {
 }
 
 #[cfg(any(unix, windows, test))]
+fn is_runtime_notification(value: &Value) -> Result<bool, BridgeError> {
+    match value.get("method").and_then(Value::as_str) {
+        Some("runtime.event") => {
+            if value.get("kind").and_then(Value::as_str) != Some("notification")
+                || value
+                    .pointer("/params/runtime_session_id")
+                    .and_then(Value::as_str)
+                    .is_none()
+                || value
+                    .pointer("/params/runtime_event_seq")
+                    .and_then(Value::as_u64)
+                    .is_none()
+            {
+                return Err(BridgeError::Invalid("runtime.event is invalid".to_owned()));
+            }
+            Ok(true)
+        }
+        Some("runtime.invalidated") => {
+            if value.get("kind").and_then(Value::as_str) != Some("notification")
+                || value
+                    .pointer("/params/runtime_session_id")
+                    .and_then(Value::as_str)
+                    .is_none()
+            {
+                return Err(BridgeError::Invalid(
+                    "runtime.invalidated is invalid".to_owned(),
+                ));
+            }
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
+#[cfg(any(unix, windows, test))]
 fn sync_invalidation_affects_editor(value: &Value) -> bool {
     match value.get("method").and_then(Value::as_str) {
         Some("sync.event") => {
@@ -380,7 +415,7 @@ impl Session {
         let mut stream = FrameStream::connect(&discovery.endpoint).await?;
         // Bridge negotiation advertises one highest supported minor per major;
         // the server selects the best 1.x fallback it implements.
-        let offered_versions = vec!["1.5".to_owned()];
+        let offered_versions = vec!["1.6".to_owned()];
         let mut client_nonce = [0_u8; 32];
         getrandom::fill(&mut client_nonce)
             .map_err(|error| BridgeError::Invalid(format!("client nonce failed: {error}")))?;
@@ -399,7 +434,7 @@ impl Session {
         if required_str(&challenge, "kind")? != "handshake.server_challenge"
             || !matches!(
                 selected_protocol_version.as_str(),
-                "1.0" | "1.1" | "1.2" | "1.3" | "1.4" | "1.5"
+                "1.0" | "1.1" | "1.2" | "1.3" | "1.4" | "1.5" | "1.6"
             )
             || required_str(&challenge, "project_id")? != discovery.project_id
             || required_str(&challenge, "editor_session_id")? != discovery.editor_session_id
@@ -462,14 +497,14 @@ impl Session {
         }
         if matches!(
             session.selected_protocol_version.as_str(),
-            "1.2" | "1.3" | "1.4" | "1.5"
+            "1.2" | "1.3" | "1.4" | "1.5" | "1.6"
         ) {
             requested_capabilities
                 .extend(["resource.uid_dependencies", "resource.incremental_index"]);
         }
         if matches!(
             session.selected_protocol_version.as_str(),
-            "1.3" | "1.4" | "1.5"
+            "1.3" | "1.4" | "1.5" | "1.6"
         ) {
             requested_capabilities.extend([
                 "scene.packed_state",
@@ -477,13 +512,23 @@ impl Session {
                 "scene.project_context",
             ]);
         }
-        if session.selected_protocol_version == "1.5" {
+        if matches!(session.selected_protocol_version.as_str(), "1.5" | "1.6") {
             requested_capabilities.extend([
                 "editor.open_scenes",
                 "editor.open_scripts",
                 "editor.native_history",
                 "editor.diagnostics",
                 "editor.viewport_metadata",
+            ]);
+        }
+        if session.selected_protocol_version == "1.6" {
+            requested_capabilities.extend([
+                "runtime.debugger",
+                "runtime.process_control",
+                "runtime.remote_tree",
+                "runtime.bounded_properties",
+                "runtime.diagnostics",
+                "runtime.viewport_capture",
             ]);
         }
         let initialize = session
@@ -527,6 +572,25 @@ impl Session {
         self.receive_non_sync_with_timeout(IO_TIMEOUT).await
     }
 
+    pub(crate) async fn receive_runtime_notification(&mut self) -> Result<Value, BridgeError> {
+        loop {
+            let message = self.stream.receive().await?;
+            validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
+            if is_runtime_notification(&message)? {
+                return Ok(message);
+            }
+            if is_script_notification(&message)?
+                || is_scene_notification(&message)?
+                || is_sync_invalidation(&message)?
+            {
+                continue;
+            }
+            return Err(BridgeError::Invalid(
+                "unexpected message on runtime event stream".to_owned(),
+            ));
+        }
+    }
+
     pub(crate) async fn receive_non_sync_with_timeout(
         &mut self,
         timeout: std::time::Duration,
@@ -538,6 +602,9 @@ impl Session {
                 continue;
             }
             if is_scene_notification(&message)? {
+                continue;
+            }
+            if is_runtime_notification(&message)? {
                 continue;
             }
             if is_sync_invalidation(&message)? {
@@ -680,7 +747,7 @@ impl Session {
         let response = self
             .request(
                 "editor.snapshot.get",
-                if self.selected_protocol_version == "1.5" {
+                if matches!(self.selected_protocol_version.as_str(), "1.5" | "1.6") {
                     json!({"domains": [
                         "editor_context",
                         "editor_inspector",
@@ -791,6 +858,9 @@ impl Session {
         loop {
             let message = self.stream.receive().await?;
             validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
+            if is_runtime_notification(&message)? {
+                continue;
+            }
             let method = message.get("method").and_then(Value::as_str);
             match method {
                 Some("script_graph_changed" | "script_journal_gap") => {

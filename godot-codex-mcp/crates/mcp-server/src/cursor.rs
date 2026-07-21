@@ -21,6 +21,7 @@ pub(crate) enum CursorTool {
     OpenScripts,
     EditorHistory,
     Diagnostics,
+    RuntimeTree,
 }
 
 impl CursorTool {
@@ -37,6 +38,7 @@ impl CursorTool {
             Self::OpenScripts => "godot_get_open_scripts",
             Self::EditorHistory => "godot_get_editor_history",
             Self::Diagnostics => "godot_get_diagnostics",
+            Self::RuntimeTree => "godot_get_runtime_tree",
         }
     }
 }

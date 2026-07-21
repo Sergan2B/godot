@@ -204,6 +204,8 @@ mod tests {
             resource_revision: 1,
             scene_graph_revision: None,
             script_graph_revision: None,
+            runtime_session_id: None,
+            runtime_event_seq: None,
             scene_revisions: BTreeMap::new(),
         }
     }

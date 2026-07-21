@@ -26,6 +26,16 @@ const MAX_SAFE_REVISION: u64 = 9_007_199_254_740_991;
 const SCRIPT_SNAPSHOT_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const SCRIPT_SNAPSHOT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
+fn valid_runtime_coordinates(session_id: &Option<String>, event_seq: Option<u64>) -> bool {
+    match (session_id.as_deref(), event_seq) {
+        (None, None) => true,
+        (Some(id), Some(seq)) => {
+            valid_prefixed_hex(id, "runtime:", 32) && (1..=MAX_SAFE_REVISION).contains(&seq)
+        }
+        _ => false,
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ScriptRevisionVector {
@@ -36,6 +46,10 @@ pub struct ScriptRevisionVector {
     pub resource_revision: u64,
     pub scene_graph_revision: u64,
     pub script_graph_revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_event_seq: Option<u64>,
     pub scene_revisions: BTreeMap<String, u64>,
 }
 
@@ -1253,7 +1267,7 @@ fn validate_snapshot_chunk(
     expected_index: usize,
 ) -> Result<(), BridgeError> {
     let canonical_payload = canonical_serialized(&chunk.payload)?;
-    if !matches!(chunk.protocol_version.as_str(), "1.4" | "1.5")
+    if !matches!(chunk.protocol_version.as_str(), "1.4" | "1.5" | "1.6")
         || chunk.kind != "chunk"
         || chunk.domain != "script_graph"
         || chunk.snapshot_id != accepted.snapshot_id
@@ -1330,6 +1344,13 @@ async fn receive_script_snapshot<S: ScriptSnapshotSink>(
         || accepted.resource_revision > MAX_SAFE_REVISION
         || accepted.scene_graph_revision > MAX_SAFE_REVISION
         || accepted.script_graph_revision > MAX_SAFE_REVISION
+        || !valid_runtime_coordinates(
+            &accepted.revisions.runtime_session_id,
+            accepted.revisions.runtime_event_seq,
+        )
+        || (session.protocol_version() != "1.6"
+            && (accepted.revisions.runtime_session_id.is_some()
+                || accepted.revisions.runtime_event_seq.is_some()))
         || !valid_prefixed_hex(&accepted.snapshot_id, "snapshot:", 32)
     {
         return Err(BridgeError::Invalid(
@@ -1344,8 +1365,10 @@ async fn receive_script_snapshot<S: ScriptSnapshotSink>(
             .await?,
     )
     .map_err(|error| BridgeError::Invalid(format!("script snapshot begin is invalid: {error}")))?;
-    if !matches!(begin_message.protocol_version.as_str(), "1.4" | "1.5")
-        || begin_message.kind != "notification"
+    if !matches!(
+        begin_message.protocol_version.as_str(),
+        "1.4" | "1.5" | "1.6"
+    ) || begin_message.kind != "notification"
         || begin_message.method != "snapshot.begin"
         || begin_message.params.snapshot_id != accepted.snapshot_id
         || begin_message.params.domain != "script_graph"
@@ -1420,7 +1443,7 @@ async fn receive_script_snapshot<S: ScriptSnapshotSink>(
             })?;
         break end_message;
     };
-    if !matches!(end.protocol_version.as_str(), "1.4" | "1.5")
+    if !matches!(end.protocol_version.as_str(), "1.4" | "1.5" | "1.6")
         || end.kind != "notification"
         || end.method != "snapshot.end"
         || end.params.snapshot_id != accepted.snapshot_id
@@ -1993,7 +2016,7 @@ fn require_script_graph(session: &Session) -> Result<(), BridgeError> {
         "script.diagnostics",
         "script.csharp_discovery",
     ];
-    if !matches!(session.protocol_version(), "1.4" | "1.5")
+    if !matches!(session.protocol_version(), "1.4" | "1.5" | "1.6")
         || required
             .iter()
             .any(|capability| !session.capabilities().contains(*capability))

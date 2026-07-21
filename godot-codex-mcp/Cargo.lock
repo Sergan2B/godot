@@ -341,6 +341,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "getrandom",
+ "godot-codex-bridge-client",
  "godot-codex-index-store",
  "godot-codex-resource-indexer",
  "godot-codex-semantic-model",
@@ -352,6 +353,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

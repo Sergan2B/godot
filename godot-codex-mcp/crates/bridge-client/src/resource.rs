@@ -16,6 +16,21 @@ const MAX_SAFE_REVISION: u64 = 9_007_199_254_740_991;
 const RESOURCE_SNAPSHOT_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 const RESOURCE_SNAPSHOT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 
+fn valid_runtime_coordinates(session_id: &Option<String>, event_seq: Option<u64>) -> bool {
+    match (session_id.as_deref(), event_seq) {
+        (None, None) => true,
+        (Some(id), Some(seq)) => {
+            id.strip_prefix("runtime:").is_some_and(|tail| {
+                tail.len() == 32
+                    && tail
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            }) && (1..=MAX_SAFE_REVISION).contains(&seq)
+        }
+        _ => false,
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RpcContext {
@@ -35,6 +50,10 @@ pub struct ResourceRevisionVector {
     pub scene_graph_revision: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub script_graph_revision: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_event_seq: Option<u64>,
     pub scene_revisions: BTreeMap<String, u64>,
 }
 
@@ -528,7 +547,7 @@ fn validate_snapshot_chunk(
 ) -> Result<(), BridgeError> {
     if !matches!(
         chunk.protocol_version.as_str(),
-        "1.2" | "1.3" | "1.4" | "1.5"
+        "1.2" | "1.3" | "1.4" | "1.5" | "1.6"
     ) || chunk.kind != "chunk"
         || chunk.domain != "resource_graph"
         || chunk.snapshot_id != accepted.snapshot_id
@@ -631,13 +650,20 @@ async fn receive_resource_snapshot<S: ResourceSnapshotSink>(
     if accepted.domain != "resource_graph"
         || accepted.revisions.resource_revision != accepted.resource_revision
         || match session.protocol_version() {
-            "1.4" | "1.5" => accepted
+            "1.4" | "1.5" | "1.6" => accepted
                 .revisions
                 .script_graph_revision
                 .is_none_or(|revision| revision > MAX_SAFE_REVISION),
             _ => accepted.revisions.script_graph_revision.is_some(),
         }
         || accepted.resource_revision > MAX_SAFE_REVISION
+        || !valid_runtime_coordinates(
+            &accepted.revisions.runtime_session_id,
+            accepted.revisions.runtime_event_seq,
+        )
+        || (session.protocol_version() != "1.6"
+            && (accepted.revisions.runtime_session_id.is_some()
+                || accepted.revisions.runtime_event_seq.is_some()))
         || !accepted.snapshot_id.starts_with("snapshot:")
     {
         return Err(BridgeError::Invalid(
@@ -882,8 +908,10 @@ pub(crate) async fn get_next_resource_delta(
 }
 
 fn require_resource_graph(session: &Session) -> Result<(), BridgeError> {
-    if !matches!(session.protocol_version(), "1.2" | "1.3" | "1.4" | "1.5")
-        || !session.capabilities().contains("resource.uid_dependencies")
+    if !matches!(
+        session.protocol_version(),
+        "1.2" | "1.3" | "1.4" | "1.5" | "1.6"
+    ) || !session.capabilities().contains("resource.uid_dependencies")
         || !session
             .capabilities()
             .contains("resource.incremental_index")

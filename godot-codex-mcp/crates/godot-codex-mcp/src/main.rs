@@ -52,11 +52,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ResourceIndexCoordinator::new_semantic(&project_root)?;
     let (shutdown_sender, shutdown_receiver) = tokio::sync::watch::channel(false);
     let resource_task = tokio::spawn(resource_coordinator.run(shutdown_receiver));
-    let server = GodotMcpServer::with_all_indexes(
+    let server = GodotMcpServer::with_all_indexes_and_project_root(
         replicator,
         resource_index_reader,
         scene_index_reader,
         script_index_reader,
+        project_root,
     )
     .serve(rmcp::transport::stdio())
     .await?;

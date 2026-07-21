@@ -1,6 +1,7 @@
 mod discovery;
 mod protocol;
 mod resource;
+mod runtime;
 mod scene;
 mod script;
 
@@ -18,6 +19,15 @@ pub use resource::{
     ResourceSnapshotEndParams, ResourceSnapshotLimits, ResourceSnapshotPayload,
     ResourceSnapshotSink, ResourceSnapshotTransfer, ResourceSourceKind, ResourceValidity,
     ResourceWithDependencies, RpcContext, UidResourceRef,
+};
+pub use runtime::{
+    RuntimeDiagnostic, RuntimeDiagnosticSeverity, RuntimeDiagnosticSource, RuntimeDomain,
+    RuntimeEntity, RuntimeEvent, RuntimeEventType, RuntimeInvalidated, RuntimeInvalidationReason,
+    RuntimeLimits, RuntimeNode, RuntimeNotification, RuntimeObjectResult, RuntimeOrigin,
+    RuntimeProjectedValue, RuntimeProperty, RuntimeRevisionVector, RuntimeSnapshot,
+    RuntimeSnapshotAccepted, RuntimeSnapshotEnd, RuntimeSourceHint, RuntimeStack,
+    RuntimeStackFrame, RuntimeStackKind, RuntimeStackResult, RuntimeState, RuntimeStateEntity,
+    RuntimeStateResult, RuntimeTarget, RuntimeViewportCapture, RuntimeVisibility,
 };
 pub use scene::{
     AnimationTrackObservation, AnimationTrackResolution, ConnectionObservation, NodeObservation,
@@ -49,6 +59,7 @@ pub struct NegotiatedBridgeProfile {
     pub scene_graph_available: bool,
     pub script_graph_available: bool,
     pub live_editor_available: bool,
+    pub runtime_available: bool,
 }
 
 /// Backward-compatible short name for callers that adopted the Stage 3 spike API.
@@ -73,24 +84,35 @@ impl BridgeClient {
             protocol_version: self.session.protocol_version().to_owned(),
             resource_graph_available: matches!(
                 self.session.protocol_version(),
-                "1.2" | "1.3" | "1.4" | "1.5"
+                "1.2" | "1.3" | "1.4" | "1.5" | "1.6"
             ) && capabilities.contains("resource.uid_dependencies")
                 && capabilities.contains("resource.incremental_index"),
-            scene_graph_available: matches!(self.session.protocol_version(), "1.3" | "1.4" | "1.5")
-                && capabilities.contains("scene.packed_state")
+            scene_graph_available: matches!(
+                self.session.protocol_version(),
+                "1.3" | "1.4" | "1.5" | "1.6"
+            ) && capabilities.contains("scene.packed_state")
                 && capabilities.contains("scene.incremental_index")
                 && capabilities.contains("scene.project_context"),
-            script_graph_available: matches!(self.session.protocol_version(), "1.4" | "1.5")
-                && capabilities.contains("script.gdscript_semantics")
+            script_graph_available: matches!(
+                self.session.protocol_version(),
+                "1.4" | "1.5" | "1.6"
+            ) && capabilities.contains("script.gdscript_semantics")
                 && capabilities.contains("script.incremental_index")
                 && capabilities.contains("script.diagnostics")
                 && capabilities.contains("script.csharp_discovery"),
-            live_editor_available: self.session.protocol_version() == "1.5"
+            live_editor_available: matches!(self.session.protocol_version(), "1.5" | "1.6")
                 && capabilities.contains("editor.open_scenes")
                 && capabilities.contains("editor.open_scripts")
                 && capabilities.contains("editor.native_history")
                 && capabilities.contains("editor.diagnostics")
                 && capabilities.contains("editor.viewport_metadata"),
+            runtime_available: self.session.protocol_version() == "1.6"
+                && capabilities.contains("runtime.debugger")
+                && capabilities.contains("runtime.process_control")
+                && capabilities.contains("runtime.remote_tree")
+                && capabilities.contains("runtime.bounded_properties")
+                && capabilities.contains("runtime.diagnostics")
+                && capabilities.contains("runtime.viewport_capture"),
             capabilities,
         }
     }
@@ -105,6 +127,11 @@ impl BridgeClient {
     #[must_use]
     pub fn editor_session_id(&self) -> &str {
         self.session.editor_session_id()
+    }
+
+    pub async fn next_runtime_notification(&mut self) -> Result<RuntimeNotification, BridgeError> {
+        let value = self.session.receive_runtime_notification().await?;
+        runtime::parse_runtime_notification(&self.session, value)
     }
 
     pub async fn stream_resource_snapshot<S: ResourceSnapshotSink>(
@@ -167,12 +194,125 @@ impl BridgeClient {
     ) -> Result<ScriptDeltaPoll, BridgeError> {
         script::get_next_script_delta(&mut self.session, after_script_graph_revision).await
     }
+
+    pub async fn run_runtime(
+        &mut self,
+        target: RuntimeTarget,
+    ) -> Result<RuntimeStateResult, BridgeError> {
+        runtime::run_runtime(&mut self.session, target).await
+    }
+
+    pub async fn stop_runtime(
+        &mut self,
+        runtime_session_id: &str,
+        expected_runtime_event_seq: Option<u64>,
+    ) -> Result<RuntimeStateResult, BridgeError> {
+        runtime::stop_runtime(
+            &mut self.session,
+            runtime_session_id,
+            expected_runtime_event_seq,
+        )
+        .await
+    }
+
+    pub async fn pause_runtime(
+        &mut self,
+        runtime_session_id: &str,
+        expected_runtime_event_seq: Option<u64>,
+    ) -> Result<RuntimeStateResult, BridgeError> {
+        runtime::pause_runtime(
+            &mut self.session,
+            runtime_session_id,
+            expected_runtime_event_seq,
+        )
+        .await
+    }
+
+    pub async fn continue_runtime(
+        &mut self,
+        runtime_session_id: &str,
+        expected_runtime_event_seq: Option<u64>,
+    ) -> Result<RuntimeStateResult, BridgeError> {
+        runtime::continue_runtime(
+            &mut self.session,
+            runtime_session_id,
+            expected_runtime_event_seq,
+        )
+        .await
+    }
+
+    pub async fn get_runtime_snapshot(
+        &mut self,
+        runtime_session_id: &str,
+        expected_runtime_event_seq: Option<u64>,
+        domains: Option<Vec<RuntimeDomain>>,
+    ) -> Result<RuntimeSnapshot, BridgeError> {
+        runtime::get_runtime_snapshot(
+            &mut self.session,
+            runtime_session_id,
+            expected_runtime_event_seq,
+            domains,
+        )
+        .await
+    }
+
+    pub async fn inspect_runtime_object(
+        &mut self,
+        runtime_session_id: &str,
+        runtime_object_id: &str,
+        expected_runtime_event_seq: Option<u64>,
+    ) -> Result<RuntimeObjectResult, BridgeError> {
+        runtime::inspect_runtime_object(
+            &mut self.session,
+            runtime_session_id,
+            runtime_object_id,
+            expected_runtime_event_seq,
+        )
+        .await
+    }
+
+    pub async fn get_runtime_stack(
+        &mut self,
+        runtime_session_id: &str,
+        runtime_stack_id: &str,
+        expected_runtime_event_seq: Option<u64>,
+    ) -> Result<RuntimeStackResult, BridgeError> {
+        runtime::get_runtime_stack(
+            &mut self.session,
+            runtime_session_id,
+            runtime_stack_id,
+            expected_runtime_event_seq,
+        )
+        .await
+    }
+
+    pub async fn capture_runtime_viewport(
+        &mut self,
+        runtime_session_id: &str,
+        expected_runtime_event_seq: Option<u64>,
+        max_width: u32,
+        max_height: u32,
+    ) -> Result<RuntimeViewportCapture, BridgeError> {
+        runtime::capture_runtime_viewport(
+            &mut self.session,
+            runtime_session_id,
+            expected_runtime_event_seq,
+            max_width,
+            max_height,
+        )
+        .await
+    }
 }
 
 pub async fn run_bridge_sync(project_root: PathBuf, replicator: SnapshotReplicator) -> ! {
     let mut retry = Duration::from_millis(200);
     loop {
         let result = protocol::run_session(&project_root, &replicator).await;
+        if let Err(error) = &result
+            && std::env::var_os("GODOT_CODEX_DEBUG_ERRORS").is_some()
+        {
+            eprintln!("[godot-codex-bridge-sync] {error}");
+        }
         let message = result.map_or_else(
             |error| error.safe_summary().to_owned(),
             |()| "bridge session ended".to_owned(),
