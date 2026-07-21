@@ -625,6 +625,7 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		Array diagnostic_ids;
 		Array captured_diagnostics;
 		Array captured_ids;
+		HashSet<String> captured_id_set;
 		int diagnostic_bytes = 0;
 		int omitted_diagnostics = 0;
 		EditorLog *editor_log = EditorNode::get_log();
@@ -653,8 +654,16 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 				diagnostic["kind"] = "editor_diagnostic";
 				const int64_t output_seq = raw_message.get("output_seq", 0);
 				const String session_component = p_editor_session_id.trim_prefix("editor:").left(16).rpad(16, "0");
-				const String sequence_component = String::num_uint64((uint64_t)MAX((int64_t)0, output_seq), 16).pad_zeros(16).right(16);
-				const String diagnostic_id = "diagnostic:" + session_component + sequence_component;
+				uint64_t identity_seq = (uint64_t)MAX((int64_t)0, output_seq);
+				if (identity_seq == 0) {
+					identity_seq = (UINT64_C(1) << 63) | (uint64_t)(message_index + 1);
+				}
+				String diagnostic_id;
+				do {
+					const String sequence_component = String::num_uint64(identity_seq++, 16).pad_zeros(16).right(16);
+					diagnostic_id = "diagnostic:" + session_component + sequence_component;
+				} while (captured_id_set.has(diagnostic_id));
+				captured_id_set.insert(diagnostic_id);
 				diagnostic["entity_id"] = diagnostic_id;
 				diagnostic["source"] = "editor_output";
 				const int message_type = raw_message.get("type", 0);

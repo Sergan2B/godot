@@ -34,6 +34,7 @@
 #include "bridge_revision_clock.h"
 #include "main_thread_dispatcher.h"
 #include "resource_graph_adapter.h"
+#include "runtime_debugger_adapter.h"
 #include "scene_state_adapter.h"
 #include "script_graph_adapter.h"
 
@@ -64,6 +65,7 @@ private:
 	ResourceGraphAdapter resource_graph_adapter;
 	SceneStateAdapter scene_state_adapter;
 	ScriptGraphAdapter script_graph_adapter;
+	Ref<RuntimeDebuggerAdapter> runtime_debugger_adapter;
 	BridgeFrameTelemetry frame_telemetry;
 	bool editor_signals_connected = false;
 	int work_lane_turn = 0;
@@ -87,6 +89,7 @@ private:
 			STAGE_END,
 		};
 		uint64_t request_id = 0;
+		String protocol_version = "1.5";
 		String snapshot_id;
 		Dictionary revisions;
 		Dictionary result;

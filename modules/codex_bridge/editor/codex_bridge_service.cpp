@@ -148,7 +148,32 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 				service->_complete_script_delta(p_command.request_id, (uint64_t)(int64_t)p_command.params["after_script_graph_revision"]);
 			}
 			break;
+		case MainThreadDispatcher::COMMAND_RUNTIME_RUN:
+			service->runtime_debugger_adapter->run(p_command.request_id, p_command.params);
+			break;
+		case MainThreadDispatcher::COMMAND_RUNTIME_STOP:
+			service->runtime_debugger_adapter->stop(p_command.request_id, p_command.params);
+			break;
+		case MainThreadDispatcher::COMMAND_RUNTIME_PAUSE:
+			service->runtime_debugger_adapter->pause(p_command.request_id, p_command.params);
+			break;
+		case MainThreadDispatcher::COMMAND_RUNTIME_CONTINUE:
+			service->runtime_debugger_adapter->continue_run(p_command.request_id, p_command.params);
+			break;
+		case MainThreadDispatcher::COMMAND_RUNTIME_SNAPSHOT:
+			service->runtime_debugger_adapter->snapshot(p_command.request_id, p_command.params);
+			break;
+		case MainThreadDispatcher::COMMAND_RUNTIME_OBJECT_INSPECT:
+			service->runtime_debugger_adapter->inspect_object(p_command.request_id, p_command.params);
+			break;
+		case MainThreadDispatcher::COMMAND_RUNTIME_STACK_GET:
+			service->runtime_debugger_adapter->get_stack(p_command.request_id, p_command.params);
+			break;
+		case MainThreadDispatcher::COMMAND_RUNTIME_VIEWPORT_CAPTURE:
+			service->runtime_debugger_adapter->capture_viewport(p_command.request_id, p_command.params);
+			break;
 		case MainThreadDispatcher::COMMAND_CANCEL: {
+			service->runtime_debugger_adapter->cancel(p_command.request_id);
 			const Array abandoned = service->resource_graph_adapter.cancel_snapshot(p_command.request_id);
 			if (!abandoned.is_empty()) {
 				service->transport_worker.abort_resource_snapshot(p_command.request_id, abandoned);
@@ -443,10 +468,12 @@ void CodexBridgeService::_flush_scene_change() {
 void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Dictionary &p_params) {
 	_refresh_open_scene_ids(true);
 	const Dictionary revisions = revision_clock.get_revision_vector();
-	const bool full_live_context = String(p_params.get("_protocol_version", "1.1")) == "1.5";
+	const String protocol_version = p_params.get("_protocol_version", "1.1");
+	const bool full_live_context = protocol_version == "1.5" || protocol_version == "1.6";
 	if (full_live_context) {
 		PendingEditorSnapshot pending;
 		pending.request_id = p_request_id;
+		pending.protocol_version = protocol_version;
 		pending.revisions = revisions;
 		pending.domains = p_params.get("domains", Array());
 		pending_editor_snapshots.push_back(pending);
@@ -745,7 +772,7 @@ void CodexBridgeService::_process_editor_snapshot() {
 		params["revisions"] = pending.revisions;
 		params["chunk_count"] = chunk_count;
 		Dictionary begin;
-		begin["protocol_version"] = "1.5";
+		begin["protocol_version"] = pending.protocol_version;
 		begin["kind"] = "notification";
 		begin["method"] = "snapshot.begin";
 		begin["params"] = params;
@@ -763,7 +790,7 @@ void CodexBridgeService::_process_editor_snapshot() {
 			Dictionary payload;
 			payload["entities"] = chunk_entities;
 			Dictionary chunk;
-			chunk["protocol_version"] = "1.5";
+			chunk["protocol_version"] = pending.protocol_version;
 			chunk["kind"] = "chunk";
 			chunk["domain"] = "editor_context";
 			chunk["snapshot_id"] = pending.snapshot_id;
@@ -785,7 +812,7 @@ void CodexBridgeService::_process_editor_snapshot() {
 	params["entity_count"] = pending.entities.size();
 	params["revisions"] = pending.revisions;
 	Dictionary end;
-	end["protocol_version"] = "1.5";
+	end["protocol_version"] = pending.protocol_version;
 	end["kind"] = "notification";
 	end["method"] = "snapshot.end";
 	end["params"] = params;
@@ -1057,6 +1084,7 @@ void CodexBridgeService::_notification(int p_what) {
 		} break;
 		case NOTIFICATION_PROCESS: {
 			if (state == STATE_RUNNING) {
+				runtime_debugger_adapter->process();
 				if (scene_change_pending && OS::get_singleton()->get_ticks_usec() >= scene_change_not_before_usec) {
 					_flush_scene_change();
 				}
@@ -1154,6 +1182,9 @@ Error CodexBridgeService::start() {
 	resource_graph_adapter.initialize(&revision_clock);
 	scene_state_adapter.initialize(&revision_clock);
 	script_graph_adapter.initialize(&revision_clock);
+	runtime_debugger_adapter.instantiate();
+	runtime_debugger_adapter->initialize(&transport_worker, &revision_clock);
+	add_debugger_plugin(runtime_debugger_adapter);
 	work_lane_turn = 0;
 	frame_telemetry.reset(OS::get_singleton()->get_environment("GODOT_CODEX_EVIDENCE_TELEMETRY") == "1");
 	native_history_observations.clear();
@@ -1175,6 +1206,11 @@ void CodexBridgeService::stop() {
 
 	state = STATE_STOPPING;
 	_disconnect_editor_signals();
+	if (runtime_debugger_adapter.is_valid()) {
+		runtime_debugger_adapter->shutdown();
+		remove_debugger_plugin(runtime_debugger_adapter);
+		runtime_debugger_adapter.unref();
+	}
 	resource_graph_adapter.shutdown();
 	scene_state_adapter.shutdown();
 	script_graph_adapter.shutdown();

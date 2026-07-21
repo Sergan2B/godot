@@ -50,14 +50,18 @@ namespace {
 static constexpr int MAX_CLIENTS = 16;
 static constexpr int MAX_OUTBOUND_BYTES = 33554432;
 static constexpr uint64_t SNAPSHOT_TIMEOUT_USEC = 120000000;
+static constexpr uint64_t RUNTIME_SNAPSHOT_TIMEOUT_USEC = 10000000;
 static constexpr int MAX_NOTIFICATION_ENTRIES = 4096;
 static constexpr int MAX_NOTIFICATION_BYTES = 16777216;
+static constexpr int MAX_RUNTIME_NOTIFICATION_ENTRIES = 1024;
+static constexpr int MAX_RUNTIME_NOTIFICATION_BYTES = 4 * 1024 * 1024;
 static constexpr int MAX_SNAPSHOT_CHUNKS = 100001;
 static constexpr uint64_t MAX_SNAPSHOT_MESSAGES = MAX_SNAPSHOT_CHUNKS + 2;
 static constexpr uint64_t MAX_RESOURCE_SNAPSHOT_SPOOL_BYTES =
 		(65536ULL + 2) * (BridgeFrameCodec::MAX_PAYLOAD_BYTES + 8ULL);
 static constexpr uint64_t MAX_SCENE_SNAPSHOT_SPOOL_BYTES = 32 * 1024 * 1024;
 static constexpr uint64_t MAX_SCRIPT_SNAPSHOT_SPOOL_BYTES = 64 * 1024 * 1024;
+static constexpr uint64_t MAX_RUNTIME_SNAPSHOT_SPOOL_BYTES = 16 * 1024 * 1024;
 
 struct SnapshotStreamState {
 	bool active = false;
@@ -73,6 +77,7 @@ struct SnapshotStreamState {
 	Vector<uint64_t> sent_chunk_bytes;
 	uint64_t unacked_bytes = 0;
 	uint64_t deadline_usec = 0;
+	String domain;
 };
 
 struct SnapshotPreparation {
@@ -142,20 +147,20 @@ static String sha256_hex_utf8(const String &p_value) {
 }
 
 static bool is_resource_protocol(const String &p_protocol_version) {
-	return p_protocol_version == "1.2" || p_protocol_version == "1.3" || p_protocol_version == "1.4" || p_protocol_version == "1.5";
+	return p_protocol_version == "1.2" || p_protocol_version == "1.3" || p_protocol_version == "1.4" || p_protocol_version == "1.5" || p_protocol_version == "1.6";
 }
 
 static bool is_snapshot_protocol(const String &p_protocol_version, const String &p_domain) {
 	if (p_domain == "editor_context") {
-		return p_protocol_version == "1.5";
+		return p_protocol_version == "1.5" || p_protocol_version == "1.6";
 	}
 	if (p_domain == "resource_graph") {
 		return is_resource_protocol(p_protocol_version);
 	}
 	if (p_domain == "scene_graph") {
-		return p_protocol_version == "1.3" || p_protocol_version == "1.4" || p_protocol_version == "1.5";
+		return p_protocol_version == "1.3" || p_protocol_version == "1.4" || p_protocol_version == "1.5" || p_protocol_version == "1.6";
 	}
-	return p_domain == "script_graph" && (p_protocol_version == "1.4" || p_protocol_version == "1.5");
+	return (p_domain == "script_graph" && (p_protocol_version == "1.4" || p_protocol_version == "1.5" || p_protocol_version == "1.6")) || (p_domain == "runtime" && p_protocol_version == "1.6");
 }
 
 static bool open_snapshot_spool(SnapshotPreparation &r_preparation) {
@@ -187,7 +192,7 @@ static bool append_snapshot_frame(SnapshotPreparation &r_preparation, const Pack
 		return false;
 	}
 	const uint64_t record_bytes = sizeof(uint32_t) + (uint64_t)p_encoded.size();
-	const uint64_t spool_limit = r_preparation.domain == "scene_graph" ? MAX_SCENE_SNAPSHOT_SPOOL_BYTES : (r_preparation.domain == "script_graph" ? MAX_SCRIPT_SNAPSHOT_SPOOL_BYTES : MAX_RESOURCE_SNAPSHOT_SPOOL_BYTES);
+	const uint64_t spool_limit = r_preparation.domain == "runtime" ? MAX_RUNTIME_SNAPSHOT_SPOOL_BYTES : (r_preparation.domain == "scene_graph" ? MAX_SCENE_SNAPSHOT_SPOOL_BYTES : (r_preparation.domain == "script_graph" ? MAX_SCRIPT_SNAPSHOT_SPOOL_BYTES : MAX_RESOURCE_SNAPSHOT_SPOOL_BYTES));
 	if (r_preparation.spool_bytes > spool_limit || record_bytes > spool_limit - r_preparation.spool_bytes ||
 			!r_preparation.spool->store_32((uint32_t)p_encoded.size()) ||
 			!r_preparation.spool->store_buffer(p_encoded)) {
@@ -275,14 +280,18 @@ static SnapshotPreparationResult prepare_snapshot_dictionary(SnapshotPreparation
 static void sanitize_revision_vector_for_protocol(Dictionary &r_message, const String &p_protocol_version) {
 	if (r_message.has("revisions") && r_message["revisions"].get_type() == Variant::DICTIONARY) {
 		Dictionary revisions = r_message["revisions"];
-		if (p_protocol_version != "1.2" && p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5") {
+		if (p_protocol_version != "1.2" && p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6") {
 			revisions.erase("resource_revision");
 		}
-		if (p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5") {
+		if (p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6") {
 			revisions.erase("scene_graph_revision");
 		}
-		if (p_protocol_version != "1.4" && p_protocol_version != "1.5") {
+		if (p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6") {
 			revisions.erase("script_graph_revision");
+		}
+		if (p_protocol_version != "1.6") {
+			revisions.erase("runtime_session_id");
+			revisions.erase("runtime_event_seq");
 		}
 		r_message["revisions"] = revisions;
 	}
@@ -290,14 +299,18 @@ static void sanitize_revision_vector_for_protocol(Dictionary &r_message, const S
 		Dictionary params = r_message["params"];
 		if (params.has("revisions") && params["revisions"].get_type() == Variant::DICTIONARY) {
 			Dictionary revisions = params["revisions"];
-			if (p_protocol_version != "1.2" && p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5") {
+			if (p_protocol_version != "1.2" && p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6") {
 				revisions.erase("resource_revision");
 			}
-			if (p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5") {
+			if (p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6") {
 				revisions.erase("scene_graph_revision");
 			}
-			if (p_protocol_version != "1.4" && p_protocol_version != "1.5") {
+			if (p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6") {
 				revisions.erase("script_graph_revision");
+			}
+			if (p_protocol_version != "1.6") {
+				revisions.erase("runtime_session_id");
+				revisions.erase("runtime_event_seq");
 			}
 			params["revisions"] = revisions;
 			r_message["params"] = params;
@@ -410,12 +423,13 @@ static bool start_snapshot_stream(TransportClient &r_client, uint64_t p_internal
 	r_client.snapshot_stream.internal_request_id = p_internal_request_id;
 	r_client.snapshot_stream.request_id = p_request_id;
 	r_client.snapshot_stream.snapshot_id = params["snapshot_id"];
+	r_client.snapshot_stream.domain = params.get("domain", String());
 	r_client.snapshot_stream.messages = p_messages;
-	r_client.snapshot_stream.deadline_usec = p_now_usec + SNAPSHOT_TIMEOUT_USEC;
+	r_client.snapshot_stream.deadline_usec = p_now_usec + (r_client.snapshot_stream.domain == "runtime" ? RUNTIME_SNAPSHOT_TIMEOUT_USEC : SNAPSHOT_TIMEOUT_USEC);
 	return true;
 }
 
-static bool start_spooled_snapshot_stream(TransportClient &r_client, uint64_t p_internal_request_id, const String &p_request_id, const String &p_snapshot_id, const Ref<FileAccess> &p_spool, int p_chunk_count, uint64_t p_now_usec) {
+static bool start_spooled_snapshot_stream(TransportClient &r_client, uint64_t p_internal_request_id, const String &p_request_id, const String &p_snapshot_id, const String &p_domain, const Ref<FileAccess> &p_spool, int p_chunk_count, uint64_t p_now_usec) {
 	if (r_client.snapshot_stream.active || !is_resource_protocol(r_client.rpc.get_protocol_version()) || p_request_id.is_empty() || p_snapshot_id.is_empty() ||
 			p_spool.is_null() || p_chunk_count <= 0 || p_chunk_count > MAX_SNAPSHOT_CHUNKS || p_spool->get_position() != 0 || p_spool->get_length() == 0) {
 		return false;
@@ -424,9 +438,10 @@ static bool start_spooled_snapshot_stream(TransportClient &r_client, uint64_t p_
 	r_client.snapshot_stream.internal_request_id = p_internal_request_id;
 	r_client.snapshot_stream.request_id = p_request_id;
 	r_client.snapshot_stream.snapshot_id = p_snapshot_id;
+	r_client.snapshot_stream.domain = p_domain;
 	r_client.snapshot_stream.spool = p_spool;
 	r_client.snapshot_stream.spool_chunk_count = p_chunk_count;
-	r_client.snapshot_stream.deadline_usec = p_now_usec + SNAPSHOT_TIMEOUT_USEC;
+	r_client.snapshot_stream.deadline_usec = p_now_usec + (p_domain == "runtime" ? RUNTIME_SNAPSHOT_TIMEOUT_USEC : SNAPSHOT_TIMEOUT_USEC);
 	return true;
 }
 
@@ -472,6 +487,22 @@ static MainThreadDispatcher::CommandType command_type_for_method(BridgeRpcSessio
 			return MainThreadDispatcher::COMMAND_SCRIPT_SNAPSHOT;
 		case BridgeRpcSession::METHOD_SCRIPT_DELTA:
 			return MainThreadDispatcher::COMMAND_SCRIPT_DELTA;
+		case BridgeRpcSession::METHOD_RUNTIME_RUN:
+			return MainThreadDispatcher::COMMAND_RUNTIME_RUN;
+		case BridgeRpcSession::METHOD_RUNTIME_STOP:
+			return MainThreadDispatcher::COMMAND_RUNTIME_STOP;
+		case BridgeRpcSession::METHOD_RUNTIME_PAUSE:
+			return MainThreadDispatcher::COMMAND_RUNTIME_PAUSE;
+		case BridgeRpcSession::METHOD_RUNTIME_CONTINUE:
+			return MainThreadDispatcher::COMMAND_RUNTIME_CONTINUE;
+		case BridgeRpcSession::METHOD_RUNTIME_SNAPSHOT:
+			return MainThreadDispatcher::COMMAND_RUNTIME_SNAPSHOT;
+		case BridgeRpcSession::METHOD_RUNTIME_OBJECT_INSPECT:
+			return MainThreadDispatcher::COMMAND_RUNTIME_OBJECT_INSPECT;
+		case BridgeRpcSession::METHOD_RUNTIME_STACK_GET:
+			return MainThreadDispatcher::COMMAND_RUNTIME_STACK_GET;
+		case BridgeRpcSession::METHOD_RUNTIME_VIEWPORT_CAPTURE:
+			return MainThreadDispatcher::COMMAND_RUNTIME_VIEWPORT_CAPTURE;
 		case BridgeRpcSession::METHOD_SHUTDOWN:
 			return MainThreadDispatcher::COMMAND_SHUTDOWN;
 	}
@@ -685,6 +716,8 @@ static void drain_notifications(BridgeTransportWorker::Context *p_context, Vecto
 		p_context->notifications.pop_front();
 	}
 	p_context->notification_bytes = 0;
+	p_context->runtime_notification_bytes = 0;
+	p_context->runtime_notification_entries = 0;
 }
 
 static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRuntime &r_runtime) {
@@ -751,6 +784,7 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 					preparation.completion.result = event.result;
 					preparation.completion.snapshot_spool = preparation.spool;
 					preparation.completion.snapshot_chunk_count = preparation.next_chunk;
+					preparation.completion.snapshot_domain = preparation.domain;
 					completions.push_back(preparation.completion);
 					snapshot_preparations.remove_at(preparation_index);
 				} else if (preparation_result == SNAPSHOT_PREPARATION_FAILED) {
@@ -815,11 +849,11 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 					} else if (completion.snapshot_spool.is_valid()) {
 						const String request_id = outcome.response.get("request_id", String());
 						const String snapshot_id = completion.result.get("snapshot_id", String());
-						if (!start_spooled_snapshot_stream(client, completion.request_id, request_id, snapshot_id, completion.snapshot_spool, completion.snapshot_chunk_count, completion_now_usec)) {
+						if (!start_spooled_snapshot_stream(client, completion.request_id, request_id, snapshot_id, completion.snapshot_domain, completion.snapshot_spool, completion.snapshot_chunk_count, completion_now_usec)) {
 							cancel_dispatched_request(p_context, completion.request_id);
 							client.force_close = true;
 						}
-					} else if (!completion.server_messages.is_empty() && (client.rpc.get_protocol_version() == "1.1" || client.rpc.get_protocol_version() == "1.2" || client.rpc.get_protocol_version() == "1.3" || client.rpc.get_protocol_version() == "1.4" || client.rpc.get_protocol_version() == "1.5")) {
+					} else if (!completion.server_messages.is_empty() && (client.rpc.get_protocol_version() == "1.1" || client.rpc.get_protocol_version() == "1.2" || client.rpc.get_protocol_version() == "1.3" || client.rpc.get_protocol_version() == "1.4" || client.rpc.get_protocol_version() == "1.5" || client.rpc.get_protocol_version() == "1.6")) {
 						const String request_id = outcome.response.get("request_id", String());
 						if (request_id.is_empty() || !start_snapshot_stream(client, completion.request_id, request_id, completion.server_messages, completion_now_usec)) {
 							cancel_dispatched_request(p_context, completion.request_id);
@@ -836,15 +870,16 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 		Vector<Dictionary> notifications;
 		drain_notifications(p_context, notifications);
 		for (TransportClient &client : clients) {
-			if (client.handshake.get_state() != BridgeHandshakeSession::STATE_AUTHENTICATED || !client.rpc.is_initialized() || (client.rpc.get_protocol_version() != "1.1" && client.rpc.get_protocol_version() != "1.2" && client.rpc.get_protocol_version() != "1.3" && client.rpc.get_protocol_version() != "1.4" && client.rpc.get_protocol_version() != "1.5")) {
+			if (client.handshake.get_state() != BridgeHandshakeSession::STATE_AUTHENTICATED || !client.rpc.is_initialized() || (client.rpc.get_protocol_version() != "1.1" && client.rpc.get_protocol_version() != "1.2" && client.rpc.get_protocol_version() != "1.3" && client.rpc.get_protocol_version() != "1.4" && client.rpc.get_protocol_version() != "1.5" && client.rpc.get_protocol_version() != "1.6")) {
 				continue;
 			}
 			for (const Dictionary &notification : notifications) {
 				const String notification_version = notification.get("protocol_version", "1.1");
 				if ((notification_version == "1.2" && client.rpc.get_protocol_version() == "1.1") ||
-						(notification_version == "1.3" && client.rpc.get_protocol_version() != "1.3" && client.rpc.get_protocol_version() != "1.4" && client.rpc.get_protocol_version() != "1.5") ||
-						(notification_version == "1.4" && client.rpc.get_protocol_version() != "1.4" && client.rpc.get_protocol_version() != "1.5") ||
-						(notification_version == "1.5" && client.rpc.get_protocol_version() != "1.5")) {
+						(notification_version == "1.3" && client.rpc.get_protocol_version() != "1.3" && client.rpc.get_protocol_version() != "1.4" && client.rpc.get_protocol_version() != "1.5" && client.rpc.get_protocol_version() != "1.6") ||
+						(notification_version == "1.4" && client.rpc.get_protocol_version() != "1.4" && client.rpc.get_protocol_version() != "1.5" && client.rpc.get_protocol_version() != "1.6") ||
+						(notification_version == "1.5" && client.rpc.get_protocol_version() != "1.5" && client.rpc.get_protocol_version() != "1.6") ||
+						(notification_version == "1.6" && client.rpc.get_protocol_version() != "1.6")) {
 					continue;
 				}
 				Dictionary client_notification = notification;
@@ -1090,11 +1125,41 @@ bool BridgeTransportWorker::publish_notification(const Dictionary &p_notificatio
 		return false;
 	}
 	MutexLock lock(context->notification_mutex);
+	const String method = p_notification.get("method", String());
+	const bool runtime_event = method == "runtime.event";
+	if (runtime_event && (context->runtime_notification_entries >= MAX_RUNTIME_NOTIFICATION_ENTRIES || context->runtime_notification_bytes + encoded.size() > MAX_RUNTIME_NOTIFICATION_BYTES)) {
+		context->notifications.clear();
+		context->notification_bytes = 0;
+		context->runtime_notification_bytes = 0;
+		context->runtime_notification_entries = 0;
+		const Dictionary event_params = p_notification.get("params", Dictionary());
+		Dictionary params;
+		params["runtime_session_id"] = event_params.get("runtime_session_id", String());
+		params["last_contiguous_runtime_event_seq"] = MAX<int64_t>(1, (int64_t)event_params.get("runtime_event_seq", 1) - 1);
+		params["reason"] = "journal_overflow";
+		Dictionary invalidated;
+		invalidated["protocol_version"] = "1.6";
+		invalidated["kind"] = "notification";
+		invalidated["method"] = "runtime.invalidated";
+		invalidated["params"] = params;
+		invalidated["context"] = p_notification.get("context", Dictionary());
+		PackedByteArray invalidated_encoded;
+		if (BridgeFrameCodec::encode_json(invalidated, invalidated_encoded) != OK || invalidated_encoded.size() > MAX_NOTIFICATION_BYTES) {
+			return false;
+		}
+		context->notifications.push_back(invalidated);
+		context->notification_bytes = invalidated_encoded.size();
+		return false;
+	}
 	if (context->notifications.size() >= MAX_NOTIFICATION_ENTRIES || context->notification_bytes + encoded.size() > MAX_NOTIFICATION_BYTES) {
 		return false;
 	}
 	context->notifications.push_back(p_notification);
 	context->notification_bytes += encoded.size();
+	if (runtime_event) {
+		context->runtime_notification_entries++;
+		context->runtime_notification_bytes += encoded.size();
+	}
 	return true;
 }
 

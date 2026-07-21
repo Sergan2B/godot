@@ -62,6 +62,7 @@ public:
 	bool is_breaked();
 	bool is_debuggable();
 	bool is_active();
+	ScriptEditorDebugger *get_debugger() const { return debugger; }
 
 	void set_breakpoint(const String &p_path, int p_line, bool p_enabled);
 

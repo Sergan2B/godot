@@ -54,7 +54,8 @@ public:
 	SceneDebuggerObject(Object *p_obj);
 	SceneDebuggerObject() {}
 
-	void serialize(Array &r_arr, int p_max_size = 1 << 20);
+	void serialize(Array &r_arr, int p_max_size = 1 << 20, int p_max_properties = 2147483647, int p_max_total_size = 2147483647, bool *r_truncated = nullptr);
+	void serialize_codex(Array &r_arr, int p_max_size, int p_max_properties, int p_max_total_size, bool *r_truncated = nullptr);
 	void deserialize(const Array &p_arr);
 	void deserialize(uint64_t p_id, const String &p_class_name, const Array &p_props);
 };
@@ -89,10 +90,11 @@ public:
 	};
 
 	List<RemoteNode> nodes;
+	bool truncated = false;
 
 	void serialize(Array &r_arr);
 	void deserialize(const Array &p_arr);
-	SceneDebuggerTree(Node *p_root);
+	SceneDebuggerTree(Node *p_root, int p_max_nodes = 10000, int p_max_depth = 256);
 	SceneDebuggerTree() {}
 };
 #endif // DEBUG_ENABLED

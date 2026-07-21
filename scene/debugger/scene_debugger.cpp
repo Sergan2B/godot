@@ -184,6 +184,35 @@ Error SceneDebugger::_msg_inspect_objects(const Array &p_args) {
 	return OK;
 }
 
+Error SceneDebugger::_msg_codex_runtime_tree(const Array &p_args) {
+	ERR_FAIL_COND_V(p_args.size() != 3 || p_args[0].get_type() != Variant::STRING || p_args[1].get_type() != Variant::INT || p_args[2].get_type() != Variant::INT, ERR_INVALID_DATA);
+	const String correlation_id = p_args[0];
+	const int max_nodes = p_args[1];
+	const int max_depth = p_args[2];
+	ERR_FAIL_COND_V(correlation_id.is_empty() || correlation_id.length() > 128 || max_nodes < 1 || max_nodes > 10000 || max_depth < 1 || max_depth > 256, ERR_INVALID_DATA);
+	LiveEditor::get_singleton()->_send_tree(max_nodes, max_depth, correlation_id);
+	return OK;
+}
+
+Error SceneDebugger::_msg_codex_runtime_object(const Array &p_args) {
+	ERR_FAIL_COND_V(p_args.size() != 2 || p_args[0].get_type() != Variant::STRING || p_args[1].get_type() != Variant::INT, ERR_INVALID_DATA);
+	const String correlation_id = p_args[0];
+	ERR_FAIL_COND_V(correlation_id.is_empty() || correlation_id.length() > 128, ERR_INVALID_DATA);
+	SceneDebuggerObject object(ObjectID(p_args[1].operator uint64_t()));
+	Array response;
+	response.push_back(correlation_id);
+	response.push_back(object.id.is_valid());
+	bool truncated = false;
+	Array serialized;
+	if (object.id.is_valid()) {
+		object.serialize_codex(serialized, 65536, 512, 262144, &truncated);
+	}
+	response.push_back(truncated);
+	response.push_back(serialized);
+	EngineDebugger::get_singleton()->send_message("codex_runtime:object", response);
+	return OK;
+}
+
 #ifndef DISABLE_DEPRECATED
 Error SceneDebugger::_msg_inspect_object(const Array &p_args) {
 	ERR_FAIL_COND_V(p_args.is_empty(), ERR_INVALID_DATA);
@@ -612,6 +641,8 @@ void SceneDebugger::_init_message_handlers() {
 	message_handlers["request_scene_tree"] = _msg_request_scene_tree;
 	message_handlers["save_node"] = _msg_save_node;
 	message_handlers["inspect_objects"] = _msg_inspect_objects;
+	message_handlers["codex_runtime_tree"] = _msg_codex_runtime_tree;
+	message_handlers["codex_runtime_object"] = _msg_codex_runtime_object;
 #ifndef DISABLE_DEPRECATED
 	message_handlers["inspect_object"] = _msg_inspect_object;
 #endif // DISABLE_DEPRECATED
@@ -834,7 +865,7 @@ LiveEditor *LiveEditor::get_singleton() {
 	return singleton;
 }
 
-void LiveEditor::_send_tree() {
+void LiveEditor::_send_tree(int p_max_nodes, int p_max_depth, const String &p_correlation_id) {
 	SceneTree *scene_tree = SceneTree::get_singleton();
 	if (!scene_tree) {
 		return;
@@ -842,9 +873,17 @@ void LiveEditor::_send_tree() {
 
 	Array arr;
 	// Encoded as a flat list depth first.
-	SceneDebuggerTree tree(scene_tree->root);
+	SceneDebuggerTree tree(scene_tree->root, p_max_nodes, p_max_depth);
 	tree.serialize(arr);
-	EngineDebugger::get_singleton()->send_message("scene:scene_tree", arr);
+	if (p_correlation_id.is_empty()) {
+		EngineDebugger::get_singleton()->send_message("scene:scene_tree", arr);
+	} else {
+		Array response;
+		response.push_back(p_correlation_id);
+		response.push_back(tree.truncated);
+		response.push_back(arr);
+		EngineDebugger::get_singleton()->send_message("codex_runtime:tree", response);
+	}
 }
 
 void LiveEditor::_node_path_func(const NodePath &p_path, int p_id) {

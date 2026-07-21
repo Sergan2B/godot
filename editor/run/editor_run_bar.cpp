@@ -252,7 +252,7 @@ void EditorRunBar::_play_current_pressed(int p_menu_item) {
 	}
 }
 
-void EditorRunBar::_run_scene(const String &p_scene_path, const Vector<String> &p_run_args) {
+void EditorRunBar::_run_scene(const String &p_scene_path, const Vector<String> &p_run_args, bool p_allow_editor_writes) {
 	ERR_FAIL_COND_MSG(current_mode == RUN_CUSTOM && p_scene_path.is_empty(), "Attempting to run a custom scene with an empty path.");
 
 	if (editor_run.get_status() == EditorRun::STATUS_PLAY) {
@@ -347,7 +347,9 @@ void EditorRunBar::_run_scene(const String &p_scene_path, const Vector<String> &
 		} break;
 	}
 
-	EditorNode::get_singleton()->try_autosave();
+	if (p_allow_editor_writes) {
+		EditorNode::get_singleton()->try_autosave();
+	}
 	if (!EditorNode::get_singleton()->call_build()) {
 		return;
 	}
@@ -459,6 +461,42 @@ void EditorRunBar::play_custom_scene(const String &p_custom, const Vector<String
 	_run_scene(p_custom, p_play_args);
 }
 
+Error EditorRunBar::play_main_scene_read_only() {
+	ERR_FAIL_COND_V(Engine::get_singleton()->is_recovery_mode_hint(), ERR_UNAVAILABLE);
+	ERR_FAIL_COND_V(is_playing(), ERR_ALREADY_IN_USE);
+	current_mode = RunMode::RUN_MAIN;
+	_run_scene("", Vector<String>(), false);
+	if (!is_playing()) {
+		current_mode = RunMode::STOPPED;
+		return ERR_CANT_CREATE;
+	}
+	return OK;
+}
+
+Error EditorRunBar::play_current_scene_read_only() {
+	ERR_FAIL_COND_V(Engine::get_singleton()->is_recovery_mode_hint(), ERR_UNAVAILABLE);
+	ERR_FAIL_COND_V(is_playing(), ERR_ALREADY_IN_USE);
+	Node *scene_root = get_tree()->get_edited_scene_root();
+	ERR_FAIL_NULL_V(scene_root, ERR_DOES_NOT_EXIST);
+	ERR_FAIL_COND_V(scene_root->get_scene_file_path().is_empty(), ERR_FILE_NOT_FOUND);
+	current_mode = RunMode::RUN_CURRENT;
+	_run_scene("", Vector<String>(), false);
+	if (!is_playing()) {
+		current_mode = RunMode::STOPPED;
+		return ERR_CANT_CREATE;
+	}
+	return OK;
+}
+
+void EditorRunBar::request_stop_playing() {
+	if (editor_run.get_status() == EditorRun::STATUS_STOP) {
+		return;
+	}
+
+	emit_signal(SNAME("stop_requested"));
+	stop_playing();
+}
+
 void EditorRunBar::stop_playing() {
 	if (editor_run.get_status() == EditorRun::STATUS_STOP) {
 		return;
@@ -489,6 +527,10 @@ String EditorRunBar::get_playing_scene() const {
 	}
 
 	return run_filename;
+}
+
+String EditorRunBar::get_playing_target() const {
+	return current_mode == RunMode::RUN_CURRENT ? "current_scene" : "project";
 }
 
 Error EditorRunBar::start_native_device(int p_device_id) const {
@@ -552,6 +594,7 @@ HBoxContainer *EditorRunBar::get_buttons_container() {
 
 void EditorRunBar::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("play_pressed"));
+	ADD_SIGNAL(MethodInfo("stop_requested"));
 	ADD_SIGNAL(MethodInfo("stop_pressed"));
 }
 
@@ -642,7 +685,7 @@ EditorRunBar::EditorRunBar() {
 	stop_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 	stop_button->set_tooltip_text(TTRC("Stop the currently running project."));
 	stop_button->set_disabled(true);
-	stop_button->connect(SceneStringName(pressed), callable_mp(this, &EditorRunBar::stop_playing));
+	stop_button->connect(SceneStringName(pressed), callable_mp(this, &EditorRunBar::request_stop_playing));
 
 	ED_SHORTCUT("editor/stop_running_project", TTRC("Stop Running Project"), Key::F8);
 	ED_SHORTCUT_OVERRIDE("editor/stop_running_project", "macos", KeyModifierMask::META | Key::PERIOD);

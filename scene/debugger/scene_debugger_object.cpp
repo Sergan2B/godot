@@ -33,9 +33,159 @@
 #include "scene_debugger_object.h"
 
 #include "core/debugger/debugger_marshalls.h"
+#include "core/io/json.h"
 #include "core/io/marshalls.h"
 #include "core/object/script_language.h"
 #include "scene/main/node.h"
+
+namespace {
+
+struct CodexProjectionContext {
+	HashMap<const void *, String> arrays;
+	HashMap<const void *, String> dictionaries;
+	uint64_t next_reference = 1;
+};
+
+static Dictionary codex_omitted(const String &p_type, const String &p_reason) {
+	Dictionary omitted;
+	omitted["type"] = p_type;
+	omitted["omitted_reason"] = p_reason;
+	return omitted;
+}
+
+static Variant codex_project_raw(const Variant &p_value, int p_depth, CodexProjectionContext &r_context, bool &r_truncated) {
+	const String type = Variant::get_type_name(p_value.get_type());
+	if (p_depth > 8) {
+		r_truncated = true;
+		return codex_omitted(type, "max_depth");
+	}
+	switch (p_value.get_type()) {
+		case Variant::NIL:
+		case Variant::BOOL:
+		case Variant::INT:
+		case Variant::FLOAT:
+			return p_value;
+		case Variant::STRING:
+		case Variant::STRING_NAME:
+		case Variant::NODE_PATH: {
+			String value = p_value.stringify();
+			if (p_value.get_type() == Variant::STRING) {
+				value = p_value;
+			} else if (p_value.get_type() == Variant::STRING_NAME) {
+				value = String(StringName(p_value));
+			} else {
+				value = String(NodePath(p_value));
+			}
+			if (value.length() > 16384) {
+				value = value.left(16384);
+				r_truncated = true;
+			}
+			return value;
+		}
+		case Variant::ARRAY: {
+			const Array source = p_value;
+			const void *identity = source.id();
+			if (const String *reference = r_context.arrays.getptr(identity)) {
+				Dictionary result;
+				result["type"] = "array";
+				result["reference_id"] = *reference;
+				result["reference"] = true;
+				return result;
+			}
+			const String reference = "ref:" + String::num_uint64(r_context.next_reference++);
+			r_context.arrays.insert(identity, reference);
+			Array items;
+			const int count = MIN(source.size(), 1000);
+			for (int index = 0; index < count; index++) {
+				items.push_back(codex_project_raw(source[index], p_depth + 1, r_context, r_truncated));
+			}
+			Dictionary result;
+			result["type"] = "array";
+			result["reference_id"] = reference;
+			result["items"] = items;
+			result["size"] = source.size();
+			if (source.size() > count) {
+				result["omitted_count"] = source.size() - count;
+				r_truncated = true;
+			}
+			return result;
+		}
+		case Variant::DICTIONARY: {
+			const Dictionary source = p_value;
+			const void *identity = source.id();
+			if (const String *reference = r_context.dictionaries.getptr(identity)) {
+				Dictionary result;
+				result["type"] = "dictionary";
+				result["reference_id"] = *reference;
+				result["reference"] = true;
+				return result;
+			}
+			const String reference = "ref:" + String::num_uint64(r_context.next_reference++);
+			r_context.dictionaries.insert(identity, reference);
+			Array keys = source.keys();
+			keys.sort();
+			Array entries;
+			const int count = MIN(keys.size(), 1000);
+			for (int index = 0; index < count; index++) {
+				String key = keys[index].stringify();
+				if (key.length() > 16384) {
+					key = key.left(16384);
+					r_truncated = true;
+				}
+				Dictionary entry;
+				entry["key"] = key;
+				entry["value"] = codex_project_raw(source[keys[index]], p_depth + 1, r_context, r_truncated);
+				entries.push_back(entry);
+			}
+			Dictionary result;
+			result["type"] = "dictionary";
+			result["reference_id"] = reference;
+			result["entries"] = entries;
+			result["size"] = keys.size();
+			if (keys.size() > count) {
+				result["omitted_count"] = keys.size() - count;
+				r_truncated = true;
+			}
+			return result;
+		}
+		case Variant::OBJECT:
+		case Variant::RID:
+		case Variant::CALLABLE:
+		case Variant::SIGNAL:
+			r_truncated = true;
+			return codex_omitted(type, "unsupported_handle");
+		case Variant::PACKED_BYTE_ARRAY:
+		case Variant::PACKED_INT32_ARRAY:
+		case Variant::PACKED_INT64_ARRAY:
+		case Variant::PACKED_FLOAT32_ARRAY:
+		case Variant::PACKED_FLOAT64_ARRAY:
+		case Variant::PACKED_STRING_ARRAY:
+		case Variant::PACKED_VECTOR2_ARRAY:
+		case Variant::PACKED_VECTOR3_ARRAY:
+		case Variant::PACKED_COLOR_ARRAY:
+		case Variant::PACKED_VECTOR4_ARRAY:
+			r_truncated = true;
+			return codex_omitted(type, "packed_array_omitted");
+		default:
+			return p_value.stringify().left(16384);
+	}
+}
+
+static Dictionary codex_project_typed(const Variant &p_value, bool &r_truncated) {
+	CodexProjectionContext context;
+	Dictionary result;
+	result["type"] = Variant::get_type_name(p_value.get_type());
+	result["value"] = codex_project_raw(p_value, 0, context, r_truncated);
+	result["truncated"] = r_truncated;
+	if (JSON::stringify(result, "", true, true).utf8().length() > 65536) {
+		result["value"] = codex_omitted(Variant::get_type_name(p_value.get_type()), "max_encoded_bytes");
+		result["truncated"] = true;
+		r_truncated = true;
+	}
+	return result;
+}
+
+} // namespace
 
 SceneDebuggerObject::SceneDebuggerObject(Object *p_obj) {
 	if (!p_obj) {
@@ -186,9 +336,15 @@ void SceneDebuggerObject::_parse_script_properties(Script *p_script, ScriptInsta
 	}
 }
 
-void SceneDebuggerObject::serialize(Array &r_arr, int p_max_size) {
+void SceneDebuggerObject::serialize(Array &r_arr, int p_max_size, int p_max_properties, int p_max_total_size, bool *r_truncated) {
 	Array send_props;
+	int total_size = 0;
+	bool truncated = false;
 	for (SceneDebuggerProperty &property : properties) {
+		if (send_props.size() >= p_max_properties) {
+			truncated = true;
+			break;
+		}
 		const PropertyInfo &pi = property.first;
 		Variant &var = property.second;
 
@@ -210,13 +366,86 @@ void SceneDebuggerObject::serialize(Array &r_arr, int p_max_size) {
 				hint = PROPERTY_HINT_OBJECT_TOO_BIG;
 				hint_string = "";
 				var = Variant();
+				truncated = true;
 			}
 		}
 		prop.push_back(hint);
 		prop.push_back(hint_string);
 		prop.push_back(pi.usage);
 		prop.push_back(var);
+		int prop_size = 0;
+		encode_variant(prop, nullptr, prop_size);
+		if (prop_size > p_max_total_size - total_size) {
+			truncated = true;
+			break;
+		}
+		total_size += prop_size;
 		send_props.push_back(prop);
+	}
+	if (r_truncated) {
+		*r_truncated = truncated;
+	}
+	r_arr.push_back(uint64_t(id));
+	r_arr.push_back(class_name);
+	r_arr.push_back(send_props);
+}
+
+void SceneDebuggerObject::serialize_codex(Array &r_arr, int p_max_size, int p_max_properties, int p_max_total_size, bool *r_truncated) {
+	Array send_props;
+	int total_size = 0;
+	bool truncated = false;
+	for (const SceneDebuggerProperty &property : properties) {
+		if (send_props.size() >= p_max_properties) {
+			truncated = true;
+			break;
+		}
+		const PropertyInfo &pi = property.first;
+		const Variant &source = property.second;
+		Array prop = { pi.name, pi.type, pi.hint, pi.hint_string, pi.usage };
+		bool already_projected = true;
+		Variant projected;
+		if (source.get_type() == Variant::OBJECT) {
+			Object *object = source;
+			Resource *resource = Object::cast_to<Resource>(object);
+			if (resource && resource->get_path().begins_with("res://")) {
+				Dictionary value;
+				value["type"] = "resource";
+				Dictionary reference;
+				reference["path"] = resource->get_path().get_slice("::", 0).left(1024);
+				value["value"] = reference;
+				value["truncated"] = false;
+				projected = value;
+			} else if (object) {
+				projected = source;
+				already_projected = false;
+			} else {
+				projected = codex_project_typed(source, truncated);
+			}
+		} else {
+			bool value_truncated = false;
+			projected = codex_project_typed(source, value_truncated);
+			truncated = truncated || value_truncated;
+		}
+		int value_size = 0;
+		encode_variant(projected, nullptr, value_size);
+		if (value_size > p_max_size) {
+			projected = codex_omitted(Variant::get_type_name(source.get_type()), "max_encoded_bytes");
+			already_projected = true;
+			truncated = true;
+		}
+		prop.push_back(projected);
+		prop.push_back(already_projected);
+		int prop_size = 0;
+		encode_variant(prop, nullptr, prop_size);
+		if (prop_size > p_max_total_size - total_size) {
+			truncated = true;
+			break;
+		}
+		total_size += prop_size;
+		send_props.push_back(prop);
+	}
+	if (r_truncated) {
+		*r_truncated = truncated;
 	}
 	r_arr.push_back(uint64_t(id));
 	r_arr.push_back(class_name);
@@ -275,26 +504,34 @@ void SceneDebuggerObject::deserialize(uint64_t p_id, const String &p_class_name,
 	}
 }
 
-SceneDebuggerTree::SceneDebuggerTree(Node *p_root) {
-	// Flatten tree into list, depth first, use stack to avoid recursion.
-	List<Node *> stack;
-	stack.push_back(p_root);
-	bool is_root = true;
+SceneDebuggerTree::SceneDebuggerTree(Node *p_root, int p_max_nodes, int p_max_depth) {
+	ERR_FAIL_NULL(p_root);
+	p_max_nodes = CLAMP(p_max_nodes, 1, 10000);
+	p_max_depth = CLAMP(p_max_depth, 1, 256);
+	// Flatten a deterministic depth-first prefix without queuing or serializing
+	// nodes outside the negotiated runtime budgets.
+	struct PendingNode {
+		Node *node = nullptr;
+		int depth = 0;
+		int parent_index = -1;
+	};
+	Vector<PendingNode> stack;
+	stack.push_back({ p_root, 0, -1 });
+	Vector<RemoteNode> captured;
 	const StringName &is_visible_sn = SNAME("is_visible");
 	const StringName &is_visible_in_tree_sn = SNAME("is_visible_in_tree");
-	while (stack.size()) {
-		Node *n = stack.front()->get();
-		stack.pop_front();
-
-		int count = n->get_child_count();
-		for (int i = 0; i < count; i++) {
-			stack.push_front(n->get_child(count - i - 1));
+	while (!stack.is_empty() && captured.size() < p_max_nodes) {
+		const PendingNode pending = stack[stack.size() - 1];
+		stack.resize(stack.size() - 1);
+		Node *n = pending.node;
+		const int captured_index = captured.size();
+		if (pending.parent_index >= 0) {
+			captured.write[pending.parent_index].child_count++;
 		}
 
 		int view_flags = 0;
-		if (is_root) {
+		if (pending.depth == 0) {
 			// Prevent root window visibility from being changed.
-			is_root = false;
 		} else if (n->has_method(is_visible_sn)) {
 			const Variant visible = n->call(is_visible_sn);
 			if (visible.get_type() == Variant::BOOL) {
@@ -322,7 +559,19 @@ SceneDebuggerTree::SceneDebuggerTree(Node *p_root) {
 				}
 			}
 		}
-		nodes.push_back(RemoteNode(count, n->get_name(), class_name.is_empty() ? n->get_class() : class_name, n->get_instance_id(), n->get_scene_file_path(), view_flags));
+		captured.push_back(RemoteNode(0, n->get_name(), class_name.is_empty() ? n->get_class() : class_name, n->get_instance_id(), n->get_scene_file_path(), view_flags));
+		const int count = n->get_child_count();
+		if (pending.depth + 1 < p_max_depth) {
+			for (int i = count - 1; i >= 0; i--) {
+				stack.push_back({ n->get_child(i), pending.depth + 1, captured_index });
+			}
+		} else if (count > 0) {
+			truncated = true;
+		}
+	}
+	truncated = truncated || !stack.is_empty();
+	for (const RemoteNode &node : captured) {
+		nodes.push_back(node);
 	}
 }
 

@@ -546,6 +546,7 @@ void ScriptEditorDebugger::_msg_stack_dump(uint64_t p_thread_id, const Array &p_
 		}
 	}
 	emit_signal(SNAME("stack_dump"), stack_dump_info);
+	emit_signal(SNAME("runtime_stack_dump"), (int64_t)p_thread_id, stack_dump_info);
 }
 
 void ScriptEditorDebugger::_msg_stack_frame_vars(uint64_t p_thread_id, const Array &p_data) {
@@ -776,6 +777,30 @@ void ScriptEditorDebugger::_msg_error(uint64_t p_thread_id, const Array &p_data)
 	} else {
 		error_count++;
 	}
+
+	Dictionary runtime_error;
+	runtime_error["warning"] = oe.warning;
+	runtime_error["message"] = error_title;
+	if (source_is_project_file) {
+		runtime_error["script_path"] = oe.source_file;
+		runtime_error["line"] = oe.source_line;
+	}
+	if (!oe.source_func.is_empty()) {
+		runtime_error["function"] = oe.source_func;
+	}
+	Array runtime_frames;
+	for (unsigned int i = 0; i < (unsigned int)oe.callstack.size(); i++) {
+		Dictionary frame;
+		frame["frame"] = (int64_t)i;
+		if (oe.callstack[i].file.begins_with("res://")) {
+			frame["script_path"] = oe.callstack[i].file;
+		}
+		frame["function"] = oe.callstack[i].func;
+		frame["line"] = MAX(1, oe.callstack[i].line);
+		runtime_frames.push_back(frame);
+	}
+	runtime_error["frames"] = runtime_frames;
+	emit_signal(SNAME("runtime_error"), runtime_error);
 }
 
 void ScriptEditorDebugger::_msg_servers_function_signature(uint64_t p_thread_id, const Array &p_data) {
@@ -2071,6 +2096,8 @@ void ScriptEditorDebugger::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("remote_tree_clear_selection_requested"));
 	ADD_SIGNAL(MethodInfo("output", PropertyInfo(Variant::STRING, "msg"), PropertyInfo(Variant::INT, "level")));
 	ADD_SIGNAL(MethodInfo("stack_dump", PropertyInfo(Variant::ARRAY, "stack_dump")));
+	ADD_SIGNAL(MethodInfo("runtime_stack_dump", PropertyInfo(Variant::INT, "thread_id"), PropertyInfo(Variant::ARRAY, "stack_dump")));
+	ADD_SIGNAL(MethodInfo("runtime_error", PropertyInfo(Variant::DICTIONARY, "error")));
 	ADD_SIGNAL(MethodInfo("stack_frame_vars", PropertyInfo(Variant::INT, "num_vars")));
 	ADD_SIGNAL(MethodInfo("stack_frame_var", PropertyInfo(Variant::ARRAY, "data")));
 	ADD_SIGNAL(MethodInfo("debug_data", PropertyInfo(Variant::STRING, "msg"), PropertyInfo(Variant::ARRAY, "data")));

@@ -67,6 +67,7 @@ public:
 		Array server_messages;
 		Ref<FileAccess> snapshot_spool;
 		int snapshot_chunk_count = 0;
+		String snapshot_domain;
 		Dictionary snapshot_message;
 		Array abandoned_messages;
 		bool is_error = false;
@@ -94,6 +95,8 @@ public:
 		Mutex notification_mutex;
 		List<Dictionary> notifications;
 		uint64_t notification_bytes = 0;
+		uint64_t runtime_notification_bytes = 0;
+		int runtime_notification_entries = 0;
 		Error startup_error = OK;
 
 		Context() {

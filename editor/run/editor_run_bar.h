@@ -102,7 +102,7 @@ class EditorRunBar : public MarginContainer {
 	void _play_current_pressed(int p_menu_item = RunXRModeMenuItem::INVALID);
 	void _play_custom_pressed(int p_menu_item = RunXRModeMenuItem::INVALID);
 
-	void _run_scene(const String &p_scene_path = "", const Vector<String> &p_run_args = Vector<String>());
+	void _run_scene(const String &p_scene_path = "", const Vector<String> &p_run_args = Vector<String>(), bool p_allow_editor_writes = true);
 	void _run_native(const Ref<EditorExportPreset> &p_preset);
 
 	void _profiler_autostart_indicator_pressed();
@@ -123,10 +123,14 @@ public:
 	void play_main_scene(bool p_from_native = false, const Vector<String> &p_play_args = Vector<String>());
 	void play_current_scene(bool p_reload = false, const Vector<String> &p_play_args = Vector<String>());
 	void play_custom_scene(const String &p_custom, const Vector<String> &p_play_args = Vector<String>());
+	Error play_main_scene_read_only();
+	Error play_current_scene_read_only();
 
+	void request_stop_playing();
 	void stop_playing();
 	bool is_playing() const;
 	String get_playing_scene() const;
+	String get_playing_target() const;
 
 	Error start_native_device(int p_device_id) const;
 

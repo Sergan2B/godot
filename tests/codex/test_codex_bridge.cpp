@@ -47,6 +47,8 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "core/templates/local_vector.h"
 #include "core/templates/safe_refcount.h"
 #include "editor/file_system/editor_file_system.h"
+#include "scene/debugger/scene_debugger_object.h"
+#include "scene/main/node.h"
 
 #include "modules/codex_bridge/editor/bounded_variant_projector.h"
 #include "modules/codex_bridge/editor/bridge_frame_telemetry.h"
@@ -881,7 +883,7 @@ TEST_CASE("[CodexBridge] Handshake negotiates the compatible 1.1 minor") {
 	CHECK(handshake.get_selected_protocol_version() == "1.1");
 }
 
-TEST_CASE("[CodexS7BridgeProfile] Handshake negotiates Bridge RPC 1.5 and caps future major-one minors") {
+TEST_CASE("[CodexS8BridgeProfile] Handshake negotiates Bridge RPC 1.6 and preserves the 1.5 downgrade") {
 	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
 	const PackedByteArray token = bytes_from_range(0xa0, 32);
@@ -891,8 +893,8 @@ TEST_CASE("[CodexS7BridgeProfile] Handshake negotiates Bridge RPC 1.5 and caps f
 	BridgeHandshakeSession handshake(token, project_id, editor_session_id, 0);
 	BridgeHandshakeSession::Outcome challenge;
 	REQUIRE(handshake.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, "1.9"), 1, challenge) == OK);
-	CHECK(challenge.response["selected_protocol_version"] == "1.5");
-	CHECK(handshake.get_selected_protocol_version() == "1.5");
+	CHECK(challenge.response["selected_protocol_version"] == "1.6");
+	CHECK(handshake.get_selected_protocol_version() == "1.6");
 
 	BridgeHandshakeSession exact(token, project_id, editor_session_id, 0);
 	REQUIRE(exact.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, "1.5"), 1, challenge) == OK);
@@ -1400,6 +1402,113 @@ TEST_CASE("[CodexS7BridgeProfile] RPC 1.5 exposes only the bounded live editor e
 	CHECK(rpc_error_code(outcome) == "invalid_request");
 }
 
+TEST_CASE("[CodexS8BridgeProfile] RPC 1.6 exposes bounded runtime methods and strict guards") {
+	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
+	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
+	const String runtime_session_id = "runtime:0123456789abcdef0123456789abcdef";
+	const String runtime_object_id = "runtime-object:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+	const String runtime_stack_id = "runtime-stack:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+	BridgeRpcSession rpc(project_id, editor_session_id);
+	rpc.set_protocol_version("1.6");
+	BridgeRpcSession::Outcome outcome;
+
+	REQUIRE(rpc.handle_message(make_rpc_request("req:init-runtime", "bridge.initialize", make_initialize_params(), project_id, editor_session_id, 5000, "1.6"), 0, 1, outcome) == OK);
+	REQUIRE(rpc.complete(1, 1, outcome) == OK);
+	const Dictionary initialize_result = outcome.response["result"];
+	CHECK(initialize_result["protocol_version"] == "1.6");
+	const Array capabilities = initialize_result["capabilities"];
+	CHECK(capabilities.size() == 26);
+	int runtime_capabilities = 0;
+	for (int index = 0; index < capabilities.size(); index++) {
+		const String name = Dictionary(capabilities[index])["name"];
+		if (name.begins_with("runtime.")) {
+			runtime_capabilities++;
+			CHECK(Dictionary(capabilities[index])["readiness"] == "ready");
+		}
+	}
+	CHECK(runtime_capabilities == 6);
+	const Dictionary limits = initialize_result["limits"];
+	CHECK((int64_t)limits["runtime_tree_nodes"] == 10000);
+	CHECK((int64_t)limits["runtime_snapshot_bytes"] == 16777216);
+	CHECK((int64_t)limits["runtime_properties"] == 512);
+	CHECK((int64_t)limits["runtime_screenshot_bytes"] == 524288);
+
+	Dictionary run_params;
+	run_params["target"] = "current_scene";
+	REQUIRE(rpc.handle_message(make_rpc_request("req:runtime-run", "runtime.run", run_params, project_id, editor_session_id, 0, "1.6"), 100, 2, outcome) == OK);
+	CHECK(outcome.dispatch);
+	CHECK(outcome.method == BridgeRpcSession::METHOD_RUNTIME_RUN);
+	CHECK(outcome.deadline_usec == 10000100);
+	Dictionary run_result;
+	run_result["schema_version"] = "runtime/1.0";
+	REQUIRE(rpc.complete(2, 101, run_result, outcome) == OK);
+
+	Dictionary guard;
+	guard["runtime_session_id"] = runtime_session_id;
+	guard["expected_runtime_event_seq"] = 7;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:runtime-pause", "runtime.pause", guard, project_id, editor_session_id, 0, "1.6"), 200, 3, outcome) == OK);
+	CHECK(outcome.method == BridgeRpcSession::METHOD_RUNTIME_PAUSE);
+	CHECK(outcome.deadline_usec == 3000200);
+	Dictionary pause_result;
+	pause_result["schema_version"] = "runtime/1.0";
+	REQUIRE(rpc.complete(3, 201, pause_result, outcome) == OK);
+
+	Dictionary object_params = guard.duplicate();
+	object_params["runtime_object_id"] = runtime_object_id;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:runtime-object", "runtime.object.inspect", object_params, project_id, editor_session_id, 3000, "1.6"), 300, 4, outcome) == OK);
+	CHECK(outcome.method == BridgeRpcSession::METHOD_RUNTIME_OBJECT_INSPECT);
+	Dictionary object_result;
+	object_result["schema_version"] = "runtime/1.0";
+	REQUIRE(rpc.complete(4, 301, object_result, outcome) == OK);
+
+	Dictionary stack_params = guard.duplicate();
+	stack_params["runtime_stack_id"] = runtime_stack_id;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:runtime-stack", "runtime.stack.get", stack_params, project_id, editor_session_id, 3000, "1.6"), 400, 5, outcome) == OK);
+	CHECK(outcome.method == BridgeRpcSession::METHOD_RUNTIME_STACK_GET);
+	Dictionary stack_result;
+	stack_result["schema_version"] = "runtime/1.0";
+	REQUIRE(rpc.complete(5, 401, stack_result, outcome) == OK);
+
+	object_params["runtime_object_id"] = "42";
+	REQUIRE(rpc.handle_message(make_rpc_request("req:runtime-raw-object", "runtime.object.inspect", object_params, project_id, editor_session_id, 3000, "1.6"), 500, 6, outcome) == OK);
+	CHECK(rpc_error_code(outcome) == "invalid_request");
+
+	Vector<BridgeRpcSession::Outcome> expired;
+	Dictionary timeout_run_params;
+	timeout_run_params["target"] = "project";
+	REQUIRE(rpc.handle_message(make_rpc_request("req:runtime-run-timeout", "runtime.run", timeout_run_params, project_id, editor_session_id, 0, "1.6"), 1000, 20, outcome) == OK);
+	rpc.expire_requests(10001001, expired);
+	REQUIRE(expired.size() == 1);
+	CHECK(rpc_error_code(expired[0]) == "runtime_start_timeout");
+	CHECK(expired[0].cancel_dispatch);
+
+	expired.clear();
+	REQUIRE(rpc.handle_message(make_rpc_request("req:runtime-stop-timeout", "runtime.stop", guard, project_id, editor_session_id, 0, "1.6"), 2000, 21, outcome) == OK);
+	rpc.expire_requests(5002001, expired);
+	REQUIRE(expired.size() == 1);
+	CHECK(rpc_error_code(expired[0]) == "runtime_control_timeout");
+	CHECK(expired[0].cancel_dispatch);
+
+	expired.clear();
+	object_params["runtime_object_id"] = runtime_object_id;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:runtime-object-timeout", "runtime.object.inspect", object_params, project_id, editor_session_id, 0, "1.6"), 3000, 22, outcome) == OK);
+	rpc.expire_requests(3003001, expired);
+	REQUIRE(expired.size() == 1);
+	CHECK(rpc_error_code(expired[0]) == "runtime_request_timeout");
+	CHECK(expired[0].cancel_dispatch);
+
+	guard["unexpected"] = true;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:runtime-extra-guard", "runtime.stop", guard, project_id, editor_session_id, 5000, "1.6"), 600, 7, outcome) == OK);
+	CHECK(rpc_error_code(outcome) == "invalid_request");
+
+	BridgeRpcSession downgraded(project_id, editor_session_id);
+	downgraded.set_protocol_version("1.5");
+	REQUIRE(downgraded.handle_message(make_rpc_request("req:init-runtime-old", "bridge.initialize", make_initialize_params(), project_id, editor_session_id, 5000, "1.5"), 0, 10, outcome) == OK);
+	REQUIRE(downgraded.complete(10, 1, outcome) == OK);
+	REQUIRE(downgraded.handle_message(make_rpc_request("req:no-runtime", "runtime.pause", Dictionary(), project_id, editor_session_id, 3000, "1.5"), 2, 11, outcome) == OK);
+	CHECK(rpc_error_code(outcome) == "capability_unavailable");
+}
+
 TEST_CASE("[CodexBridge] Revision clock advances selection and scene domains monotonically") {
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
 	const String scene_id = "scene:0123456789abcdef0123456789abcdef";
@@ -1426,6 +1535,63 @@ TEST_CASE("[CodexBridge] Revision clock advances selection and scene domains mon
 	CHECK(revisions.record_script_graph_change() == 2);
 	CHECK(revisions.get_script_graph_revision() == 2);
 	CHECK((int64_t)revisions.get_revision_vector()["script_graph_revision"] == 2);
+}
+
+TEST_CASE("[CodexS8Runtime] Revision clock isolates consecutive runtime sessions") {
+	BridgeRevisionClock revisions;
+	revisions.initialize("editor:0123456789abcdef0123456789abcdef");
+	CHECK_FALSE(revisions.get_revision_vector().has("runtime_session_id"));
+	CHECK(revisions.begin_runtime_session("runtime:11111111111111111111111111111111") == 1);
+	CHECK(revisions.record_runtime_change() == 2);
+	Dictionary first = revisions.get_revision_vector();
+	CHECK(first["runtime_session_id"] == "runtime:11111111111111111111111111111111");
+	CHECK((int64_t)first["runtime_event_seq"] == 2);
+	CHECK(revisions.begin_runtime_session("runtime:22222222222222222222222222222222") == 1);
+	Dictionary second = revisions.get_revision_vector();
+	CHECK(second["runtime_session_id"] == "runtime:22222222222222222222222222222222");
+	CHECK((int64_t)second["runtime_event_seq"] == 1);
+	revisions.clear_runtime_session();
+	CHECK_FALSE(revisions.get_revision_vector().has("runtime_session_id"));
+}
+
+TEST_CASE("[CodexS8Runtime] Game-side tree and cyclic properties are bounded before debugger serialization") {
+	Node *root = memnew(Node);
+	root->set_name("Root");
+	for (int index = 0; index < 10001; index++) {
+		Node *child = memnew(Node);
+		child->set_name("Child" + String::num_int64(index));
+		root->add_child(child);
+	}
+	SceneDebuggerTree tree(root, 10000, 256);
+	CHECK(tree.truncated);
+	CHECK(tree.nodes.size() == 10000);
+	Array serialized_tree;
+	tree.serialize(serialized_tree);
+	CHECK(serialized_tree.size() == 60000);
+	memdelete(root);
+
+	SceneDebuggerObject object;
+	object.id = ObjectID(uint64_t(42));
+	object.class_name = "FixtureObject";
+	Array cyclic;
+	cyclic.push_back(cyclic);
+	for (int index = 0; index < 1200; index++) {
+		cyclic.push_back(index);
+	}
+	PropertyInfo property_info(Variant::ARRAY, "large_cycle", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR);
+	object.properties.push_back(SceneDebuggerObject::SceneDebuggerProperty(property_info, cyclic));
+	Array serialized_object;
+	bool truncated = false;
+	object.serialize_codex(serialized_object, 65536, 512, 262144, &truncated);
+	REQUIRE(serialized_object.size() == 3);
+	const Array properties = serialized_object[2];
+	REQUIRE(properties.size() == 1);
+	const Array property = properties[0];
+	REQUIRE(property.size() == 7);
+	CHECK((bool)property[6]);
+	CHECK(property[5].get_type() == Variant::DICTIONARY);
+	CHECK(truncated);
+	CHECK(JSON::stringify(property[5], "", true, true).utf8().length() <= 65536);
 }
 
 static Dictionary make_resource_ref(const String &p_uid, const String &p_path = String()) {

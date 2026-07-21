@@ -814,7 +814,7 @@ void EditorInterface::play_custom_scene(const String &scene_path) {
 }
 
 void EditorInterface::stop_playing_scene() {
-	EditorRunBar::get_singleton()->stop_playing();
+	EditorRunBar::get_singleton()->request_stop_playing();
 }
 
 bool EditorInterface::is_playing_scene() const {

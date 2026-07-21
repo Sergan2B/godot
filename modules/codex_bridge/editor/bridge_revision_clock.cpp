@@ -40,6 +40,8 @@ void BridgeRevisionClock::initialize(const String &p_editor_session_id) {
 	resource_revision = 1;
 	scene_graph_revision = 1;
 	script_graph_revision = 1;
+	runtime_session_id.clear();
+	runtime_event_seq = 0;
 	scene_revisions.clear();
 }
 
@@ -101,6 +103,28 @@ uint64_t BridgeRevisionClock::record_script_graph_change() {
 	return ++script_graph_revision;
 }
 
+uint64_t BridgeRevisionClock::begin_runtime_session(const String &p_runtime_session_id) {
+	runtime_session_id = p_runtime_session_id;
+	runtime_event_seq = 1;
+	++event_seq;
+	return runtime_event_seq;
+}
+
+uint64_t BridgeRevisionClock::record_runtime_change() {
+	ERR_FAIL_COND_V(runtime_session_id.is_empty(), 0);
+	++event_seq;
+	return ++runtime_event_seq;
+}
+
+void BridgeRevisionClock::clear_runtime_session() {
+	if (runtime_session_id.is_empty()) {
+		return;
+	}
+	runtime_session_id.clear();
+	runtime_event_seq = 0;
+	++event_seq;
+}
+
 uint64_t BridgeRevisionClock::get_scene_revision(const String &p_scene_id) const {
 	const uint64_t *scene_revision = scene_revisions.getptr(p_scene_id);
 	return scene_revision ? *scene_revision : 0;
@@ -118,6 +142,14 @@ uint64_t BridgeRevisionClock::get_script_graph_revision() const {
 	return script_graph_revision;
 }
 
+const String &BridgeRevisionClock::get_runtime_session_id() const {
+	return runtime_session_id;
+}
+
+uint64_t BridgeRevisionClock::get_runtime_event_seq() const {
+	return runtime_event_seq;
+}
+
 Dictionary BridgeRevisionClock::get_revision_vector() const {
 	Dictionary scenes;
 	for (const KeyValue<String, uint64_t> &entry : scene_revisions) {
@@ -131,6 +163,10 @@ Dictionary BridgeRevisionClock::get_revision_vector() const {
 	revisions["resource_revision"] = (int64_t)resource_revision;
 	revisions["scene_graph_revision"] = (int64_t)scene_graph_revision;
 	revisions["script_graph_revision"] = (int64_t)script_graph_revision;
+	if (!runtime_session_id.is_empty()) {
+		revisions["runtime_session_id"] = runtime_session_id;
+		revisions["runtime_event_seq"] = (int64_t)runtime_event_seq;
+	}
 	revisions["scene_revisions"] = scenes;
 	return revisions;
 }

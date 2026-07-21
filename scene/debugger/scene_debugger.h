@@ -74,6 +74,8 @@ private:
 	static Error _msg_request_scene_tree(const Array &p_args);
 	static Error _msg_save_node(const Array &p_args);
 	static Error _msg_inspect_objects(const Array &p_args);
+	static Error _msg_codex_runtime_tree(const Array &p_args);
+	static Error _msg_codex_runtime_object(const Array &p_args);
 #ifndef DISABLE_DEPRECATED
 	static Error _msg_inspect_object(const Array &p_args);
 #endif // DISABLE_DEPRECATED
@@ -142,7 +144,7 @@ private:
 	HashMap<String, HashSet<Node *>> live_scene_edit_cache;
 	HashMap<Node *, HashMap<ObjectID, Node *>> live_edit_remove_list;
 
-	void _send_tree();
+	void _send_tree(int p_max_nodes = 10000, int p_max_depth = 256, const String &p_correlation_id = String());
 
 	void _node_path_func(const NodePath &p_path, int p_id);
 	void _res_path_func(const String &p_path, int p_id);
