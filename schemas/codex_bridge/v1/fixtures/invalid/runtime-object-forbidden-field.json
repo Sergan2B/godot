@@ -1,0 +1,39 @@
+{
+  "result": {
+    "schema_version": "runtime/1.0",
+    "runtime_session_id": "runtime:22222222222222222222222222222222",
+    "runtime_event_seq": 4,
+    "state": "running",
+    "runtime_object_id": "runtime-object:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "properties": [
+      {
+        "name": "target",
+        "variant_type": "Object",
+        "read_only": true,
+        "usage": 6,
+        "value": { "type": "object", "object_id": "42" }
+      }
+    ],
+    "limits_applied": {
+      "tree_nodes": 10000,
+      "tree_depth": 256,
+      "snapshot_bytes": 16777216,
+      "snapshot_chunk_bytes": 524288,
+      "snapshot_window_bytes": 33554432,
+      "snapshot_timeout_ms": 10000,
+      "properties": 512,
+      "variant_depth": 8,
+      "container_items": 1000,
+      "string_characters": 16384,
+      "projected_value_bytes": 65536,
+      "object_bytes": 262144,
+      "diagnostics": 200,
+      "diagnostic_message_bytes": 16384,
+      "diagnostics_bytes": 262144,
+      "stacks": 64,
+      "stack_frames": 128,
+      "stacks_bytes": 262144,
+      "truncated": false
+    }
+  }
+}

@@ -94,6 +94,9 @@ freshness. Mismatches fail with `stale_runtime_session` or
 
 ## 4. Runtime tree and identity
 
+The game/editor implementation details and independent safety checks are
+frozen in [Remote tree and bounded properties](REMOTE-TREE-AND-BOUNDED-PROPERTIES.md).
+
 A runtime node contains opaque `runtime_object_id`, optional parent identity,
 name, Godot or script type, canonical runtime `NodePath`, depth, child count,
 visibility flags, and bounded source hints. Source hints contain only the

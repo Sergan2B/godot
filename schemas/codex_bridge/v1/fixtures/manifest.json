@@ -141,6 +141,36 @@
     },
     {
       "expect": "invalid_schema",
+      "fixture": "invalid/runtime-tree-raw-object-id.json",
+      "id": "schema.runtime.tree-raw-object-id",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/runtime-tree-depth-overflow.json",
+      "id": "schema.runtime.tree-depth-overflow",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/runtime-object-writable-property.json",
+      "id": "schema.runtime.object-writable-property",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/objectInspectResult"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "invalid/runtime-object-forbidden-field.json",
+      "id": "schema.runtime.object-forbidden-field",
+      "instance_pointer": "/result",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json#/$defs/objectInspectResult"
+    },
+    {
+      "expect": "invalid_schema",
       "fixture": "invalid/runtime-stack-absolute-path.json",
       "id": "schema.runtime.absolute-stack-path",
       "kind": "schema",
