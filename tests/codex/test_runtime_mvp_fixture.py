@@ -26,7 +26,7 @@ class RuntimeMvpFixtureTests(unittest.TestCase):
     def test_committed_fixture_and_oracle_close_exactly(self) -> None:
         result = validate()
         self.assertEqual(result["status"], "passed")
-        self.assertEqual(result["fixture_files"], 9)
+        self.assertEqual(result["fixture_files"], 11)
 
     def test_manifest_rejects_unsafe_or_unbound_files(self) -> None:
         manifest = strict_json(MANIFEST_PATH)

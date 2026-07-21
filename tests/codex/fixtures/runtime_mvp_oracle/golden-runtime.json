@@ -4,6 +4,7 @@
     "required_names": [
       "RuntimeFixture",
       "StaticNode",
+      "BoundedPropertiesFixture",
       "InstancedBranch",
       "InstancedLeaf",
       "RuntimeOnlyNode",
@@ -15,7 +16,24 @@
   "properties": {
     "fixture_number": 42,
     "fixture_text": "runtime-mvp",
-    "truncated": ["Members/oversized_text", "Members/cyclic_value", "Members/large_values"]
+    "truncated": [
+      "Members/oversized_text",
+      "Members/cyclic_value",
+      "Members/cyclic_dictionary",
+      "Members/large_values",
+      "Members/unsafe_absolute_path",
+      "Members/unsafe_rid",
+      "Members/unsafe_callable"
+    ],
+    "unsafe_reasons": {
+      "Members/unsafe_absolute_path": "unsafe_absolute_path",
+      "Members/unsafe_rid": "unsupported_handle",
+      "Members/unsafe_callable": "unsupported_handle"
+    },
+    "bounded_node": "BoundedPropertiesFixture",
+    "bounded_first": "bounded_0000",
+    "bounded_omitted": "bounded_0512",
+    "max_getters": 512
   },
   "diagnostics": {
     "warning": "CODEX_RUNTIME_FIXTURE_WARNING",

@@ -8,13 +8,19 @@ const ACK_PATH := "res://.godot/codex-sprint8-runtime-ack.json"
 var pause_visible_counter: int = 0
 var oversized_text: String = ""
 var cyclic_value: Array = []
+var cyclic_dictionary: Dictionary = {}
 var large_values: Array[int] = []
+var unsafe_absolute_path: String = "/Users/private/runtime.log"
+var unsafe_rid: RID = RID()
+var unsafe_callable: Callable
 var _command_elapsed := 0.0
 
 
 func _ready() -> void:
 	oversized_text = "bounded-runtime-value-".repeat(1200)
 	cyclic_value.append(cyclic_value)
+	cyclic_dictionary["self"] = cyclic_dictionary
+	unsafe_callable = Callable(self, "_error_leaf")
 	for value in range(1200):
 		large_values.append(value)
 	var dynamic := Node2D.new()
@@ -53,6 +59,30 @@ func _poll_command() -> void:
 		"large_tree":
 			_create_large_tree()
 			_publish_ack("large_tree")
+		"deep_tree":
+			_create_deep_tree()
+			_publish_ack("deep_tree")
+		"reset_bounded_properties":
+			var bounded_reset := get_node("BoundedPropertiesFixture")
+			bounded_reset.reset_counts()
+			_publish_ack("reset_bounded_properties")
+		"bounded_property_stats":
+			var bounded_stats := get_node("BoundedPropertiesFixture")
+			_publish_ack("bounded_property_stats", {
+				"getter_count": bounded_stats.getter_count,
+				"last_get_index": bounded_stats.last_get_index,
+			})
+		"spawn_ephemeral":
+			if not has_node("EphemeralRuntimeNode"):
+				var ephemeral := Node.new()
+				ephemeral.name = "EphemeralRuntimeNode"
+				add_child(ephemeral)
+			_publish_ack("spawn_ephemeral")
+		"free_ephemeral":
+			var ephemeral := get_node_or_null("EphemeralRuntimeNode")
+			if ephemeral != null:
+				ephemeral.free()
+			_publish_ack("free_ephemeral")
 		"quit":
 			_publish_ack("quit")
 			get_tree().quit()
@@ -93,12 +123,27 @@ func _create_large_tree() -> void:
 		large_root.add_child(child)
 
 
-func _publish_ack(kind: String) -> void:
+func _create_deep_tree() -> void:
+	if has_node("SyntheticDeepTree"):
+		return
+	var parent: Node = Node.new()
+	parent.name = "SyntheticDeepTree"
+	add_child(parent)
+	for depth in range(1, 258):
+		var child := Node.new()
+		child.name = "Depth%03d" % depth
+		parent.add_child(child)
+		parent = child
+
+
+func _publish_ack(kind: String, details: Dictionary = {}) -> void:
 	var file := FileAccess.open(ACK_PATH, FileAccess.WRITE)
 	if file == null:
 		return
-	file.store_string(JSON.stringify({
+	var payload := {
 		"kind": kind,
 		"counter": pause_visible_counter,
-	}, "", true, true))
+	}
+	payload.merge(details, true)
+	file.store_string(JSON.stringify(payload, "", true, true))
 	file.close()

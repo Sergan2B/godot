@@ -2,7 +2,7 @@
   "schema_version": 1,
   "project": "../runtime_mvp_project",
   "golden": "golden-runtime.json",
-  "golden_sha256": "b49e6cad3ead9a5340d8fc41fd7cbefd577366646c558e4f74265ec601d4c9b3",
+  "golden_sha256": "06b3a06a6788bcbfc088eda690afdc2b64d1df9006f7ee36c01398579456285c",
   "main_scene": "res://main.tscn",
   "script": "res://scripts/runtime_fixture.gd",
   "files": [
@@ -28,15 +28,23 @@
     },
     {
       "path": "main.tscn",
-      "sha256": "ebe65d2832340a6436f5d5a9284cc06d70b1a59a6e309924b200d835e07593c3"
+      "sha256": "d818ec307937eac0f53797e9dfe5354cb8c89f6013dab605c1daba810423dcbb"
     },
     {
       "path": "project.godot",
       "sha256": "0475d090f622d4aa499067d675dc04695fe8c66b9f05727ffff345a6a7fef6a9"
     },
     {
+      "path": "scripts/bounded_properties_fixture.gd",
+      "sha256": "7695c66828152e88f24f8f5a1faeef9b80321b3d4e041b74df76a6c9f441f68c"
+    },
+    {
+      "path": "scripts/bounded_properties_fixture.gd.uid",
+      "sha256": "4805d6a49eb03acc9febb9aebd0b9d4477de69c92318e2bed00e83b095815bb4"
+    },
+    {
       "path": "scripts/runtime_fixture.gd",
-      "sha256": "f8f5e95402913aea4d7cdf349a70a79d012c9bb3ec940ef9c52a86cab702507b"
+      "sha256": "7674d8b6028879ad2581f5244d5eaf3f586d11bfd5382a8a6a5ad832f850af9b"
     },
     {
       "path": "scripts/runtime_fixture.gd.uid",
@@ -46,6 +54,7 @@
   "coverage": [
     "bounded_properties",
     "crash",
+    "deep_tree",
     "diagnostic_stack",
     "hang",
     "instanced_scene",
@@ -53,6 +62,8 @@
     "manual_lifecycle",
     "runtime_only_node",
     "source_mapping",
+    "stale_object",
+    "unsafe_values",
     "viewport_capture"
   ]
 }

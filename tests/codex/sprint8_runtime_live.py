@@ -52,7 +52,10 @@ TOOL_NAMES = {
     "godot_stop_project",
 }
 FORBIDDEN_KEYS = {
+    "address",
+    "endpoint",
     "object_id",
+    "pointer",
     "raw_object_id",
     "pid",
     "rid",
@@ -78,6 +81,63 @@ def recursive_keys(value: Any) -> set[str]:
     if isinstance(value, list):
         return {key for child in value for key in recursive_keys(child)}
     return set()
+
+
+def recursive_strings(value: Any) -> list[str]:
+    if isinstance(value, dict):
+        return [item for child in value.values() for item in recursive_strings(child)]
+    if isinstance(value, list):
+        return [item for child in value for item in recursive_strings(child)]
+    return [value] if isinstance(value, str) else []
+
+
+def tree_structure(nodes: list[dict[str, Any]]) -> list[tuple[Any, ...]]:
+    return [
+        (
+            node.get("runtime_object_id"),
+            node.get("parent_runtime_object_id"),
+            node.get("name"),
+            node.get("godot_type"),
+            node.get("runtime_node_path"),
+            node.get("depth"),
+            node.get("child_count"),
+        )
+        for node in nodes
+    ]
+
+
+def require_tree_relations(nodes: list[dict[str, Any]]) -> None:
+    parents: list[dict[str, Any]] = []
+    identities: set[str] = set()
+    for node in nodes:
+        while parents and parents[-1]["remaining"] == 0:
+            parents.pop()
+        runtime_object_id = node.get("runtime_object_id")
+        require(
+            isinstance(runtime_object_id, str) and runtime_object_id not in identities,
+            "runtime tree contains a duplicate or missing identity",
+        )
+        identities.add(runtime_object_id)
+        expected_parent = parents[-1]["id"] if parents else None
+        require(
+            node.get("parent_runtime_object_id") == expected_parent
+            and node.get("depth") == len(parents),
+            f"runtime DFS parent/depth relation differs: {node}",
+        )
+        if parents:
+            parents[-1]["remaining"] -= 1
+        child_count = node.get("child_count")
+        require(
+            isinstance(child_count, int)
+            and not isinstance(child_count, bool)
+            and child_count >= 0,
+            f"runtime child count is invalid: {node}",
+        )
+        if child_count:
+            parents.append({"id": runtime_object_id, "remaining": child_count})
+    while parents and parents[-1]["remaining"] == 0:
+        parents.pop()
+    require(not parents, "runtime DFS prefix has unfulfilled child counts")
 
 
 def wait_file(process: subprocess.Popen[str], path: Path, timeout: float) -> None:
@@ -374,6 +434,7 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 set(golden["tree"]["required_names"]) <= names,
                 f"runtime tree misses fixture nodes: {sorted(str(name) for name in names)}",
             )
+            require_tree_relations(nodes)
             require(
                 all(str(node.get("runtime_object_id", "")).startswith("runtime-object:") for node in nodes),
                 "runtime tree exposes a non-opaque object identity",
@@ -407,6 +468,17 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 "runtime-only node was incorrectly mapped",
             )
 
+            stable_meta, stable_nodes, stable_timings = runtime_tree(
+                client, first_session, tree_meta["runtime_event_seq"]
+            )
+            tree_timings.extend(stable_timings)
+            require(
+                stable_meta["runtime_event_seq"] == tree_meta["runtime_event_seq"]
+                and tree_structure(stable_nodes) == tree_structure(nodes),
+                "identical tree resnapshot advanced or changed the accepted revision",
+            )
+            require_tree_relations(stable_nodes)
+
             root = next(node for node in nodes if node.get("name") == "RuntimeFixture")
             inspected, inspect_error, _, inspect_ms = tool_call(
                 client,
@@ -436,6 +508,108 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
             require(
                 inspected.get("limits_applied", {}).get("properties") == 512,
                 "runtime property limit differs",
+            )
+            for property_name, expected_reason in golden["properties"][
+                "unsafe_reasons"
+            ].items():
+                projected = properties.get(property_name, {}).get("value", {})
+                require(
+                    projected.get("value", {}).get("omitted_reason")
+                    == expected_reason,
+                    f"{property_name} unsafe value was not omitted: {projected}",
+                )
+            require(
+                "reference_id"
+                in recursive_keys(properties["Members/cyclic_dictionary"]["value"]),
+                "cyclic dictionary did not use snapshot-local references",
+            )
+            require(
+                not any(
+                    value.startswith(("/Users/", "/home/", "/private/", "/tmp/", "file://"))
+                    or (
+                        len(value) >= 3
+                        and value[1] == ":"
+                        and value[2] in {"/", "\\"}
+                    )
+                    for value in recursive_strings(inspected)
+                ),
+                "runtime properties leaked an absolute host path",
+            )
+
+            bounded_node = next(
+                node
+                for node in nodes
+                if node.get("name") == golden["properties"]["bounded_node"]
+            )
+            write_game_command(project, "reset_bounded_properties")
+            wait_game_ack(project, "reset_bounded_properties", timeout)
+            bounded, bounded_error, _, _ = tool_call(
+                client,
+                "godot_inspect_runtime_object",
+                {
+                    "runtime_session_id": first_session,
+                    "runtime_object_id": bounded_node["runtime_object_id"],
+                    "expected_runtime_event_seq": inspected["runtime_event_seq"],
+                },
+            )
+            require(not bounded_error, f"bounded runtime object inspection failed: {bounded}")
+            bounded_names = {
+                property_value.get("name")
+                for property_value in bounded.get("properties", [])
+            }
+            require(
+                len(bounded.get("properties", [])) <= golden["properties"]["max_getters"]
+                and golden["properties"]["bounded_first"] in bounded_names
+                and golden["properties"]["bounded_omitted"] not in bounded_names,
+                f"bounded property prefix differs: {len(bounded_names)} properties",
+            )
+            require(
+                all(item.get("read_only") is True for item in bounded["properties"]),
+                "runtime object exposed a writable property",
+            )
+            require(
+                len(json.dumps(bounded, separators=(",", ":")).encode())
+                <= bounded["limits_applied"]["object_bytes"] + 8192,
+                "runtime object exceeded its encoded byte envelope",
+            )
+            write_game_command(project, "bounded_property_stats")
+            bounded_stats = wait_game_ack(project, "bounded_property_stats", timeout)
+            require(
+                0 < bounded_stats.get("getter_count", 0)
+                <= golden["properties"]["max_getters"]
+                and bounded_stats.get("last_get_index", 513)
+                < golden["properties"]["max_getters"],
+                f"property getters ran beyond the collector limit: {bounded_stats}",
+            )
+
+            write_game_command(project, "spawn_ephemeral")
+            wait_game_ack(project, "spawn_ephemeral", timeout)
+            ephemeral_meta, ephemeral_nodes, _ = runtime_tree(client, first_session)
+            ephemeral = next(
+                node for node in ephemeral_nodes if node.get("name") == "EphemeralRuntimeNode"
+            )
+            write_game_command(project, "free_ephemeral")
+            wait_game_ack(project, "free_ephemeral", timeout)
+            retired_meta, retired_nodes, _ = runtime_tree(client, first_session)
+            require(
+                not any(node.get("name") == "EphemeralRuntimeNode" for node in retired_nodes)
+                and retired_meta["runtime_event_seq"] > ephemeral_meta["runtime_event_seq"],
+                "freed runtime node remained in the accepted tree snapshot",
+            )
+            stale_object, stale_object_error, _, _ = tool_call(
+                client,
+                "godot_inspect_runtime_object",
+                {
+                    "runtime_session_id": first_session,
+                    "runtime_object_id": ephemeral["runtime_object_id"],
+                    "expected_runtime_event_seq": retired_meta["runtime_event_seq"],
+                },
+            )
+            require(
+                stale_object_error
+                and stale_object.get("error", {}).get("code")
+                in {"runtime_object_stale", "runtime_object_not_found"},
+                f"freed runtime object ID remained readable: {stale_object}",
             )
 
             cursor_page, cursor_page_error, _, _ = tool_call(
@@ -600,6 +774,21 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 stale_error and stale.get("error", {}).get("code") == "stale_runtime_session",
                 "old runtime session did not fail closed",
             )
+            second_tree_deadline = time.monotonic() + timeout
+            while True:
+                _, second_nodes, _ = runtime_tree(client, second_session)
+                second_roots = [
+                    node for node in second_nodes if node.get("name") == "RuntimeFixture"
+                ]
+                if second_roots:
+                    break
+                if time.monotonic() >= second_tree_deadline:
+                    raise RuntimeGateError("second runtime tree did not become ready")
+                time.sleep(0.1)
+            require(
+                second_roots[0]["runtime_object_id"] != root["runtime_object_id"],
+                "opaque runtime object identity was reused across sessions",
+            )
             second_stop, second_stop_error, _, _ = tool_call(
                 client,
                 "godot_stop_project",
@@ -618,9 +807,23 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 if time.monotonic() >= large_ready_deadline:
                     raise RuntimeGateError("large-tree runtime did not become ready")
                 time.sleep(0.1)
+            write_game_command(project, "deep_tree")
+            wait_game_ack(project, "deep_tree", timeout)
+            deep_meta, deep_nodes, _ = runtime_tree(client, large_session)
+            require_tree_relations(deep_nodes)
+            deep_names = {node.get("name") for node in deep_nodes}
+            require(
+                deep_meta.get("limits_applied", {}).get("truncated") is True
+                and max(node.get("depth", 0) for node in deep_nodes)
+                < golden["limits"]["tree_depth"]
+                and "Depth250" in deep_names
+                and "Depth257" not in deep_names,
+                "deep runtime tree did not truncate at the negotiated depth",
+            )
             write_game_command(project, "large_tree")
             wait_game_ack(project, "large_tree", timeout)
             large_meta, large_nodes, large_tree_timings = runtime_tree(client, large_session)
+            require_tree_relations(large_nodes)
             require(
                 large_meta.get("total") == golden["limits"]["tree_nodes"]
                 and len(large_nodes) == golden["limits"]["tree_nodes"]
@@ -841,9 +1044,11 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                     "exact_25_tool_registry": True,
                     "active_run_rejected": True,
                     "runtime_tree_and_opaque_ids": True,
+                    "session_scoped_opaque_ids": True,
                     "runtime_editor_mapping_evidence": True,
                     "runtime_only_unmapped": True,
                     "bounded_properties": True,
+                    "deep_tree_bounded": True,
                     "diagnostic_stack": True,
                     "pause_continue_stop_confirmed": True,
                     "fresh_session_per_run": True,
@@ -853,6 +1058,11 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                     "source_content_unchanged": True,
                     "runtime_cursor_invalidation": True,
                     "large_tree_bounded": True,
+                    "getter_limit_before_read": True,
+                    "snapshot_checksums_and_ack": True,
+                    "stable_resnapshot_revision": True,
+                    "stale_object_rejected": True,
+                    "unsafe_values_omitted": True,
                     "crash_retention_and_retirement": True,
                     "hang_timeout_and_recovery": True,
                     "manual_editor_lifecycle_observed": True,

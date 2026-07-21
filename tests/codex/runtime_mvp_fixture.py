@@ -17,6 +17,7 @@ GOLDEN_PATH = ORACLE_ROOT / "golden-runtime.json"
 EXPECTED_COVERAGE = {
     "bounded_properties",
     "crash",
+    "deep_tree",
     "diagnostic_stack",
     "hang",
     "instanced_scene",
@@ -24,6 +25,8 @@ EXPECTED_COVERAGE = {
     "manual_lifecycle",
     "runtime_only_node",
     "source_mapping",
+    "stale_object",
+    "unsafe_values",
     "viewport_capture",
 }
 EXPECTED_MANIFEST_FIELDS = {
@@ -170,10 +173,39 @@ def validate_golden(golden: dict[str, Any]) -> None:
     properties = golden.get("properties")
     require(
         isinstance(properties, dict)
+        and set(properties)
+        == {
+            "fixture_number",
+            "fixture_text",
+            "truncated",
+            "unsafe_reasons",
+            "bounded_node",
+            "bounded_first",
+            "bounded_omitted",
+            "max_getters",
+        }
         and properties.get("fixture_number") == 42
         and properties.get("fixture_text") == "runtime-mvp"
         and set(properties.get("truncated", []))
-        == {"Members/oversized_text", "Members/cyclic_value", "Members/large_values"},
+        == {
+            "Members/oversized_text",
+            "Members/cyclic_value",
+            "Members/cyclic_dictionary",
+            "Members/large_values",
+            "Members/unsafe_absolute_path",
+            "Members/unsafe_rid",
+            "Members/unsafe_callable",
+        }
+        and properties.get("unsafe_reasons")
+        == {
+            "Members/unsafe_absolute_path": "unsafe_absolute_path",
+            "Members/unsafe_rid": "unsupported_handle",
+            "Members/unsafe_callable": "unsupported_handle",
+        }
+        and properties.get("bounded_node") == "BoundedPropertiesFixture"
+        and properties.get("bounded_first") == "bounded_0000"
+        and properties.get("bounded_omitted") == "bounded_0512"
+        and properties.get("max_getters") == 512,
         "property oracle differs",
     )
 
@@ -210,6 +242,9 @@ def validate_fixture_sources(golden: dict[str, Any]) -> None:
     main_scene = (PROJECT_ROOT / "main.tscn").read_text(encoding="utf-8")
     instance_scene = (PROJECT_ROOT / "instance.tscn").read_text(encoding="utf-8")
     script = (PROJECT_ROOT / "scripts/runtime_fixture.gd").read_text(encoding="utf-8")
+    bounded_script = (
+        PROJECT_ROOT / "scripts/bounded_properties_fixture.gd"
+    ).read_text(encoding="utf-8")
     plugin = (
         PROJECT_ROOT
         / "addons/codex_sprint8_runtime/codex_sprint8_runtime.gd"
@@ -227,10 +262,15 @@ def validate_fixture_sources(golden: dict[str, Any]) -> None:
         "_error_middle",
         "_error_entry",
         '"large_tree"',
+        '"deep_tree"',
+        '"spawn_ephemeral"',
+        '"free_ephemeral"',
         '"crash"',
         '"hang"',
     ):
         require(token in script, f"fixture behavior is missing: {token}")
+    for token in ("range(513)", '"bounded_%04d"', "getter_count += 1"):
+        require(token in bounded_script, f"bounded-property behavior is missing: {token}")
     for token in ('"manual_run"', '"manual_stop"'):
         require(token in plugin, f"manual lifecycle command is missing: {token}")
 

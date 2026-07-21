@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/runtime_fixture.gd" id="1_runtime"]
 [ext_resource type="PackedScene" path="res://instance.tscn" id="2_instance"]
+[ext_resource type="Script" path="res://scripts/bounded_properties_fixture.gd" id="3_bounded"]
 
 [node name="RuntimeFixture" type="Node2D"]
 script = ExtResource("1_runtime")
@@ -10,6 +11,9 @@ fixture_text = "runtime-mvp"
 
 [node name="StaticNode" type="Node2D" parent="."]
 position = Vector2(64, 64)
+
+[node name="BoundedPropertiesFixture" type="Node" parent="."]
+script = ExtResource("3_bounded")
 
 [node name="InstancedBranch" parent="." instance=ExtResource("2_instance")]
 position = Vector2(160, 96)
