@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use base64::Engine;
@@ -911,6 +911,14 @@ async fn receive_runtime_snapshot(
             "runtime snapshot end is invalid".to_owned(),
         ));
     }
+    let nodes = entities
+        .iter()
+        .filter_map(|entity| match entity {
+            RuntimeEntity::RuntimeNode(node) => Some(node),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    validate_runtime_tree(&nodes, accepted.limits_applied.tree_nodes)?;
     Ok(RuntimeSnapshot {
         accepted,
         entities,
@@ -956,13 +964,26 @@ fn validate_entities(
                         .is_some_and(|id| !valid_opaque(id, "runtime-object:"))
                     || value.depth >= accepted.limits_applied.tree_depth
                     || value.child_count > accepted.limits_applied.tree_nodes
+                    || value.name.chars().count() > 1_024
+                    || value.godot_type.chars().count() > 1_024
                     || value.runtime_node_path.chars().count() > 1_024
+                    || !value.runtime_node_path.starts_with('/')
+                    || value.runtime_node_path.contains('\\')
+                    || (!value.visibility.available
+                        && (value.visibility.visible.is_some()
+                            || value.visibility.visible_in_tree.is_some()))
                     || value.source_hint.as_ref().is_some_and(|hint| {
                         hint.scene_path
                             .as_deref()
                             .is_some_and(|path| !valid_res_path(path))
                             || hint.instance_scene_paths.as_ref().is_some_and(|paths| {
                                 paths.len() > 256 || paths.iter().any(|path| !valid_res_path(path))
+                            })
+                            || hint.relative_node_path.as_ref().is_some_and(|path| {
+                                path.chars().count() > 1_024
+                                    || path.contains('\\')
+                                    || path.starts_with('/')
+                                    || path.split('/').any(|part| part == "..")
                             })
                     })
                 {
@@ -994,6 +1015,51 @@ fn validate_entities(
     Ok(())
 }
 
+fn validate_runtime_tree(nodes: &[&RuntimeNode], tree_limit: usize) -> Result<(), BridgeError> {
+    struct Parent<'a> {
+        id: &'a str,
+        remaining: usize,
+    }
+
+    if nodes.len() > tree_limit {
+        return Err(BridgeError::Invalid("runtime tree is too large".to_owned()));
+    }
+    let mut parents: Vec<Parent<'_>> = Vec::new();
+    let mut identities = BTreeSet::new();
+    for node in nodes {
+        while parents.last().is_some_and(|parent| parent.remaining == 0) {
+            parents.pop();
+        }
+        let expected_parent = parents.last().map(|parent| parent.id);
+        if !identities.insert(node.runtime_object_id.as_str())
+            || node.parent_runtime_object_id.as_deref() != expected_parent
+            || node.depth != parents.len()
+        {
+            return Err(BridgeError::Invalid(
+                "runtime tree relation is invalid".to_owned(),
+            ));
+        }
+        if let Some(parent) = parents.last_mut() {
+            parent.remaining -= 1;
+        }
+        if node.child_count > 0 {
+            parents.push(Parent {
+                id: &node.runtime_object_id,
+                remaining: node.child_count,
+            });
+        }
+    }
+    while parents.last().is_some_and(|parent| parent.remaining == 0) {
+        parents.pop();
+    }
+    if !parents.is_empty() {
+        return Err(BridgeError::Invalid(
+            "runtime tree child counts are incomplete".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_stack(stack: &RuntimeStack, limits: &RuntimeLimits) -> Result<(), BridgeError> {
     if stack.entity_id != stack.runtime_stack_id
         || stack.kind != "runtime_stack"
@@ -1011,6 +1077,43 @@ fn validate_stack(stack: &RuntimeStack, limits: &RuntimeLimits) -> Result<(), Br
         return Err(BridgeError::Invalid("runtime stack is invalid".to_owned()));
     }
     Ok(())
+}
+
+fn projected_value_is_safe(value: &Value) -> bool {
+    const FORBIDDEN_KEYS: &[&str] = &[
+        "object_id",
+        "raw_object_id",
+        "pid",
+        "rid",
+        "pointer",
+        "address",
+        "window_handle",
+        "texture_handle",
+        "native_handle",
+        "path_absolute",
+        "endpoint",
+    ];
+    match value {
+        Value::Object(object) => object.iter().all(|(key, child)| {
+            let normalized = key.to_ascii_lowercase();
+            !FORBIDDEN_KEYS.contains(&normalized.as_str())
+                && (key != "path" || child.as_str().is_some_and(|path| valid_res_path(path)))
+                && projected_value_is_safe(child)
+        }),
+        Value::Array(values) => values.iter().all(projected_value_is_safe),
+        Value::String(value) => {
+            let normalized = value.replace('\\', "/");
+            !normalized.starts_with("file://")
+                && !normalized.starts_with("/Users/")
+                && !normalized.starts_with("/home/")
+                && !normalized.starts_with("/private/")
+                && !normalized.starts_with("/tmp/")
+                && !(normalized.len() >= 3
+                    && normalized.as_bytes()[1] == b':'
+                    && normalized.as_bytes()[2] == b'/')
+        }
+        _ => true,
+    }
 }
 
 pub(crate) async fn inspect_runtime_object(
@@ -1048,6 +1151,11 @@ pub(crate) async fn inspect_runtime_object(
         || value.runtime_object_id != runtime_object_id
         || value.properties.len() > value.limits_applied.properties
         || value.properties.iter().any(|property| !property.read_only)
+        || value.properties.iter().any(|property| {
+            serde_json::to_value(&property.value)
+                .map(|value| !projected_value_is_safe(&value))
+                .unwrap_or(true)
+        })
         || serde_json::to_vec(&value)?.len() > value.limits_applied.object_bytes + 8_192
     {
         return Err(BridgeError::Invalid(
@@ -1246,5 +1354,66 @@ mod tests {
         let capture: RuntimeViewportCapture =
             serde_json::from_value(response["result"].clone()).unwrap();
         assert!(capture.decode_png().is_err());
+    }
+
+    #[test]
+    fn projected_runtime_values_reject_raw_handles_and_host_paths() {
+        assert!(projected_value_is_safe(&serde_json::json!({
+            "type": "resource",
+            "value": {"path": "res://safe.tres"},
+            "truncated": false
+        })));
+        assert!(!projected_value_is_safe(&serde_json::json!({
+            "type": "object",
+            "value": {"raw_object_id": 42}
+        })));
+        assert!(!projected_value_is_safe(&serde_json::json!({
+            "type": "string",
+            "value": "/Users/private/runtime.log"
+        })));
+        assert!(!projected_value_is_safe(&serde_json::json!({
+            "type": "resource",
+            "value": {"path": "user://private.tres"}
+        })));
+    }
+
+    #[test]
+    fn runtime_tree_relations_fail_closed() {
+        fn node(
+            id: &str,
+            parent: Option<&str>,
+            name: &str,
+            path: &str,
+            depth: usize,
+            child_count: usize,
+        ) -> RuntimeNode {
+            RuntimeNode {
+                kind: "runtime_node".to_owned(),
+                entity_id: id.to_owned(),
+                runtime_object_id: id.to_owned(),
+                parent_runtime_object_id: parent.map(str::to_owned),
+                name: name.to_owned(),
+                godot_type: "Node".to_owned(),
+                runtime_node_path: path.to_owned(),
+                depth,
+                child_count,
+                visibility: RuntimeVisibility {
+                    available: false,
+                    visible: None,
+                    visible_in_tree: None,
+                },
+                source_hint: None,
+            }
+        }
+
+        let root = node("root", None, "Root", "/Root", 0, 1);
+        let child = node("child", Some("root"), "Child", "/Root/Child", 1, 0);
+        assert!(validate_runtime_tree(&[&root, &child], 10_000).is_ok());
+
+        let wrong_parent = node("child", Some("other"), "Child", "/Root/Child", 1, 0);
+        assert!(validate_runtime_tree(&[&root, &wrong_parent], 10_000).is_err());
+
+        let incomplete_root = node("root", None, "Root", "/Root", 0, 2);
+        assert!(validate_runtime_tree(&[&incomplete_root, &child], 10_000).is_err());
     }
 }
