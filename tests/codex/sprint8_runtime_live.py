@@ -271,9 +271,19 @@ def runtime_tree(
     if expected is not None:
         arguments["expected_runtime_event_seq"] = expected
     first, is_error, _, elapsed = tool_call(client, "godot_get_runtime_tree", arguments)
+    timings = [elapsed]
+    if (
+        is_error
+        and expected is not None
+        and first.get("error", {}).get("code") == "stale_runtime_state"
+    ):
+        arguments.pop("expected_runtime_event_seq")
+        first, is_error, _, retry_elapsed = tool_call(
+            client, "godot_get_runtime_tree", arguments
+        )
+        timings.append(retry_elapsed)
     require(not is_error, f"runtime tree failed: {first}")
     nodes = list(first.get("nodes", []))
-    timings = [elapsed]
     cursor = first.get("next_cursor")
     while isinstance(cursor, str):
         page_args = {
