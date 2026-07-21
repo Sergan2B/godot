@@ -56,6 +56,7 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "modules/codex_bridge/editor/main_thread_dispatcher.h"
 #include "modules/codex_bridge/editor/resource_delta_journal.h"
 #include "modules/codex_bridge/editor/resource_graph_adapter.h"
+#include "modules/codex_bridge/editor/runtime_debugger_adapter.h"
 #include "modules/codex_bridge/editor/scene_delta_journal.h"
 #include "modules/codex_bridge/editor/scene_state_adapter.h"
 #include "modules/codex_bridge/editor/script_delta_journal.h"
@@ -1481,6 +1482,7 @@ TEST_CASE("[CodexS8BridgeProfile] RPC 1.6 exposes bounded runtime methods and st
 	REQUIRE(expired.size() == 1);
 	CHECK(rpc_error_code(expired[0]) == "runtime_start_timeout");
 	CHECK(expired[0].cancel_dispatch);
+	CHECK(rpc.complete(20, 10001002, outcome) == ERR_DOES_NOT_EXIST);
 
 	expired.clear();
 	REQUIRE(rpc.handle_message(make_rpc_request("req:runtime-stop-timeout", "runtime.stop", guard, project_id, editor_session_id, 0, "1.6"), 2000, 21, outcome) == OK);
@@ -1488,6 +1490,7 @@ TEST_CASE("[CodexS8BridgeProfile] RPC 1.6 exposes bounded runtime methods and st
 	REQUIRE(expired.size() == 1);
 	CHECK(rpc_error_code(expired[0]) == "runtime_control_timeout");
 	CHECK(expired[0].cancel_dispatch);
+	CHECK(rpc.complete(21, 5002002, outcome) == ERR_DOES_NOT_EXIST);
 
 	expired.clear();
 	object_params["runtime_object_id"] = runtime_object_id;
@@ -1496,6 +1499,7 @@ TEST_CASE("[CodexS8BridgeProfile] RPC 1.6 exposes bounded runtime methods and st
 	REQUIRE(expired.size() == 1);
 	CHECK(rpc_error_code(expired[0]) == "runtime_request_timeout");
 	CHECK(expired[0].cancel_dispatch);
+	CHECK(rpc.complete(22, 3003002, outcome) == ERR_DOES_NOT_EXIST);
 
 	guard["unexpected"] = true;
 	REQUIRE(rpc.handle_message(make_rpc_request("req:runtime-extra-guard", "runtime.stop", guard, project_id, editor_session_id, 5000, "1.6"), 600, 7, outcome) == OK);
@@ -1546,12 +1550,40 @@ TEST_CASE("[CodexS8Runtime] Revision clock isolates consecutive runtime sessions
 	Dictionary first = revisions.get_revision_vector();
 	CHECK(first["runtime_session_id"] == "runtime:11111111111111111111111111111111");
 	CHECK((int64_t)first["runtime_event_seq"] == 2);
+	CHECK((int64_t)first["event_seq"] == 2);
 	CHECK(revisions.begin_runtime_session("runtime:22222222222222222222222222222222") == 1);
 	Dictionary second = revisions.get_revision_vector();
 	CHECK(second["runtime_session_id"] == "runtime:22222222222222222222222222222222");
 	CHECK((int64_t)second["runtime_event_seq"] == 1);
+	CHECK((int64_t)second["event_seq"] == 3);
 	revisions.clear_runtime_session();
-	CHECK_FALSE(revisions.get_revision_vector().has("runtime_session_id"));
+	Dictionary cleared = revisions.get_revision_vector();
+	CHECK_FALSE(cleared.has("runtime_session_id"));
+	CHECK_FALSE(cleared.has("runtime_event_seq"));
+	CHECK((int64_t)cleared["event_seq"] == 4);
+}
+
+TEST_CASE("[CodexS8Runtime][CodexEDRLifecycle] Lifecycle policy classifies stop, crash, disconnect, and reconnect deterministically") {
+	CHECK_FALSE(RuntimeLifecyclePolicy::is_terminal("inactive"));
+	CHECK_FALSE(RuntimeLifecyclePolicy::is_terminal("starting"));
+	CHECK_FALSE(RuntimeLifecyclePolicy::is_terminal("running"));
+	CHECK_FALSE(RuntimeLifecyclePolicy::is_terminal("paused"));
+	CHECK_FALSE(RuntimeLifecyclePolicy::is_terminal("stopping"));
+	CHECK_FALSE(RuntimeLifecyclePolicy::is_terminal("disconnected"));
+	for (const char *terminal : { "stopped", "crashed", "failed", "timed_out" }) {
+		CHECK(RuntimeLifecyclePolicy::is_terminal(terminal));
+	}
+
+	CHECK(RuntimeLifecyclePolicy::classify_debugger_stop("running", true, false) == "disconnected");
+	CHECK(RuntimeLifecyclePolicy::classify_debugger_stop("paused", false, false) == "crashed");
+	CHECK(RuntimeLifecyclePolicy::classify_debugger_stop("stopping", true, false) == "stopped");
+	CHECK(RuntimeLifecyclePolicy::classify_debugger_stop("running", true, true) == "stopped");
+	CHECK(RuntimeLifecyclePolicy::classify_process_exit("running", false) == "crashed");
+	CHECK(RuntimeLifecyclePolicy::classify_process_exit("paused", false) == "crashed");
+	CHECK(RuntimeLifecyclePolicy::classify_process_exit("stopping", false) == "stopped");
+	CHECK(RuntimeLifecyclePolicy::classify_process_exit("disconnected", true) == "stopped");
+	CHECK(RuntimeLifecyclePolicy::is_reconnect("disconnected"));
+	CHECK_FALSE(RuntimeLifecyclePolicy::is_reconnect("running"));
 }
 
 TEST_CASE("[CodexS8Runtime] Game-side tree and cyclic properties are bounded before debugger serialization") {

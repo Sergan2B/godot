@@ -85,6 +85,7 @@ pub enum RuntimeInvalidationReason {
     JournalGap,
     JournalOverflow,
     SessionReplaced,
+    Reconnected,
     SnapshotCancelled,
     RecoveryFailed,
 }
@@ -1223,6 +1224,16 @@ mod tests {
         assert_eq!(
             invalidated.params.reason,
             RuntimeInvalidationReason::JournalGap
+        );
+
+        let reconnected: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/codex_bridge/v1/fixtures/valid/runtime-invalidated-reconnected.json"
+        ))
+        .unwrap();
+        let reconnected: RuntimeInvalidatedMessage = serde_json::from_value(reconnected).unwrap();
+        assert_eq!(
+            reconnected.params.reason,
+            RuntimeInvalidationReason::Reconnected
         );
     }
 

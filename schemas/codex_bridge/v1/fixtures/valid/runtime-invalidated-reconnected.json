@@ -1,0 +1,14 @@
+{
+  "protocol_version": "1.6",
+  "kind": "notification",
+  "method": "runtime.invalidated",
+  "params": {
+    "runtime_session_id": "runtime:22222222222222222222222222222222",
+    "last_contiguous_runtime_event_seq": 8,
+    "reason": "reconnected"
+  },
+  "context": {
+    "project_id": "project:sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "editor_session_id": "editor:11111111111111111111111111111111"
+  }
+}

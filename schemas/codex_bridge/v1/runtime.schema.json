@@ -787,7 +787,7 @@
                   "maximum": 9007199254740991
                 },
                 "reason": {
-                  "enum": ["journal_gap", "journal_overflow", "session_replaced", "snapshot_cancelled", "recovery_failed"]
+                  "enum": ["journal_gap", "journal_overflow", "session_replaced", "reconnected", "snapshot_cancelled", "recovery_failed"]
                 }
               },
               "additionalProperties": false

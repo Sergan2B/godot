@@ -189,8 +189,11 @@ contain only `runtime_state`, `runtime_node`, `runtime_diagnostic`, or
 
 `runtime.event` carries session, sequence, event type, resulting state,
 changed domains, and the complete negotiated revision vector.
-`runtime.invalidated` reports a journal gap, overflow, session replacement, or
-failed recovery. The journal is bounded to 1024 records and 4 MiB.
+`runtime.invalidated` reports a journal gap, overflow, session replacement,
+same-session debugger reconnect, or failed recovery. A reconnect uses reason
+`reconnected`, preserves the runtime session ID, and requires a full runtime
+snapshot before live data can be served again. The journal is bounded to 1024
+records and 4 MiB.
 
 Stable runtime errors include `runtime_inactive`, `runtime_already_active`,
 `runtime_ambiguous`, `runtime_unsaved_changes`, `runtime_start_failed`,

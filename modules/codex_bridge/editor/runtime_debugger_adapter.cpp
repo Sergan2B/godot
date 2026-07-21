@@ -59,6 +59,25 @@ static String sha256_hex_utf8(const String &p_value) {
 
 } // namespace
 
+bool RuntimeLifecyclePolicy::is_terminal(const String &p_state) {
+	return p_state == "stopped" || p_state == "crashed" || p_state == "failed" || p_state == "timed_out";
+}
+
+bool RuntimeLifecyclePolicy::is_reconnect(const String &p_state) {
+	return p_state == "disconnected";
+}
+
+String RuntimeLifecyclePolicy::classify_debugger_stop(const String &p_state, bool p_editor_playing, bool p_normal_quit_requested) {
+	if (p_state == "stopping" || p_normal_quit_requested) {
+		return "stopped";
+	}
+	return p_editor_playing ? "disconnected" : "crashed";
+}
+
+String RuntimeLifecyclePolicy::classify_process_exit(const String &p_state, bool p_normal_quit_requested) {
+	return p_state == "stopping" || p_normal_quit_requested ? "stopped" : "crashed";
+}
+
 ScriptEditorDebugger *RuntimeDebuggerAdapter::_get_debugger(int p_session_id) const {
 	const ObjectID *id = debugger_sessions.getptr(p_session_id);
 	return id ? Object::cast_to<ScriptEditorDebugger>(ObjectDB::get_instance(*id)) : nullptr;
@@ -148,7 +167,7 @@ Dictionary RuntimeDebuggerAdapter::_safe_coordinates() const {
 }
 
 bool RuntimeDebuggerAdapter::_is_terminal() const {
-	return state == "stopped" || state == "crashed" || state == "failed" || state == "timed_out";
+	return RuntimeLifecyclePolicy::is_terminal(state);
 }
 
 bool RuntimeDebuggerAdapter::_guard(uint64_t p_request_id, const Dictionary &p_params, bool p_require_running, bool p_allow_paused) {
@@ -176,17 +195,7 @@ void RuntimeDebuggerAdapter::_begin_session(const String &p_origin, const String
 	const String previous_session_id = runtime_session_id;
 	const uint64_t previous_event_seq = revisions->get_runtime_event_seq();
 	if (!previous_session_id.is_empty() && transport) {
-		Dictionary params;
-		params["runtime_session_id"] = previous_session_id;
-		params["last_contiguous_runtime_event_seq"] = (int64_t)previous_event_seq;
-		params["reason"] = "session_replaced";
-		Dictionary notification;
-		notification["protocol_version"] = "1.6";
-		notification["kind"] = "notification";
-		notification["method"] = "runtime.invalidated";
-		notification["params"] = params;
-		notification["context"] = _make_context();
-		transport->publish_notification(notification);
+		_publish_invalidated(previous_session_id, previous_event_seq, "session_replaced");
 	}
 	runtime_session_id = _make_runtime_session_id();
 	origin = p_origin;
@@ -208,9 +217,14 @@ void RuntimeDebuggerAdapter::_begin_session(const String &p_origin, const String
 	_publish_event("session_started", changed_domain("runtime_state"));
 }
 
-void RuntimeDebuggerAdapter::_transition(const String &p_state, const String &p_event_type, const Array &p_changed_domains, const String &p_reason, bool p_advance) {
+bool RuntimeDebuggerAdapter::_transition(const String &p_state, const String &p_event_type, const Array &p_changed_domains, const String &p_reason, bool p_advance) {
 	if (runtime_session_id.is_empty()) {
-		return;
+		return false;
+	}
+	// A terminal transition wins exactly once. Late debugger callbacks, forced
+	// process cleanup, and expired RPC completions cannot rewrite its outcome.
+	if (_is_terminal()) {
+		return false;
 	}
 	state = p_state;
 	terminal_reason = p_reason;
@@ -222,6 +236,7 @@ void RuntimeDebuggerAdapter::_transition(const String &p_state, const String &p_
 		_retire_live_data();
 	}
 	_publish_event(p_event_type, p_changed_domains);
+	return true;
 }
 
 void RuntimeDebuggerAdapter::_publish_event(const String &p_event_type, const Array &p_changed_domains) {
@@ -239,6 +254,23 @@ void RuntimeDebuggerAdapter::_publish_event(const String &p_event_type, const Ar
 	notification["protocol_version"] = "1.6";
 	notification["kind"] = "notification";
 	notification["method"] = "runtime.event";
+	notification["params"] = params;
+	notification["context"] = _make_context();
+	transport->publish_notification(notification);
+}
+
+void RuntimeDebuggerAdapter::_publish_invalidated(const String &p_runtime_session_id, uint64_t p_last_contiguous_event_seq, const String &p_reason) {
+	if (!transport || p_runtime_session_id.is_empty()) {
+		return;
+	}
+	Dictionary params;
+	params["runtime_session_id"] = p_runtime_session_id;
+	params["last_contiguous_runtime_event_seq"] = (int64_t)p_last_contiguous_event_seq;
+	params["reason"] = p_reason;
+	Dictionary notification;
+	notification["protocol_version"] = "1.6";
+	notification["kind"] = "notification";
+	notification["method"] = "runtime.invalidated";
 	notification["params"] = params;
 	notification["context"] = _make_context();
 	transport->publish_notification(notification);
@@ -701,9 +733,16 @@ void RuntimeDebuggerAdapter::_on_started(int p_session_id) {
 			return;
 		}
 	}
+	EditorRunBar *run_bar = EditorRunBar::get_singleton();
+	if (_is_terminal() && (!run_bar || !run_bar->is_playing())) {
+		return;
+	}
 	if (runtime_session_id.is_empty() || _is_terminal()) {
-		EditorRunBar *run_bar = EditorRunBar::get_singleton();
 		_begin_session("editor", run_bar ? run_bar->get_playing_target() : "project", run_bar ? run_bar->get_playing_scene() : String());
+	}
+	const bool reconnected = RuntimeLifecyclePolicy::is_reconnect(state);
+	if (reconnected) {
+		_publish_invalidated(runtime_session_id, revisions->get_runtime_event_seq(), "reconnected");
 	}
 	active_debugger_session = p_session_id;
 	disconnected_since_usec = 0;
@@ -715,13 +754,15 @@ void RuntimeDebuggerAdapter::_on_stopped(int p_session_id) {
 	if (p_session_id != active_debugger_session || runtime_session_id.is_empty() || _is_terminal()) {
 		return;
 	}
-	if (EditorRunBar::get_singleton() && EditorRunBar::get_singleton()->is_playing() && state != "stopping") {
+	const bool editor_playing = EditorRunBar::get_singleton() && EditorRunBar::get_singleton()->is_playing();
+	const String stopped_state = RuntimeLifecyclePolicy::classify_debugger_stop(state, editor_playing, normal_quit_requested);
+	if (stopped_state == "disconnected") {
 		disconnected_since_usec = OS::get_singleton()->get_ticks_usec();
 		_transition("disconnected", "disconnected", changed_domain("runtime_state"));
 		_fail_pending_live_requests("runtime_disconnected", "The runtime debugger disconnected.", true);
 		return;
 	}
-	const bool stopped_normally = state == "stopping" || normal_quit_requested;
+	const bool stopped_normally = stopped_state == "stopped";
 	_transition(stopped_normally ? "stopped" : "crashed", stopped_normally ? "stopped" : "crashed", changed_domain("runtime_state"), stopped_normally ? "requested" : "process_exit");
 	if (stopped_normally) {
 		_complete_pending_controls("stopped");
@@ -774,7 +815,7 @@ void RuntimeDebuggerAdapter::_on_output(const String &p_message, int p_level, in
 }
 
 void RuntimeDebuggerAdapter::_on_runtime_error(const Dictionary &p_error, int p_session_id) {
-	if (p_session_id != active_debugger_session || runtime_session_id.is_empty()) {
+	if (p_session_id != active_debugger_session || runtime_session_id.is_empty() || _is_terminal()) {
 		return;
 	}
 	String stack_id;
@@ -892,6 +933,26 @@ void RuntimeDebuggerAdapter::shutdown() {
 		debugger->disconnect("runtime_stack_dump", callable_mp(this, &RuntimeDebuggerAdapter::_on_runtime_stack).bind(entry.key));
 	}
 	debugger_sessions.clear();
+	for (uint64_t *pending : { &pending_run, &pending_stop, &pending_pause, &pending_continue, &pending_snapshot, &pending_object, &pending_capture }) {
+		*pending = 0;
+	}
+	_retire_live_data();
+	diagnostics.clear();
+	diagnostic_bytes = 0;
+	stacks.clear();
+	stack_order.clear();
+	stack_bytes = 0;
+	pending_snapshot_params.clear();
+	pending_object_params.clear();
+	pending_capture_params.clear();
+	pending_tree_correlation.clear();
+	pending_object_correlation.clear();
+	if (revisions) {
+		revisions->clear_runtime_session();
+	}
+	runtime_session_id.clear();
+	state.clear();
+	active_debugger_session = -1;
 	transport = nullptr;
 	revisions = nullptr;
 }
@@ -907,27 +968,27 @@ void RuntimeDebuggerAdapter::process() {
 	}
 	const uint64_t now = OS::get_singleton()->get_ticks_usec();
 	if (state == "starting" && now - state_since_usec >= 10000000) {
-		if (run_bar && run_bar->is_playing()) {
-			internal_forced_stop = true;
-			run_bar->stop_playing();
-			internal_forced_stop = false;
-		}
 		_transition("timed_out", "timed_out", changed_domain("runtime_state"), "debugger_start_timeout");
 		_fail_pending_live_requests("runtime_start_timeout", "The debugger did not connect within 10 seconds.", true);
 		if (pending_run) {
 			transport->complete_request_error(pending_run, "runtime_start_timeout", "The debugger did not connect within 10 seconds.", true, _safe_coordinates());
 			pending_run = 0;
 		}
-	} else if (state == "disconnected" && disconnected_since_usec > 0 && now - disconnected_since_usec >= 2000000) {
 		if (run_bar && run_bar->is_playing()) {
 			internal_forced_stop = true;
 			run_bar->stop_playing();
 			internal_forced_stop = false;
 		}
+	} else if (state == "disconnected" && disconnected_since_usec > 0 && now - disconnected_since_usec >= 2000000) {
 		_transition("crashed", "crashed", changed_domain("runtime_state"), "debugger_disconnect_timeout");
 		_fail_pending_live_requests("runtime_crashed", "The disconnected runtime did not reconnect within two seconds.", false);
+		if (run_bar && run_bar->is_playing()) {
+			internal_forced_stop = true;
+			run_bar->stop_playing();
+			internal_forced_stop = false;
+		}
 	} else if (!playing && !runtime_session_id.is_empty() && !_is_terminal() && state != "starting") {
-		const bool stopped_normally = state == "stopping" || normal_quit_requested;
+		const bool stopped_normally = RuntimeLifecyclePolicy::classify_process_exit(state, normal_quit_requested) == "stopped";
 		_transition(stopped_normally ? "stopped" : "crashed", stopped_normally ? "stopped" : "crashed", changed_domain("runtime_state"), stopped_normally ? "requested" : "process_exit");
 		if (stopped_normally) {
 			_complete_pending_controls("stopped");
@@ -1012,6 +1073,10 @@ void RuntimeDebuggerAdapter::pause(uint64_t p_request_id, const Dictionary &p_pa
 		transport->complete_request_error(p_request_id, "runtime_not_running", "The runtime is not running.", true, _safe_coordinates());
 		return;
 	}
+	if (pending_pause) {
+		transport->complete_request_error(p_request_id, "runtime_control_timeout", "A pause request is already pending.", true, _safe_coordinates());
+		return;
+	}
 	ScriptEditorDebugger *debugger = _get_active_debugger();
 	if (!debugger || !debugger->is_session_active()) {
 		transport->complete_request_error(p_request_id, "runtime_disconnected", "The debugger is disconnected.", true, _safe_coordinates());
@@ -1027,6 +1092,10 @@ void RuntimeDebuggerAdapter::continue_run(uint64_t p_request_id, const Dictionar
 	}
 	if (state != "paused") {
 		transport->complete_request_error(p_request_id, "runtime_not_paused", "The runtime is not paused.", true, _safe_coordinates());
+		return;
+	}
+	if (pending_continue) {
+		transport->complete_request_error(p_request_id, "runtime_control_timeout", "A continue request is already pending.", true, _safe_coordinates());
 		return;
 	}
 	ScriptEditorDebugger *debugger = _get_active_debugger();

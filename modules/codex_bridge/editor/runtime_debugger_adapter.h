@@ -15,6 +15,14 @@ class BridgeRevisionClock;
 class BridgeTransportWorker;
 class ScriptEditorDebugger;
 
+class RuntimeLifecyclePolicy {
+public:
+	static bool is_terminal(const String &p_state);
+	static bool is_reconnect(const String &p_state);
+	static String classify_debugger_stop(const String &p_state, bool p_editor_playing, bool p_normal_quit_requested);
+	static String classify_process_exit(const String &p_state, bool p_normal_quit_requested);
+};
+
 class RuntimeDebuggerAdapter : public EditorDebuggerPlugin {
 	GDCLASS(RuntimeDebuggerAdapter, EditorDebuggerPlugin);
 
@@ -86,8 +94,9 @@ private:
 	bool _is_terminal() const;
 	bool _guard(uint64_t p_request_id, const Dictionary &p_params, bool p_require_running, bool p_allow_paused = true);
 	void _begin_session(const String &p_origin, const String &p_target, const String &p_scene_path);
-	void _transition(const String &p_state, const String &p_event_type, const Array &p_changed_domains, const String &p_reason = String(), bool p_advance = true);
+	bool _transition(const String &p_state, const String &p_event_type, const Array &p_changed_domains, const String &p_reason = String(), bool p_advance = true);
 	void _publish_event(const String &p_event_type, const Array &p_changed_domains);
+	void _publish_invalidated(const String &p_runtime_session_id, uint64_t p_last_contiguous_event_seq, const String &p_reason);
 	void _retire_live_data();
 	void _fail_pending_live_requests(const String &p_code, const String &p_message, bool p_retryable);
 	void _complete_pending_controls(const String &p_confirmed_state);

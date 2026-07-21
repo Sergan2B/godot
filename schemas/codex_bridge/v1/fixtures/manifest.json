@@ -119,6 +119,13 @@
       "schema_ref": "runtime.schema.json"
     },
     {
+      "expect": "valid",
+      "fixture": "valid/runtime-invalidated-reconnected.json",
+      "id": "schema.runtime.invalidated-reconnected",
+      "kind": "schema",
+      "schema_ref": "runtime.schema.json"
+    },
+    {
       "expect": "invalid_schema",
       "fixture": "invalid/runtime-request-old-minor.json",
       "id": "schema.runtime.old-minor",

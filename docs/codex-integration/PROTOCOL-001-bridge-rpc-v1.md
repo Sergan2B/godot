@@ -741,7 +741,9 @@ The new methods are `runtime.run`, `runtime.stop`, `runtime.pause`,
 `runtime.continue`, `runtime.snapshot.get`, `runtime.object.inspect`,
 `runtime.stack.get`, and `runtime.viewport.capture`. Runtime state changes are
 published as `runtime.event`; an event gap, journal overflow, session
-replacement, or unrecoverable transfer is `runtime.invalidated`.
+replacement, same-session debugger reconnect, or unrecoverable transfer is
+`runtime.invalidated`. Reconnect uses `reason: reconnected` and forces a full
+runtime snapshot without allocating a new runtime session ID.
 
 The 1.6 revision vector adds optional `runtime_session_id` and
 `runtime_event_seq`. They are absent when no runtime session or retained

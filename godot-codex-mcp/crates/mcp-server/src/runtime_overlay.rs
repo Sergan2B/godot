@@ -380,4 +380,22 @@ mod tests {
         assert_eq!(summary["requires_full_snapshot"], true);
         assert!(overlay.snapshot().is_none());
     }
+
+    #[test]
+    fn reconnect_invalidation_preserves_session_coordinate_but_requires_snapshot() {
+        let overlay = RuntimeOverlay::unavailable();
+        let session = format!("runtime:{}", "7".repeat(32));
+        overlay.record_state(&state(&session, 8, RuntimeState::Disconnected));
+        overlay.record_invalidated(&RuntimeInvalidated {
+            runtime_session_id: session.clone(),
+            last_contiguous_runtime_event_seq: 8,
+            reason: RuntimeInvalidationReason::Reconnected,
+        });
+        let summary = overlay.summary();
+        assert_eq!(summary["runtime_session_id"], session);
+        assert_eq!(summary["runtime_event_seq"], 8);
+        assert_eq!(summary["reason"], "reconnected");
+        assert_eq!(summary["requires_full_snapshot"], true);
+        assert!(overlay.snapshot().is_none());
+    }
 }
