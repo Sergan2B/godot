@@ -282,4 +282,41 @@ mod tests {
         stale_live.event_seq = Some(11);
         assert!(codec.validate(&live_cursor, &stale_live, 1_001).is_err());
     }
+
+    #[test]
+    fn runtime_cursor_binds_session_revision_snapshot_tool_and_limit() {
+        let codec = CursorCodec::from_secret([9; 32]);
+        let runtime_binding = || {
+            let mut runtime = binding(CursorTool::RuntimeTree);
+            runtime.selector = "runtime:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            runtime.limit = 17;
+            runtime.generation_id = "runtime-snapshot:one";
+            runtime.editor_session_id = Some("editor:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+            runtime.snapshot_id = Some("runtime-snapshot:one");
+            runtime.event_seq = Some(41);
+            runtime
+        };
+        let runtime = runtime_binding();
+        let cursor = codec.issue(&runtime, 17, 2_000).unwrap();
+        assert_eq!(codec.validate(&cursor, &runtime, 2_001), Ok(17));
+
+        let mut stale = runtime_binding();
+        stale.selector = "runtime:cccccccccccccccccccccccccccccccc";
+        assert!(codec.validate(&cursor, &stale, 2_001).is_err());
+        stale = runtime_binding();
+        stale.event_seq = Some(42);
+        assert!(codec.validate(&cursor, &stale, 2_001).is_err());
+        stale = runtime_binding();
+        stale.snapshot_id = Some("runtime-snapshot:two");
+        assert!(codec.validate(&cursor, &stale, 2_001).is_err());
+        stale = runtime_binding();
+        stale.editor_session_id = Some("editor:dddddddddddddddddddddddddddddddd");
+        assert!(codec.validate(&cursor, &stale, 2_001).is_err());
+        stale = runtime_binding();
+        stale.limit = 18;
+        assert!(codec.validate(&cursor, &stale, 2_001).is_err());
+        stale = runtime_binding();
+        stale.tool = CursorTool::Diagnostics;
+        assert!(codec.validate(&cursor, &stale, 2_001).is_err());
+    }
 }

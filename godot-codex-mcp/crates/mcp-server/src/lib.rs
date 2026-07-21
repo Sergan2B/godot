@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use cursor::{CursorBinding, CursorCodec, CursorTool};
 use godot_codex_bridge_client::{
-    BridgeError, RuntimeDomain, RuntimeEntity, RuntimeNode, RuntimeTarget,
+    BridgeError, RuntimeDomain, RuntimeEntity, RuntimeNode, RuntimeTarget, RuntimeViewportCapture,
 };
 use godot_codex_index_store::{
     ContextSummaryError, DependencyEdge, FIND_USAGES_DEFAULT_LIMIT, FindUsagesQuery,
@@ -48,6 +48,7 @@ const DEFAULT_RESOURCE_LIMIT: usize = 50;
 const MAX_RESOURCE_LIMIT: usize = 200;
 const MAX_TOTAL_RESULTS: usize = 250_000;
 const MAX_SCRIPT_DIAGNOSTICS: usize = 200;
+const MAX_SAFE_RUNTIME_SEQUENCE: u64 = 9_007_199_254_740_991;
 const EDITOR_SUMMARY_MAX_BYTES: usize = 4096;
 const PROJECT_SUMMARY_URI: &str = "godot://project/summary";
 const EDITOR_SUMMARY_URI: &str = "godot://editor/summary";
@@ -103,6 +104,7 @@ struct DiagnosticInput {
     #[serde(default)]
     scope: DiagnosticScopeInput,
     #[serde(default = "default_resource_limit")]
+    #[schemars(range(min = 1, max = 200))]
     limit: usize,
     #[serde(default)]
     cursor: Option<String>,
@@ -113,8 +115,10 @@ struct DiagnosticInput {
     #[serde(default)]
     expected_scene_revision: Option<u64>,
     #[serde(default)]
+    #[schemars(regex(pattern = r"^runtime:[0-9a-f]{32}$"))]
     runtime_session_id: Option<String>,
     #[serde(default)]
+    #[schemars(range(min = 1, max = 9_007_199_254_740_991_u64))]
     expected_runtime_event_seq: Option<u64>,
 }
 
@@ -125,18 +129,23 @@ struct RuntimeRunInput {}
 #[derive(Clone, Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct RuntimeGuardInput {
+    #[schemars(regex(pattern = r"^runtime:[0-9a-f]{32}$"))]
     runtime_session_id: String,
     #[serde(default)]
+    #[schemars(range(min = 1, max = 9_007_199_254_740_991_u64))]
     expected_runtime_event_seq: Option<u64>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct RuntimeTreeInput {
+    #[schemars(regex(pattern = r"^runtime:[0-9a-f]{32}$"))]
     runtime_session_id: String,
     #[serde(default)]
+    #[schemars(range(min = 1, max = 9_007_199_254_740_991_u64))]
     expected_runtime_event_seq: Option<u64>,
     #[serde(default = "default_resource_limit")]
+    #[schemars(range(min = 1, max = 200))]
     limit: usize,
     #[serde(default)]
     cursor: Option<String>,
@@ -145,18 +154,24 @@ struct RuntimeTreeInput {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct RuntimeObjectInput {
+    #[schemars(regex(pattern = r"^runtime:[0-9a-f]{32}$"))]
     runtime_session_id: String,
+    #[schemars(regex(pattern = r"^runtime-object:[A-Za-z0-9_-]{43}$"))]
     runtime_object_id: String,
     #[serde(default)]
+    #[schemars(range(min = 1, max = 9_007_199_254_740_991_u64))]
     expected_runtime_event_seq: Option<u64>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct RuntimeStackInput {
+    #[schemars(regex(pattern = r"^runtime:[0-9a-f]{32}$"))]
     runtime_session_id: String,
+    #[schemars(regex(pattern = r"^runtime-stack:[A-Za-z0-9_-]{43}$"))]
     runtime_stack_id: String,
     #[serde(default)]
+    #[schemars(range(min = 1, max = 9_007_199_254_740_991_u64))]
     expected_runtime_event_seq: Option<u64>,
 }
 
@@ -171,12 +186,16 @@ fn default_capture_height() -> u32 {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct RuntimeCaptureInput {
+    #[schemars(regex(pattern = r"^runtime:[0-9a-f]{32}$"))]
     runtime_session_id: String,
     #[serde(default)]
+    #[schemars(range(min = 1, max = 9_007_199_254_740_991_u64))]
     expected_runtime_event_seq: Option<u64>,
     #[serde(default = "default_capture_width")]
+    #[schemars(range(min = 1, max = 1_280))]
     max_width: u32,
     #[serde(default = "default_capture_height")]
+    #[schemars(range(min = 1, max = 720))]
     max_height: u32,
 }
 
@@ -882,7 +901,11 @@ impl GodotMcpServer {
                 .runtime_snapshot(
                     runtime_session_id,
                     input.expected_runtime_event_seq,
-                    vec![RuntimeDomain::RuntimeDiagnostics],
+                    vec![
+                        RuntimeDomain::RuntimeState,
+                        RuntimeDomain::RuntimeDiagnostics,
+                        RuntimeDomain::RuntimeStacks,
+                    ],
                 )
                 .await
             {
@@ -935,6 +958,14 @@ impl GodotMcpServer {
                 _ => None,
             })
             .collect::<Vec<_>>();
+        let active_stack_id = cached
+            .snapshot
+            .entities
+            .iter()
+            .find_map(|entity| match entity {
+                RuntimeEntity::RuntimeState(state) => state.active_stack_id.as_deref(),
+                _ => None,
+            });
         if offset > diagnostics.len() {
             return structured_error(
                 "stale_cursor",
@@ -969,6 +1000,7 @@ impl GodotMcpServer {
             "runtime_session_id": accepted.runtime_session_id,
             "runtime_event_seq": accepted.runtime_event_seq,
             "state": accepted.state,
+            "active_stack_id": active_stack_id,
             "snapshot_id": accepted.snapshot_id,
             "diagnostics": page,
             "limit": input.limit,
@@ -977,6 +1009,7 @@ impl GodotMcpServer {
             "truncated": accepted.limits_applied.truncated || has_more,
             "limits_applied": accepted.limits_applied,
             "next_cursor": next_cursor,
+            "evidence": [{"source": "checksum_verified_runtime_snapshot", "snapshot_id": accepted.snapshot_id}],
         }))
     }
 
@@ -4005,21 +4038,49 @@ fn structured_error(code: &str, message: &str, retryable: bool) -> CallToolResul
 }
 
 fn runtime_bridge_error(error: BridgeError) -> CallToolResult {
-    eprintln!("[godot-codex-runtime] {error}");
+    let validation_stage = match &error {
+        BridgeError::Invalid(message) if message == "runtime capture result is invalid" => {
+            "capture_result"
+        }
+        BridgeError::Invalid(message) if message == "runtime screenshot encoding is invalid" => {
+            "capture_encoding"
+        }
+        BridgeError::Invalid(message) if message == "runtime screenshot payload is invalid" => {
+            "capture_payload"
+        }
+        BridgeError::Invalid(_) => "bridge_payload",
+        _ => "request",
+    };
+    eprintln!(
+        "[godot-codex-runtime] {} ({validation_stage})",
+        error.safe_summary()
+    );
     match error {
         BridgeError::Rpc {
             code,
             retryable,
             data,
             ..
-        } => CallToolResult::structured_error(json!({
-            "error": {
-                "code": code,
-                "message": "Godot runtime request failed",
-                "retryable": retryable,
-                "current": data,
-            }
-        })),
+        } => {
+            let code = if code.len() <= 64
+                && !code.is_empty()
+                && code
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+            {
+                code
+            } else {
+                "runtime_unavailable".to_owned()
+            };
+            CallToolResult::structured_error(json!({
+                "error": {
+                    "code": code,
+                    "message": "Godot runtime request failed",
+                    "retryable": retryable,
+                    "current": safe_runtime_error_coordinates(&data),
+                }
+            }))
+        }
         error => CallToolResult::structured_error(json!({
             "error": {
                 "code": "runtime_unavailable",
@@ -4028,6 +4089,78 @@ fn runtime_bridge_error(error: BridgeError) -> CallToolResult {
             }
         })),
     }
+}
+
+fn safe_runtime_error_coordinates(data: &Value) -> Value {
+    let Some(object) = data.as_object() else {
+        return json!({});
+    };
+    let Some(runtime_session_id) = object
+        .get("runtime_session_id")
+        .and_then(Value::as_str)
+        .filter(|value| valid_runtime_session_id(value))
+    else {
+        return json!({});
+    };
+    let Some(runtime_event_seq) = object
+        .get("runtime_event_seq")
+        .and_then(Value::as_u64)
+        .filter(|value| (1..=MAX_SAFE_RUNTIME_SEQUENCE).contains(value))
+    else {
+        return json!({});
+    };
+    let state = object.get("state").and_then(Value::as_str).filter(|state| {
+        matches!(
+            *state,
+            "starting"
+                | "running"
+                | "paused"
+                | "stopping"
+                | "disconnected"
+                | "stopped"
+                | "crashed"
+                | "failed"
+                | "timed_out"
+        )
+    });
+    json!({
+        "runtime_session_id": runtime_session_id,
+        "runtime_event_seq": runtime_event_seq,
+        "state": state,
+    })
+}
+
+fn valid_runtime_session_id(value: &str) -> bool {
+    value.strip_prefix("runtime:").is_some_and(|suffix| {
+        suffix.len() == 32
+            && suffix
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
+fn runtime_capture_result(capture: RuntimeViewportCapture) -> Result<CallToolResult, BridgeError> {
+    let png = capture.decode_png()?;
+    let metadata = json!({
+        "schema_version": capture.schema_version,
+        "runtime_session_id": capture.runtime_session_id,
+        "runtime_event_seq": capture.runtime_event_seq,
+        "state": capture.state,
+        "mime_type": capture.mime_type,
+        "width": capture.width,
+        "height": capture.height,
+        "byte_length": capture.byte_length,
+        "sha256": capture.sha256,
+    });
+    let mut result = CallToolResult::success(vec![
+        ContentBlock::text(metadata.to_string()),
+        ContentBlock::image(
+            base64::engine::general_purpose::STANDARD.encode(png),
+            "image/png",
+        ),
+    ]);
+    result.structured_content = Some(metadata);
+    Ok(result)
 }
 
 struct RuntimeSourceContext<'a> {
@@ -4601,30 +4734,10 @@ impl GodotMcpServer {
             Ok(capture) => capture,
             Err(error) => return runtime_bridge_error(error),
         };
-        let png = match capture.decode_png() {
-            Ok(png) => png,
-            Err(error) => return runtime_bridge_error(error),
-        };
-        let metadata = json!({
-            "schema_version": capture.schema_version,
-            "runtime_session_id": capture.runtime_session_id,
-            "runtime_event_seq": capture.runtime_event_seq,
-            "state": capture.state,
-            "mime_type": capture.mime_type,
-            "width": capture.width,
-            "height": capture.height,
-            "byte_length": capture.byte_length,
-            "sha256": capture.sha256,
-        });
-        let mut result = CallToolResult::success(vec![
-            ContentBlock::text(metadata.to_string()),
-            ContentBlock::image(
-                base64::engine::general_purpose::STANDARD.encode(png),
-                "image/png",
-            ),
-        ]);
-        result.structured_content = Some(metadata);
-        result
+        match runtime_capture_result(capture) {
+            Ok(result) => result,
+            Err(error) => runtime_bridge_error(error),
+        }
     }
 
     #[tool(
@@ -4806,6 +4919,7 @@ mod tests {
     };
     use godot_codex_resource_indexer::{ResourceIndexReader, SceneIndexReader, ScriptIndexReader};
     use godot_codex_semantic_model::{SnapshotChunk, SnapshotEnd, SnapshotMetadata};
+    use sha2::{Digest, Sha256};
     use tempfile::TempDir;
 
     fn canonical_ready_replica() -> SnapshotReplicator {
@@ -5721,6 +5835,14 @@ mod tests {
                 tool.annotations.as_ref().unwrap().read_only_hint,
                 Some(false)
             );
+            assert_eq!(
+                tool.annotations.as_ref().unwrap().idempotent_hint,
+                Some(false)
+            );
+            assert_eq!(
+                tool.annotations.as_ref().unwrap().destructive_hint,
+                Some(name == "godot_stop_project")
+            );
         }
         let stop = tools
             .iter()
@@ -5748,7 +5870,47 @@ mod tests {
                 tool.annotations.as_ref().unwrap().destructive_hint,
                 Some(false)
             );
+            assert_eq!(
+                tool.annotations.as_ref().unwrap().idempotent_hint,
+                Some(name != "godot_capture_viewport")
+            );
         }
+        let capture = tools
+            .iter()
+            .find(|tool| tool.name.as_ref() == "godot_capture_viewport")
+            .expect("runtime capture tool");
+        assert_eq!(
+            capture.input_schema["properties"]["runtime_session_id"]["pattern"],
+            "^runtime:[0-9a-f]{32}$"
+        );
+        assert_eq!(
+            capture.input_schema["properties"]["max_width"]["minimum"],
+            1
+        );
+        assert_eq!(
+            capture.input_schema["properties"]["max_width"]["maximum"],
+            1_280
+        );
+        assert_eq!(
+            capture.input_schema["properties"]["max_height"]["maximum"],
+            720
+        );
+        let runtime_tree = tools
+            .iter()
+            .find(|tool| tool.name.as_ref() == "godot_get_runtime_tree")
+            .expect("runtime tree tool");
+        assert_eq!(
+            runtime_tree.input_schema["properties"]["limit"]["minimum"],
+            1
+        );
+        assert_eq!(
+            runtime_tree.input_schema["properties"]["limit"]["maximum"],
+            200
+        );
+        assert_eq!(
+            DiagnosticScopeInput::default() as u8,
+            DiagnosticScopeInput::Editor as u8
+        );
         let search = tools
             .iter()
             .find(|tool| tool.name.as_ref() == "godot_search_symbols")
@@ -5788,6 +5950,91 @@ mod tests {
         assert_eq!(
             find.input_schema["$defs"]["SemanticConfidenceInput"]["enum"],
             json!(["dynamic", "probable", "runtime_confirmed", "exact"])
+        );
+    }
+
+    #[test]
+    fn runtime_error_projection_exposes_only_safe_coordinates() {
+        let session = format!("runtime:{}", "a".repeat(32));
+        let projected = runtime_bridge_error(BridgeError::Rpc {
+            code: "stale_runtime_state".to_owned(),
+            message: "failed at /Users/private/project".to_owned(),
+            retryable: true,
+            data: json!({
+                "runtime_session_id": session,
+                "runtime_event_seq": 7,
+                "state": "paused",
+                "path": "/Users/private/project/main.tscn",
+                "native_handle": 42,
+            }),
+        });
+        let error = &structured_content(&projected).unwrap()["error"];
+        assert_eq!(error["code"], "stale_runtime_state");
+        assert_eq!(error["retryable"], true);
+        assert_eq!(
+            error["current"],
+            json!({
+                "runtime_session_id": format!("runtime:{}", "a".repeat(32)),
+                "runtime_event_seq": 7,
+                "state": "paused",
+            })
+        );
+        let serialized = serde_json::to_string(error).unwrap();
+        assert!(!serialized.contains("/Users/"));
+        assert!(!serialized.contains("native_handle"));
+
+        let malformed = runtime_bridge_error(BridgeError::Rpc {
+            code: "/Users/private".to_owned(),
+            message: "private".to_owned(),
+            retryable: false,
+            data: json!({"runtime_session_id": "/tmp/session", "runtime_event_seq": 1}),
+        });
+        let error = &structured_content(&malformed).unwrap()["error"];
+        assert_eq!(error["code"], "runtime_unavailable");
+        assert_eq!(error["current"], json!({}));
+    }
+
+    #[test]
+    fn runtime_capture_returns_one_image_copy_and_metadata_only_structured_content() {
+        let response: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/codex_bridge/v1/fixtures/valid/runtime-viewport-capture-response.json"
+        ))
+        .unwrap();
+        let capture: RuntimeViewportCapture =
+            serde_json::from_value(response["result"].clone()).unwrap();
+        let result = runtime_capture_result(capture).unwrap();
+        assert_eq!(result.is_error, Some(false));
+        assert_eq!(result.content.len(), 2);
+        let structured = result.structured_content.as_ref().unwrap();
+        assert_eq!(structured["mime_type"], "image/png");
+        assert_eq!(structured["width"], 2);
+        assert_eq!(structured["height"], 2);
+        assert!(structured.get("data_base64url").is_none());
+        assert!(structured.get("path").is_none());
+        assert!(structured.get("native_handle").is_none());
+
+        let ContentBlock::Text(text) = &result.content[0] else {
+            panic!("capture metadata must be text");
+        };
+        let text_value: Value = serde_json::from_str(&text.text).unwrap();
+        assert_eq!(&text_value, structured);
+        let ContentBlock::Image(image) = &result.content[1] else {
+            panic!("capture pixels must be image content");
+        };
+        assert_eq!(image.mime_type, "image/png");
+        let png = base64::engine::general_purpose::STANDARD
+            .decode(&image.data)
+            .unwrap();
+        assert_eq!(
+            png.len(),
+            structured["byte_length"].as_u64().unwrap() as usize
+        );
+        assert_eq!(
+            Sha256::digest(&png)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+            structured["sha256"].as_str().unwrap()
         );
     }
 
