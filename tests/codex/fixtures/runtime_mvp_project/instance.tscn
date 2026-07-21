@@ -1,0 +1,10 @@
+[gd_scene format=3]
+
+[node name="InstancedBranch" type="Node2D"]
+
+[node name="InstancedLeaf" type="Node2D" parent="."]
+position = Vector2(24, 12)
+
+[node name="InstancedLabel" type="Label" parent="."]
+text = "RUNTIME-001"
+position = Vector2(-44, -16)

@@ -1,0 +1,25 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/runtime_fixture.gd" id="1_runtime"]
+[ext_resource type="PackedScene" path="res://instance.tscn" id="2_instance"]
+
+[node name="RuntimeFixture" type="Node2D"]
+script = ExtResource("1_runtime")
+fixture_number = 42
+fixture_text = "runtime-mvp"
+
+[node name="StaticNode" type="Node2D" parent="."]
+position = Vector2(64, 64)
+
+[node name="InstancedBranch" parent="." instance=ExtResource("2_instance")]
+position = Vector2(160, 96)
+
+[node name="VisualMarker" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(0, 0, 320, 0, 320, 180, 0, 180)
+color = Color(0.12, 0.62, 0.94, 1)
+position = Vector2(160, 90)
+
+[node name="MarkerCore" type="Polygon2D" parent="VisualMarker"]
+polygon = PackedVector2Array(-48, -48, 48, -48, 48, 48, -48, 48)
+color = Color(1, 0.45, 0.12, 1)
+position = Vector2(0, 0)

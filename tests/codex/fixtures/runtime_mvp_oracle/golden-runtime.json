@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "tree": {
+    "required_names": [
+      "RuntimeFixture",
+      "StaticNode",
+      "InstancedBranch",
+      "InstancedLeaf",
+      "RuntimeOnlyNode",
+      "VisualMarker"
+    ],
+    "runtime_only": "RuntimeOnlyNode",
+    "static_mapped": "StaticNode"
+  },
+  "properties": {
+    "fixture_number": 42,
+    "fixture_text": "runtime-mvp",
+    "truncated": ["Members/oversized_text", "Members/cyclic_value", "Members/large_values"]
+  },
+  "diagnostics": {
+    "warning": "CODEX_RUNTIME_FIXTURE_WARNING",
+    "error": "CODEX_RUNTIME_FIXTURE_ERROR",
+    "stack_functions": ["_error_leaf", "_error_middle", "_error_entry"],
+    "script_path": "res://scripts/runtime_fixture.gd"
+  },
+  "viewport": {
+    "mime_type": "image/png",
+    "max_width": 1280,
+    "max_height": 720,
+    "max_bytes": 524288
+  },
+  "limits": {
+    "tree_nodes": 10000,
+    "tree_depth": 256,
+    "properties": 512
+  }
+}
