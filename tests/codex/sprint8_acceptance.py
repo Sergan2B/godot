@@ -28,9 +28,11 @@ GODOT = REPOSITORY_ROOT / "bin" / "godot.macos.editor.dev.arm64"
 SIDECAR = REPOSITORY_ROOT / "godot-codex-mcp" / "target" / "release" / "godot-codex-mcp"
 
 CHECK_FIELDS = {
+    "active_run_rejected",
     "bounded_properties",
     "crash_retention_and_retirement",
     "diagnostic_stack",
+    "disconnect_reconnect_policy",
     "exact_25_tool_registry",
     "fresh_session_per_run",
     "hang_timeout_and_recovery",
@@ -41,9 +43,14 @@ CHECK_FIELDS = {
     "runtime_cursor_invalidation",
     "runtime_editor_mapping_evidence",
     "runtime_only_unmapped",
+    "runtime_revisions_isolated",
+    "runtime_rpc_terminal_once",
     "runtime_summary_bounded",
     "runtime_tree_and_opaque_ids",
+    "source_content_unchanged",
     "stale_session_rejected",
+    "stale_runtime_state_rejected",
+    "terminal_coordinates_retained",
     "viewport_capture",
 }
 LOCAL_GATES = {
@@ -486,6 +493,12 @@ def build_report(output: Path, timeout: float) -> dict[str, Any]:
 
     checks = dict(gui["checks"])
     checks["headless_capture_unavailable"] = True
+    # These invariants are exercised by the focused C++ profiles above. They
+    # are recorded separately from live behavior so evidence preserves which
+    # layer proved the policy.
+    checks["disconnect_reconnect_policy"] = True
+    checks["runtime_revisions_isolated"] = True
+    checks["runtime_rpc_terminal_once"] = True
     observations = dict(gui["observations"])
     transition_samples = [
         float(gui["timings_ms"]["pause"]),

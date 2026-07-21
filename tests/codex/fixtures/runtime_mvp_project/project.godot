@@ -1,10 +1,18 @@
-; Deterministic Sprint 8 runtime-debugger fixture.
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
 config_version=5
 
 [application]
 
 config/name="Codex Runtime MVP Fixture"
 run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.8")
 run/flush_stdout_on_print=true
 
 [display]
@@ -14,10 +22,6 @@ window/size/viewport_height=360
 window/size/window_width_override=640
 window/size/window_height_override=360
 window/stretch/mode="canvas_items"
-
-[editor]
-
-run/main_run_args=""
 
 [editor_plugins]
 

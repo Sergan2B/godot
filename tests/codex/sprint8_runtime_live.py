@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import difflib
 import hashlib
 import json
 import os
@@ -267,6 +268,31 @@ def percentile_95(values: list[float]) -> float:
     return ordered[min(len(ordered) - 1, max(0, int(len(ordered) * 0.95) - 1))]
 
 
+def project_source_snapshot(project: Path) -> dict[str, str]:
+    snapshot: dict[str, str] = {}
+    files = sorted(
+        path
+        for path in project.rglob("*")
+        if path.is_file() and ".godot" not in path.parts
+    )
+    for path in files:
+        relative = path.relative_to(project).as_posix()
+        snapshot[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return snapshot
+
+
+def source_change_summary(
+    before: dict[str, str], after: dict[str, str]
+) -> dict[str, list[str]]:
+    return {
+        "added": sorted(after.keys() - before.keys()),
+        "removed": sorted(before.keys() - after.keys()),
+        "changed": sorted(
+            path for path in before.keys() & after.keys() if before[path] != after[path]
+        ),
+    }
+
+
 def wait_runtime_state(
     client: McpClient, runtime_session_id: str, state: str, timeout: float
 ) -> dict[str, Any]:
@@ -290,6 +316,7 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
     with tempfile.TemporaryDirectory(prefix="s8-", dir="/tmp") as temporary:
         project = Path(temporary) / "p"
         shutil.copytree(PROJECT_SOURCE, project, ignore=shutil.ignore_patterns(".godot"))
+        initial_source_snapshot = project_source_snapshot(project)
         log_path = Path(temporary) / "editor.log"
         log = log_path.open("w", encoding="utf-8")
         environment = os.environ.copy()
@@ -318,6 +345,20 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
             require(not run_error and run.get("state") == "running", f"run failed: {run}")
             first_session = cast(str, run["runtime_session_id"])
             first_seq = cast(int, run["runtime_event_seq"])
+
+            active_run, active_run_error, _, _ = tool_call(
+                client, "godot_run_project", {}
+            )
+            require(
+                active_run_error
+                and active_run.get("error", {}).get("code")
+                == "runtime_already_active"
+                and active_run.get("error", {}).get("current", {}).get(
+                    "runtime_session_id"
+                )
+                == first_session,
+                f"an active runtime did not reject a second run: {active_run}",
+            )
 
             tree_deadline = time.monotonic() + timeout
             tree_timings: list[float] = []
@@ -492,6 +533,24 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
             current_seq = cast(
                 int, capture.get("runtime_event_seq", diagnostics["runtime_event_seq"])
             )
+            stale_pause, stale_pause_error, _, _ = tool_call(
+                client,
+                "godot_pause_project",
+                {
+                    "runtime_session_id": first_session,
+                    "expected_runtime_event_seq": max(1, current_seq - 1),
+                },
+            )
+            require(
+                stale_pause_error
+                and stale_pause.get("error", {}).get("code")
+                == "stale_runtime_state"
+                and stale_pause.get("error", {}).get("current", {}).get(
+                    "runtime_event_seq"
+                )
+                == current_seq,
+                f"stale runtime control did not fail closed: {stale_pause}",
+            )
             paused, pause_error, _, pause_ms = tool_call(
                 client,
                 "godot_pause_project",
@@ -510,6 +569,23 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 {"runtime_session_id": first_session},
             )
             require(not stop_error and stopped.get("state") == "stopped", f"stop failed: {stopped}")
+            terminal, terminal_error, _, _ = tool_call(
+                client,
+                "godot_get_diagnostics",
+                {
+                    "scope": "runtime",
+                    "runtime_session_id": first_session,
+                    "limit": 200,
+                },
+            )
+            require(
+                not terminal_error
+                and terminal.get("runtime_session_id") == first_session
+                and terminal.get("state") == "stopped"
+                and terminal.get("runtime_event_seq")
+                == stopped.get("runtime_event_seq"),
+                f"terminal runtime coordinates were not retained: {terminal}",
+            )
 
             second, second_error, _, _ = tool_call(client, "godot_run_current_scene", {})
             require(not second_error and second.get("state") == "running", f"second run failed: {second}")
@@ -721,6 +797,33 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
 
             read_runtime_summary(client)
 
+            final_source_snapshot = project_source_snapshot(project)
+            source_changes = source_change_summary(
+                initial_source_snapshot, final_source_snapshot
+            )
+            source_change_detail = ""
+            if "project.godot" in source_changes["changed"]:
+                before_lines = (PROJECT_SOURCE / "project.godot").read_text(
+                    encoding="utf-8"
+                ).splitlines()
+                after_lines = (project / "project.godot").read_text(
+                    encoding="utf-8"
+                ).splitlines()
+                source_change_detail = "\n".join(
+                    difflib.unified_diff(
+                        before_lines,
+                        after_lines,
+                        fromfile="project.godot.before",
+                        tofile="project.godot.after",
+                        lineterm="",
+                    )
+                )
+            require(
+                not any(source_changes.values()),
+                "read-only runtime workflow changed fixture source content: "
+                f"{source_changes}; diff={source_change_detail}",
+            )
+
             return {
                 "schema_version": 1,
                 "sprint": 8,
@@ -736,6 +839,7 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 ],
                 "checks": {
                     "exact_25_tool_registry": True,
+                    "active_run_rejected": True,
                     "runtime_tree_and_opaque_ids": True,
                     "runtime_editor_mapping_evidence": True,
                     "runtime_only_unmapped": True,
@@ -744,6 +848,9 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                     "pause_continue_stop_confirmed": True,
                     "fresh_session_per_run": True,
                     "stale_session_rejected": True,
+                    "stale_runtime_state_rejected": True,
+                    "terminal_coordinates_retained": True,
+                    "source_content_unchanged": True,
                     "runtime_cursor_invalidation": True,
                     "large_tree_bounded": True,
                     "crash_retention_and_retirement": True,
