@@ -48,6 +48,7 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "core/templates/safe_refcount.h"
 #include "editor/file_system/editor_file_system.h"
 #include "scene/debugger/scene_debugger_object.h"
+#include "scene/debugger/codex_runtime_value_projector.h"
 #include "scene/main/node.h"
 
 #include "modules/codex_bridge/editor/bounded_variant_projector.h"
@@ -100,6 +101,36 @@ struct ResourceGraphAdapterTestAccess {
 	static bool validate_diagnostic(const Dictionary &p_value) {
 		return ResourceGraphAdapter::_validate_diagnostic(p_value);
 	}
+};
+
+class CodexBoundedPropertyTestObject : public Object {
+	GDCLASS(CodexBoundedPropertyTestObject, Object);
+
+	mutable int getter_count = 0;
+	mutable HashSet<StringName> requested_properties;
+
+protected:
+	static void _bind_methods() {}
+
+	bool _get(const StringName &p_name, Variant &r_property) const {
+		getter_count++;
+		requested_properties.insert(p_name);
+		if (p_name == SNAME("bounded_0007")) {
+			return false;
+		}
+		r_property = String(p_name).trim_prefix("bounded_").to_int();
+		return true;
+	}
+
+	void _get_property_list(List<PropertyInfo> *p_list) const {
+		for (int index = 0; index < 513; index++) {
+			p_list->push_back(PropertyInfo(Variant::INT, "bounded_" + String::num_int64(index).pad_zeros(4), PROPERTY_HINT_NONE, "", PROPERTY_USAGE_EDITOR));
+		}
+	}
+
+public:
+	int get_getter_count() const { return getter_count; }
+	bool was_requested(const StringName &p_name) const { return requested_properties.has(p_name); }
 };
 
 struct ResourceDeltaJournalTestAccess {
@@ -342,6 +373,7 @@ TEST_CASE("[CodexBridge] Bounded variant projection preserves type and fails clo
 	Dictionary long_string = BoundedVariantProjector::project_typed(String("x").repeat(BoundedVariantProjector::MAX_STRING_CHARACTERS + 1));
 	CHECK(long_string["type"] == "string");
 	CHECK((bool)long_string["truncated"]);
+	CHECK(long_string["omitted_reason"] == "max_string");
 	CHECK(String(long_string["value"]).length() == BoundedVariantProjector::MAX_STRING_CHARACTERS);
 
 	Array nested;
@@ -1600,7 +1632,25 @@ TEST_CASE("[CodexS8Runtime] Game-side tree and cyclic properties are bounded bef
 	Array serialized_tree;
 	tree.serialize(serialized_tree);
 	CHECK(serialized_tree.size() == 60000);
+	CHECK((int64_t)serialized_tree[0] == 9999);
+	CHECK(serialized_tree[1] == "Root");
+	CHECK(serialized_tree[7] == "Child0");
+	CHECK(serialized_tree[59995] == "Child9998");
 	memdelete(root);
+
+	Node *deep_root = memnew(Node);
+	deep_root->set_name("Depth0");
+	Node *parent = deep_root;
+	for (int depth = 1; depth <= CodexRuntimeLimits::TREE_DEPTH; depth++) {
+		Node *child = memnew(Node);
+		child->set_name("Depth" + String::num_int64(depth));
+		parent->add_child(child);
+		parent = child;
+	}
+	SceneDebuggerTree deep_tree(deep_root, CodexRuntimeLimits::TREE_NODES, CodexRuntimeLimits::TREE_DEPTH);
+	CHECK(deep_tree.truncated);
+	CHECK(deep_tree.nodes.size() == CodexRuntimeLimits::TREE_DEPTH);
+	memdelete(deep_root);
 
 	SceneDebuggerObject object;
 	object.id = ObjectID(uint64_t(42));
@@ -1624,6 +1674,55 @@ TEST_CASE("[CodexS8Runtime] Game-side tree and cyclic properties are bounded bef
 	CHECK(property[5].get_type() == Variant::DICTIONARY);
 	CHECK(truncated);
 	CHECK(JSON::stringify(property[5], "", true, true).utf8().length() <= 65536);
+}
+
+TEST_CASE("[CodexS8Runtime][CodexRTPProperties] Property collection applies its limit before getters and preserves typed failure") {
+	CodexBoundedPropertyTestObject::initialize_class();
+	CodexBoundedPropertyTestObject source;
+	bool capture_truncated = false;
+	SceneDebuggerObject object(&source, CodexRuntimeLimits::PROPERTIES, &capture_truncated);
+	CHECK(capture_truncated);
+	CHECK(object.properties.size() == CodexRuntimeLimits::PROPERTIES);
+	CHECK(source.get_getter_count() == CodexRuntimeLimits::PROPERTIES - 1);
+	CHECK(object.properties.front()->get().first.name == "CodexBoundedPropertyTestObject");
+	REQUIRE(object.properties.front()->next());
+	CHECK(object.properties.front()->next()->get().first.name == "bounded_0000");
+	CHECK(object.properties.back()->get().first.name == "bounded_0510");
+	CHECK_FALSE(source.was_requested(SNAME("bounded_0512")));
+
+	Array serialized;
+	bool serialization_truncated = false;
+	object.serialize_codex(serialized, CodexRuntimeLimits::PROJECTED_VALUE_BYTES, CodexRuntimeLimits::PROPERTIES, CodexRuntimeLimits::OBJECT_BYTES, &serialization_truncated);
+	CHECK(serialization_truncated);
+	REQUIRE(serialized.size() == 3);
+	const Array properties = serialized[2];
+	CHECK(properties.size() == CodexRuntimeLimits::PROPERTIES);
+	bool found_getter_failure = false;
+	for (const Variant &entry_variant : properties) {
+		const Array entry = entry_variant;
+		if (entry[0] != "bounded_0007") {
+			continue;
+		}
+		const Dictionary projected = entry[5];
+		const Dictionary omitted = projected["value"];
+		CHECK(omitted["omitted_reason"] == "getter_failed");
+		CHECK((bool)projected["truncated"]);
+		found_getter_failure = true;
+	}
+	CHECK(found_getter_failure);
+
+	Ref<Resource> unsafe_resource;
+	unsafe_resource.instantiate();
+	unsafe_resource->set_path("user://private-runtime-resource.tres");
+	const Dictionary unsafe_projection = CodexRuntimeValueProjector::project_typed(unsafe_resource);
+	CHECK((bool)unsafe_projection["truncated"]);
+	CHECK(Dictionary(unsafe_projection["value"])["omitted_reason"] == "unsafe_resource_path");
+	const Dictionary rid_projection = CodexRuntimeValueProjector::project_typed(RID());
+	CHECK((bool)rid_projection["truncated"]);
+	CHECK(Dictionary(rid_projection["value"])["omitted_reason"] == "unsupported_handle");
+	const Dictionary path_projection = CodexRuntimeValueProjector::project_typed("/Users/private/runtime.log");
+	CHECK((bool)path_projection["truncated"]);
+	CHECK(Dictionary(path_projection["value"])["omitted_reason"] == "unsafe_absolute_path");
 }
 
 static Dictionary make_resource_ref(const String &p_uid, const String &p_path = String()) {

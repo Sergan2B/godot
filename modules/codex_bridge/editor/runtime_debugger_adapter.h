@@ -10,6 +10,7 @@
 #include "core/templates/hash_map.h"
 #include "core/variant/variant.h"
 #include "editor/debugger/editor_debugger_plugin.h"
+#include "scene/debugger/codex_runtime_limits.h"
 
 class BridgeRevisionClock;
 class BridgeTransportWorker;
@@ -27,10 +28,10 @@ class RuntimeDebuggerAdapter : public EditorDebuggerPlugin {
 	GDCLASS(RuntimeDebuggerAdapter, EditorDebuggerPlugin);
 
 public:
-	static constexpr int MAX_TREE_NODES = 10000;
-	static constexpr int MAX_TREE_DEPTH = 256;
-	static constexpr int MAX_PROPERTIES = 512;
-	static constexpr int MAX_OBJECT_BYTES = 262144;
+	static constexpr int MAX_TREE_NODES = CodexRuntimeLimits::TREE_NODES;
+	static constexpr int MAX_TREE_DEPTH = CodexRuntimeLimits::TREE_DEPTH;
+	static constexpr int MAX_PROPERTIES = CodexRuntimeLimits::PROPERTIES;
+	static constexpr int MAX_OBJECT_BYTES = CodexRuntimeLimits::OBJECT_BYTES;
 	static constexpr int MAX_DIAGNOSTICS = 200;
 	static constexpr int MAX_DIAGNOSTIC_BYTES = 262144;
 	static constexpr int MAX_STACKS = 64;
@@ -60,6 +61,7 @@ private:
 
 	Array runtime_tree;
 	String runtime_tree_checksum;
+	uint64_t runtime_tree_generation = 0;
 	HashMap<String, uint64_t> object_ids;
 	HashMap<uint64_t, String> opaque_by_object_id;
 	Array diagnostics;
@@ -74,6 +76,7 @@ private:
 	uint64_t pending_continue = 0;
 	uint64_t pending_snapshot = 0;
 	uint64_t pending_object = 0;
+	uint64_t pending_object_generation = 0;
 	uint64_t pending_capture = 0;
 	Dictionary pending_snapshot_params;
 	Dictionary pending_object_params;
@@ -104,7 +107,7 @@ private:
 	String _redact_message(const String &p_message, bool &r_redacted, bool &r_truncated) const;
 	void _append_diagnostic(const String &p_severity, const String &p_source, const String &p_message, const String &p_script_path = String(), int p_line = 0, const String &p_function = String(), const String &p_stack_id = String());
 	String _append_stack(const String &p_kind, const Array &p_frames, const String &p_identity);
-	Array _project_tree(const Array &p_serialized, bool &r_truncated);
+	bool _project_tree(const Array &p_serialized, Array &r_entities, HashMap<String, uint64_t> &r_object_ids, HashMap<uint64_t, String> &r_opaque_by_object_id, bool &r_truncated);
 	Dictionary _project_object(const Array &p_serialized, bool p_game_truncated, bool &r_truncated);
 	void _complete_snapshot(const Array &p_tree, bool p_tree_truncated);
 

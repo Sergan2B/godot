@@ -34,6 +34,7 @@
 
 #include "modules/codex_bridge/editor/main_thread_dispatcher.h"
 #include "modules/modules_enabled.gen.h"
+#include "scene/debugger/codex_runtime_limits.h"
 
 namespace {
 
@@ -382,14 +383,14 @@ Dictionary BridgeRpcSession::_make_limits() const {
 		limits["editor_projected_value_bytes"] = (int64_t)65536;
 	}
 	if (has_runtime_profile(protocol_version)) {
-		limits["runtime_tree_nodes"] = (int64_t)10000;
-		limits["runtime_tree_depth"] = (int64_t)256;
-		limits["runtime_snapshot_bytes"] = (int64_t)16777216;
-		limits["runtime_snapshot_timeout_ms"] = (int64_t)10000;
+		limits["runtime_tree_nodes"] = (int64_t)CodexRuntimeLimits::TREE_NODES;
+		limits["runtime_tree_depth"] = (int64_t)CodexRuntimeLimits::TREE_DEPTH;
+		limits["runtime_snapshot_bytes"] = (int64_t)CodexRuntimeLimits::SNAPSHOT_BYTES;
+		limits["runtime_snapshot_timeout_ms"] = (int64_t)CodexRuntimeLimits::SNAPSHOT_TIMEOUT_MS;
 		limits["runtime_event_journal_entries"] = (int64_t)1024;
 		limits["runtime_event_journal_bytes"] = (int64_t)4194304;
-		limits["runtime_properties"] = (int64_t)512;
-		limits["runtime_object_bytes"] = (int64_t)262144;
+		limits["runtime_properties"] = (int64_t)CodexRuntimeLimits::PROPERTIES;
+		limits["runtime_object_bytes"] = (int64_t)CodexRuntimeLimits::OBJECT_BYTES;
 		limits["runtime_diagnostics"] = (int64_t)200;
 		limits["runtime_diagnostic_message_bytes"] = (int64_t)16384;
 		limits["runtime_diagnostics_bytes"] = (int64_t)262144;

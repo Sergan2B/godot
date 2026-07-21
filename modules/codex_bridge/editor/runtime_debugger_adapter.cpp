@@ -36,7 +36,7 @@ static Array changed_domain(const String &p_domain) {
 }
 
 static bool safe_res_path(const String &p_path) {
-	return p_path.begins_with("res://") && !p_path.replace("\\", "/").contains("/../") && !p_path.ends_with("/..");
+	return p_path.begins_with("res://") && p_path.length() <= CodexRuntimeLimits::NODE_STRING_CHARACTERS && !p_path.contains("\\") && !p_path.contains("/../") && !p_path.ends_with("/..");
 }
 
 static String bounded_string(const String &p_value, int p_limit, bool &r_truncated) {
@@ -120,10 +120,10 @@ Dictionary RuntimeDebuggerAdapter::_make_limits(bool p_truncated) const {
 	Dictionary limits;
 	limits["tree_nodes"] = MAX_TREE_NODES;
 	limits["tree_depth"] = MAX_TREE_DEPTH;
-	limits["snapshot_bytes"] = 16777216;
-	limits["snapshot_chunk_bytes"] = 524288;
-	limits["snapshot_window_bytes"] = 33554432;
-	limits["snapshot_timeout_ms"] = 10000;
+	limits["snapshot_bytes"] = CodexRuntimeLimits::SNAPSHOT_BYTES;
+	limits["snapshot_chunk_bytes"] = CodexRuntimeLimits::SNAPSHOT_CHUNK_BYTES;
+	limits["snapshot_window_bytes"] = CodexRuntimeLimits::SNAPSHOT_WINDOW_BYTES;
+	limits["snapshot_timeout_ms"] = CodexRuntimeLimits::SNAPSHOT_TIMEOUT_MS;
 	limits["properties"] = MAX_PROPERTIES;
 	limits["variant_depth"] = BoundedVariantProjector::MAX_DEPTH;
 	limits["container_items"] = BoundedVariantProjector::MAX_CONTAINER_ITEMS;
@@ -281,6 +281,7 @@ void RuntimeDebuggerAdapter::_retire_live_data() {
 	runtime_tree_checksum.clear();
 	object_ids.clear();
 	opaque_by_object_id.clear();
+	runtime_tree_generation++;
 }
 
 void RuntimeDebuggerAdapter::_fail_pending_live_requests(const String &p_code, const String &p_message, bool p_retryable) {
@@ -295,6 +296,7 @@ void RuntimeDebuggerAdapter::_fail_pending_live_requests(const String &p_code, c
 	pending_capture_params.clear();
 	pending_tree_correlation.clear();
 	pending_object_correlation.clear();
+	pending_object_generation = 0;
 }
 
 void RuntimeDebuggerAdapter::_complete_pending_controls(const String &p_confirmed_state) {
@@ -412,13 +414,12 @@ String RuntimeDebuggerAdapter::_append_stack(const String &p_kind, const Array &
 	return id;
 }
 
-Array RuntimeDebuggerAdapter::_project_tree(const Array &p_serialized, bool &r_truncated) {
+bool RuntimeDebuggerAdapter::_project_tree(const Array &p_serialized, Array &r_entities, HashMap<String, uint64_t> &r_object_ids, HashMap<uint64_t, String> &r_opaque_by_object_id, bool &r_truncated) {
 	Array entities;
-	object_ids.clear();
-	opaque_by_object_id.clear();
+	HashMap<String, uint64_t> projected_object_ids;
+	HashMap<uint64_t, String> projected_opaque_by_object_id;
 	if (p_serialized.size() % 6 != 0 || p_serialized.size() / 6 > MAX_TREE_NODES) {
-		r_truncated = true;
-		return entities;
+		return false;
 	}
 	struct Parent {
 		String id;
@@ -434,22 +435,20 @@ Array RuntimeDebuggerAdapter::_project_tree(const Array &p_serialized, bool &r_t
 			parents.resize(parents.size() - 1);
 		}
 		if (p_serialized[offset].get_type() != Variant::INT || p_serialized[offset + 1].get_type() != Variant::STRING || p_serialized[offset + 2].get_type() != Variant::STRING || p_serialized[offset + 3].get_type() != Variant::INT || p_serialized[offset + 4].get_type() != Variant::STRING || p_serialized[offset + 5].get_type() != Variant::INT) {
-			r_truncated = true;
-			break;
+			return false;
 		}
 		const int child_count = p_serialized[offset];
 		if (child_count < 0 || child_count > MAX_TREE_NODES || parents.size() >= MAX_TREE_DEPTH) {
-			r_truncated = true;
-			break;
+			return false;
 		}
 		if (!parents.is_empty()) {
 			parents.write[parents.size() - 1].remaining--;
 		}
 		const uint64_t raw_id = p_serialized[offset + 3];
 		const String opaque_id = _make_opaque_id("runtime-object:", "godot-codex-runtime-object/v1", String::num_uint64(raw_id));
-		const String name = bounded_string(String(p_serialized[offset + 1]), 1024, r_truncated);
+		const String name = bounded_string(String(p_serialized[offset + 1]), CodexRuntimeLimits::NODE_STRING_CHARACTERS, r_truncated);
 		String node_path = parents.is_empty() ? "/" + name : parents[parents.size() - 1].path.path_join(name);
-		node_path = bounded_string(node_path, 1024, r_truncated);
+		node_path = bounded_string(node_path, CodexRuntimeLimits::NODE_STRING_CHARACTERS, r_truncated);
 		String source_scene = parents.is_empty() ? String() : parents[parents.size() - 1].source_scene;
 		String source_root_path = parents.is_empty() ? String() : parents[parents.size() - 1].source_root_path;
 		Array instance_scenes = parents.is_empty() ? Array() : parents[parents.size() - 1].instance_scenes.duplicate();
@@ -457,7 +456,7 @@ Array RuntimeDebuggerAdapter::_project_tree(const Array &p_serialized, bool &r_t
 		if (safe_res_path(observed_scene)) {
 			source_scene = observed_scene;
 			source_root_path = node_path;
-			if (!instance_scenes.has(observed_scene) && instance_scenes.size() < 256) {
+			if (!instance_scenes.has(observed_scene) && instance_scenes.size() < CodexRuntimeLimits::SOURCE_SCENE_PATHS) {
 				instance_scenes.push_back(observed_scene);
 			}
 		}
@@ -467,7 +466,7 @@ Array RuntimeDebuggerAdapter::_project_tree(const Array &p_serialized, bool &r_t
 		entity["runtime_object_id"] = opaque_id;
 		entity["parent_runtime_object_id"] = parents.is_empty() ? Variant() : Variant(parents[parents.size() - 1].id);
 		entity["name"] = name;
-		entity["godot_type"] = bounded_string(String(p_serialized[offset + 2]), 1024, r_truncated);
+		entity["godot_type"] = bounded_string(String(p_serialized[offset + 2]), CodexRuntimeLimits::NODE_STRING_CHARACTERS, r_truncated);
 		entity["runtime_node_path"] = node_path;
 		entity["depth"] = parents.size();
 		entity["child_count"] = child_count;
@@ -483,13 +482,13 @@ Array RuntimeDebuggerAdapter::_project_tree(const Array &p_serialized, bool &r_t
 			Dictionary source_hint;
 			source_hint["scene_path"] = source_scene;
 			String relative = node_path == source_root_path ? "." : node_path.trim_prefix(source_root_path + "/");
-			source_hint["relative_node_path"] = bounded_string(relative, 1024, r_truncated);
+			source_hint["relative_node_path"] = bounded_string(relative, CodexRuntimeLimits::NODE_STRING_CHARACTERS, r_truncated);
 			source_hint["instance_scene_paths"] = instance_scenes;
 			entity["source_hint"] = source_hint;
 		}
 		entities.push_back(entity);
-		object_ids.insert(opaque_id, raw_id);
-		opaque_by_object_id.insert(raw_id, opaque_id);
+		projected_object_ids.insert(opaque_id, raw_id);
+		projected_opaque_by_object_id.insert(raw_id, opaque_id);
 		if (child_count > 0) {
 			Parent parent;
 			parent.id = opaque_id;
@@ -504,12 +503,14 @@ Array RuntimeDebuggerAdapter::_project_tree(const Array &p_serialized, bool &r_t
 	if (!parents.is_empty()) {
 		for (const Parent &parent : parents) {
 			if (parent.remaining != 0) {
-				r_truncated = true;
-				break;
+				return false;
 			}
 		}
 	}
-	return entities;
+	r_entities = entities;
+	r_object_ids = projected_object_ids;
+	r_opaque_by_object_id = projected_opaque_by_object_id;
+	return true;
 }
 
 Dictionary RuntimeDebuggerAdapter::_project_object(const Array &p_serialized, bool p_game_truncated, bool &r_truncated) {
@@ -528,7 +529,7 @@ Dictionary RuntimeDebuggerAdapter::_project_object(const Array &p_serialized, bo
 	result["runtime_event_seq"] = (int64_t)(revisions->get_runtime_event_seq() + 1);
 	result["state"] = state;
 	result["runtime_object_id"] = *opaque_id;
-	result["godot_type"] = bounded_string(String(p_serialized[1]), 1024, r_truncated);
+	result["godot_type"] = bounded_string(String(p_serialized[1]), CodexRuntimeLimits::NODE_STRING_CHARACTERS, r_truncated);
 	Array projected_properties;
 	const Array properties = p_serialized[2];
 	int total_bytes = 0;
@@ -543,7 +544,7 @@ Dictionary RuntimeDebuggerAdapter::_project_object(const Array &p_serialized, bo
 			continue;
 		}
 		Dictionary projected;
-		projected["name"] = bounded_string(String(property[0]), 1024, r_truncated);
+		projected["name"] = bounded_string(String(property[0]), CodexRuntimeLimits::NODE_STRING_CHARACTERS, r_truncated);
 		const Variant::Type type = (Variant::Type)(int)property[1];
 		projected["variant_type"] = Variant::get_type_name(type);
 		projected["read_only"] = true;
@@ -622,7 +623,7 @@ void RuntimeDebuggerAdapter::_complete_snapshot(const Array &p_tree, bool p_tree
 	int total_bytes = 0;
 	for (const Variant &entity : entities) {
 		const int bytes = JSON::stringify(entity, "", true, true).utf8().length();
-		if (bytes > 256 * 1024 || total_bytes + bytes > 16777216) {
+		if (bytes > CodexRuntimeLimits::OBJECT_BYTES || total_bytes + bytes > CodexRuntimeLimits::SNAPSHOT_BYTES) {
 			truncated = true;
 			break;
 		}
@@ -1001,10 +1002,29 @@ void RuntimeDebuggerAdapter::process() {
 }
 
 void RuntimeDebuggerAdapter::cancel(uint64_t p_request_id) {
+	bool retire_observation = false;
+	if (pending_snapshot == p_request_id) {
+		pending_snapshot_params.clear();
+		pending_tree_correlation.clear();
+		retire_observation = true;
+	}
+	if (pending_object == p_request_id) {
+		pending_object_params.clear();
+		pending_object_correlation.clear();
+		pending_object_generation = 0;
+		retire_observation = true;
+	}
+	if (pending_capture == p_request_id) {
+		pending_capture_params.clear();
+	}
 	for (uint64_t *pending : { &pending_run, &pending_stop, &pending_pause, &pending_continue, &pending_snapshot, &pending_object, &pending_capture }) {
 		if (*pending == p_request_id) {
 			*pending = 0;
 		}
+	}
+	if (retire_observation) {
+		_retire_live_data();
+		_publish_invalidated(runtime_session_id, revisions->get_runtime_event_seq(), "snapshot_cancelled");
 	}
 }
 
@@ -1157,6 +1177,7 @@ void RuntimeDebuggerAdapter::inspect_object(uint64_t p_request_id, const Diction
 	}
 	pending_object = p_request_id;
 	pending_object_params = p_params;
+	pending_object_generation = runtime_tree_generation;
 	pending_object_correlation = "runtime-object-" + String::num_uint64(p_request_id);
 	debugger->send_message("scene:codex_runtime_object", Array{ pending_object_correlation, (int64_t)*raw_id });
 }
@@ -1210,17 +1231,32 @@ bool RuntimeDebuggerAdapter::capture(const String &p_message, const Array &p_dat
 			return true;
 		}
 		bool truncated = p_data[1];
-		Array projected_tree = _project_tree(p_data[2], truncated);
+		Array projected_tree;
+		HashMap<String, uint64_t> projected_object_ids;
+		HashMap<uint64_t, String> projected_opaque_by_object_id;
+		if (!_project_tree(p_data[2], projected_tree, projected_object_ids, projected_opaque_by_object_id, truncated)) {
+			const uint64_t request_id = pending_snapshot;
+			pending_snapshot = 0;
+			pending_snapshot_params.clear();
+			pending_tree_correlation.clear();
+			transport->complete_request_error(request_id, "runtime_request_timeout", "The runtime tree response was structurally invalid.", true, _safe_coordinates());
+			return true;
+		}
 		const String projected_checksum = sha256_hex_utf8(JSON::stringify(projected_tree, "", true, true));
 		if (projected_checksum.is_empty()) {
 			const uint64_t request_id = pending_snapshot;
 			pending_snapshot = 0;
+			pending_snapshot_params.clear();
+			pending_tree_correlation.clear();
 			transport->complete_request_error(request_id, "runtime_request_timeout", "The runtime tree digest could not be produced.", true, _safe_coordinates());
 			return true;
 		}
 		const bool changed = projected_checksum != runtime_tree_checksum;
 		runtime_tree = projected_tree;
 		runtime_tree_checksum = projected_checksum;
+		object_ids = projected_object_ids;
+		opaque_by_object_id = projected_opaque_by_object_id;
+		runtime_tree_generation++;
 		if (changed) {
 			_transition(state, "tree_changed", changed_domain("runtime_tree"));
 		}
@@ -1233,13 +1269,25 @@ bool RuntimeDebuggerAdapter::capture(const String &p_message, const Array &p_dat
 		}
 		const uint64_t request_id = pending_object;
 		pending_object = 0;
+		if (pending_object_generation != runtime_tree_generation) {
+			pending_object_generation = 0;
+			pending_object_params.clear();
+			pending_object_correlation.clear();
+			transport->complete_request_error(request_id, "runtime_object_stale", "The runtime tree changed while the object was being observed.", true, _safe_coordinates());
+			return true;
+		}
+		pending_object_generation = 0;
 		if (!(bool)p_data[1]) {
+			pending_object_params.clear();
+			pending_object_correlation.clear();
 			transport->complete_request_error(request_id, "runtime_object_not_found", "The runtime object no longer exists.", true, _safe_coordinates());
 			return true;
 		}
 		bool truncated = p_data[2];
 		Dictionary result = _project_object(p_data[3], truncated, truncated);
 		if (result.is_empty()) {
+			pending_object_params.clear();
+			pending_object_correlation.clear();
 			transport->complete_request_error(request_id, "runtime_object_stale", "The runtime object response did not match the current tree.", true, _safe_coordinates());
 			return true;
 		}
