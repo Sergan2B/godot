@@ -117,6 +117,33 @@ TEST_CASE("[CodexS9PreparedStore] Admission is bounded and idempotent") {
 	CHECK(store.get_active_count() == 1);
 }
 
+TEST_CASE("[CodexS9PreparedStore] Idempotency inspection is allocation-free and preserves terminal outcomes") {
+	DeterministicIds ids;
+	PreparedTransactionStore store(generate_id, &ids);
+	String canonical;
+	String digest;
+	const Dictionary params = prepare_params();
+	canonical_request(params, canonical, digest);
+	const String key = params["idempotency_key"];
+	const String operation_json = JSON::stringify(params["operation"], "", true, true);
+
+	CHECK(store.inspect_idempotency(key, digest, 1000).kind == PreparedTransactionStore::ADMISSION_CREATED);
+	CHECK(ids.next == 1);
+	CHECK(store.get_next_expiry_deadline_usec() == UINT64_MAX);
+	const PreparedTransactionStore::Admission created = store.admit(key, digest, canonical, operation_json, binding(), 1000, 2000);
+	REQUIRE(created.kind == PreparedTransactionStore::ADMISSION_CREATED);
+	CHECK(ids.next == 2);
+	CHECK(store.get_next_expiry_deadline_usec() == 1000 + PreparedTransactionStore::PREPARED_TTL_MSEC * 1000);
+	CHECK(store.inspect_idempotency(key, digest, 2000).kind == PreparedTransactionStore::ADMISSION_IN_PROGRESS);
+	CHECK(store.inspect_idempotency(key, "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 2000).kind == PreparedTransactionStore::ADMISSION_IDEMPOTENCY_CONFLICT);
+	CHECK(ids.next == 2);
+
+	REQUIRE(store.conflict(created.transaction_id));
+	CHECK(store.inspect_idempotency(key, digest, 3000).kind == PreparedTransactionStore::ADMISSION_TRANSACTION_CONFLICTED);
+	CHECK(store.get_next_expiry_deadline_usec() == UINT64_MAX);
+	CHECK(ids.next == 2);
+}
+
 TEST_CASE("[CodexS9PreparedStore] Preview replay is immutable") {
 	DeterministicIds ids;
 	PreparedTransactionStore store(generate_id, &ids);

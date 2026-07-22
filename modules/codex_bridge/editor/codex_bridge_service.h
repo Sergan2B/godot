@@ -37,9 +37,9 @@
 #include "runtime_debugger_adapter.h"
 #include "scene_state_adapter.h"
 #include "script_graph_adapter.h"
+#include "transaction_coordinator.h"
 
 #include "core/templates/hash_set.h"
-
 #include "editor/plugins/editor_plugin.h"
 
 #include "modules/codex_bridge/transport/bridge_transport_worker.h"
@@ -65,6 +65,7 @@ private:
 	ResourceGraphAdapter resource_graph_adapter;
 	SceneStateAdapter scene_state_adapter;
 	ScriptGraphAdapter script_graph_adapter;
+	TransactionCoordinator transaction_coordinator;
 	Ref<RuntimeDebuggerAdapter> runtime_debugger_adapter;
 	BridgeFrameTelemetry frame_telemetry;
 	bool editor_signals_connected = false;
@@ -134,6 +135,7 @@ private:
 	void _process_resource_graph(uint64_t p_budget_usec);
 	void _process_scene_graph(uint64_t p_budget_usec);
 	void _process_script_graph(uint64_t p_budget_usec);
+	void _process_transaction_coordinator(uint64_t p_budget_usec);
 
 protected:
 	void _notification(int p_what);

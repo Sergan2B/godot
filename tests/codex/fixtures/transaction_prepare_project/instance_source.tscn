@@ -1,0 +1,5 @@
+[gd_scene format=3]
+
+[node name="InstanceSource" type="Node"]
+
+[node name="LockedChild" type="Node" parent="."]

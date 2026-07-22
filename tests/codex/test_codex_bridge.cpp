@@ -1566,6 +1566,7 @@ TEST_CASE("[CodexS9TransactionProfile] RPC 1.7 preserves the version matrix and 
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
 	const char *versions[] = { "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7" };
 	const int capability_counts[] = { 2, 6, 8, 11, 15, 20, 26, 27 };
+	const Dictionary vector = load_transaction_vector();
 	for (int version_index = 0; version_index < 8; version_index++) {
 		const String version = versions[version_index];
 		BridgeRpcSession rpc(project_id, editor_session_id);
@@ -1583,20 +1584,23 @@ TEST_CASE("[CodexS9TransactionProfile] RPC 1.7 preserves the version matrix and 
 			const Dictionary transaction = capabilities[capabilities.size() - 1];
 			CHECK(transaction["name"] == "transaction.scene_v1");
 			CHECK(transaction["readiness"] == "unavailable");
-			CHECK(Dictionary(transaction["transaction_readiness"])["reason"] == "transaction_coordinator_unavailable");
+			CHECK(Dictionary(transaction["transaction_readiness"])["reason"] == "approval_unavailable");
 			CHECK((int64_t)limits["transaction_prepared_records"] == 64);
 		} else {
 			CHECK_FALSE(limits.has("transaction_prepared_records"));
+			const Dictionary prepare_params = Dictionary(Dictionary(vector["prepare_request"])["params"]);
+			REQUIRE(rpc.handle_message(make_rpc_request("req:transaction-prepare-old-" + version, "transaction.prepare", prepare_params, project_id, editor_session_id, 5000, version), 2, 2, outcome) == OK);
+			CHECK(rpc_error_code(outcome) == "capability_unavailable");
+			CHECK_FALSE(outcome.dispatch);
 			Dictionary status_params;
 			status_params["transaction_id"] = "transaction:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-			REQUIRE(rpc.handle_message(make_rpc_request("req:transaction-old-" + version, "transaction.status", status_params, project_id, editor_session_id, 5000, version), 2, 2, outcome) == OK);
+			REQUIRE(rpc.handle_message(make_rpc_request("req:transaction-old-" + version, "transaction.status", status_params, project_id, editor_session_id, 5000, version), 3, 3, outcome) == OK);
 			CHECK(rpc_error_code(outcome) == "capability_unavailable");
 			CHECK_FALSE(outcome.dispatch);
 			CHECK(rpc.get_in_flight_count() == 0);
 		}
 	}
 
-	const Dictionary vector = load_transaction_vector();
 	BridgeRpcSession rpc(project_id, editor_session_id);
 	rpc.set_protocol_version("1.7");
 	BridgeRpcSession::Outcome outcome;
@@ -1653,8 +1657,15 @@ TEST_CASE("[CodexS9TransactionProfile] RPC 1.7 preserves the version matrix and 
 	const char *request_names[] = { "prepare_request", "apply_request", "status_request", "undo_request" };
 	for (int index = 0; index < 4; index++) {
 		REQUIRE(rpc.handle_message(vector[request_names[index]], 2 + index, 11 + index, outcome) == OK);
-		CHECK(rpc_error_code(outcome) == "capability_unavailable");
-		CHECK_FALSE(outcome.dispatch);
+		if (index == 0) {
+			CHECK(outcome.dispatch);
+			CHECK(outcome.method == BridgeRpcSession::METHOD_TRANSACTION_PREPARE);
+			REQUIRE(rpc.complete(11, 7, vector["prepare_result"], outcome) == OK);
+			CHECK(Dictionary(outcome.response["result"])["state"] == "previewed");
+		} else {
+			CHECK(rpc_error_code(outcome) == "capability_unavailable");
+			CHECK_FALSE(outcome.dispatch);
+		}
 		CHECK(rpc.get_in_flight_count() == 0);
 	}
 
@@ -1751,6 +1762,17 @@ TEST_CASE("[CodexS9TransactionProfile] C++ validates the shared transaction vect
 	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
 	unsafe_value["type"] = "pid";
 	operation["value"] = unsafe_value;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+	Dictionary wire_integer;
+	wire_integer["type"] = "int";
+	wire_integer["value"] = 9.0;
+	operation["value"] = wire_integer;
+	CHECK(BridgeTransactionProfile::validate_operation(operation));
+	wire_integer["value"] = 9.25;
+	operation["value"] = wire_integer;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+	wire_integer["value"] = 9007199254740992.0;
+	operation["value"] = wire_integer;
 	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
 
 	Dictionary apply = Dictionary(Dictionary(vector["apply_request"])["params"]).duplicate(true);

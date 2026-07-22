@@ -35,6 +35,7 @@
 #include "core/io/json.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
+#include "core/os/time.h"
 #include "core/string/print_string.h"
 #include "core/templates/hash_set.h"
 #include "editor/docks/inspector_dock.h"
@@ -61,6 +62,9 @@ static_assert(
 static_assert(
 		MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME >= ScriptGraphAdapter::FRAME_SAFETY_MARGIN_USEC + ScriptGraphAdapter::SCRIPT_BUDGET_USEC,
 		"Script scheduling must leave a nonnegative dispatcher lane.");
+static_assert(
+		MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME >= 200 + TransactionCoordinator::WORK_BUDGET_USEC,
+		"Transaction scheduling must leave a nonnegative dispatcher lane.");
 
 static String sha256_hex_utf8(const String &p_value) {
 	const CharString bytes = p_value.utf8();
@@ -172,13 +176,23 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 		case MainThreadDispatcher::COMMAND_RUNTIME_VIEWPORT_CAPTURE:
 			service->runtime_debugger_adapter->capture_viewport(p_command.request_id, p_command.params);
 			break;
-		case MainThreadDispatcher::COMMAND_TRANSACTION_PREPARE:
+		case MainThreadDispatcher::COMMAND_TRANSACTION_PREPARE: {
+			const uint64_t now_usec = OS::get_singleton()->get_ticks_usec();
+			const uint64_t now_ms = (uint64_t)(Time::get_singleton()->get_unix_time_from_system() * 1000.0);
+			const TransactionCoordinator::StartOutcome outcome = service->transaction_coordinator.prepare(p_command.request_id, p_command.params, now_usec, now_ms);
+			if (outcome.has_result) {
+				service->transport_worker.complete_request(p_command.request_id, outcome.result);
+			} else if (!outcome.pending) {
+				service->transport_worker.complete_request_error(p_command.request_id, outcome.error_code, outcome.error_message, outcome.retryable);
+			}
+		} break;
 		case MainThreadDispatcher::COMMAND_TRANSACTION_APPLY:
 		case MainThreadDispatcher::COMMAND_TRANSACTION_STATUS:
 		case MainThreadDispatcher::COMMAND_TRANSACTION_UNDO:
-			service->transport_worker.complete_request_error(p_command.request_id, "capability_unavailable", "The transaction coordinator is not available in this bridge build.", false);
+			service->transport_worker.complete_request_error(p_command.request_id, "capability_unavailable", "Transaction apply, status, and undo require the approval workflow.", false);
 			break;
 		case MainThreadDispatcher::COMMAND_CANCEL: {
+			service->transaction_coordinator.cancel_waiter(p_command.request_id);
 			service->runtime_debugger_adapter->cancel(p_command.request_id);
 			const Array abandoned = service->resource_graph_adapter.cancel_snapshot(p_command.request_id);
 			if (!abandoned.is_empty()) {
@@ -286,6 +300,9 @@ void CodexBridgeService::_publish_event(const String &p_event_type, const String
 	} else {
 		revision_clock.record_selection_change();
 	}
+	if (p_native_operation || p_scene_mutation) {
+		transaction_coordinator.invalidate_all();
+	}
 	const Dictionary revisions = revision_clock.get_revision_vector();
 	Dictionary params;
 	params["event_seq"] = revisions["event_seq"];
@@ -329,6 +346,7 @@ void CodexBridgeService::_on_scene_changed() {
 
 void CodexBridgeService::_on_scene_closed(const String &p_path) {
 	(void)p_path;
+	transaction_coordinator.invalidate_all();
 	_refresh_open_scene_ids(true);
 	_publish_event("scene_closed");
 }
@@ -433,12 +451,14 @@ void CodexBridgeService::_on_undo_redo_version_changed() {
 }
 
 void CodexBridgeService::_on_filesystem_changed() {
+	transaction_coordinator.invalidate_all();
 	resource_graph_adapter.request_refresh();
 	scene_state_adapter.request_refresh();
 	script_graph_adapter.request_refresh();
 }
 
 void CodexBridgeService::_on_resources_reimported(const Vector<String> &p_paths) {
+	transaction_coordinator.invalidate_all();
 	resource_graph_adapter.mark_reimported(p_paths);
 	scene_state_adapter.request_refresh();
 	script_graph_adapter.invalidate_saved_paths(p_paths);
@@ -450,6 +470,7 @@ void CodexBridgeService::_on_resources_reload(const PackedStringArray &p_paths) 
 	// Reload signals identify affected paths, but a resumable full diff remains
 	// the correctness fallback for moves, removals, and dependency fan-out.
 	if (!p_paths.is_empty()) {
+		transaction_coordinator.invalidate_all();
 		resource_graph_adapter.request_refresh();
 		scene_state_adapter.request_refresh();
 		script_graph_adapter.invalidate_saved_paths(p_paths);
@@ -458,6 +479,7 @@ void CodexBridgeService::_on_resources_reload(const PackedStringArray &p_paths) 
 }
 
 void CodexBridgeService::_on_project_settings_changed() {
+	transaction_coordinator.invalidate_all();
 	scene_state_adapter.invalidate_project_context();
 }
 
@@ -468,6 +490,9 @@ void CodexBridgeService::_flush_scene_change() {
 	native_operation_pending = false;
 	const String property = pending_property;
 	pending_property.clear();
+	if (native_operation) {
+		transaction_coordinator.invalidate_all();
+	}
 	_publish_event(native_operation ? "editor_operation" : (property.is_empty() ? "scene_changed" : "property_changed"), property, !native_operation, false);
 }
 
@@ -949,6 +974,7 @@ void CodexBridgeService::_process_resource_graph(uint64_t p_budget_usec) {
 			script_graph_adapter.request_refresh();
 		}
 		if (refresh.changed) {
+			transaction_coordinator.invalidate_all();
 			Dictionary params;
 			params["event_seq"] = refresh.revisions["event_seq"];
 			params["event_type"] = "resource_graph_changed";
@@ -1001,6 +1027,7 @@ void CodexBridgeService::_process_scene_graph(uint64_t p_budget_usec) {
 		return;
 	}
 	if (refresh.changed) {
+		transaction_coordinator.invalidate_all();
 		Dictionary params;
 		params["event_type"] = "scene_graph_changed";
 		params["scene_graph_revision"] = (int64_t)refresh.current_scene_graph_revision;
@@ -1053,6 +1080,7 @@ void CodexBridgeService::_process_script_graph(uint64_t p_budget_usec) {
 		return;
 	}
 	if (refresh.changed) {
+		transaction_coordinator.invalidate_all();
 		Dictionary params;
 		params["event_type"] = "script_graph_changed";
 		params["script_graph_revision"] = (int64_t)refresh.current_script_graph_revision;
@@ -1083,6 +1111,18 @@ void CodexBridgeService::_process_script_graph(uint64_t p_budget_usec) {
 	}
 }
 
+void CodexBridgeService::_process_transaction_coordinator(uint64_t p_budget_usec) {
+	Vector<TransactionCoordinator::Completion> completions;
+	transaction_coordinator.process(OS::get_singleton()->get_ticks_usec(), (uint64_t)(Time::get_singleton()->get_unix_time_from_system() * 1000.0), p_budget_usec, completions);
+	for (const TransactionCoordinator::Completion &completion : completions) {
+		if (completion.has_result) {
+			transport_worker.complete_request(completion.request_id, completion.result);
+		} else {
+			transport_worker.complete_request_error(completion.request_id, completion.error_code, completion.error_message, completion.retryable);
+		}
+	}
+}
+
 void CodexBridgeService::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
@@ -1098,39 +1138,36 @@ void CodexBridgeService::_notification(int p_what) {
 				const bool resource_work = resource_graph_adapter.has_pending_work();
 				const bool scene_work = scene_state_adapter.has_pending_work();
 				const bool script_work = script_graph_adapter.has_pending_work();
+				const bool transaction_work = transaction_coordinator.has_pending_work(OS::get_singleton()->get_ticks_usec());
 				const bool control_work = dispatcher.get_queue_size() > 0 || !pending_editor_snapshots.is_empty();
 				bool run_resource_bulk = false;
 				bool run_scene_bulk = false;
 				bool run_script_bulk = false;
-				if (!resource_work && script_work) {
-					run_script_bulk = true;
-					work_lane_turn = 3;
-				}
-				for (int offset = 0; offset < 4; offset++) {
-					if (run_script_bulk) {
-						break;
-					}
-					const int candidate = (work_lane_turn + offset) % 4;
+				bool run_transaction_bulk = false;
+				for (int offset = 0; offset < 5; offset++) {
+					const int candidate = (work_lane_turn + offset) % 5;
 					// Scene and script observations bind one resource checkpoint. Let
 					// the resource pass settle before either dependent lane can commit.
 					const bool dependent_lane_ready = !resource_work;
-					if ((candidate == 0 && resource_work) || (candidate == 1 && scene_work && dependent_lane_ready) || (candidate == 2 && script_work && dependent_lane_ready) || (candidate == 3 && control_work)) {
+					if ((candidate == 0 && resource_work) || (candidate == 1 && scene_work && dependent_lane_ready) || (candidate == 2 && script_work && dependent_lane_ready) || (candidate == 3 && transaction_work) || (candidate == 4 && control_work)) {
 						run_resource_bulk = candidate == 0;
 						run_scene_bulk = candidate == 1;
 						run_script_bulk = candidate == 2;
-						work_lane_turn = (candidate + 1) % 4;
+						run_transaction_bulk = candidate == 3;
+						work_lane_turn = (candidate + 1) % 5;
 						break;
 					}
 				}
-				const uint64_t frame_safety_margin = run_script_bulk ? ScriptGraphAdapter::FRAME_SAFETY_MARGIN_USEC : (run_scene_bulk ? SceneStateAdapter::FRAME_SAFETY_MARGIN_USEC : ResourceGraphAdapter::FRAME_SAFETY_MARGIN_USEC);
+				const uint64_t frame_safety_margin = run_transaction_bulk ? 200 : (run_script_bulk ? ScriptGraphAdapter::FRAME_SAFETY_MARGIN_USEC : (run_scene_bulk ? SceneStateAdapter::FRAME_SAFETY_MARGIN_USEC : ResourceGraphAdapter::FRAME_SAFETY_MARGIN_USEC));
 				const uint64_t dispatcher_budget = MainThreadDispatcher::MAX_PROCESS_USEC_PER_FRAME -
 						frame_safety_margin -
 						(run_resource_bulk ? ResourceGraphAdapter::RESOURCE_BUDGET_USEC : 0) -
 						(run_scene_bulk ? SceneStateAdapter::SCENE_BUDGET_USEC : 0) -
-						(run_script_bulk ? ScriptGraphAdapter::SCRIPT_BUDGET_USEC : 0);
+						(run_script_bulk ? ScriptGraphAdapter::SCRIPT_BUDGET_USEC : 0) -
+						(run_transaction_bulk ? TransactionCoordinator::WORK_BUDGET_USEC : 0);
 				MainThreadDispatcher::ProcessStats dispatcher_stats;
 				if (dispatcher_budget > 0) {
-						dispatcher_stats = dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
+					dispatcher_stats = dispatcher.process(_dispatch_command, this, MainThreadDispatcher::MAX_COMMANDS_PER_FRAME, dispatcher_budget);
 				}
 				bool editor_snapshot_step = false;
 				if (!pending_editor_snapshots.is_empty() && dispatcher_stats.consumed == 0) {
@@ -1150,8 +1187,11 @@ void CodexBridgeService::_notification(int p_what) {
 				if (run_script_bulk && bulk_lane_available) {
 					_process_script_graph(ScriptGraphAdapter::SCRIPT_BUDGET_USEC);
 				}
+				if (run_transaction_bulk && bulk_lane_available) {
+					_process_transaction_coordinator(TransactionCoordinator::WORK_BUDGET_USEC);
+				}
 				const uint64_t frame_elapsed_usec = OS::get_singleton()->get_ticks_usec() - frame_started_usec;
-				frame_telemetry.record(frame_elapsed_usec, resource_work || scene_work || script_work || control_work || dispatcher_stats.consumed > 0);
+				frame_telemetry.record(frame_elapsed_usec, resource_work || scene_work || script_work || transaction_work || control_work || dispatcher_stats.consumed > 0);
 			}
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
@@ -1185,6 +1225,7 @@ Error CodexBridgeService::start() {
 	}
 
 	revision_clock.initialize(transport_worker.get_editor_session_id());
+	transaction_coordinator.initialize(transport_worker.get_project_id(), transport_worker.get_editor_session_id(), &revision_clock);
 	resource_graph_adapter.initialize(&revision_clock);
 	scene_state_adapter.initialize(&revision_clock);
 	script_graph_adapter.initialize(&revision_clock);
@@ -1220,6 +1261,7 @@ void CodexBridgeService::stop() {
 	resource_graph_adapter.shutdown();
 	scene_state_adapter.shutdown();
 	script_graph_adapter.shutdown();
+	transaction_coordinator.shutdown();
 	work_lane_turn = 0;
 	scene_change_pending = false;
 	scene_change_not_before_usec = 0;

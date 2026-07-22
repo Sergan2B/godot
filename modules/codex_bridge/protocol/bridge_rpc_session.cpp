@@ -931,8 +931,10 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 				_set_error_outcome(request_id, "invalid_request", "The transaction parameters are invalid.", false, r_outcome);
 				return OK;
 			}
-			_set_error_outcome(request_id, "capability_unavailable", "The transaction coordinator is not available in this bridge build.", false, r_outcome);
-			return OK;
+			if (method != METHOD_TRANSACTION_PREPARE) {
+				_set_error_outcome(request_id, "capability_unavailable", "Transaction apply, status, and undo are not available until the approval workflow is enabled.", false, r_outcome);
+				return OK;
+			}
 		} else if (method_name == "bridge.shutdown") {
 			if (!_validate_shutdown_params(params)) {
 				_set_error_outcome(request_id, "invalid_request", "The shutdown parameters are invalid.", false, r_outcome);
@@ -1127,11 +1129,18 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 			}
 			result = p_result_override;
 		} break;
-		case METHOD_TRANSACTION_PREPARE:
+		case METHOD_TRANSACTION_PREPARE: {
+			if (p_result_override.is_empty() || !BridgeTransactionProfile::validate_prepare_result(p_result_override)) {
+				_set_error_outcome(pending.request_id, "internal_error", "The transaction preview response was not produced or failed validation.", true, r_outcome);
+				_remove_pending(p_internal_request_id);
+				return OK;
+			}
+			result = p_result_override;
+		} break;
 		case METHOD_TRANSACTION_APPLY:
 		case METHOD_TRANSACTION_STATUS:
 		case METHOD_TRANSACTION_UNDO: {
-			_set_error_outcome(pending.request_id, "capability_unavailable", "The transaction coordinator is not available in this bridge build.", false, r_outcome);
+			_set_error_outcome(pending.request_id, "capability_unavailable", "Transaction apply, status, and undo are not available until the approval workflow is enabled.", false, r_outcome);
 			_remove_pending(p_internal_request_id);
 			return OK;
 		}

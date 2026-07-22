@@ -53,7 +53,7 @@
       "scene_state": "not_evaluated",
       "approval_state": "unavailable",
       "busy": false,
-      "reason": "transaction_coordinator_unavailable"
+      "reason": "approval_unavailable"
     },
     "limits": {
       "operations": 1,

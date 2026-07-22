@@ -91,11 +91,13 @@ private:
 public:
 	PreparedTransactionStore(IdGenerator p_id_generator = nullptr, void *p_id_generator_userdata = nullptr);
 
+	Admission inspect_idempotency(const String &p_idempotency_key, const String &p_request_digest, uint64_t p_now_usec);
 	Admission admit(const String &p_idempotency_key, const String &p_request_digest, const String &p_canonical_request_json, const String &p_canonical_operation_json, const Binding &p_binding, uint64_t p_now_usec, uint64_t p_now_ms);
 	Error publish_preview(const String &p_transaction_id, const String &p_prepare_result_json, const String &p_preview_payload_json, const String &p_preview_digest);
 	bool conflict(const String &p_transaction_id);
 	uint32_t conflict_scene(const String &p_scene_id);
 	uint32_t conflict_operation_sequence(uint64_t p_current_operation_seq);
+	uint32_t conflict_all();
 	void expire(uint64_t p_now_usec);
 	void clear();
 
@@ -104,4 +106,5 @@ public:
 	uint32_t get_active_count() const;
 	uint32_t get_terminal_count() const;
 	uint32_t get_total_count() const;
+	uint64_t get_next_expiry_deadline_usec() const;
 };

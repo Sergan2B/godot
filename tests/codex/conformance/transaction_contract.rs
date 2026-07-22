@@ -435,6 +435,7 @@ fn transaction_preview_digest_binds_exact_bytes() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn transaction_canonical_preview_vectors_match_all_operations() {
     let vector = strict_json(&bundle_root().join("fixtures/test-vectors/transaction.json"));
     let operations = vector["operations"].as_array().expect("operations");

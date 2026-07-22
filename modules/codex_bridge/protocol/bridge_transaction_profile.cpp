@@ -272,7 +272,17 @@ static bool validate_writable_variant(const Dictionary &p_value, int p_depth, in
 		return value.get_type() == Variant::BOOL;
 	}
 	if (type == "int") {
-		return value.get_type() == Variant::INT && (int64_t)value >= -MAX_SAFE_INTEGER && (int64_t)value <= MAX_SAFE_INTEGER;
+		if (value.get_type() == Variant::INT) {
+			return (int64_t)value >= -MAX_SAFE_INTEGER && (int64_t)value <= MAX_SAFE_INTEGER;
+		}
+		if (value.get_type() != Variant::FLOAT) {
+			return false;
+		}
+		const double number = value;
+		if (!Math::is_finite(number) || number < (double)-MAX_SAFE_INTEGER || number > (double)MAX_SAFE_INTEGER) {
+			return false;
+		}
+		return (double)(int64_t)number == number;
 	}
 	if (type == "float") {
 		return (value.get_type() == Variant::FLOAT || value.get_type() == Variant::INT) && Math::is_finite((double)value);
@@ -425,7 +435,7 @@ Dictionary BridgeTransactionProfile::make_unavailable_capability() {
 	readiness["scene_state"] = "not_evaluated";
 	readiness["approval_state"] = "unavailable";
 	readiness["busy"] = false;
-	readiness["reason"] = "transaction_coordinator_unavailable";
+	readiness["reason"] = "approval_unavailable";
 	Dictionary capability;
 	capability["name"] = "transaction.scene_v1";
 	capability["version"] = "1.0";

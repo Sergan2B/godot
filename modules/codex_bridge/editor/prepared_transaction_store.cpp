@@ -72,7 +72,7 @@ PreparedTransactionStore::PreparedTransactionStore(IdGenerator p_id_generator, v
 		id_generator(p_id_generator ? p_id_generator : _default_generate_id), id_generator_userdata(p_id_generator_userdata) {
 }
 
-PreparedTransactionStore::Admission PreparedTransactionStore::admit(const String &p_idempotency_key, const String &p_request_digest, const String &p_canonical_request_json, const String &p_canonical_operation_json, const Binding &p_binding, uint64_t p_now_usec, uint64_t p_now_ms) {
+PreparedTransactionStore::Admission PreparedTransactionStore::inspect_idempotency(const String &p_idempotency_key, const String &p_request_digest, uint64_t p_now_usec) {
 	expire(p_now_usec);
 	Admission admission;
 	const String *existing_transaction = transaction_by_idempotency.getptr(p_idempotency_key);
@@ -96,6 +96,15 @@ PreparedTransactionStore::Admission PreparedTransactionStore::admit(const String
 			}
 			return admission;
 		}
+	}
+	admission.kind = ADMISSION_CREATED;
+	return admission;
+}
+
+PreparedTransactionStore::Admission PreparedTransactionStore::admit(const String &p_idempotency_key, const String &p_request_digest, const String &p_canonical_request_json, const String &p_canonical_operation_json, const Binding &p_binding, uint64_t p_now_usec, uint64_t p_now_ms) {
+	Admission admission = inspect_idempotency(p_idempotency_key, p_request_digest, p_now_usec);
+	if (admission.kind != ADMISSION_CREATED || !admission.transaction_id.is_empty()) {
+		return admission;
 	}
 	if (active_records >= MAX_ACTIVE_RECORDS) {
 		admission.kind = ADMISSION_BUSY;
@@ -192,6 +201,19 @@ uint32_t PreparedTransactionStore::conflict_operation_sequence(uint64_t p_curren
 	return conflicts.size();
 }
 
+uint32_t PreparedTransactionStore::conflict_all() {
+	Vector<String> conflicts;
+	for (const KeyValue<String, Record> &entry : records) {
+		if (entry.value.state == STATE_PREPARING || entry.value.state == STATE_PREVIEWED) {
+			conflicts.push_back(entry.key);
+		}
+	}
+	for (const String &transaction_id : conflicts) {
+		_terminalize(transaction_id, STATE_CONFLICTED, "transaction_conflicted");
+	}
+	return conflicts.size();
+}
+
 void PreparedTransactionStore::expire(uint64_t p_now_usec) {
 	Vector<String> expired;
 	for (const KeyValue<String, Record> &entry : records) {
@@ -241,4 +263,14 @@ uint32_t PreparedTransactionStore::get_terminal_count() const {
 
 uint32_t PreparedTransactionStore::get_total_count() const {
 	return records.size();
+}
+
+uint64_t PreparedTransactionStore::get_next_expiry_deadline_usec() const {
+	uint64_t deadline_usec = UINT64_MAX;
+	for (const KeyValue<String, Record> &entry : records) {
+		if (entry.value.state == STATE_PREPARING || entry.value.state == STATE_PREVIEWED) {
+			deadline_usec = MIN(deadline_usec, entry.value.expiry_deadline_usec);
+		}
+	}
+	return deadline_usec;
 }

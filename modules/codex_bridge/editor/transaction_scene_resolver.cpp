@@ -14,6 +14,7 @@
 #include "core/io/resource_uid.h"
 #include "core/object/class_db.h"
 #include "core/object/object.h"
+#include "core/object/script_language.h"
 #include "core/os/os.h"
 #include "core/os/thread.h"
 #include "editor/editor_data.h"
@@ -264,7 +265,11 @@ static TransactionSceneResolver::ProcessOutcome resolve_operation(TransactionSce
 		} else if (kind == "attach_script") {
 			const String path = resource_ref_path(operation["script_ref"]);
 			const String type = path.is_empty() || !FileAccess::exists(path) ? String() : ResourceLoader::get_resource_type(path);
-			if (type.is_empty() || !ClassDB::is_parent_class(type, "Script")) {
+			Ref<Script> script;
+			if (!type.is_empty() && ClassDB::is_parent_class(type, "Script")) {
+				script = ResourceLoader::load(path, "Script");
+			}
+			if (script.is_null() || script->get_instance_base_type().is_empty() || !ClassDB::is_parent_class(target->get_class_name(), script->get_instance_base_type())) {
 				return failure("script_incompatible", "The requested script resource is missing or incompatible.");
 			}
 			outcome.resolution.script_already_attached = target->get_script().get_type() != Variant::NIL;

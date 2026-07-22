@@ -1,0 +1,32 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/fixture_endpoint.gd" id="1_endpoint"]
+[ext_resource type="PackedScene" path="res://instance_source.tscn" id="2_instance"]
+
+[node name="TransactionFixture" type="Node2D"]
+
+[node name="Player" type="CharacterBody2D" parent="."]
+position = Vector2(8, 12)
+
+[node name="Receiver" type="Node" parent="."]
+script = ExtResource("1_endpoint")
+
+[node name="Emitter" type="Node" parent="."]
+script = ExtResource("1_endpoint")
+
+[node name="Scripted" type="Node" parent="."]
+script = ExtResource("1_endpoint")
+
+[node name="Scriptless" type="Node" parent="."]
+
+[node name="Deletable" type="Node" parent="."]
+
+[node name="Descendant" type="Node" parent="Deletable"]
+
+[node name="ReparentTarget" type="Node" parent="."]
+
+[node name="NewParent" type="Node" parent="."]
+
+[node name="Instance" parent="." instance=ExtResource("2_instance")]
+
+[connection signal="pulse" from="Emitter" to="Receiver" method="_on_pulse"]

@@ -1,0 +1,41 @@
+{
+  "bounded_node_count": 912,
+  "bridge_responsive_after_oversized": true,
+  "cancelled_waiter_completed_in_background": true,
+  "capability_reason": "approval_unavailable",
+  "concurrent_duplicate_joined": true,
+  "forbidden_property_error": "property_not_writable",
+  "idempotency_conflict": true,
+  "incompatible_script_error": "script_incompatible",
+  "initial_node_count": 12,
+  "locked_instance_error": "node_not_editable",
+  "manual_change_node_count": 12,
+  "manual_invalidation": true,
+  "native_tree_evidence_equal": true,
+  "operation_kinds": [
+    "attach_script",
+    "connect_signal",
+    "create_node",
+    "delete_node",
+    "detach_script",
+    "disconnect_signal",
+    "reparent_node",
+    "set_property"
+  ],
+  "operation_previews": 9,
+  "oversized_error": "transaction_too_large",
+  "oversized_node_count": 1013,
+  "prepared_capacity": 64,
+  "protocol_version": "1.7",
+  "read_only_evidence_equal": true,
+  "replay_identical": true,
+  "schema_version": "s9-03-acceptance/1.0",
+  "source_hashes": {
+    "addons/codex_s9_prepare/codex_s9_prepare.gd": "23f4195e4949d16fa452d527c65070fad9d5f10f767f2d321a8b2b072d91622b",
+    "instance_source.tscn": "bb056e0b07ae06bc8c41a956e61f0c585faae54bc249898fa7642863a4ee6579",
+    "main.tscn": "b63a82357fd98d8c3b0f62c466315d4a33cd346565e578ae900b93a82cd6a603",
+    "scripts/fixture_endpoint.gd": "e167a27d580a276d3e4bd7ba2bffb1c0f8941d92262b437788114ec9eee74fd2",
+    "scripts/incompatible.gd": "087d184f7cbac52200b4c44963fffd5ead7b411dd4e1b0dcfd5a71344d8cd442"
+  },
+  "status": "passed"
+}

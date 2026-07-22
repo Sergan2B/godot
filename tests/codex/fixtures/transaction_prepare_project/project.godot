@@ -1,0 +1,17 @@
+; Deterministic Sprint 9 prepare/preview fixture.
+config_version=5
+
+[application]
+
+config/name="Codex Transaction Prepare Fixture"
+run/main_scene="res://main.tscn"
+run/flush_stdout_on_print=true
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/codex_s9_prepare/plugin.cfg")
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
