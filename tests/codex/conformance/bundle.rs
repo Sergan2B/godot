@@ -29,8 +29,13 @@ mod approval_boundary_contract {
     include!("approval_boundary_contract.rs");
 }
 
+#[cfg(test)]
+mod transaction_contract {
+    include!("transaction_contract.rs");
+}
+
 const SCHEMA_BASE_URI: &str = "https://godot-codex.local/schema/v1/";
-const SCHEMA_FILES: [&str; 11] = [
+const SCHEMA_FILES: [&str; 12] = [
     "common.schema.json",
     "discovery.schema.json",
     "fixture-manifest.schema.json",
@@ -42,6 +47,7 @@ const SCHEMA_FILES: [&str; 11] = [
     "scene.schema.json",
     "script.schema.json",
     "runtime.schema.json",
+    "transaction.schema.json",
 ];
 
 fn bundle_root() -> PathBuf {
@@ -311,7 +317,7 @@ mod tests {
 
     #[test]
     fn canonical_schema_fixture_bundle_is_self_consistent() {
-        assert_eq!(validate_canonical_bundle().unwrap(), 135);
+        assert_eq!(validate_canonical_bundle().unwrap(), 161);
     }
 
     #[test]

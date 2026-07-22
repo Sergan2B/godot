@@ -1,6 +1,214 @@
 {
-  "bundle_version": "1.6",
+  "bundle_version": "1.7",
   "cases": [
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.capability-unavailable",
+      "instance_pointer": "/capability",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/transactionCapability"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.operation-create",
+      "instance_pointer": "/operations/0",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.operation-delete",
+      "instance_pointer": "/operations/1",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.operation-reparent",
+      "instance_pointer": "/operations/2",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.operation-property",
+      "instance_pointer": "/operations/3",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.operation-attach-script",
+      "instance_pointer": "/operations/4",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.operation-detach-script",
+      "instance_pointer": "/operations/5",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.operation-connect-signal",
+      "instance_pointer": "/operations/6",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.operation-disconnect-signal",
+      "instance_pointer": "/operations/7",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.prepare-request",
+      "instance_pointer": "/prepare_request",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.prepare-result",
+      "instance_pointer": "/prepare_result",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/prepareResult"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.apply-request",
+      "instance_pointer": "/apply_request",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.status-request",
+      "instance_pointer": "/status_request",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.status-result",
+      "instance_pointer": "/status_result",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/transactionStatus"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.undo-request",
+      "instance_pointer": "/undo_request",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.event",
+      "instance_pointer": "/event",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.old-minor",
+      "instance_pointer": "/old_minor_request",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.unknown-operation",
+      "instance_pointer": "/unknown_operation",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.missing-revision",
+      "instance_pointer": "/missing_revision",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/prepareParams"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.extra-prepare-field",
+      "instance_pointer": "/extra_prepare_field",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/prepareParams"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.raw-object-id",
+      "instance_pointer": "/raw_object_id",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.absolute-script-path",
+      "instance_pointer": "/absolute_script_path",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.unsafe-variant",
+      "instance_pointer": "/unsafe_variant",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/writableVariant"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.malformed-receipt",
+      "instance_pointer": "/malformed_receipt",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/approvalReceipt"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.extra-event-field",
+      "instance_pointer": "/extra_event_field",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/transactionEventParams"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.wrong-digest",
+      "instance_pointer": "/wrong_digest",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/previewDigest"
+    },
     {
       "expect": "valid",
       "fixture": "valid/runtime-run-request.json",

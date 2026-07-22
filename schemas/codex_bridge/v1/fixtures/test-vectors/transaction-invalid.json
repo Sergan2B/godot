@@ -1,0 +1,92 @@
+{
+  "old_minor_request": {
+    "protocol_version": "1.6",
+    "kind": "request",
+    "request_id": "req:transaction-old-minor",
+    "method": "transaction.status",
+    "params": {
+      "transaction_id": "transaction:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "context": {
+      "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd",
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef"
+    }
+  },
+  "unknown_operation": {
+    "kind": "raw_scene_patch",
+    "path": "res://main.tscn"
+  },
+  "missing_revision": {
+    "idempotency_key": "idempotency:dddddddddddddddddddddddddddddddd",
+    "coordinates": {
+      "scene_id": "scene:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "history_id": "history:cccccccccccccccccccccccccccccccc",
+      "scene_revision": 7
+    },
+    "operation": {
+      "kind": "delete_node",
+      "node_id": "node:22222222222222222222222222222222"
+    }
+  },
+  "extra_prepare_field": {
+    "idempotency_key": "idempotency:dddddddddddddddddddddddddddddddd",
+    "coordinates": {
+      "scene_id": "scene:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "history_id": "history:cccccccccccccccccccccccccccccccc",
+      "scene_revision": 7,
+      "operation_seq": 11
+    },
+    "operation": {
+      "kind": "delete_node",
+      "node_id": "node:22222222222222222222222222222222"
+    },
+    "approved": true
+  },
+  "raw_object_id": {
+    "kind": "delete_node",
+    "node_id": "42"
+  },
+  "absolute_script_path": {
+    "kind": "attach_script",
+    "node_id": "node:22222222222222222222222222222222",
+    "script_ref": {
+      "uid_missing": true,
+      "path": "/Users/example/project/actor.gd"
+    }
+  },
+  "unsafe_variant": {
+    "type": "rid",
+    "value": 42
+  },
+  "malformed_receipt": {
+    "kind": "mcp_form_v1",
+    "scope": "scene.node.create",
+    "nonce": "short",
+    "issued_at_ms": 1784690010000,
+    "expires_at_ms": 1784690040000,
+    "mac": "GATXghx6burI5ZwUowKmqkJkxE8noYdibeDsrOiBGQI"
+  },
+  "extra_event_field": {
+    "coordinates": {
+      "transaction_id": "transaction:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "scene_id": "scene:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "history_id": "history:cccccccccccccccccccccccccccccccc",
+      "scene_revision": 7,
+      "operation_seq": 11,
+      "transaction_seq": 2
+    },
+    "previous_state": "preparing",
+    "state": "previewed",
+    "reason": "prepared",
+    "revisions": {
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+      "event_seq": 20,
+      "project_revision": 8,
+      "operation_seq": 11,
+      "scene_revisions": {}
+    },
+    "timestamp_ms": 1784690000000,
+    "native_history_id": 99
+  },
+  "wrong_digest": "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+}

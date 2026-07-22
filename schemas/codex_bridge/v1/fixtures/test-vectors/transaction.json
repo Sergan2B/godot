@@ -1,0 +1,360 @@
+{
+  "schema_version": "transaction-vectors/1.0",
+  "preview_payload_json": "{\"affected_entities\":[\"node:11111111111111111111111111111111\"],\"operation_kind\":\"create_node\",\"scope\":\"scene.node.create\"}",
+  "preview_payload_bytes": 122,
+  "preview_digest": "sha256:27bacb82a24c3d8ed7d464d6c574d57dce5b91792126eb7a3add92f2f1dc50bf",
+  "capability": {
+    "name": "transaction.scene_v1",
+    "version": "1.0",
+    "readiness": "unavailable",
+    "transaction_readiness": {
+      "scene_state": "not_evaluated",
+      "approval_state": "unavailable",
+      "busy": false,
+      "reason": "transaction_coordinator_unavailable"
+    },
+    "limits": {
+      "operations": 1,
+      "prepared_records": 64,
+      "applying_per_history": 1,
+      "prepared_ttl_ms": 300000,
+      "approval_timeout_ms": 120000,
+      "receipt_ttl_ms": 30000,
+      "clock_skew_ms": 2000,
+      "approval_message_bytes": 8192,
+      "preview_bytes": 65536,
+      "operation_bytes": 65536,
+      "variant_depth": 8,
+      "container_items": 1000,
+      "string_characters": 16384,
+      "structural_nodes": 1000,
+      "journal_records": 1024,
+      "journal_bytes": 8388608,
+      "status_bytes": 65536,
+      "request_deadline_ms": 5000
+    }
+  },
+  "operations": [
+    {
+      "kind": "create_node",
+      "parent_node_id": "node:11111111111111111111111111111111",
+      "godot_type": "Node2D",
+      "name": "CreatedActor",
+      "insertion_index": 1
+    },
+    {
+      "kind": "delete_node",
+      "node_id": "node:22222222222222222222222222222222"
+    },
+    {
+      "kind": "reparent_node",
+      "node_id": "node:22222222222222222222222222222222",
+      "new_parent_node_id": "node:33333333333333333333333333333333",
+      "insertion_index": 0,
+      "keep_global_transform": true
+    },
+    {
+      "kind": "set_property",
+      "node_id": "node:22222222222222222222222222222222",
+      "property": "position",
+      "value": {
+        "type": "vector2",
+        "value": [12.5, -3.0]
+      }
+    },
+    {
+      "kind": "attach_script",
+      "node_id": "node:22222222222222222222222222222222",
+      "script_ref": {
+        "uid_missing": true,
+        "path": "res://scripts/existing_actor.gd"
+      }
+    },
+    {
+      "kind": "detach_script",
+      "node_id": "node:22222222222222222222222222222222"
+    },
+    {
+      "kind": "connect_signal",
+      "emitter_node_id": "node:22222222222222222222222222222222",
+      "signal": "health_changed",
+      "receiver_node_id": "node:33333333333333333333333333333333",
+      "method": "_on_health_changed",
+      "flags": 1,
+      "unbinds": 0,
+      "binds": [
+        { "type": "string", "value": "fixture" }
+      ]
+    },
+    {
+      "kind": "disconnect_signal",
+      "emitter_node_id": "node:22222222222222222222222222222222",
+      "signal": "health_changed",
+      "receiver_node_id": "node:33333333333333333333333333333333",
+      "method": "_on_health_changed",
+      "flags": 1,
+      "unbinds": 0,
+      "binds": [
+        { "type": "string", "value": "fixture" }
+      ]
+    }
+  ],
+  "prepare_request": {
+    "protocol_version": "1.7",
+    "kind": "request",
+    "request_id": "req:transaction-prepare",
+    "method": "transaction.prepare",
+    "deadline_ms": 5000,
+    "params": {
+      "idempotency_key": "idempotency:dddddddddddddddddddddddddddddddd",
+      "coordinates": {
+        "scene_id": "scene:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "history_id": "history:cccccccccccccccccccccccccccccccc",
+        "scene_revision": 7,
+        "operation_seq": 11
+      },
+      "operation": {
+        "kind": "create_node",
+        "parent_node_id": "node:11111111111111111111111111111111",
+        "godot_type": "Node2D",
+        "name": "CreatedActor",
+        "insertion_index": 1
+      }
+    },
+    "context": {
+      "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd",
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef"
+    }
+  },
+  "prepare_result": {
+    "schema_version": "transaction/1.0",
+    "coordinates": {
+      "transaction_id": "transaction:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "scene_id": "scene:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "history_id": "history:cccccccccccccccccccccccccccccccc",
+      "scene_revision": 7,
+      "operation_seq": 11,
+      "transaction_seq": 2
+    },
+    "state": "previewed",
+    "operation_kind": "create_node",
+    "risk": "write",
+    "scope": "scene.node.create",
+    "affected_entities": [
+      {
+        "node_id": "node:11111111111111111111111111111111",
+        "role": "parent"
+      }
+    ],
+    "preview": {
+      "operation_kind": "create_node",
+      "summary": "Create Node2D named CreatedActor under the selected parent.",
+      "dirty_effect": "marks_scene_dirty",
+      "save_effect": "not_saved",
+      "preconditions": [
+        "scene and native history revisions remain unchanged",
+        "parent remains editable"
+      ],
+      "truncated": false
+    },
+    "preview_payload_json": "{\"affected_entities\":[\"node:11111111111111111111111111111111\"],\"operation_kind\":\"create_node\",\"scope\":\"scene.node.create\"}",
+    "preview_digest": "sha256:27bacb82a24c3d8ed7d464d6c574d57dce5b91792126eb7a3add92f2f1dc50bf",
+    "created_at_ms": 1784690000000,
+    "expires_at_ms": 1784690300000,
+    "limits_applied": {
+      "operations": 1,
+      "prepared_records": 64,
+      "applying_per_history": 1,
+      "prepared_ttl_ms": 300000,
+      "approval_timeout_ms": 120000,
+      "receipt_ttl_ms": 30000,
+      "clock_skew_ms": 2000,
+      "approval_message_bytes": 8192,
+      "preview_bytes": 65536,
+      "operation_bytes": 65536,
+      "variant_depth": 8,
+      "container_items": 1000,
+      "string_characters": 16384,
+      "structural_nodes": 1000,
+      "journal_records": 1024,
+      "journal_bytes": 8388608,
+      "status_bytes": 65536,
+      "request_deadline_ms": 5000
+    }
+  },
+  "apply_request": {
+    "protocol_version": "1.7",
+    "kind": "request",
+    "request_id": "req:transaction-apply",
+    "method": "transaction.apply",
+    "deadline_ms": 5000,
+    "params": {
+      "transaction_id": "transaction:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "preview_digest": "sha256:27bacb82a24c3d8ed7d464d6c574d57dce5b91792126eb7a3add92f2f1dc50bf",
+      "expected_scene_revision": 7,
+      "expected_operation_seq": 11,
+      "approval": {
+        "kind": "mcp_form_v1",
+        "scope": "scene.node.create",
+        "nonce": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "issued_at_ms": 1784690010000,
+        "expires_at_ms": 1784690040000,
+        "mac": "GATXghx6burI5ZwUowKmqkJkxE8noYdibeDsrOiBGQI"
+      }
+    },
+    "context": {
+      "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd",
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef"
+    }
+  },
+  "status_request": {
+    "protocol_version": "1.7",
+    "kind": "request",
+    "request_id": "req:transaction-status",
+    "method": "transaction.status",
+    "params": {
+      "transaction_id": "transaction:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "context": {
+      "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd",
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef"
+    }
+  },
+  "status_result": {
+    "schema_version": "transaction/1.0",
+    "coordinates": {
+      "transaction_id": "transaction:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "scene_id": "scene:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "history_id": "history:cccccccccccccccccccccccccccccccc",
+      "scene_revision": 7,
+      "operation_seq": 11,
+      "transaction_seq": 2
+    },
+    "state": "previewed",
+    "operation_kind": "create_node",
+    "risk": "write",
+    "scope": "scene.node.create",
+    "preview_digest": "sha256:27bacb82a24c3d8ed7d464d6c574d57dce5b91792126eb7a3add92f2f1dc50bf",
+    "current_scene_revision": 7,
+    "current_operation_seq": 11,
+    "outcome": "none",
+    "undo_eligibility": {
+      "eligible": false,
+      "reason": "not_committed"
+    },
+    "updated_at_ms": 1784690000000,
+    "limits_applied": {
+      "operations": 1,
+      "prepared_records": 64,
+      "applying_per_history": 1,
+      "prepared_ttl_ms": 300000,
+      "approval_timeout_ms": 120000,
+      "receipt_ttl_ms": 30000,
+      "clock_skew_ms": 2000,
+      "approval_message_bytes": 8192,
+      "preview_bytes": 65536,
+      "operation_bytes": 65536,
+      "variant_depth": 8,
+      "container_items": 1000,
+      "string_characters": 16384,
+      "structural_nodes": 1000,
+      "journal_records": 1024,
+      "journal_bytes": 8388608,
+      "status_bytes": 65536,
+      "request_deadline_ms": 5000
+    },
+    "truncated": false
+  },
+  "undo_request": {
+    "protocol_version": "1.7",
+    "kind": "request",
+    "request_id": "req:transaction-undo",
+    "method": "transaction.undo",
+    "deadline_ms": 5000,
+    "params": {
+      "transaction_id": "transaction:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expected_transaction_seq": 7,
+      "expected_scene_revision": 8,
+      "expected_operation_seq": 12
+    },
+    "context": {
+      "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd",
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef"
+    }
+  },
+  "event": {
+    "protocol_version": "1.7",
+    "kind": "notification",
+    "method": "transaction.event",
+    "params": {
+      "coordinates": {
+        "transaction_id": "transaction:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scene_id": "scene:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "history_id": "history:cccccccccccccccccccccccccccccccc",
+        "scene_revision": 7,
+        "operation_seq": 11,
+        "transaction_seq": 2
+      },
+      "previous_state": "preparing",
+      "state": "previewed",
+      "reason": "prepared",
+      "revisions": {
+        "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+        "event_seq": 20,
+        "project_revision": 8,
+        "operation_seq": 11,
+        "resource_revision": 4,
+        "scene_graph_revision": 6,
+        "script_graph_revision": 5,
+        "scene_revisions": {
+          "scene:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": 7
+        }
+      },
+      "timestamp_ms": 1784690000000
+    },
+    "context": {
+      "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd",
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef"
+    }
+  },
+  "legal_transitions": [
+    ["preparing", "previewed"],
+    ["previewed", "awaiting_approval"],
+    ["awaiting_approval", "applying"],
+    ["applying", "applied"],
+    ["applied", "validating"],
+    ["validating", "committed"],
+    ["committed", "undone"],
+    ["undone", "committed"],
+    ["previewed", "conflicted"],
+    ["previewed", "expired"],
+    ["previewed", "rejected"],
+    ["awaiting_approval", "conflicted"],
+    ["awaiting_approval", "expired"],
+    ["awaiting_approval", "rejected"],
+    ["preparing", "failed"],
+    ["applying", "failed"],
+    ["applying", "failed_rolled_back"],
+    ["applying", "in_doubt"],
+    ["validating", "failed_rolled_back"],
+    ["validating", "in_doubt"],
+    ["in_doubt", "committed"],
+    ["in_doubt", "undone"],
+    ["in_doubt", "failed_rolled_back"]
+  ],
+  "illegal_transitions": [
+    ["previewed", "committed"],
+    ["rejected", "applying"],
+    ["expired", "applying"],
+    ["committed", "applying"],
+    ["failed", "committed"]
+  ],
+  "semantic_negative_cases": [
+    { "id": "preview.digest_mismatch", "expected_error": "preview_mismatch" },
+    { "id": "operation.encoded_bytes_overflow", "expected_error": "transaction_too_large" },
+    { "id": "status.encoded_bytes_overflow", "expected_error": "transaction_too_large" },
+    { "id": "variant.depth_overflow", "expected_error": "property_value_unsupported" },
+    { "id": "variant.aggregate_items_overflow", "expected_error": "property_value_unsupported" },
+    { "id": "variant.string_overflow", "expected_error": "property_value_unsupported" }
+  ]
+}

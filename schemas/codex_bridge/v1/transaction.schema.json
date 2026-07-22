@@ -1,0 +1,698 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Bridge RPC 1.7 guarded editor transactions",
+  "oneOf": [
+    { "$ref": "#/$defs/prepareRequest" },
+    { "$ref": "#/$defs/applyRequest" },
+    { "$ref": "#/$defs/statusRequest" },
+    { "$ref": "#/$defs/undoRequest" },
+    { "$ref": "#/$defs/transactionEvent" }
+  ],
+  "$defs": {
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "positiveSequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "timestampMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "transactionId": {
+      "type": "string",
+      "pattern": "^transaction:[0-9a-f]{32}$"
+    },
+    "historyId": {
+      "type": "string",
+      "pattern": "^history:[0-9a-f]{32}$"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^idempotency:[0-9a-f]{32}$"
+    },
+    "previewDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "transactionState": {
+      "enum": [
+        "preparing",
+        "previewed",
+        "awaiting_approval",
+        "applying",
+        "applied",
+        "validating",
+        "committed",
+        "undone",
+        "conflicted",
+        "expired",
+        "rejected",
+        "failed",
+        "failed_rolled_back",
+        "in_doubt"
+      ]
+    },
+    "operationKind": {
+      "enum": [
+        "create_node",
+        "delete_node",
+        "reparent_node",
+        "set_property",
+        "attach_script",
+        "detach_script",
+        "connect_signal",
+        "disconnect_signal"
+      ]
+    },
+    "risk": {
+      "enum": ["write", "destructive"]
+    },
+    "approvalScope": {
+      "enum": [
+        "scene.node.create",
+        "scene.node.delete",
+        "scene.node.reparent",
+        "scene.property.set",
+        "scene.script.attach",
+        "scene.script.detach",
+        "scene.signal.connect",
+        "scene.signal.disconnect"
+      ]
+    },
+    "nodeName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^/\\\\:\\u0000-\\u001f]+$"
+    },
+    "memberName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\u0000-\\u001f]+$"
+    },
+    "godotType": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    },
+    "nilValue": {
+      "type": "object",
+      "required": ["type"],
+      "properties": { "type": { "const": "nil" } },
+      "additionalProperties": false
+    },
+    "boolValue": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "bool" },
+        "value": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "intValue": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "int" },
+        "value": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "additionalProperties": false
+    },
+    "floatValue": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "float" },
+        "value": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+    "stringValue": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "enum": ["string", "string_name", "node_path"] },
+        "value": { "type": "string", "maxLength": 16384 }
+      },
+      "additionalProperties": false
+    },
+    "mathValue": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": {
+          "enum": [
+            "vector2", "vector2i", "vector3", "vector3i", "vector4", "vector4i",
+            "rect2", "rect2i", "transform2d", "plane", "quaternion", "aabb",
+            "basis", "transform3d", "projection", "color"
+          ]
+        },
+        "value": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 16,
+          "items": { "type": "number" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "resourceValue": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "resource" },
+        "value": { "$ref": "resource.schema.json#/$defs/resourceRef" }
+      },
+      "additionalProperties": false
+    },
+    "arrayValue": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "array" },
+        "value": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/writableVariant" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "dictionaryEntry": {
+      "type": "object",
+      "required": ["key", "value"],
+      "properties": {
+        "key": { "type": "string", "maxLength": 16384 },
+        "value": { "$ref": "#/$defs/writableVariant" }
+      },
+      "additionalProperties": false
+    },
+    "dictionaryValue": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "const": "dictionary" },
+        "value": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/dictionaryEntry" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "writableVariant": {
+      "oneOf": [
+        { "$ref": "#/$defs/nilValue" },
+        { "$ref": "#/$defs/boolValue" },
+        { "$ref": "#/$defs/intValue" },
+        { "$ref": "#/$defs/floatValue" },
+        { "$ref": "#/$defs/stringValue" },
+        { "$ref": "#/$defs/mathValue" },
+        { "$ref": "#/$defs/resourceValue" },
+        { "$ref": "#/$defs/arrayValue" },
+        { "$ref": "#/$defs/dictionaryValue" }
+      ]
+    },
+    "createNodeOperation": {
+      "type": "object",
+      "required": ["kind", "parent_node_id", "godot_type", "name"],
+      "properties": {
+        "kind": { "const": "create_node" },
+        "parent_node_id": { "$ref": "common.schema.json#/$defs/nodeId" },
+        "godot_type": { "$ref": "#/$defs/godotType" },
+        "name": { "$ref": "#/$defs/nodeName" },
+        "insertion_index": { "type": "integer", "minimum": 0, "maximum": 2147483647 }
+      },
+      "additionalProperties": false
+    },
+    "deleteNodeOperation": {
+      "type": "object",
+      "required": ["kind", "node_id"],
+      "properties": {
+        "kind": { "const": "delete_node" },
+        "node_id": { "$ref": "common.schema.json#/$defs/nodeId" }
+      },
+      "additionalProperties": false
+    },
+    "reparentNodeOperation": {
+      "type": "object",
+      "required": ["kind", "node_id", "new_parent_node_id", "insertion_index", "keep_global_transform"],
+      "properties": {
+        "kind": { "const": "reparent_node" },
+        "node_id": { "$ref": "common.schema.json#/$defs/nodeId" },
+        "new_parent_node_id": { "$ref": "common.schema.json#/$defs/nodeId" },
+        "insertion_index": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "keep_global_transform": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "setPropertyOperation": {
+      "type": "object",
+      "required": ["kind", "node_id", "property", "value"],
+      "properties": {
+        "kind": { "const": "set_property" },
+        "node_id": { "$ref": "common.schema.json#/$defs/nodeId" },
+        "property": { "$ref": "#/$defs/memberName" },
+        "value": { "$ref": "#/$defs/writableVariant" }
+      },
+      "additionalProperties": false
+    },
+    "attachScriptOperation": {
+      "type": "object",
+      "required": ["kind", "node_id", "script_ref"],
+      "properties": {
+        "kind": { "const": "attach_script" },
+        "node_id": { "$ref": "common.schema.json#/$defs/nodeId" },
+        "script_ref": { "$ref": "resource.schema.json#/$defs/resourceRef" }
+      },
+      "additionalProperties": false
+    },
+    "detachScriptOperation": {
+      "type": "object",
+      "required": ["kind", "node_id"],
+      "properties": {
+        "kind": { "const": "detach_script" },
+        "node_id": { "$ref": "common.schema.json#/$defs/nodeId" }
+      },
+      "additionalProperties": false
+    },
+    "signalConnectionFields": {
+      "type": "object",
+      "required": ["emitter_node_id", "signal", "receiver_node_id", "method", "flags", "unbinds", "binds"],
+      "properties": {
+        "emitter_node_id": { "$ref": "common.schema.json#/$defs/nodeId" },
+        "signal": { "$ref": "#/$defs/memberName" },
+        "receiver_node_id": { "$ref": "common.schema.json#/$defs/nodeId" },
+        "method": { "$ref": "#/$defs/memberName" },
+        "flags": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "unbinds": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "binds": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/writableVariant" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "connectSignalOperation": {
+      "type": "object",
+      "required": ["kind", "emitter_node_id", "signal", "receiver_node_id", "method", "flags", "unbinds", "binds"],
+      "properties": {
+        "kind": { "const": "connect_signal" },
+        "emitter_node_id": { "$ref": "common.schema.json#/$defs/nodeId" },
+        "signal": { "$ref": "#/$defs/memberName" },
+        "receiver_node_id": { "$ref": "common.schema.json#/$defs/nodeId" },
+        "method": { "$ref": "#/$defs/memberName" },
+        "flags": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "unbinds": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "binds": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/writableVariant" } }
+      },
+      "additionalProperties": false
+    },
+    "disconnectSignalOperation": {
+      "type": "object",
+      "required": ["kind", "emitter_node_id", "signal", "receiver_node_id", "method", "flags", "unbinds", "binds"],
+      "properties": {
+        "kind": { "const": "disconnect_signal" },
+        "emitter_node_id": { "$ref": "common.schema.json#/$defs/nodeId" },
+        "signal": { "$ref": "#/$defs/memberName" },
+        "receiver_node_id": { "$ref": "common.schema.json#/$defs/nodeId" },
+        "method": { "$ref": "#/$defs/memberName" },
+        "flags": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "unbinds": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "binds": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/writableVariant" } }
+      },
+      "additionalProperties": false
+    },
+    "operation": {
+      "oneOf": [
+        { "$ref": "#/$defs/createNodeOperation" },
+        { "$ref": "#/$defs/deleteNodeOperation" },
+        { "$ref": "#/$defs/reparentNodeOperation" },
+        { "$ref": "#/$defs/setPropertyOperation" },
+        { "$ref": "#/$defs/attachScriptOperation" },
+        { "$ref": "#/$defs/detachScriptOperation" },
+        { "$ref": "#/$defs/connectSignalOperation" },
+        { "$ref": "#/$defs/disconnectSignalOperation" }
+      ]
+    },
+    "revisionCoordinates": {
+      "type": "object",
+      "required": ["scene_id", "history_id", "scene_revision", "operation_seq"],
+      "properties": {
+        "scene_id": { "$ref": "common.schema.json#/$defs/sceneId" },
+        "history_id": { "$ref": "#/$defs/historyId" },
+        "scene_revision": { "$ref": "#/$defs/revision" },
+        "operation_seq": { "$ref": "#/$defs/revision" }
+      },
+      "additionalProperties": false
+    },
+    "transactionCoordinates": {
+      "type": "object",
+      "required": ["transaction_id", "scene_id", "history_id", "scene_revision", "operation_seq", "transaction_seq"],
+      "properties": {
+        "transaction_id": { "$ref": "#/$defs/transactionId" },
+        "scene_id": { "$ref": "common.schema.json#/$defs/sceneId" },
+        "history_id": { "$ref": "#/$defs/historyId" },
+        "scene_revision": { "$ref": "#/$defs/revision" },
+        "operation_seq": { "$ref": "#/$defs/revision" },
+        "transaction_seq": { "$ref": "#/$defs/positiveSequence" }
+      },
+      "additionalProperties": false
+    },
+    "transactionLimits": {
+      "type": "object",
+      "required": [
+        "operations", "prepared_records", "applying_per_history", "prepared_ttl_ms",
+        "approval_timeout_ms", "receipt_ttl_ms", "clock_skew_ms", "approval_message_bytes",
+        "preview_bytes", "operation_bytes", "variant_depth", "container_items",
+        "string_characters", "structural_nodes", "journal_records", "journal_bytes",
+        "status_bytes", "request_deadline_ms"
+      ],
+      "properties": {
+        "operations": { "const": 1 },
+        "prepared_records": { "const": 64 },
+        "applying_per_history": { "const": 1 },
+        "prepared_ttl_ms": { "const": 300000 },
+        "approval_timeout_ms": { "const": 120000 },
+        "receipt_ttl_ms": { "const": 30000 },
+        "clock_skew_ms": { "const": 2000 },
+        "approval_message_bytes": { "const": 8192 },
+        "preview_bytes": { "const": 65536 },
+        "operation_bytes": { "const": 65536 },
+        "variant_depth": { "const": 8 },
+        "container_items": { "const": 1000 },
+        "string_characters": { "const": 16384 },
+        "structural_nodes": { "const": 1000 },
+        "journal_records": { "const": 1024 },
+        "journal_bytes": { "const": 8388608 },
+        "status_bytes": { "const": 65536 },
+        "request_deadline_ms": { "const": 5000 }
+      },
+      "additionalProperties": false
+    },
+    "transactionReadiness": {
+      "type": "object",
+      "required": ["scene_state", "approval_state", "busy", "reason"],
+      "properties": {
+        "scene_state": { "enum": ["not_evaluated", "available", "unavailable"] },
+        "approval_state": { "enum": ["available", "unavailable"] },
+        "busy": { "type": "boolean" },
+        "reason": {
+          "enum": [
+            "ready",
+            "transaction_coordinator_unavailable",
+            "editor_unavailable",
+            "scene_not_open",
+            "approval_unavailable",
+            "transaction_busy"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "transactionCapability": {
+      "type": "object",
+      "required": ["name", "version", "readiness", "transaction_readiness", "limits"],
+      "properties": {
+        "name": { "const": "transaction.scene_v1" },
+        "version": { "const": "1.0" },
+        "readiness": { "enum": ["ready", "unavailable"] },
+        "transaction_readiness": { "$ref": "#/$defs/transactionReadiness" },
+        "limits": { "$ref": "#/$defs/transactionLimits" }
+      },
+      "additionalProperties": false
+    },
+    "affectedEntity": {
+      "type": "object",
+      "required": ["node_id", "role"],
+      "properties": {
+        "node_id": { "$ref": "common.schema.json#/$defs/nodeId" },
+        "role": { "enum": ["target", "parent", "new_parent", "emitter", "receiver", "created"] }
+      },
+      "additionalProperties": false
+    },
+    "preview": {
+      "type": "object",
+      "required": ["operation_kind", "summary", "dirty_effect", "save_effect", "preconditions", "truncated"],
+      "properties": {
+        "operation_kind": { "$ref": "#/$defs/operationKind" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 8192 },
+        "dirty_effect": { "const": "marks_scene_dirty" },
+        "save_effect": { "const": "not_saved" },
+        "preconditions": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+        },
+        "truncated": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "approvalReceipt": {
+      "type": "object",
+      "required": ["kind", "scope", "nonce", "issued_at_ms", "expires_at_ms", "mac"],
+      "properties": {
+        "kind": { "const": "mcp_form_v1" },
+        "scope": { "$ref": "#/$defs/approvalScope" },
+        "nonce": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+        "issued_at_ms": { "$ref": "#/$defs/timestampMs" },
+        "expires_at_ms": { "$ref": "#/$defs/timestampMs" },
+        "mac": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }
+      },
+      "additionalProperties": false
+    },
+    "prepareParams": {
+      "type": "object",
+      "required": ["idempotency_key", "coordinates", "operation"],
+      "properties": {
+        "idempotency_key": { "$ref": "#/$defs/idempotencyKey" },
+        "coordinates": { "$ref": "#/$defs/revisionCoordinates" },
+        "operation": { "$ref": "#/$defs/operation" }
+      },
+      "additionalProperties": false
+    },
+    "prepareRequest": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/request" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.7" },
+            "method": { "const": "transaction.prepare" },
+            "params": { "$ref": "#/$defs/prepareParams" }
+          }
+        }
+      ]
+    },
+    "prepareResult": {
+      "type": "object",
+      "required": [
+        "schema_version", "coordinates", "state", "operation_kind", "risk", "scope",
+        "affected_entities", "preview", "preview_payload_json", "preview_digest",
+        "created_at_ms", "expires_at_ms", "limits_applied"
+      ],
+      "properties": {
+        "schema_version": { "const": "transaction/1.0" },
+        "coordinates": { "$ref": "#/$defs/transactionCoordinates" },
+        "state": { "const": "previewed" },
+        "operation_kind": { "$ref": "#/$defs/operationKind" },
+        "risk": { "$ref": "#/$defs/risk" },
+        "scope": { "$ref": "#/$defs/approvalScope" },
+        "affected_entities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/affectedEntity" }
+        },
+        "preview": { "$ref": "#/$defs/preview" },
+        "preview_payload_json": { "type": "string", "minLength": 2, "maxLength": 65536 },
+        "preview_digest": { "$ref": "#/$defs/previewDigest" },
+        "created_at_ms": { "$ref": "#/$defs/timestampMs" },
+        "expires_at_ms": { "$ref": "#/$defs/timestampMs" },
+        "limits_applied": { "$ref": "#/$defs/transactionLimits" }
+      },
+      "additionalProperties": false
+    },
+    "applyParams": {
+      "type": "object",
+      "required": ["transaction_id", "preview_digest", "expected_scene_revision", "expected_operation_seq", "approval"],
+      "properties": {
+        "transaction_id": { "$ref": "#/$defs/transactionId" },
+        "preview_digest": { "$ref": "#/$defs/previewDigest" },
+        "expected_scene_revision": { "$ref": "#/$defs/revision" },
+        "expected_operation_seq": { "$ref": "#/$defs/revision" },
+        "approval": { "$ref": "#/$defs/approvalReceipt" }
+      },
+      "additionalProperties": false
+    },
+    "applyRequest": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/request" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.7" },
+            "method": { "const": "transaction.apply" },
+            "params": { "$ref": "#/$defs/applyParams" }
+          }
+        }
+      ]
+    },
+    "statusParams": {
+      "type": "object",
+      "required": ["transaction_id"],
+      "properties": {
+        "transaction_id": { "$ref": "#/$defs/transactionId" }
+      },
+      "additionalProperties": false
+    },
+    "statusRequest": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/request" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.7" },
+            "method": { "const": "transaction.status" },
+            "params": { "$ref": "#/$defs/statusParams" }
+          }
+        }
+      ]
+    },
+    "undoParams": {
+      "type": "object",
+      "required": ["transaction_id", "expected_transaction_seq", "expected_scene_revision", "expected_operation_seq"],
+      "properties": {
+        "transaction_id": { "$ref": "#/$defs/transactionId" },
+        "expected_transaction_seq": { "$ref": "#/$defs/positiveSequence" },
+        "expected_scene_revision": { "$ref": "#/$defs/revision" },
+        "expected_operation_seq": { "$ref": "#/$defs/revision" }
+      },
+      "additionalProperties": false
+    },
+    "undoRequest": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/request" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.7" },
+            "method": { "const": "transaction.undo" },
+            "params": { "$ref": "#/$defs/undoParams" }
+          }
+        }
+      ]
+    },
+    "safeErrorCode": {
+      "enum": [
+        "approval_required", "approval_host_unsupported", "approval_declined",
+        "approval_cancelled", "approval_timeout", "approval_invalid",
+        "approval_scope_mismatch", "approval_replayed", "preview_mismatch",
+        "transaction_not_found", "transaction_expired", "transaction_conflicted",
+        "transaction_busy", "transaction_too_large", "transaction_in_doubt",
+        "transaction_not_undoable", "idempotency_conflict", "stale_editor_state",
+        "stale_scene_revision", "scene_not_open", "scene_operation_unsupported",
+        "node_not_editable", "node_ownership_invalid", "property_not_writable",
+        "property_value_unsupported", "script_incompatible", "signal_connection_invalid",
+        "transaction_apply_failed", "transaction_undo_failed"
+      ]
+    },
+    "safeError": {
+      "type": "object",
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": { "$ref": "#/$defs/safeErrorCode" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "retryable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "undoEligibility": {
+      "type": "object",
+      "required": ["eligible", "reason"],
+      "properties": {
+        "eligible": { "type": "boolean" },
+        "reason": {
+          "enum": ["eligible", "not_committed", "not_newest_action", "history_unavailable", "revision_mismatch"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "transactionStatus": {
+      "type": "object",
+      "required": [
+        "schema_version", "coordinates", "state", "operation_kind", "risk", "scope",
+        "preview_digest", "current_scene_revision", "current_operation_seq",
+        "undo_eligibility", "updated_at_ms", "limits_applied", "truncated"
+      ],
+      "properties": {
+        "schema_version": { "const": "transaction/1.0" },
+        "coordinates": { "$ref": "#/$defs/transactionCoordinates" },
+        "state": { "$ref": "#/$defs/transactionState" },
+        "operation_kind": { "$ref": "#/$defs/operationKind" },
+        "risk": { "$ref": "#/$defs/risk" },
+        "scope": { "$ref": "#/$defs/approvalScope" },
+        "preview_digest": { "$ref": "#/$defs/previewDigest" },
+        "current_scene_revision": { "$ref": "#/$defs/revision" },
+        "current_operation_seq": { "$ref": "#/$defs/revision" },
+        "outcome": { "enum": ["none", "applied", "committed", "undone", "rolled_back", "unknown"] },
+        "error": { "$ref": "#/$defs/safeError" },
+        "undo_eligibility": { "$ref": "#/$defs/undoEligibility" },
+        "updated_at_ms": { "$ref": "#/$defs/timestampMs" },
+        "limits_applied": { "$ref": "#/$defs/transactionLimits" },
+        "truncated": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "eventReason": {
+      "enum": [
+        "prepared", "approval_requested", "approval_cancelled", "approval_declined",
+        "apply_started", "native_action_committed", "validation_started",
+        "validation_succeeded", "native_undo_observed", "native_redo_observed",
+        "revision_conflict", "prepared_expired", "precommit_failed",
+        "postcondition_failed_rolled_back", "reconciliation_required",
+        "reconciliation_committed", "reconciliation_undone", "reconciliation_rolled_back"
+      ]
+    },
+    "transactionEventParams": {
+      "type": "object",
+      "required": ["coordinates", "previous_state", "state", "reason", "revisions", "timestamp_ms"],
+      "properties": {
+        "coordinates": { "$ref": "#/$defs/transactionCoordinates" },
+        "previous_state": {
+          "oneOf": [
+            { "$ref": "#/$defs/transactionState" },
+            { "type": "null" }
+          ]
+        },
+        "state": { "$ref": "#/$defs/transactionState" },
+        "reason": { "$ref": "#/$defs/eventReason" },
+        "revisions": { "$ref": "common.schema.json#/$defs/revisionVector" },
+        "timestamp_ms": { "$ref": "#/$defs/timestampMs" }
+      },
+      "additionalProperties": false
+    },
+    "transactionEvent": {
+      "allOf": [
+        { "$ref": "rpc.schema.json#/$defs/notification" },
+        {
+          "properties": {
+            "protocol_version": { "const": "1.7" },
+            "method": { "const": "transaction.event" },
+            "params": { "$ref": "#/$defs/transactionEventParams" }
+          }
+        }
+      ]
+    }
+  }
+}

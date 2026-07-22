@@ -270,6 +270,60 @@
         "runtime_screenshot_interval_ms": {
           "const": 1000
         },
+        "transaction_operations": {
+          "const": 1
+        },
+        "transaction_prepared_records": {
+          "const": 64
+        },
+        "transaction_applying_per_history": {
+          "const": 1
+        },
+        "transaction_prepared_ttl_ms": {
+          "const": 300000
+        },
+        "transaction_approval_timeout_ms": {
+          "const": 120000
+        },
+        "transaction_receipt_ttl_ms": {
+          "const": 30000
+        },
+        "transaction_clock_skew_ms": {
+          "const": 2000
+        },
+        "transaction_approval_message_bytes": {
+          "const": 8192
+        },
+        "transaction_preview_bytes": {
+          "const": 65536
+        },
+        "transaction_operation_bytes": {
+          "const": 65536
+        },
+        "transaction_variant_depth": {
+          "const": 8
+        },
+        "transaction_container_items": {
+          "const": 1000
+        },
+        "transaction_string_characters": {
+          "const": 16384
+        },
+        "transaction_structural_nodes": {
+          "const": 1000
+        },
+        "transaction_journal_records": {
+          "const": 1024
+        },
+        "transaction_journal_bytes": {
+          "const": 8388608
+        },
+        "transaction_status_bytes": {
+          "const": 65536
+        },
+        "transaction_request_deadline_ms": {
+          "const": 5000
+        },
         "resource_records": {
           "const": 250000
         },
