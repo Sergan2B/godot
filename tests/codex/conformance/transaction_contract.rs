@@ -435,6 +435,125 @@ fn transaction_preview_digest_binds_exact_bytes() {
 }
 
 #[test]
+fn transaction_canonical_preview_vectors_match_all_operations() {
+    let vector = strict_json(&bundle_root().join("fixtures/test-vectors/transaction.json"));
+    let operations = vector["operations"].as_array().expect("operations");
+    let expected = vector["canonical_preview_digests"]
+        .as_array()
+        .expect("canonical preview digests");
+    assert_eq!(operations.len(), 8);
+    assert_eq!(expected.len(), operations.len());
+
+    for (operation, expected) in operations.iter().zip(expected) {
+        let kind = operation["kind"].as_str().expect("operation kind");
+        let (risk, scope, summary, specific_precondition) = match kind {
+            "create_node" => (
+                "write",
+                "scene.node.create",
+                "Create Node2D named CreatedActor under the resolved parent.",
+                "parent remains editable and the requested name remains available",
+            ),
+            "delete_node" => (
+                "destructive",
+                "scene.node.delete",
+                "Delete the resolved node and its bounded subtree (3 nodes).",
+                "target remains editable with the same owner and bounded subtree",
+            ),
+            "reparent_node" => (
+                "destructive",
+                "scene.node.reparent",
+                "Move the resolved node under the resolved new parent.",
+                "target and new parent remain editable and outside a cycle",
+            ),
+            "set_property" => (
+                "destructive",
+                "scene.property.set",
+                "Replace property position on the resolved node.",
+                "native property remains editor-writable without a custom getter",
+            ),
+            "attach_script" => (
+                "destructive",
+                "scene.script.attach",
+                "Replace the script attached to the resolved node.",
+                "target script identity and compatible script resource remain unchanged",
+            ),
+            "detach_script" => (
+                "destructive",
+                "scene.script.detach",
+                "Detach the script from the resolved node.",
+                "target remains editable with the same attached script",
+            ),
+            "connect_signal" => (
+                "write",
+                "scene.signal.connect",
+                "Connect signal health_changed to method _on_health_changed on the resolved receiver.",
+                "signal endpoints and exact connection state remain unchanged",
+            ),
+            "disconnect_signal" => (
+                "destructive",
+                "scene.signal.disconnect",
+                "Disconnect signal health_changed from method _on_health_changed on the resolved receiver.",
+                "signal endpoints and exact connection state remain unchanged",
+            ),
+            _ => panic!("unexpected operation {kind}"),
+        };
+        let affected_entities = match kind {
+            "create_node" => serde_json::json!([
+                {"node_id":"node:11111111111111111111111111111111","role":"parent"},
+                {"node_id":"node:44444444444444444444444444444444","role":"created"}
+            ]),
+            "reparent_node" => serde_json::json!([
+                {"node_id":"node:22222222222222222222222222222222","role":"target"},
+                {"node_id":"node:33333333333333333333333333333333","role":"new_parent"}
+            ]),
+            "connect_signal" | "disconnect_signal" => serde_json::json!([
+                {"node_id":"node:22222222222222222222222222222222","role":"emitter"},
+                {"node_id":"node:33333333333333333333333333333333","role":"receiver"}
+            ]),
+            _ => serde_json::json!([
+                {"node_id":"node:22222222222222222222222222222222","role":"target"}
+            ]),
+        };
+        let payload = serde_json::json!({
+            "schema_version": "canonical-transaction-preview/1.0",
+            "coordinates": {
+                "transaction_id": "transaction:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "scene_id": "scene:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "history_id": "history:cccccccccccccccccccccccccccccccc",
+                "scene_revision": 7,
+                "operation_seq": 11,
+                "transaction_seq": 2
+            },
+            "operation": operation,
+            "risk": risk,
+            "scope": scope,
+            "affected_entities": affected_entities,
+            "preview": {
+                "operation_kind": kind,
+                "summary": summary,
+                "dirty_effect": "marks_scene_dirty",
+                "save_effect": "not_saved",
+                "preconditions": [
+                    "scene and native history revisions remain unchanged",
+                    specific_precondition
+                ],
+                "truncated": false
+            },
+            "created_at_ms": 1_784_690_000_000_u64,
+            "expires_at_ms": 1_784_690_300_000_u64,
+            "limits_applied": vector["capability"]["limits"].clone()
+        });
+        let bytes = serde_json::to_vec(&payload).expect("canonical payload");
+        assert_eq!(kind, expected["operation_kind"]);
+        assert_eq!(bytes.len() as u64, expected["preview_payload_bytes"]);
+        assert_eq!(
+            format!("sha256:{:x}", Sha256::digest(&bytes)),
+            expected["preview_digest"]
+        );
+    }
+}
+
+#[test]
 fn transaction_lifecycle_matrix_is_closed() {
     let vector = strict_json(&bundle_root().join("fixtures/test-vectors/transaction.json"));
     let legal: Vec<[TransactionState; 2]> =

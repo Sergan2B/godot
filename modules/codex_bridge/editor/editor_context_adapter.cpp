@@ -31,15 +31,15 @@
 #include "editor_context_adapter.h"
 
 #include "bounded_variant_projector.h"
+#include "bridge_editor_identity.h"
 
 #include "core/config/project_settings.h"
-#include "core/crypto/crypto_core.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/object/property_info.h"
 #include "core/object/script_language.h"
-#include "core/os/thread.h"
 #include "core/os/os.h"
+#include "core/os/thread.h"
 #include "core/templates/hash_set.h"
 #include "editor/editor_data.h"
 #include "editor/editor_interface.h"
@@ -48,12 +48,10 @@
 #include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/inspector/editor_inspector.h"
-#include "editor/script/script_editor_plugin.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/script/script_editor_plugin.h"
 #include "scene/main/node.h"
-
-#include "modules/codex_bridge/protocol/bridge_crypto.h"
 
 // The transport chunk also contains the entity identity, property-array
 // envelope, and checksum metadata. Reserve bounded headroom so a property
@@ -64,36 +62,23 @@ static constexpr int DIAGNOSTIC_CAPTURE_RECORDS = 16;
 static constexpr uint64_t DIAGNOSTIC_CAPTURE_USEC = 500;
 
 String EditorContextAdapter::_make_opaque_id(const String &p_prefix, const String &p_domain, const String &p_value) {
-	const CharString bytes = (p_domain + "\n" + p_value).utf8();
-	PackedByteArray digest;
-	digest.resize(32);
-	if (CryptoCore::sha256(reinterpret_cast<const uint8_t *>(bytes.get_data()), bytes.length(), digest.ptrw()) != OK) {
-		return p_prefix + "00000000000000000000000000000000";
-	}
-	return p_prefix + BridgeCrypto::bytes_to_lower_hex(digest).left(32);
+	return BridgeEditorIdentity::make_opaque_id(p_prefix, p_domain, p_value);
 }
 
 String EditorContextAdapter::make_scene_id(const String &p_editor_session_id, const Node *p_scene_root) {
-	if (!p_scene_root) {
-		return String();
-	}
-	String identity = p_scene_root->get_scene_file_path();
-	if (identity.is_empty()) {
-		identity = String(p_scene_root->get_name()) + "\n" + String::num_uint64(p_scene_root->get_instance_id());
-	}
-	return _make_opaque_id("scene:", "godot-codex-scene/v1\n" + p_editor_session_id, identity);
+	return BridgeEditorIdentity::make_scene_id(p_editor_session_id, p_scene_root);
 }
 
 String EditorContextAdapter::_make_node_id(const String &p_editor_session_id, const String &p_scene_id, const String &p_node_path) {
-	return _make_opaque_id("node:", "godot-codex-node/v1\n" + p_editor_session_id + "\n" + p_scene_id, p_node_path);
+	return BridgeEditorIdentity::make_node_id(p_editor_session_id, p_scene_id, p_node_path);
 }
 
 String EditorContextAdapter::_make_history_id(const String &p_editor_session_id, int p_native_history_id) {
-	return _make_opaque_id("history:", "godot-codex-history/v1\n" + p_editor_session_id, String::num_int64(p_native_history_id));
+	return BridgeEditorIdentity::make_history_id(p_editor_session_id, p_native_history_id);
 }
 
 String EditorContextAdapter::_make_script_id(const String &p_editor_session_id, const String &p_identity) {
-	return _make_opaque_id("script:", "godot-codex-live-script/v1\n" + p_editor_session_id, p_identity);
+	return BridgeEditorIdentity::make_script_id(p_editor_session_id, p_identity);
 }
 
 String EditorContextAdapter::_redact_output_message(const String &p_message, const String &p_project_root, const String &p_home, bool &r_redacted, bool &r_truncated) {

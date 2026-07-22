@@ -3,6 +3,48 @@
   "preview_payload_json": "{\"affected_entities\":[\"node:11111111111111111111111111111111\"],\"operation_kind\":\"create_node\",\"scope\":\"scene.node.create\"}",
   "preview_payload_bytes": 122,
   "preview_digest": "sha256:27bacb82a24c3d8ed7d464d6c574d57dce5b91792126eb7a3add92f2f1dc50bf",
+  "canonical_preview_digests": [
+    {
+      "operation_kind": "create_node",
+      "preview_payload_bytes": 1492,
+      "preview_digest": "sha256:762075adbc6d3b1d40254721c4978931cb2275203fa207ffd888a49c1bee4c53"
+    },
+    {
+      "operation_kind": "delete_node",
+      "preview_payload_bytes": 1357,
+      "preview_digest": "sha256:3ae4d0dd6d10296bfa2b0eba6322717a03eac85fb302786eeeb520f23779249b"
+    },
+    {
+      "operation_kind": "reparent_node",
+      "preview_payload_bytes": 1533,
+      "preview_digest": "sha256:e0a7a9fb1dc1016432ac9e509093ada9f5fdc60eb0187bc7c4e9f7c0b8df8ba9"
+    },
+    {
+      "operation_kind": "set_property",
+      "preview_payload_bytes": 1417,
+      "preview_digest": "sha256:843f3225da880d4948aa5f184132ce3fd8e87fac77e252783c4b51de93b59605"
+    },
+    {
+      "operation_kind": "attach_script",
+      "preview_payload_bytes": 1435,
+      "preview_digest": "sha256:553db5e439a8d84bd5829d0698eecce9fdcdd9e891da0b9d2a8623e3b1d6b662"
+    },
+    {
+      "operation_kind": "detach_script",
+      "preview_payload_bytes": 1335,
+      "preview_digest": "sha256:b27c9719fdd5f554cc71316e3c34cce5947530d648d6a67da8cfc6b0babb8653"
+    },
+    {
+      "operation_kind": "connect_signal",
+      "preview_payload_bytes": 1644,
+      "preview_digest": "sha256:5fbd30930a9a9cc986632c1b5a16b719b15f3ab35b85f3f901922f1da17d4f6e"
+    },
+    {
+      "operation_kind": "disconnect_signal",
+      "preview_payload_bytes": 1664,
+      "preview_digest": "sha256:3ba41cce7c5c05403f228734cf2088c45e16d2330a4e58fa5704bf188eece02a"
+    }
+  ],
   "capability": {
     "name": "transaction.scene_v1",
     "version": "1.0",
