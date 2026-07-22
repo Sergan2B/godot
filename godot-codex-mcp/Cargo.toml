@@ -19,7 +19,7 @@ publish = false
 base64 = "0.22.1"
 getrandom = "0.4.3"
 hmac = "0.12.1"
-rmcp = { version = "=2.2.0", default-features = false, features = ["macros", "server", "transport-io"] }
+rmcp = { version = "=2.2.0", default-features = false, features = ["elicitation", "macros", "server", "transport-io"] }
 rustix = { version = "1.1.4", features = ["fs", "process"] }
 schemars = "1.2.1"
 serde = { version = "1.0.228", features = ["derive"] }
