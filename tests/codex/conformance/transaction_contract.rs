@@ -442,11 +442,9 @@ fn transaction_lifecycle_matrix_is_closed() {
     let illegal: Vec<[TransactionState; 2]> =
         serde_json::from_value(vector["illegal_transitions"].clone()).expect("illegal transitions");
     assert!(legal.iter().all(|pair| legal_transition(pair[0], pair[1])));
-    assert!(
-        illegal
-            .iter()
-            .all(|pair| !legal_transition(pair[0], pair[1]))
-    );
+    assert!(illegal
+        .iter()
+        .all(|pair| !legal_transition(pair[0], pair[1])));
     assert_eq!(legal.len(), 23);
     assert_eq!(illegal.len(), 5);
 }

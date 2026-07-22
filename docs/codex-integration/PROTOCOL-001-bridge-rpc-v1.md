@@ -1,11 +1,11 @@
 # PROTOCOL-001 — Bridge RPC 1.x
 
-**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.6 extensions implemented
-and locally verified; additive 1.7 transaction extension specified by S9-01
+**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.7 extensions implemented
+and locally verified; the 1.7 transaction coordinator remains unavailable
 
 **Date:** 2026-07-21
 
-**Protocol versions:** `1.0` baseline; `1.1`–`1.6` fallback; `1.7` specified current
+**Protocol versions:** `1.0` baseline; `1.1`–`1.6` fallback; `1.7` current
 
 **Decision owner:** `Sergan2B` (interim Sidecar/Protocol and Security owner)
 
@@ -809,7 +809,9 @@ project, one applying transaction per scene history, 300-second prepared TTL,
 8 KiB approval messages, 64 KiB preview/operation/status results, 1000-node
 structural preflight, and the bounded journal limits in WRITE-001.
 
-Sessions negotiated at 1.0–1.6 omit every 1.7-only capability, method, event,
-limit, state, approval object, and error. S9-01 freezes this semantic profile;
-S9-02 adds its closed JSON Schemas and cross-language conformance bundle before
-the capability can be advertised by production Bridge code.
+Sessions negotiated at 1.0–1.6 omit every 1.7-only capability, event, limit,
+state, approval object, and error; transaction method calls fail with
+`capability_unavailable`. S9-02 advertises `transaction.scene_v1` only with
+`readiness: unavailable`, validates 1.7 request DTOs before failing closed, and
+does not create pending requests, dispatch editor work, emit transaction
+events, or mutate editor state. Coordinator readiness is a later Sprint 9 gate.

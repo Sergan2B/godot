@@ -25,9 +25,10 @@
 #include "editor/run/editor_run.h"
 #include "editor/run/editor_run_bar.h"
 #include "editor/script/script_editor_plugin.h"
+#include "scene/debugger/scene_debugger_object.h"
+
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
 #include "modules/codex_bridge/transport/bridge_transport_worker.h"
-#include "scene/debugger/scene_debugger_object.h"
 
 namespace {
 
@@ -957,6 +958,7 @@ void RuntimeDebuggerAdapter::_complete_snapshot(const Array &p_tree, bool p_tree
 		return;
 	}
 	Array domains = pending_snapshot_params.get("domains", Array());
+	const String protocol_version = pending_snapshot_params.get("_protocol_version", "1.6");
 	if (domains.is_empty()) {
 		for (const char *domain : { "runtime_state", "runtime_tree", "runtime_diagnostics", "runtime_stacks" }) {
 			domains.push_back(domain);
@@ -1045,7 +1047,7 @@ void RuntimeDebuggerAdapter::_complete_snapshot(const Array &p_tree, bool p_tree
 	begin_params["revisions"] = revision_vector;
 	begin_params["chunk_count"] = chunk_count;
 	Dictionary begin;
-	begin["protocol_version"] = "1.6";
+	begin["protocol_version"] = protocol_version;
 	begin["kind"] = "notification";
 	begin["method"] = "snapshot.begin";
 	begin["params"] = begin_params;
@@ -1062,7 +1064,7 @@ void RuntimeDebuggerAdapter::_complete_snapshot(const Array &p_tree, bool p_tree
 		const String payload_json = JSON::stringify(payload, "", true, true);
 		const String chunk_checksum = sha256_hex_utf8(payload_json);
 		Dictionary chunk;
-		chunk["protocol_version"] = "1.6";
+		chunk["protocol_version"] = protocol_version;
 		chunk["kind"] = "chunk";
 		chunk["domain"] = "runtime";
 		chunk["snapshot_id"] = snapshot_id;
@@ -1084,7 +1086,7 @@ void RuntimeDebuggerAdapter::_complete_snapshot(const Array &p_tree, bool p_tree
 	end_params["checksum"] = sha256_hex_utf8(snapshot_checksum_input);
 	end_params["revisions"] = revision_vector;
 	Dictionary end;
-	end["protocol_version"] = "1.6";
+	end["protocol_version"] = protocol_version;
 	end["kind"] = "notification";
 	end["method"] = "snapshot.end";
 	end["params"] = end_params;

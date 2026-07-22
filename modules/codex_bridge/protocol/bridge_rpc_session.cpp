@@ -31,10 +31,12 @@
 #include "bridge_rpc_session.h"
 
 #include "bridge_frame_codec.h"
+#include "bridge_transaction_profile.h"
+
+#include "scene/debugger/codex_runtime_limits.h"
 
 #include "modules/codex_bridge/editor/main_thread_dispatcher.h"
 #include "modules/modules_enabled.gen.h"
-#include "scene/debugger/codex_runtime_limits.h"
 
 namespace {
 
@@ -171,27 +173,31 @@ static bool is_client_name(const String &p_value) {
 }
 
 static bool has_editor_profile(const String &p_version) {
-	return p_version == "1.1" || p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6";
+	return p_version == "1.1" || p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6" || p_version == "1.7";
 }
 
 static bool has_resource_profile(const String &p_version) {
-	return p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6";
+	return p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6" || p_version == "1.7";
 }
 
 static bool has_scene_profile(const String &p_version) {
-	return p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6";
+	return p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6" || p_version == "1.7";
 }
 
 static bool has_script_profile(const String &p_version) {
-	return p_version == "1.4" || p_version == "1.5" || p_version == "1.6";
+	return p_version == "1.4" || p_version == "1.5" || p_version == "1.6" || p_version == "1.7";
 }
 
 static bool has_live_editor_profile(const String &p_version) {
-	return p_version == "1.5" || p_version == "1.6";
+	return p_version == "1.5" || p_version == "1.6" || p_version == "1.7";
 }
 
 static bool has_runtime_profile(const String &p_version) {
-	return p_version == "1.6";
+	return p_version == "1.6" || p_version == "1.7";
+}
+
+static bool has_transaction_profile(const String &p_version) {
+	return p_version == "1.7";
 }
 
 } // namespace
@@ -346,6 +352,9 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 			capabilities.push_back(capability);
 		}
 	}
+	if (has_transaction_profile(protocol_version)) {
+		capabilities.push_back(BridgeTransactionProfile::make_unavailable_capability());
+	}
 	Dictionary result;
 	result["capabilities"] = capabilities;
 	return result;
@@ -446,6 +455,9 @@ Dictionary BridgeRpcSession::_make_limits() const {
 		limits["script_journal_bytes"] = (int64_t)16777216;
 		limits["script_snapshot_timeout_ms"] = (int64_t)120000;
 		limits["script_snapshot_concurrency"] = (int64_t)1;
+	}
+	if (has_transaction_profile(protocol_version)) {
+		BridgeTransactionProfile::append_global_limits(limits);
 	}
 	return limits;
 }
@@ -896,6 +908,31 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 				return OK;
 			}
 			method = METHOD_RUNTIME_VIEWPORT_CAPTURE;
+		} else if (method_name == "transaction.prepare" || method_name == "transaction.apply" || method_name == "transaction.status" || method_name == "transaction.undo") {
+			if (!has_transaction_profile(protocol_version)) {
+				_set_error_outcome(request_id, "capability_unavailable", "Editor transactions require Bridge RPC 1.7.", false, r_outcome);
+				return OK;
+			}
+			bool valid = false;
+			if (method_name == "transaction.prepare") {
+				method = METHOD_TRANSACTION_PREPARE;
+				valid = BridgeTransactionProfile::validate_prepare_params(params);
+			} else if (method_name == "transaction.apply") {
+				method = METHOD_TRANSACTION_APPLY;
+				valid = BridgeTransactionProfile::validate_apply_params(params);
+			} else if (method_name == "transaction.status") {
+				method = METHOD_TRANSACTION_STATUS;
+				valid = BridgeTransactionProfile::validate_status_params(params);
+			} else {
+				method = METHOD_TRANSACTION_UNDO;
+				valid = BridgeTransactionProfile::validate_undo_params(params);
+			}
+			if (!valid) {
+				_set_error_outcome(request_id, "invalid_request", "The transaction parameters are invalid.", false, r_outcome);
+				return OK;
+			}
+			_set_error_outcome(request_id, "capability_unavailable", "The transaction coordinator is not available in this bridge build.", false, r_outcome);
+			return OK;
 		} else if (method_name == "bridge.shutdown") {
 			if (!_validate_shutdown_params(params)) {
 				_set_error_outcome(request_id, "invalid_request", "The shutdown parameters are invalid.", false, r_outcome);
@@ -1090,6 +1127,14 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 			}
 			result = p_result_override;
 		} break;
+		case METHOD_TRANSACTION_PREPARE:
+		case METHOD_TRANSACTION_APPLY:
+		case METHOD_TRANSACTION_STATUS:
+		case METHOD_TRANSACTION_UNDO: {
+			_set_error_outcome(pending.request_id, "capability_unavailable", "The transaction coordinator is not available in this bridge build.", false, r_outcome);
+			_remove_pending(p_internal_request_id);
+			return OK;
+		}
 		case METHOD_SHUTDOWN: {
 			result["closing"] = true;
 			closing = true;

@@ -1,6 +1,6 @@
 # Sprint 9 plan — safe editor transactions
 
-**Status:** Proposed; implementation has not started
+**Status:** In progress; S9-01 and S9-02 implemented and locally verified
 
 **Milestone:** Write Foundation
 
@@ -22,7 +22,7 @@ Sprint 9 transaction.
 [PRODUCT-001](PRODUCT-001-semantic-bridge-vision-and-plan.md), and
 [ARCHITECTURE-001](ARCHITECTURE-001-bridge-sidecar-index-and-evidence-plan.md).
 `WRITE-001` is frozen by `S9-01`; S9-02 implements its strict Bridge RPC 1.7
-schemas before any production transaction capability is advertised.
+schemas and advertises the guarded transaction capability as unavailable.
 
 ## 1. Outcome and fixed decisions
 
@@ -138,6 +138,11 @@ negotiated revision and is deleted after validation.
 ### S9-02 — Add the Bridge RPC 1.7 transaction profile
 
 **Depends on:** S9-01.
+
+**Status:** Complete. RPC 1.7 negotiation, the unavailable capability, closed
+DTO validation, shared Rust/C++ vectors, safe limits, downgrade behavior, and
+no-dispatch routing are implemented. Coordinator, event emission, mutation,
+Undo, and production MCP write tools remain disabled for later gates.
 
 **Changes:** additive 1.7 negotiation; `transaction.scene_v1` capability and
 limits; `transaction.prepare`, `transaction.apply`, `transaction.status`, and

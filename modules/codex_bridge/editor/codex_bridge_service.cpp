@@ -172,6 +172,12 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 		case MainThreadDispatcher::COMMAND_RUNTIME_VIEWPORT_CAPTURE:
 			service->runtime_debugger_adapter->capture_viewport(p_command.request_id, p_command.params);
 			break;
+		case MainThreadDispatcher::COMMAND_TRANSACTION_PREPARE:
+		case MainThreadDispatcher::COMMAND_TRANSACTION_APPLY:
+		case MainThreadDispatcher::COMMAND_TRANSACTION_STATUS:
+		case MainThreadDispatcher::COMMAND_TRANSACTION_UNDO:
+			service->transport_worker.complete_request_error(p_command.request_id, "capability_unavailable", "The transaction coordinator is not available in this bridge build.", false);
+			break;
 		case MainThreadDispatcher::COMMAND_CANCEL: {
 			service->runtime_debugger_adapter->cancel(p_command.request_id);
 			const Array abandoned = service->resource_graph_adapter.cancel_snapshot(p_command.request_id);
@@ -469,7 +475,7 @@ void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Diction
 	_refresh_open_scene_ids(true);
 	const Dictionary revisions = revision_clock.get_revision_vector();
 	const String protocol_version = p_params.get("_protocol_version", "1.1");
-	const bool full_live_context = protocol_version == "1.5" || protocol_version == "1.6";
+	const bool full_live_context = protocol_version == "1.5" || protocol_version == "1.6" || protocol_version == "1.7";
 	if (full_live_context) {
 		PendingEditorSnapshot pending;
 		pending.request_id = p_request_id;

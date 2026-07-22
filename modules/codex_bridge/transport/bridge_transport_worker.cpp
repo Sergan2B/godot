@@ -147,20 +147,20 @@ static String sha256_hex_utf8(const String &p_value) {
 }
 
 static bool is_resource_protocol(const String &p_protocol_version) {
-	return p_protocol_version == "1.2" || p_protocol_version == "1.3" || p_protocol_version == "1.4" || p_protocol_version == "1.5" || p_protocol_version == "1.6";
+	return p_protocol_version == "1.2" || p_protocol_version == "1.3" || p_protocol_version == "1.4" || p_protocol_version == "1.5" || p_protocol_version == "1.6" || p_protocol_version == "1.7";
 }
 
 static bool is_snapshot_protocol(const String &p_protocol_version, const String &p_domain) {
 	if (p_domain == "editor_context") {
-		return p_protocol_version == "1.5" || p_protocol_version == "1.6";
+		return p_protocol_version == "1.5" || p_protocol_version == "1.6" || p_protocol_version == "1.7";
 	}
 	if (p_domain == "resource_graph") {
 		return is_resource_protocol(p_protocol_version);
 	}
 	if (p_domain == "scene_graph") {
-		return p_protocol_version == "1.3" || p_protocol_version == "1.4" || p_protocol_version == "1.5" || p_protocol_version == "1.6";
+		return p_protocol_version == "1.3" || p_protocol_version == "1.4" || p_protocol_version == "1.5" || p_protocol_version == "1.6" || p_protocol_version == "1.7";
 	}
-	return (p_domain == "script_graph" && (p_protocol_version == "1.4" || p_protocol_version == "1.5" || p_protocol_version == "1.6")) || (p_domain == "runtime" && p_protocol_version == "1.6");
+	return (p_domain == "script_graph" && (p_protocol_version == "1.4" || p_protocol_version == "1.5" || p_protocol_version == "1.6" || p_protocol_version == "1.7")) || (p_domain == "runtime" && (p_protocol_version == "1.6" || p_protocol_version == "1.7"));
 }
 
 static bool open_snapshot_spool(SnapshotPreparation &r_preparation) {
@@ -280,16 +280,16 @@ static SnapshotPreparationResult prepare_snapshot_dictionary(SnapshotPreparation
 static void sanitize_revision_vector_for_protocol(Dictionary &r_message, const String &p_protocol_version) {
 	if (r_message.has("revisions") && r_message["revisions"].get_type() == Variant::DICTIONARY) {
 		Dictionary revisions = r_message["revisions"];
-		if (p_protocol_version != "1.2" && p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6") {
+		if (p_protocol_version != "1.2" && p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6" && p_protocol_version != "1.7") {
 			revisions.erase("resource_revision");
 		}
-		if (p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6") {
+		if (p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6" && p_protocol_version != "1.7") {
 			revisions.erase("scene_graph_revision");
 		}
-		if (p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6") {
+		if (p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6" && p_protocol_version != "1.7") {
 			revisions.erase("script_graph_revision");
 		}
-		if (p_protocol_version != "1.6") {
+		if (p_protocol_version != "1.6" && p_protocol_version != "1.7") {
 			revisions.erase("runtime_session_id");
 			revisions.erase("runtime_event_seq");
 		}
@@ -299,16 +299,16 @@ static void sanitize_revision_vector_for_protocol(Dictionary &r_message, const S
 		Dictionary params = r_message["params"];
 		if (params.has("revisions") && params["revisions"].get_type() == Variant::DICTIONARY) {
 			Dictionary revisions = params["revisions"];
-			if (p_protocol_version != "1.2" && p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6") {
+			if (p_protocol_version != "1.2" && p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6" && p_protocol_version != "1.7") {
 				revisions.erase("resource_revision");
 			}
-			if (p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6") {
+			if (p_protocol_version != "1.3" && p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6" && p_protocol_version != "1.7") {
 				revisions.erase("scene_graph_revision");
 			}
-			if (p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6") {
+			if (p_protocol_version != "1.4" && p_protocol_version != "1.5" && p_protocol_version != "1.6" && p_protocol_version != "1.7") {
 				revisions.erase("script_graph_revision");
 			}
-			if (p_protocol_version != "1.6") {
+			if (p_protocol_version != "1.6" && p_protocol_version != "1.7") {
 				revisions.erase("runtime_session_id");
 				revisions.erase("runtime_event_seq");
 			}
@@ -503,6 +503,14 @@ static MainThreadDispatcher::CommandType command_type_for_method(BridgeRpcSessio
 			return MainThreadDispatcher::COMMAND_RUNTIME_STACK_GET;
 		case BridgeRpcSession::METHOD_RUNTIME_VIEWPORT_CAPTURE:
 			return MainThreadDispatcher::COMMAND_RUNTIME_VIEWPORT_CAPTURE;
+		case BridgeRpcSession::METHOD_TRANSACTION_PREPARE:
+			return MainThreadDispatcher::COMMAND_TRANSACTION_PREPARE;
+		case BridgeRpcSession::METHOD_TRANSACTION_APPLY:
+			return MainThreadDispatcher::COMMAND_TRANSACTION_APPLY;
+		case BridgeRpcSession::METHOD_TRANSACTION_STATUS:
+			return MainThreadDispatcher::COMMAND_TRANSACTION_STATUS;
+		case BridgeRpcSession::METHOD_TRANSACTION_UNDO:
+			return MainThreadDispatcher::COMMAND_TRANSACTION_UNDO;
 		case BridgeRpcSession::METHOD_SHUTDOWN:
 			return MainThreadDispatcher::COMMAND_SHUTDOWN;
 	}
@@ -853,7 +861,7 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 							cancel_dispatched_request(p_context, completion.request_id);
 							client.force_close = true;
 						}
-					} else if (!completion.server_messages.is_empty() && (client.rpc.get_protocol_version() == "1.1" || client.rpc.get_protocol_version() == "1.2" || client.rpc.get_protocol_version() == "1.3" || client.rpc.get_protocol_version() == "1.4" || client.rpc.get_protocol_version() == "1.5" || client.rpc.get_protocol_version() == "1.6")) {
+					} else if (!completion.server_messages.is_empty() && (client.rpc.get_protocol_version() == "1.1" || client.rpc.get_protocol_version() == "1.2" || client.rpc.get_protocol_version() == "1.3" || client.rpc.get_protocol_version() == "1.4" || client.rpc.get_protocol_version() == "1.5" || client.rpc.get_protocol_version() == "1.6" || client.rpc.get_protocol_version() == "1.7")) {
 						const String request_id = outcome.response.get("request_id", String());
 						if (request_id.is_empty() || !start_snapshot_stream(client, completion.request_id, request_id, completion.server_messages, completion_now_usec)) {
 							cancel_dispatched_request(p_context, completion.request_id);
@@ -870,16 +878,17 @@ static void run_transport(BridgeTransportWorker::Context *p_context, BridgeRunti
 		Vector<Dictionary> notifications;
 		drain_notifications(p_context, notifications);
 		for (TransportClient &client : clients) {
-			if (client.handshake.get_state() != BridgeHandshakeSession::STATE_AUTHENTICATED || !client.rpc.is_initialized() || (client.rpc.get_protocol_version() != "1.1" && client.rpc.get_protocol_version() != "1.2" && client.rpc.get_protocol_version() != "1.3" && client.rpc.get_protocol_version() != "1.4" && client.rpc.get_protocol_version() != "1.5" && client.rpc.get_protocol_version() != "1.6")) {
+			if (client.handshake.get_state() != BridgeHandshakeSession::STATE_AUTHENTICATED || !client.rpc.is_initialized() || (client.rpc.get_protocol_version() != "1.1" && client.rpc.get_protocol_version() != "1.2" && client.rpc.get_protocol_version() != "1.3" && client.rpc.get_protocol_version() != "1.4" && client.rpc.get_protocol_version() != "1.5" && client.rpc.get_protocol_version() != "1.6" && client.rpc.get_protocol_version() != "1.7")) {
 				continue;
 			}
 			for (const Dictionary &notification : notifications) {
 				const String notification_version = notification.get("protocol_version", "1.1");
 				if ((notification_version == "1.2" && client.rpc.get_protocol_version() == "1.1") ||
-						(notification_version == "1.3" && client.rpc.get_protocol_version() != "1.3" && client.rpc.get_protocol_version() != "1.4" && client.rpc.get_protocol_version() != "1.5" && client.rpc.get_protocol_version() != "1.6") ||
-						(notification_version == "1.4" && client.rpc.get_protocol_version() != "1.4" && client.rpc.get_protocol_version() != "1.5" && client.rpc.get_protocol_version() != "1.6") ||
-						(notification_version == "1.5" && client.rpc.get_protocol_version() != "1.5" && client.rpc.get_protocol_version() != "1.6") ||
-						(notification_version == "1.6" && client.rpc.get_protocol_version() != "1.6")) {
+						(notification_version == "1.3" && client.rpc.get_protocol_version() != "1.3" && client.rpc.get_protocol_version() != "1.4" && client.rpc.get_protocol_version() != "1.5" && client.rpc.get_protocol_version() != "1.6" && client.rpc.get_protocol_version() != "1.7") ||
+						(notification_version == "1.4" && client.rpc.get_protocol_version() != "1.4" && client.rpc.get_protocol_version() != "1.5" && client.rpc.get_protocol_version() != "1.6" && client.rpc.get_protocol_version() != "1.7") ||
+						(notification_version == "1.5" && client.rpc.get_protocol_version() != "1.5" && client.rpc.get_protocol_version() != "1.6" && client.rpc.get_protocol_version() != "1.7") ||
+						(notification_version == "1.6" && client.rpc.get_protocol_version() != "1.6" && client.rpc.get_protocol_version() != "1.7") ||
+						(notification_version == "1.7" && client.rpc.get_protocol_version() != "1.7")) {
 					continue;
 				}
 				Dictionary client_notification = notification;

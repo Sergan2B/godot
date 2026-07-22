@@ -46,11 +46,12 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "core/os/thread.h"
 #include "core/templates/local_vector.h"
 #include "core/templates/safe_refcount.h"
-#include "editor/file_system/editor_file_system.h"
 #include "editor/editor_log.h"
-#include "scene/debugger/scene_debugger_object.h"
+#include "editor/file_system/editor_file_system.h"
 #include "scene/debugger/codex_runtime_value_projector.h"
+#include "scene/debugger/scene_debugger_object.h"
 #include "scene/main/node.h"
+#include "tests/test_utils.h"
 
 #include "modules/codex_bridge/editor/bounded_variant_projector.h"
 #include "modules/codex_bridge/editor/bridge_frame_telemetry.h"
@@ -67,6 +68,7 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "modules/codex_bridge/protocol/bridge_frame_codec.h"
 #include "modules/codex_bridge/protocol/bridge_handshake.h"
 #include "modules/codex_bridge/protocol/bridge_rpc_session.h"
+#include "modules/codex_bridge/protocol/bridge_transaction_profile.h"
 #include "modules/codex_bridge/transport/bridge_runtime.h"
 #include "modules/codex_bridge/transport/bridge_transport_worker.h"
 
@@ -857,6 +859,16 @@ static String rpc_error_code(const BridgeRpcSession::Outcome &p_outcome) {
 	return Dictionary(p_outcome.response["error"])["code"];
 }
 
+static Dictionary load_transaction_vector() {
+	const String path = TestUtils::get_executable_dir().path_join("../schemas/codex_bridge/v1/fixtures/test-vectors/transaction.json").simplify_path();
+	Error error = OK;
+	const String text = FileAccess::get_file_as_string(path, &error);
+	REQUIRE(error == OK);
+	const Variant parsed = JSON::parse_string(text);
+	REQUIRE(parsed.get_type() == Variant::DICTIONARY);
+	return parsed;
+}
+
 TEST_CASE("[CodexBridge] Mutual handshake authenticates both peers") {
 	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
@@ -917,7 +929,7 @@ TEST_CASE("[CodexBridge] Handshake negotiates the compatible 1.1 minor") {
 	CHECK(handshake.get_selected_protocol_version() == "1.1");
 }
 
-TEST_CASE("[CodexS8BridgeProfile] Handshake negotiates Bridge RPC 1.6 and preserves the 1.5 downgrade") {
+TEST_CASE("[CodexS9TransactionProfile] Handshake negotiates Bridge RPC 1.7 and preserves exact downgrades") {
 	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
 	const PackedByteArray token = bytes_from_range(0xa0, 32);
@@ -927,13 +939,16 @@ TEST_CASE("[CodexS8BridgeProfile] Handshake negotiates Bridge RPC 1.6 and preser
 	BridgeHandshakeSession handshake(token, project_id, editor_session_id, 0);
 	BridgeHandshakeSession::Outcome challenge;
 	REQUIRE(handshake.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, "1.9"), 1, challenge) == OK);
-	CHECK(challenge.response["selected_protocol_version"] == "1.6");
-	CHECK(handshake.get_selected_protocol_version() == "1.6");
+	CHECK(challenge.response["selected_protocol_version"] == "1.7");
+	CHECK(handshake.get_selected_protocol_version() == "1.7");
 
-	BridgeHandshakeSession exact(token, project_id, editor_session_id, 0);
-	REQUIRE(exact.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, "1.5"), 1, challenge) == OK);
-	CHECK(challenge.response["selected_protocol_version"] == "1.5");
-	CHECK(exact.get_selected_protocol_version() == "1.5");
+	const char *versions[] = { "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7" };
+	for (const char *version : versions) {
+		BridgeHandshakeSession exact(token, project_id, editor_session_id, 0);
+		REQUIRE(exact.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, version), 1, challenge) == OK);
+		CHECK(challenge.response["selected_protocol_version"] == version);
+		CHECK(exact.get_selected_protocol_version() == version);
+	}
 }
 
 TEST_CASE("[CodexBridge] Handshake rejects binding, version, proof, replay, and timeout failures") {
@@ -1544,6 +1559,280 @@ TEST_CASE("[CodexS8BridgeProfile] RPC 1.6 exposes bounded runtime methods and st
 	REQUIRE(downgraded.complete(10, 1, outcome) == OK);
 	REQUIRE(downgraded.handle_message(make_rpc_request("req:no-runtime", "runtime.pause", Dictionary(), project_id, editor_session_id, 3000, "1.5"), 2, 11, outcome) == OK);
 	CHECK(rpc_error_code(outcome) == "capability_unavailable");
+}
+
+TEST_CASE("[CodexS9TransactionProfile] RPC 1.7 preserves the version matrix and fails closed") {
+	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
+	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
+	const char *versions[] = { "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7" };
+	const int capability_counts[] = { 2, 6, 8, 11, 15, 20, 26, 27 };
+	for (int version_index = 0; version_index < 8; version_index++) {
+		const String version = versions[version_index];
+		BridgeRpcSession rpc(project_id, editor_session_id);
+		rpc.set_protocol_version(version);
+		BridgeRpcSession::Outcome outcome;
+		REQUIRE(rpc.handle_message(make_rpc_request("req:init-" + version, "bridge.initialize", make_initialize_params(), project_id, editor_session_id, 5000, version), 0, 1, outcome) == OK);
+		REQUIRE(outcome.dispatch);
+		REQUIRE(rpc.complete(1, 1, outcome) == OK);
+		const Dictionary result = outcome.response["result"];
+		CHECK(result["protocol_version"] == version);
+		const Array capabilities = result["capabilities"];
+		CHECK(capabilities.size() == capability_counts[version_index]);
+		const Dictionary limits = result["limits"];
+		if (version == "1.7") {
+			const Dictionary transaction = capabilities[capabilities.size() - 1];
+			CHECK(transaction["name"] == "transaction.scene_v1");
+			CHECK(transaction["readiness"] == "unavailable");
+			CHECK(Dictionary(transaction["transaction_readiness"])["reason"] == "transaction_coordinator_unavailable");
+			CHECK((int64_t)limits["transaction_prepared_records"] == 64);
+		} else {
+			CHECK_FALSE(limits.has("transaction_prepared_records"));
+			Dictionary status_params;
+			status_params["transaction_id"] = "transaction:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+			REQUIRE(rpc.handle_message(make_rpc_request("req:transaction-old-" + version, "transaction.status", status_params, project_id, editor_session_id, 5000, version), 2, 2, outcome) == OK);
+			CHECK(rpc_error_code(outcome) == "capability_unavailable");
+			CHECK_FALSE(outcome.dispatch);
+			CHECK(rpc.get_in_flight_count() == 0);
+		}
+	}
+
+	const Dictionary vector = load_transaction_vector();
+	BridgeRpcSession rpc(project_id, editor_session_id);
+	rpc.set_protocol_version("1.7");
+	BridgeRpcSession::Outcome outcome;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:init-transaction", "bridge.initialize", make_initialize_params(), project_id, editor_session_id, 5000, "1.7"), 0, 10, outcome) == OK);
+	REQUIRE(rpc.complete(10, 1, outcome) == OK);
+	Vector<String> inherited_names;
+	Vector<Dictionary> inherited_params;
+	Vector<BridgeRpcSession::Method> inherited_methods;
+	auto add_inherited = [&](const String &p_name, const Dictionary &p_params, BridgeRpcSession::Method p_method) {
+		inherited_names.push_back(p_name);
+		inherited_params.push_back(p_params.duplicate(true));
+		inherited_methods.push_back(p_method);
+	};
+	add_inherited("editor.snapshot.get", Dictionary(), BridgeRpcSession::METHOD_EDITOR_SNAPSHOT);
+	add_inherited("resource.snapshot.get", Dictionary(), BridgeRpcSession::METHOD_RESOURCE_SNAPSHOT);
+	Dictionary revision_params;
+	revision_params["after_resource_revision"] = (int64_t)1;
+	add_inherited("resource.delta.get", revision_params, BridgeRpcSession::METHOD_RESOURCE_DELTA);
+	add_inherited("scene.snapshot.get", Dictionary(), BridgeRpcSession::METHOD_SCENE_SNAPSHOT);
+	revision_params.clear();
+	revision_params["after_scene_graph_revision"] = (int64_t)1;
+	add_inherited("scene.delta.get", revision_params, BridgeRpcSession::METHOD_SCENE_DELTA);
+	add_inherited("script.snapshot.get", Dictionary(), BridgeRpcSession::METHOD_SCRIPT_SNAPSHOT);
+	revision_params.clear();
+	revision_params["after_script_graph_revision"] = (int64_t)1;
+	add_inherited("script.delta.get", revision_params, BridgeRpcSession::METHOD_SCRIPT_DELTA);
+	Dictionary runtime_run;
+	runtime_run["target"] = "current_scene";
+	add_inherited("runtime.run", runtime_run, BridgeRpcSession::METHOD_RUNTIME_RUN);
+	Dictionary runtime_guard;
+	runtime_guard["runtime_session_id"] = "runtime:0123456789abcdef0123456789abcdef";
+	runtime_guard["expected_runtime_event_seq"] = (int64_t)1;
+	add_inherited("runtime.stop", runtime_guard, BridgeRpcSession::METHOD_RUNTIME_STOP);
+	add_inherited("runtime.pause", runtime_guard, BridgeRpcSession::METHOD_RUNTIME_PAUSE);
+	add_inherited("runtime.continue", runtime_guard, BridgeRpcSession::METHOD_RUNTIME_CONTINUE);
+	add_inherited("runtime.snapshot.get", runtime_guard, BridgeRpcSession::METHOD_RUNTIME_SNAPSHOT);
+	Dictionary runtime_object = runtime_guard.duplicate(true);
+	runtime_object["runtime_object_id"] = "runtime-object:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+	add_inherited("runtime.object.inspect", runtime_object, BridgeRpcSession::METHOD_RUNTIME_OBJECT_INSPECT);
+	Dictionary runtime_stack = runtime_guard.duplicate(true);
+	runtime_stack["runtime_stack_id"] = "runtime-stack:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+	add_inherited("runtime.stack.get", runtime_stack, BridgeRpcSession::METHOD_RUNTIME_STACK_GET);
+	add_inherited("runtime.viewport.capture", runtime_guard, BridgeRpcSession::METHOD_RUNTIME_VIEWPORT_CAPTURE);
+	for (int index = 0; index < inherited_names.size(); index++) {
+		const uint64_t internal_id = 30 + index;
+		REQUIRE(rpc.handle_message(make_rpc_request("req:inherited-" + itos(index), inherited_names[index], inherited_params[index], project_id, editor_session_id, 5000, "1.7"), 20 + index, internal_id, outcome) == OK);
+		CHECK(outcome.dispatch);
+		CHECK(outcome.method == inherited_methods[index]);
+		Dictionary inherited_result;
+		inherited_result["schema_version"] = "compatibility/1.0";
+		REQUIRE(rpc.complete(internal_id, 21 + index, inherited_result, outcome) == OK);
+		CHECK(outcome.response["protocol_version"] == "1.7");
+	}
+	const char *request_names[] = { "prepare_request", "apply_request", "status_request", "undo_request" };
+	for (int index = 0; index < 4; index++) {
+		REQUIRE(rpc.handle_message(vector[request_names[index]], 2 + index, 11 + index, outcome) == OK);
+		CHECK(rpc_error_code(outcome) == "capability_unavailable");
+		CHECK_FALSE(outcome.dispatch);
+		CHECK(rpc.get_in_flight_count() == 0);
+	}
+
+	Dictionary malformed_params = Dictionary(Dictionary(vector["prepare_request"])["params"]).duplicate(true);
+	malformed_params["unexpected"] = true;
+	REQUIRE(rpc.handle_message(make_rpc_request("req:transaction-malformed", "transaction.prepare", malformed_params, project_id, editor_session_id, 5000, "1.7"), 10, 20, outcome) == OK);
+	CHECK(rpc_error_code(outcome) == "invalid_request");
+	CHECK_FALSE(outcome.dispatch);
+	CHECK(rpc.get_in_flight_count() == 0);
+
+	Dictionary run_params;
+	run_params["target"] = "current_scene";
+	REQUIRE(rpc.handle_message(make_rpc_request("req:runtime-through-transaction", "runtime.run", run_params, project_id, editor_session_id, 5000, "1.7"), 11, 21, outcome) == OK);
+	CHECK(outcome.dispatch);
+	Dictionary runtime_result;
+	runtime_result["schema_version"] = "runtime/1.0";
+	REQUIRE(rpc.complete(21, 12, runtime_result, outcome) == OK);
+	CHECK(outcome.response["protocol_version"] == "1.7");
+}
+
+TEST_CASE("[CodexS9TransactionProfile] C++ validates the shared transaction vector") {
+	const Dictionary vector = load_transaction_vector();
+	const Dictionary capability = BridgeTransactionProfile::make_unavailable_capability();
+	const Dictionary expected_capability = vector["capability"];
+	CHECK(capability["name"] == expected_capability["name"]);
+	CHECK(capability["version"] == expected_capability["version"]);
+	CHECK(capability["readiness"] == expected_capability["readiness"]);
+	CHECK(Dictionary(capability["transaction_readiness"]) == Dictionary(expected_capability["transaction_readiness"]));
+	const Dictionary capability_limits = capability["limits"];
+	const Dictionary expected_limits = expected_capability["limits"];
+	const Array limit_keys = capability_limits.keys();
+	CHECK(limit_keys.size() == expected_limits.size());
+	for (int index = 0; index < limit_keys.size(); index++) {
+		CHECK((int64_t)capability_limits[limit_keys[index]] == (int64_t)(double)expected_limits[limit_keys[index]]);
+	}
+	const Array operations = vector["operations"];
+	REQUIRE(operations.size() == 8);
+	for (int index = 0; index < operations.size(); index++) {
+		REQUIRE(operations[index].get_type() == Variant::DICTIONARY);
+		CHECK(BridgeTransactionProfile::validate_operation(operations[index]));
+	}
+	CHECK(BridgeTransactionProfile::validate_prepare_params(Dictionary(Dictionary(vector["prepare_request"])["params"])));
+	CHECK(BridgeTransactionProfile::validate_apply_params(Dictionary(Dictionary(vector["apply_request"])["params"])));
+	CHECK(BridgeTransactionProfile::validate_status_params(Dictionary(Dictionary(vector["status_request"])["params"])));
+	CHECK(BridgeTransactionProfile::validate_undo_params(Dictionary(Dictionary(vector["undo_request"])["params"])));
+	CHECK(BridgeTransactionProfile::validate_prepare_result(vector["prepare_result"]));
+	CHECK(BridgeTransactionProfile::validate_status_result(vector["status_result"]));
+	CHECK(BridgeTransactionProfile::validate_event_params(Dictionary(Dictionary(vector["event"])["params"])));
+
+	const String preview_payload = vector["preview_payload_json"];
+	const CharString preview_bytes = preview_payload.utf8();
+	PackedByteArray digest;
+	digest.resize(32);
+	REQUIRE(CryptoCore::sha256(reinterpret_cast<const uint8_t *>(preview_bytes.get_data()), preview_bytes.length(), digest.ptrw()) == OK);
+	CHECK((int64_t)preview_bytes.length() == (int64_t)vector["preview_payload_bytes"]);
+	const String computed_digest = "sha256:" + BridgeCrypto::bytes_to_lower_hex(digest);
+	CHECK(computed_digest == vector["preview_digest"]);
+
+	const Array legal = vector["legal_transitions"];
+	for (int index = 0; index < legal.size(); index++) {
+		const Array transition = legal[index];
+		CHECK(BridgeTransactionProfile::is_legal_transition(transition[0], transition[1]));
+	}
+	const Array illegal = vector["illegal_transitions"];
+	for (int index = 0; index < illegal.size(); index++) {
+		const Array transition = illegal[index];
+		CHECK_FALSE(BridgeTransactionProfile::is_legal_transition(transition[0], transition[1]));
+	}
+
+	Dictionary operation = Dictionary(operations[0]).duplicate(true);
+	operation["raw_object_id"] = (int64_t)42;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+	operation = Dictionary(operations[4]).duplicate(true);
+	Dictionary unsafe_ref;
+	unsafe_ref["uid_missing"] = true;
+	unsafe_ref["path"] = "/tmp/native.gd";
+	operation["script_ref"] = unsafe_ref;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+	unsafe_ref["path"] = "file:///tmp/native.gd";
+	operation["script_ref"] = unsafe_ref;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+	unsafe_ref["path"] = "C:\\native.gd";
+	operation["script_ref"] = unsafe_ref;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+
+	operation = Dictionary(operations[0]).duplicate(true);
+	operation["kind"] = "instantiate_native_pointer";
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+	operation = Dictionary(operations[3]).duplicate(true);
+	Dictionary unsafe_value;
+	unsafe_value["type"] = "object_id";
+	unsafe_value["value"] = (int64_t)42;
+	operation["value"] = unsafe_value;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+	unsafe_value["type"] = "pid";
+	operation["value"] = unsafe_value;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+
+	Dictionary apply = Dictionary(Dictionary(vector["apply_request"])["params"]).duplicate(true);
+	apply["preview_digest"] = "sha256:ABC";
+	CHECK_FALSE(BridgeTransactionProfile::validate_apply_params(apply));
+	apply = Dictionary(Dictionary(vector["apply_request"])["params"]).duplicate(true);
+	Dictionary approval = Dictionary(apply["approval"]).duplicate(true);
+	approval["approved"] = true;
+	apply["approval"] = approval;
+	CHECK_FALSE(BridgeTransactionProfile::validate_apply_params(apply));
+	approval.erase("approved");
+	approval["mac"] = "native-handle";
+	apply["approval"] = approval;
+	CHECK_FALSE(BridgeTransactionProfile::validate_apply_params(apply));
+
+	Dictionary prepare = Dictionary(Dictionary(vector["prepare_request"])["params"]).duplicate(true);
+	Dictionary coordinates = Dictionary(prepare["coordinates"]).duplicate(true);
+	coordinates.erase("scene_revision");
+	prepare["coordinates"] = coordinates;
+	CHECK_FALSE(BridgeTransactionProfile::validate_prepare_params(prepare));
+	prepare = Dictionary(Dictionary(vector["prepare_request"])["params"]).duplicate(true);
+	prepare["native_history_id"] = (int64_t)123;
+	CHECK_FALSE(BridgeTransactionProfile::validate_prepare_params(prepare));
+
+	Dictionary nested;
+	nested["type"] = "nil";
+	for (int depth = 0; depth < BridgeTransactionProfile::MAX_VARIANT_DEPTH; depth++) {
+		Array children;
+		children.push_back(nested);
+		Dictionary parent;
+		parent["type"] = "array";
+		parent["value"] = children;
+		nested = parent;
+	}
+	operation = Dictionary(operations[3]).duplicate(true);
+	operation["value"] = nested;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+
+	Array too_many_items;
+	Dictionary nil_value;
+	nil_value["type"] = "nil";
+	for (int index = 0; index <= BridgeTransactionProfile::MAX_CONTAINER_ITEMS; index++) {
+		too_many_items.push_back(nil_value);
+	}
+	Dictionary array_value;
+	array_value["type"] = "array";
+	array_value["value"] = too_many_items;
+	operation = Dictionary(operations[3]).duplicate(true);
+	operation["value"] = array_value;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+
+	const String oversized_string = String("x").repeat(BridgeTransactionProfile::MAX_STRING_CHARACTERS + 1);
+	Dictionary string_value;
+	string_value["type"] = "string";
+	string_value["value"] = oversized_string;
+	operation["value"] = string_value;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+
+	Dictionary prepare_result = Dictionary(vector["prepare_result"]).duplicate(true);
+	prepare_result["preview_digest"] = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+	CHECK_FALSE(BridgeTransactionProfile::validate_prepare_result(prepare_result));
+	prepare_result = Dictionary(vector["prepare_result"]).duplicate(true);
+	Dictionary preview = Dictionary(prepare_result["preview"]).duplicate(true);
+	preview.erase("preconditions");
+	prepare_result["preview"] = preview;
+	CHECK_FALSE(BridgeTransactionProfile::validate_prepare_result(prepare_result));
+
+	Dictionary status = Dictionary(vector["status_result"]).duplicate(true);
+	Dictionary undo_eligibility = Dictionary(status["undo_eligibility"]).duplicate(true);
+	undo_eligibility["reason"] = "native_history:42";
+	status["undo_eligibility"] = undo_eligibility;
+	CHECK_FALSE(BridgeTransactionProfile::validate_status_result(status));
+	status = Dictionary(vector["status_result"]).duplicate(true);
+	status["native_handle"] = (int64_t)42;
+	CHECK_FALSE(BridgeTransactionProfile::validate_status_result(status));
+
+	Dictionary event = Dictionary(Dictionary(vector["event"])["params"]).duplicate(true);
+	event["reason"] = "arbitrary_native_reason";
+	CHECK_FALSE(BridgeTransactionProfile::validate_event_params(event));
+	event = Dictionary(Dictionary(vector["event"])["params"]).duplicate(true);
+	event["state"] = "committed";
+	CHECK_FALSE(BridgeTransactionProfile::validate_event_params(event));
 }
 
 TEST_CASE("[CodexBridge] Revision clock advances selection and scene domains monotonically") {
