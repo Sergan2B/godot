@@ -18,6 +18,7 @@ enum MockResponse {
     AcceptTrue,
     AcceptFalse,
     AcceptMissing,
+    AcceptExtra,
     Decline,
     Cancel,
     Timeout,
@@ -81,6 +82,8 @@ impl ClientHandler for MockClient {
             MockResponse::AcceptMissing => {
                 Ok(ElicitResult::new(ElicitationAction::Accept).with_content(json!({})))
             }
+            MockResponse::AcceptExtra => Ok(ElicitResult::new(ElicitationAction::Accept)
+                .with_content(json!({"confirm": true, "approved": true}))),
             MockResponse::Decline => Ok(ElicitResult::new(ElicitationAction::Decline)),
             MockResponse::Cancel => Ok(ElicitResult::new(ElicitationAction::Cancel)),
             MockResponse::Timeout => {
@@ -155,7 +158,11 @@ async fn approval_boundary_accept_true_is_receipt_eligible() {
 
 #[tokio::test]
 async fn approval_boundary_accept_without_true_is_rejected() {
-    for response in [MockResponse::AcceptFalse, MockResponse::AcceptMissing] {
+    for response in [
+        MockResponse::AcceptFalse,
+        MockResponse::AcceptMissing,
+        MockResponse::AcceptExtra,
+    ] {
         let (value, is_error, calls) =
             call_probe(MockClient::new(true, response), Duration::from_secs(1)).await;
         assert!(is_error);

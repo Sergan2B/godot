@@ -196,13 +196,18 @@ impl ServerHandler for ApprovalProbeServer {
             .await;
         let outcome = match response {
             Ok(result) => {
-                let confirmed = result
-                    .content
-                    .as_ref()
-                    .and_then(|content| content.get("confirm"))
+                let content = result.content.as_ref();
+                let confirmed = content
+                    .and_then(|value| value.get("confirm"))
                     .and_then(Value::as_bool);
+                let exact_confirmation = content.is_some_and(|value| {
+                    value.as_object().is_some_and(|object| {
+                        object.len() == 1
+                            && object.get("confirm").and_then(Value::as_bool) == Some(true)
+                    })
+                });
                 match result.action {
-                    ElicitationAction::Accept if confirmed == Some(true) => {
+                    ElicitationAction::Accept if exact_confirmation => {
                         self.outcome(&context, "accept", confirmed, "approval_accepted")
                     }
                     ElicitationAction::Accept => {

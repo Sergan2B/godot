@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.local/contracts/approval-boundary/receipt-vectors.schema.json",
+  "title": "Sprint 9 approval receipt contract vectors",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "canonicalization",
+    "positive",
+    "negative_cases"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "approval-receipt-v1"
+    },
+    "canonicalization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key_domain",
+        "receipt_domain",
+        "string_length_prefix",
+        "integer_encoding",
+        "nonce_encoding",
+        "mac_encoding",
+        "negative_mutation_target"
+      ],
+      "properties": {
+        "key_domain": {
+          "const": "godot-codex/approval-key/v1"
+        },
+        "receipt_domain": {
+          "const": "godot-codex/approval-receipt/v1"
+        },
+        "string_length_prefix": {
+          "const": "u32be_utf8_bytes"
+        },
+        "integer_encoding": {
+          "const": "u64be"
+        },
+        "nonce_encoding": {
+          "const": "32_raw_bytes_from_unpadded_base64url"
+        },
+        "mac_encoding": {
+          "const": "hmac_sha256_unpadded_base64url"
+        },
+        "negative_mutation_target": {
+          "const": "validation_context_except_mac_and_used_nonce"
+        }
+      }
+    },
+    "positive": {
+      "$ref": "#/$defs/positiveVector"
+    },
+    "negative_cases": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": {
+        "$ref": "#/$defs/negativeCase"
+      }
+    }
+  },
+  "$defs": {
+    "coordinates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_id",
+        "editor_session_id",
+        "scene_id",
+        "transaction_id",
+        "preview_digest",
+        "scope",
+        "risk",
+        "scene_revision",
+        "operation_seq"
+      ],
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "pattern": "^project:sha256:[0-9a-f]{64}$"
+        },
+        "editor_session_id": {
+          "type": "string",
+          "pattern": "^editor:[0-9a-f]{32}$"
+        },
+        "scene_id": {
+          "type": "string",
+          "pattern": "^scene:[0-9a-f]{32}$"
+        },
+        "transaction_id": {
+          "type": "string",
+          "pattern": "^transaction:[0-9a-f]{32}$"
+        },
+        "preview_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "scope": {
+          "enum": [
+            "scene.node.create",
+            "scene.node.delete",
+            "scene.node.reparent",
+            "scene.property.set",
+            "scene.script.attach",
+            "scene.script.detach",
+            "scene.signal.connect",
+            "scene.signal.disconnect"
+          ]
+        },
+        "risk": {
+          "enum": [
+            "write",
+            "destructive"
+          ]
+        },
+        "scene_revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "operation_seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "scope",
+        "nonce",
+        "issued_at_ms",
+        "expires_at_ms",
+        "mac"
+      ],
+      "properties": {
+        "kind": {
+          "const": "mcp_form_v1"
+        },
+        "scope": {
+          "type": "string"
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        },
+        "issued_at_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "expires_at_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "mac": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$"
+        }
+      }
+    },
+    "positiveVector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "session_token_hex",
+        "approval_key_hex",
+        "coordinates",
+        "receipt",
+        "canonical_length",
+        "canonical_sha256",
+        "current_ms"
+      ],
+      "properties": {
+        "id": {
+          "const": "receipt.valid"
+        },
+        "session_token_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "approval_key_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "coordinates": {
+          "$ref": "#/$defs/coordinates"
+        },
+        "receipt": {
+          "$ref": "#/$defs/receipt"
+        },
+        "canonical_length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536
+        },
+        "canonical_sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "current_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "negativeCase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "mutation",
+        "expected_error"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^receipt\\.[a-z_]+$"
+        },
+        "mutation": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "project_id": {
+              "type": "string"
+            },
+            "editor_session_id": {
+              "type": "string"
+            },
+            "transaction_id": {
+              "type": "string"
+            },
+            "preview_digest": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string"
+            },
+            "risk": {
+              "type": "string"
+            },
+            "scene_revision": {
+              "type": "integer"
+            },
+            "current_ms": {
+              "type": "integer"
+            },
+            "used_nonce": {
+              "type": "boolean"
+            },
+            "mac": {
+              "type": "string"
+            }
+          }
+        },
+        "expected_error": {
+          "enum": [
+            "approval_invalid",
+            "approval_scope_mismatch",
+            "approval_replayed",
+            "preview_mismatch",
+            "stale_scene_revision"
+          ]
+        }
+      }
+    }
+  }
+}

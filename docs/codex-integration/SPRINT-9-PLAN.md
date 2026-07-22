@@ -21,8 +21,8 @@ Sprint 9 transaction.
 [EVIDENCE-001](EVIDENCE-001-semantic-facts-and-evidence.md),
 [PRODUCT-001](PRODUCT-001-semantic-bridge-vision-and-plan.md), and
 [ARCHITECTURE-001](ARCHITECTURE-001-bridge-sidecar-index-and-evidence-plan.md).
-`WRITE-001` is created and frozen by `S9-01`; its link is intentionally a
-forward reference until that gate is committed.
+`WRITE-001` is frozen by `S9-01`; S9-02 implements its strict Bridge RPC 1.7
+schemas before any production transaction capability is advertised.
 
 ## 1. Outcome and fixed decisions
 
@@ -129,6 +129,11 @@ cases; trace every roadmap acceptance criterion to an executable gate.
 **Done when:** no implementation decision about approval authority, commit
 point, Undo ownership, persistence, expiry, or recovery remains implicit, and
 the selected approval path has a model-free proof with the real host protocol.
+
+The S9-01 server profile is MCP `2025-11-25`; the real-host probe also accepts
+negotiated `2025-06-18` when, and only when, the host explicitly advertises
+standard form elicitation. The bounded qualification trace records the exact
+negotiated revision and is deleted after validation.
 
 ### S9-02 — Add the Bridge RPC 1.7 transaction profile
 

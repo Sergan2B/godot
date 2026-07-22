@@ -24,6 +24,11 @@ mod script_semantics_contract {
     include!("script_semantics_contract.rs");
 }
 
+#[cfg(test)]
+mod approval_boundary_contract {
+    include!("approval_boundary_contract.rs");
+}
+
 const SCHEMA_BASE_URI: &str = "https://godot-codex.local/schema/v1/";
 const SCHEMA_FILES: [&str; 11] = [
     "common.schema.json",

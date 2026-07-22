@@ -1,10 +1,11 @@
 # PROTOCOL-001 — Bridge RPC 1.x
 
-**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.5 extensions implemented and locally verified; additive 1.6 runtime extension specified for Sprint 8
+**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.6 extensions implemented
+and locally verified; additive 1.7 transaction extension specified by S9-01
 
 **Date:** 2026-07-21
 
-**Protocol versions:** `1.0` baseline; `1.1`–`1.5` fallback; `1.6` specified current
+**Protocol versions:** `1.0` baseline; `1.1`–`1.6` fallback; `1.7` specified current
 
 **Decision owner:** `Sergan2B` (interim Sidecar/Protocol and Security owner)
 
@@ -39,7 +40,9 @@ defined by [EDITOR-001](EDITOR-001-live-editor-context.md). Bridge RPC 1.6 adds
 the runtime lifecycle, remote observations, diagnostics, stacks, and bounded
 viewport capture defined by
 [RUNTIME-001](RUNTIME-001-debugger-and-runtime-observation.md). MCP,
-persistent indexing, and transactions remain outside the bridge wire surface.
+persistent indexing, and model-facing interaction remain outside the Bridge
+wire surface. Bridge RPC 1.7 adds the capability-gated editor transaction
+profile defined by [WRITE-001](WRITE-001-editor-transactions-and-undo.md).
 
 ## 2. Normative conventions
 
@@ -551,7 +554,7 @@ Protocol 1.0 is ready for implementation when:
 
 ## 16. Deferred extensions
 
-Later sprints may add incremental semantic deltas, runtime, and transaction
+Later sprints may add incremental semantic deltas and compound transaction
 capabilities as compatible minor additions when they remain optional and
 capability-gated. A change to framing, authentication transcript semantics,
 project fingerprint inputs, required fields, or existing side effects is a
@@ -768,3 +771,45 @@ field, method, notification, and payload. A 1.6 client continues to validate
 and consume resource, scene, script, and live-editor profiles without changing
 their earlier DTO semantics. The authoritative identity, state, source
 mapping, retention, timeout, and safety rules are in RUNTIME-001.
+
+## 23. Bridge RPC 1.7 editor transactions
+
+Bridge RPC 1.7 retains every lower-minor capability and specifies
+`transaction.scene_v1`. Capability presence does not imply write readiness:
+the readiness object separately reports editor/session/scene availability,
+approval availability, busy state, and safe unavailability reason.
+
+The methods are `transaction.prepare`, `transaction.apply`,
+`transaction.status`, and `transaction.undo`; state changes are published as
+`transaction.event`. One transaction contains one operation from the closed
+WRITE-001 set. Transaction and idempotency IDs outlive a request or connection
+but never cross a project or editor-session boundary.
+
+Prepare is read-only with respect to editor content and history. Its immutable
+result binds project/editor/scene/history revisions, affected opaque entities,
+risk, exact approval scope, bounded semantic preview, exact preview payload
+digest, expiry, and applied limits. The client MUST hash the exact supplied
+preview payload bytes and MUST NOT reserialize them into a different digest.
+
+Apply includes transaction ID, preview digest, expected revision coordinates,
+and the internal `mcp_form_v1` approval object defined by WRITE-001. The Bridge
+validates its domain-separated HMAC, scope, expiry, nonce uniqueness, current
+preconditions, and per-history concurrency before native action construction.
+Approval receipt fields are never accepted by a model-facing preparation tool.
+
+The native commit point begins immediately before
+`EditorUndoRedoManager::commit_action()`. Cancellation and automatic retry are
+forbidden after entry. Response loss after that point is
+`transaction_in_doubt` and permits status reconciliation only. Undo is guarded
+to the exact newest native action and never skips an unrelated history entry.
+
+The 1.7 limits add one operation per transaction, 64 prepared records per
+project, one applying transaction per scene history, 300-second prepared TTL,
+120-second elicitation timeout, 30-second receipt TTL, 2-second clock skew,
+8 KiB approval messages, 64 KiB preview/operation/status results, 1000-node
+structural preflight, and the bounded journal limits in WRITE-001.
+
+Sessions negotiated at 1.0–1.6 omit every 1.7-only capability, method, event,
+limit, state, approval object, and error. S9-01 freezes this semantic profile;
+S9-02 adds its closed JSON Schemas and cross-language conformance bundle before
+the capability can be advertised by production Bridge code.

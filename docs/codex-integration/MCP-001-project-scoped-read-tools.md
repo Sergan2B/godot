@@ -1,9 +1,10 @@
 # MCP-001 — Project-scoped Godot read tools
 
 **Status:** Sprint 2/3/4 tools live-verified on macOS arm64 and Windows x86_64;
-the Sprint 5 symbol tools, Sprint 6 find-usages/context surfaces, and Sprint 7
-sixteen-tool live-editor surface pass their local gates; the additive Sprint 8
-twenty-five-tool runtime surface is specified
+the Sprint 5 symbol tools, Sprint 6 find-usages/context surfaces, Sprint 7
+sixteen-tool live-editor surface, and Sprint 8 twenty-five-tool runtime surface
+pass their local gates; the Sprint 9 approval and transaction surface is
+specified by S9-01 but is not registered yet
 
 **MCP protocol:** `2025-11-25`
 
@@ -19,7 +20,10 @@ return cached editor state as current after the bridge becomes unavailable.
 Sprint 7 remains read-only and is governed by
 [EDITOR-001](EDITOR-001-live-editor-context.md). Sprint 8 adds local game
 process controls without adding project-content write tools and is governed by
-[RUNTIME-001](RUNTIME-001-debugger-and-runtime-observation.md).
+[RUNTIME-001](RUNTIME-001-debugger-and-runtime-observation.md). Sprint 9
+specifies guarded editor transactions through
+[WRITE-001](WRITE-001-editor-transactions-and-undo.md); S9-01 does not expose a
+production write tool.
 
 ## Lifecycle and project binding
 
@@ -153,6 +157,42 @@ runtime coordinates. Capture returns metadata in structured/text content and
 the verified PNG bytes exactly once as MCP image content; base64url, callback
 paths, and native handles are never part of the MCP result.
 
+### Sprint 9 transaction tools — specified, not registered by S9-01
+
+The reserved production tools are
+`godot_prepare_create_node`, `godot_prepare_delete_node`,
+`godot_prepare_reparent_node`, `godot_prepare_set_property`,
+`godot_prepare_attach_script`, `godot_prepare_detach_script`,
+`godot_prepare_connect_signal`, `godot_prepare_disconnect_signal`,
+`godot_apply_transaction`, `godot_get_transaction_status`, and
+`godot_undo_transaction`.
+
+Preparation inputs bind project, editor session, open scene, exact revisions,
+one operation, and a required idempotency key. They never accept approval
+material or a raw file destination. Preparation is non-read-only because it
+allocates bounded state, but is non-destructive and idempotent for the same
+canonical request. Status is read-only. Apply and Undo are non-read-only and
+destructive. All eleven tools have `openWorldHint: false`.
+
+`godot_apply_transaction` accepts transaction ID, preview digest, and expected
+revision coordinates only. Inside the call, the sidecar requires client
+`elicitation.form`, displays the immutable bounded preview/risk/scope, and
+accepts only MCP action `accept` with required `confirm: true`. The sidecar
+then sends an internal one-time receipt to Bridge. Receipt, nonce, MAC,
+`approved`, free-form consent, and account identity are forbidden MCP fields.
+
+The server profile remains MCP `2025-11-25`. Negotiated `2025-06-18` is an
+allowed form-only compatibility floor because that revision introduced the
+same standard action/content contract. In either revision, capability presence
+is mandatory; client name/version and OpenAI-specific form extensions do not
+substitute for `elicitation.form`.
+
+If form elicitation is absent, apply returns `approval_host_unsupported` and
+write readiness is false. Decline is terminal for the prepared transaction;
+cancel or timeout may prompt again before plan expiry. Session/persistent
+approval policies are deferred. The test-only `godot_s9_approval_probe` lives
+in a separate example binary and is never part of this registry.
+
 ## Resources
 
 `godot://project/summary` is the fixed 4096-byte conservative context resource.
@@ -166,8 +206,11 @@ disabled.
 
 ## Security and limits
 
-The Sprint 6 registry has ten tools; Sprint 7 adds six and Sprint 8 adds nine
-for an exact total of twenty-five. Observation and capture tools are annotated
+The implemented registry remains exactly twenty-five tools: Sprint 6 has ten,
+Sprint 7 adds six, and Sprint 8 adds nine. S9-01 reserves eleven transaction
+tools but does not register them; the production count may become 36 only at
+S9-09 after the Bridge executor and approval path are available. Observation
+and capture tools are annotated
 read-only and non-destructive. Run, pause, and continue are non-read-only and
 non-destructive. Stop is non-read-only and destructive. All tools reject
 additional input properties.
@@ -190,6 +233,11 @@ at 512 properties and 256 KiB, diagnostics at 200 records and 256 KiB, stacks
 at 64 records and 128 frames each, and screenshots at 1280x720 and 512 KiB.
 Raw ObjectID, PID, RID, graphics handles, absolute paths, stack locals, and
 screenshot temp paths are forbidden in model-facing output.
+
+Sprint 9 approval limits are a 120-second form interaction, 30-second receipt
+lifetime, 8 KiB approval message, and one pending elicitation per transaction.
+Approval content, receipt bytes, session tokens, unrestricted property values,
+and absolute paths are forbidden in MCP output, logs, journal, and evidence.
 
 ## Sprint 2 acceptance
 

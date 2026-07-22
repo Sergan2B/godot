@@ -1,0 +1,111 @@
+{
+  "schema_version": "approval-receipt-v1",
+  "canonicalization": {
+    "key_domain": "godot-codex/approval-key/v1",
+    "receipt_domain": "godot-codex/approval-receipt/v1",
+    "string_length_prefix": "u32be_utf8_bytes",
+    "integer_encoding": "u64be",
+    "nonce_encoding": "32_raw_bytes_from_unpadded_base64url",
+    "mac_encoding": "hmac_sha256_unpadded_base64url",
+    "negative_mutation_target": "validation_context_except_mac_and_used_nonce"
+  },
+  "positive": {
+    "id": "receipt.valid",
+    "session_token_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "approval_key_hex": "bd5c8a753ee9611953024d9dc26ae4cbf6a5b7d451534f6429e150b23b201d6d",
+    "coordinates": {
+      "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd",
+      "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+      "scene_id": "scene:11111111111111111111111111111111",
+      "transaction_id": "transaction:22222222222222222222222222222222",
+      "preview_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "scope": "scene.node.delete",
+      "risk": "destructive",
+      "scene_revision": 7,
+      "operation_seq": 11
+    },
+    "receipt": {
+      "kind": "mcp_form_v1",
+      "scope": "scene.node.delete",
+      "nonce": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+      "issued_at_ms": 1784690000000,
+      "expires_at_ms": 1784690030000,
+      "mac": "UA22qIiXEf_HN0OEg83xEyJjdrSlNZBop2DYeAMaeEM"
+    },
+    "canonical_length": 423,
+    "canonical_sha256": "sha256:f458905442d7891185a9fb9c8b029fe353f3625393bb4055104f873042716b75",
+    "current_ms": 1784690010000
+  },
+  "negative_cases": [
+    {
+      "id": "receipt.wrong_project",
+      "mutation": {
+        "project_id": "project:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected_error": "approval_invalid"
+    },
+    {
+      "id": "receipt.wrong_editor",
+      "mutation": {
+        "editor_session_id": "editor:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected_error": "approval_invalid"
+    },
+    {
+      "id": "receipt.wrong_transaction",
+      "mutation": {
+        "transaction_id": "transaction:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected_error": "approval_invalid"
+    },
+    {
+      "id": "receipt.wrong_digest",
+      "mutation": {
+        "preview_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "expected_error": "preview_mismatch"
+    },
+    {
+      "id": "receipt.wrong_scope",
+      "mutation": {
+        "scope": "scene.node.create"
+      },
+      "expected_error": "approval_scope_mismatch"
+    },
+    {
+      "id": "receipt.wrong_risk",
+      "mutation": {
+        "risk": "write"
+      },
+      "expected_error": "approval_invalid"
+    },
+    {
+      "id": "receipt.stale_revision",
+      "mutation": {
+        "scene_revision": 8
+      },
+      "expected_error": "stale_scene_revision"
+    },
+    {
+      "id": "receipt.expired",
+      "mutation": {
+        "current_ms": 1784690032001
+      },
+      "expected_error": "approval_invalid"
+    },
+    {
+      "id": "receipt.replayed",
+      "mutation": {
+        "used_nonce": true
+      },
+      "expected_error": "approval_replayed"
+    },
+    {
+      "id": "receipt.wrong_mac",
+      "mutation": {
+        "mac": "AA22qIiXEf_HN0OEg83xEyJjdrSlNZBop2DYeAMaeEM"
+      },
+      "expected_error": "approval_invalid"
+    }
+  ]
+}

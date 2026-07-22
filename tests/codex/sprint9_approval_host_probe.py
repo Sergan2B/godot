@@ -8,10 +8,12 @@ import json
 import os
 import platform
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,7 @@ MCP_WORKSPACE = REPO_ROOT / "godot-codex-mcp"
 PROBE_BINARY = MCP_WORKSPACE / "target" / "debug" / "examples" / "approval_probe"
 PROBE_SERVER = "godot_s9_approval_probe"
 PROBE_TOOL = "godot_s9_approval_probe"
+SUPPORTED_FORM_PROTOCOLS = {"2025-06-18", "2025-11-25"}
 
 
 class ApprovalProbeError(RuntimeError):
@@ -96,10 +99,29 @@ def validate_trace(path: Path) -> dict[str, Any]:
     require(isinstance(host.get("name"), str) and host["name"], "host name is missing")
     require(isinstance(host.get("version"), str) and host["version"], "host version is missing")
     require(
-        host.get("protocol_version") == "2025-11-25",
-        "Codex host negotiated an unexpected MCP protocol",
+        host.get("protocol_version") in SUPPORTED_FORM_PROTOCOLS,
+        "Codex host negotiated a pre-elicitation MCP protocol",
     )
     return value
+
+
+def stop_host_after_trace(process: subprocess.Popen[bytes]) -> None:
+    """Close the interactive host after the probe wrote its immutable trace."""
+
+    for _ in range(2):
+        if process.poll() is not None:
+            return
+        process.send_signal(signal.SIGINT)
+        time.sleep(0.5)
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
 
 
 def run_host(codex: Path, output: Path, timeout: int) -> None:
@@ -128,8 +150,20 @@ def run_host(codex: Path, output: Path, timeout: int) -> None:
             "After the tool finishes, reply with only: probe complete"
         ),
     ]
-    completed = subprocess.run(command, cwd=REPO_ROOT, check=False)
-    require(completed.returncode == 0, f"Codex host exited with {completed.returncode}")
+    process = subprocess.Popen(command, cwd=REPO_ROOT)
+    deadline = time.monotonic() + timeout + 180
+    trace_seen_at: float | None = None
+    while process.poll() is None:
+        if output.is_file():
+            trace_seen_at = trace_seen_at or time.monotonic()
+            if time.monotonic() - trace_seen_at >= 2:
+                stop_host_after_trace(process)
+                break
+        if time.monotonic() >= deadline:
+            stop_host_after_trace(process)
+            raise ApprovalProbeError("Codex host probe exceeded its bounded deadline")
+        time.sleep(0.1)
+    require(output.is_file(), f"Codex host exited with {process.returncode} before producing a trace")
 
 
 def parse_args() -> argparse.Namespace:
