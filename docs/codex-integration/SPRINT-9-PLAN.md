@@ -1,7 +1,7 @@
 # Sprint 9 plan — safe editor transactions
 
-**Status:** S9-01 through S9-11 implemented and locally verified; S9-12
-source-bound macOS arm64 qualification ready
+**Status:** Complete. S9-01 through S9-12 are implemented, locally qualified
+on macOS arm64, and closed by source-bound evidence
 
 **Milestone:** Write Foundation
 
@@ -147,8 +147,8 @@ negotiated revision and is deleted after validation.
 **Status:** Complete. RPC 1.7 negotiation, the initially unavailable
 capability, closed DTO validation, shared Rust/C++ vectors, safe limits,
 downgrade behavior, and fail-closed routing are implemented. S9-04 now updates
-that capability with live coordinator/scene/approval/busy readiness; production
-MCP write tools remain disabled for later gates.
+that capability with live coordinator/scene/approval/busy readiness; S9-09
+publishes the guarded production MCP write tools after those gates.
 
 **Changes:** additive 1.7 negotiation; `transaction.scene_v1` capability and
 limits; `transaction.prepare`, `transaction.apply`, `transaction.status`, and
@@ -236,8 +236,8 @@ one bounded native action, publish post-commit identities only after intrinsic
 validation, and retain deleted subtrees through native Undo references. Focused
 C++ and local macOS gates prove exact topology, owner, order, Node2D/Node3D
 transform, connection, duplicate/recovery, targeted/native Undo/Redo, fault,
-source-hash, and 1000-node boundary behavior. Full Sprint 9 closeout evidence
-remains deferred to S9-10–S9-12.
+source-hash, and 1000-node boundary behavior. S9-10–S9-12 complete the
+independent oracle, model-free workflow, and source-bound closeout evidence.
 
 **Changes:** operation validators and native do/undo registrations for node
 creation, subtree deletion, and same-scene reparenting. Preserve deterministic
@@ -430,11 +430,13 @@ restart, unrelated Undo, or manual repair of fixture state.
 
 **Depends on:** all implementation and gate commits complete.
 
-**Status:** Acceptance wrapper and validator complete; final qualifying run and
-evidence-only commit remain.
+**Status:** Complete. Qualifying source commit
+`38e33a3a2d0bf1b533a378a7ee9fa429f9a4771f` passed every local gate. Evidence
+was published alone in commit
+`0255da9686d5be8c1362e2f2d2c33eaf54b8a3c2` and passed post-commit validation.
 
-**Changes:** no production implementation changes. Run the source-bound
-acceptance wrapper and add only
+**Changes:** no production implementation changes. The source-bound acceptance
+wrapper published only
 `tests/codex/evidence/sprint-9-editor-transactions-macos.json`.
 
 **Tests:** fixture/oracle and Python policy regressions; Rust fmt, full
@@ -446,7 +448,7 @@ permissions/cleanup/redaction; artifact/source hashes.
 **Done when:** immutable evidence validates against the current clean source
 coordinate, every acceptance transaction has a unique ID and complete Undo
 proof, no source-content hash changed, and external gates remain honestly
-`not_run`.
+`not_run`. This condition is satisfied.
 
 ## 3. Transaction contract
 
