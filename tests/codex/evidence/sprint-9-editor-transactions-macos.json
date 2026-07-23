@@ -1,0 +1,204 @@
+{
+  "artifacts": {
+    "godot_sha256": "sha256:8a2c4327f1b8fd30f047dd0cb9efecb3a29d02f19ecf0bde4a88717bd19d2607",
+    "model_free_report_sha256": "sha256:10e15244716ee65be8924bfd2baec98dd5f94a8e7ca1f5df7f234c9eb8942074",
+    "model_free_runner_sha256": "sha256:f5d85487de9d3439e1a0254a7d0b6323b83c7def1a8d4374fb31295934c2b3dc",
+    "sidecar_sha256": "sha256:7809495a9a191a11be541ae684bee677f475aeb10ef7a5f050f9755995ec22b5",
+    "validator_sha256": "sha256:4e3adb985c43633500b75dadaa92ccdeabf50cad9987d7a88f3eacc11870faaa"
+  },
+  "checks": {
+    "approval_form_only": true,
+    "bounded_reports": true,
+    "corrupt_journal_fail_closed": true,
+    "eight_operation_workflow": true,
+    "exact_targeted_undo": true,
+    "idempotency_closed": true,
+    "intervening_action_blocks_targeted_undo": true,
+    "native_undo_redo_correlated": true,
+    "no_mutation_after_prepare": true,
+    "no_persistent_undo_after_editor_restart": true,
+    "preapproval_rejections": true,
+    "response_loss_no_replay": true,
+    "source_content_unchanged": true,
+    "tool_registry_exact": true
+  },
+  "cleanup": {
+    "editor_processes_stopped": true,
+    "game_processes_stopped": true,
+    "sidecar_processes_stopped": true,
+    "temporary_workspaces_removed": true
+  },
+  "external_gates": {
+    "linux": {
+      "reason": "local qualifying coordinate is macOS arm64",
+      "status": "not_run"
+    },
+    "model_facing": {
+      "reason": "qualification uses a deterministic model-free client",
+      "status": "not_run"
+    },
+    "remote_ci": {
+      "reason": "no remote CI coordinate was requested",
+      "status": "not_run"
+    },
+    "windows": {
+      "reason": "local qualifying coordinate is macOS arm64",
+      "status": "not_run"
+    }
+  },
+  "lifecycle": {
+    "apply_exactly_once": true,
+    "native_redo_same_transaction": true,
+    "prepare_read_only": true,
+    "revision_relations_exact": true,
+    "targeted_undo_exact": true
+  },
+  "local_gates": {
+    "approval_contracts": {
+      "duration_ms": 613.418,
+      "status": "passed"
+    },
+    "cpp_s9_profiles": {
+      "duration_ms": 641.85,
+      "status": "passed"
+    },
+    "direct_bridge_matrix": {
+      "duration_ms": 291016.52,
+      "status": "passed"
+    },
+    "final_integrity": {
+      "duration_ms": 787.193,
+      "status": "passed"
+    },
+    "fixture_oracle": {
+      "duration_ms": 579.913,
+      "status": "passed"
+    },
+    "godot_editor_build": {
+      "duration_ms": 10911.425,
+      "status": "passed"
+    },
+    "model_free_mcp": {
+      "duration_ms": 311875.167,
+      "status": "passed"
+    },
+    "release_sidecar_build": {
+      "duration_ms": 336.732,
+      "status": "passed"
+    },
+    "rpc_conformance": {
+      "duration_ms": 2219.009,
+      "status": "passed"
+    },
+    "rust_clippy": {
+      "duration_ms": 472.065,
+      "status": "passed"
+    },
+    "rust_format": {
+      "duration_ms": 350.088,
+      "status": "passed"
+    },
+    "rust_workspace_tests": {
+      "duration_ms": 22857.057,
+      "status": "passed"
+    },
+    "sprint7_regression": {
+      "duration_ms": 28349.386,
+      "status": "passed"
+    },
+    "sprint8_regressions": {
+      "duration_ms": 58527.404,
+      "status": "passed"
+    }
+  },
+  "performance": {
+    "apply": {
+      "max_ms": 153.288,
+      "p50_ms": 143.27,
+      "p95_ms": 153.288
+    },
+    "bridge_dispatcher": {
+      "budget_usec": 2000,
+      "over_budget_count": 0,
+      "within_budget": true
+    },
+    "prepare": {
+      "max_ms": 48.374,
+      "p50_ms": 44.389,
+      "p95_ms": 48.374
+    },
+    "status": {
+      "max_ms": 64.012,
+      "p50_ms": 40.822,
+      "p95_ms": 64.012
+    },
+    "undo": {
+      "max_ms": 71.928,
+      "p50_ms": 63.675,
+      "p95_ms": 71.928
+    }
+  },
+  "platform": {
+    "architecture": "arm64",
+    "os": "macos"
+  },
+  "profile": "qualifying_local_macos_arm64",
+  "protocols": {
+    "bridge_rpc": "1.7",
+    "mcp": "2025-11-25",
+    "tools": 36
+  },
+  "recovery": {
+    "bridge_response_loss": "committed_without_replay",
+    "corrupt_journal": "quarantined_reads_available",
+    "disconnect_before_commit": "failed_without_action",
+    "editor_crash_before_commit": "pre_state_new_session",
+    "editor_restart_after_commit": "no_persistent_undo",
+    "journal_ack_restart": "committed_without_replay",
+    "sidecar_disconnect_prepared": "immutable_reprepare"
+  },
+  "redaction": {
+    "absolute_paths_absent": true,
+    "approval_material_absent": true,
+    "canaries_absent": true,
+    "native_ids_absent": true
+  },
+  "schema_version": "s9-editor-transactions-evidence/1.0",
+  "source": {
+    "commit": "38e33a3a2d0bf1b533a378a7ee9fa429f9a4771f",
+    "file_count": 322,
+    "fixture_manifest_sha256": "sha256:e72677b03fd632fdd6af57dd6baa3308e404ff28e5b55a2b6137ac086b4c231a",
+    "golden_sha256": "sha256:9dd9725d5c668ae7e126c45a54c0e8ab9f55856abb24c4dc96a8f4ed90c48c58",
+    "scope_manifest": "tests/codex/sprint9_source_scopes.txt",
+    "sha256": "sha256:7c4065804912a8d36472dfb14daf50a1c61ba283dcb64bab9c085e3f7107688a"
+  },
+  "sprint": 9,
+  "status": "passed",
+  "summary": {
+    "elicitation_count": 13,
+    "fault_scenarios": 7,
+    "intervening_native_actions": 4,
+    "operations": 8,
+    "primary_transactions": 8,
+    "transaction_native_actions": 8
+  },
+  "toolchain": {
+    "cargo": "cargo 1.94.1 (29ea6fb6a 2026-03-24)",
+    "macos_sdk": "26.2",
+    "python": "3.14.6",
+    "rust_host": "aarch64-apple-darwin",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)",
+    "scons": "SCons by Steven Knight et al.:",
+    "xcode": "Xcode 26.3; Build version 17C529"
+  },
+  "transaction_identity_sha256": [
+    "sha256:a50b48ef8d92cc9708e0b09cbab07f72d802e245eed90161fbca6f4eef69a136",
+    "sha256:2a03924bcd425d0b8b85280c5a3c2a1ac8609c4354fd643eb0aea48f4dc5b2d7",
+    "sha256:8f5b599def84cec8ede957d5eba5012484a23d417fbcafb017db27a48f86507e",
+    "sha256:d5ca71cc269bfc5e36f57429fa018172b3e4bbcfda24fd9600d433b4745f64b0",
+    "sha256:f5897a1d074582f61a12bd9706344ef2f5a861d80bf05a5b4d65f86bd80fde0c",
+    "sha256:0f5090983a7a233db0242abbd4fb5ee4549e08f206efe5a646065264f201d6fe",
+    "sha256:b9768d2de780e3e29cf7379d34109c0d3b0f9a8306c764ceebad7811901d2a44",
+    "sha256:2fe63c3476e239572c420d0980fecf63aa80ec295b0a885782d1bd9a398df943"
+  ]
+}
