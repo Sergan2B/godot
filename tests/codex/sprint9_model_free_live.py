@@ -2511,6 +2511,36 @@ def aggregate_latencies(operations: list[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def validate_native_history_matrix(operations: list[Mapping[str, Any]]) -> None:
+    representative_families = {
+        "attach_script",
+        "connect_signal",
+        "create_node",
+        "set_property",
+    }
+    for operation in operations:
+        kind = operation.get("operation")
+        require(kind in PREPARE_TOOLS, "operation report has an unknown family")
+        representative = kind in representative_families
+        require(
+            operation.get("transaction_native_actions") == 1
+            and operation.get("native_undo_redo") is representative
+            and operation.get("intervening_action") is representative
+            and operation.get("native_actions") == (2 if representative else 1),
+            f"{kind} native history coverage differs",
+        )
+    if len(operations) == len(PREPARE_TOOLS):
+        require(
+            {
+                operation["operation"]
+                for operation in operations
+                if operation["native_undo_redo"]
+            }
+            == representative_families,
+            "full native Undo/Redo family coverage differs",
+        )
+
+
 def atomic_json(path: Path, value: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -2690,6 +2720,7 @@ def main() -> int:
         len(transaction_hashes) == len(set(transaction_hashes)),
         "distinct operations reused a transaction identity",
     )
+    validate_native_history_matrix(operations)
     frame_max = max(
         (
             int(item["frame_telemetry"]["max_elapsed_usec"])
