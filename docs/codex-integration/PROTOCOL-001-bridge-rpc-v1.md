@@ -1,7 +1,8 @@
 # PROTOCOL-001 — Bridge RPC 1.x
 
-**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.7 extensions implemented
-and locally verified; the 1.7 transaction coordinator remains unavailable
+**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.7 extensions, Rust
+transaction coordinator, recovery journal, and guarded MCP route implemented
+and locally verified
 
 **Date:** 2026-07-21
 
@@ -814,4 +815,12 @@ state, approval object, and error; transaction method calls fail with
 `capability_unavailable`. S9-02 advertises `transaction.scene_v1` only with
 `readiness: unavailable`, validates 1.7 request DTOs before failing closed, and
 does not create pending requests, dispatch editor work, emit transaction
-events, or mutate editor state. Coordinator readiness is a later Sprint 9 gate.
+events, or mutate editor state. S9-04 activates guarded dispatch and reports
+current coordinator, open-scene, approval-verifier, and per-history busy
+readiness. Apply remains operation-gated: until the matching S9-05 through
+S9-07 executor is registered, it fails before native action construction with
+`scene_operation_unsupported`.
+S9-08 adds the authenticated Rust 1.7 client, status/event reconciliation,
+bounded private recovery journal, and no-replay latch. S9-09 publishes the
+eleven guarded MCP tools only through that coordinator; approval receipts and
+their key material remain private to the authenticated Bridge connection.

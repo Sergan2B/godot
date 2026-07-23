@@ -1,6 +1,7 @@
 # Sprint 9 plan — safe editor transactions
 
-**Status:** In progress; S9-01 and S9-02 implemented and locally verified
+**Status:** S9-01 through S9-11 implemented and locally verified; S9-12
+source-bound macOS arm64 qualification ready
 
 **Milestone:** Write Foundation
 
@@ -22,7 +23,11 @@ Sprint 9 transaction.
 [PRODUCT-001](PRODUCT-001-semantic-bridge-vision-and-plan.md), and
 [ARCHITECTURE-001](ARCHITECTURE-001-bridge-sidecar-index-and-evidence-plan.md).
 `WRITE-001` is frozen by `S9-01`; S9-02 implements its strict Bridge RPC 1.7
-schemas and advertises the guarded transaction capability as unavailable.
+schemas, S9-03 provides immutable preparation, S9-04 activates the guarded
+apply/status/Undo core, and S9-05 through S9-07 register the closed structural,
+property, existing-script, and same-scene signal executors. S9-08 adds the
+bounded Rust recovery coordinator and S9-09 publishes the guarded 36-tool MCP
+surface.
 
 ## 1. Outcome and fixed decisions
 
@@ -139,10 +144,11 @@ negotiated revision and is deleted after validation.
 
 **Depends on:** S9-01.
 
-**Status:** Complete. RPC 1.7 negotiation, the unavailable capability, closed
-DTO validation, shared Rust/C++ vectors, safe limits, downgrade behavior, and
-no-dispatch routing are implemented. Coordinator, event emission, mutation,
-Undo, and production MCP write tools remain disabled for later gates.
+**Status:** Complete. RPC 1.7 negotiation, the initially unavailable
+capability, closed DTO validation, shared Rust/C++ vectors, safe limits,
+downgrade behavior, and fail-closed routing are implemented. S9-04 now updates
+that capability with live coordinator/scene/approval/busy readiness; production
+MCP write tools remain disabled for later gates.
 
 **Changes:** additive 1.7 negotiation; `transaction.scene_v1` capability and
 limits; `transaction.prepare`, `transaction.apply`, `transaction.status`, and
@@ -164,6 +170,10 @@ history ID, absolute path, or unbounded Variant content.
 ### S9-03 — Build the coordinator and immutable preview
 
 **Depends on:** S9-02.
+
+**Status:** Complete. The bounded coordinator, immutable digest-bound preview,
+idempotency, revision guards, expiry/conflict invalidation, time-sliced
+resolution, and read-only macOS fixture gate are implemented.
 
 **Changes:** editor-side `TransactionCoordinator` and bounded prepared store;
 fresh IDs; canonical request digest; idempotency lookup; time-sliced preflight;
@@ -190,6 +200,12 @@ no stale or unsupported request can reach native action construction.
 
 **Depends on:** S9-03 and the proven S9-01 approval binding.
 
+**Status:** Complete. One-time approval verification, final preflight,
+exactly-once apply latches, native commit correlation, bounded status/events,
+response-loss recovery, targeted Undo, and native Undo/Redo reconciliation are
+implemented and locally proven with a dev-only fixture executor. No production
+operation executor is registered before S9-05 through S9-07.
+
 **Changes:** receipt verification; last-moment preflight; one in-flight apply
 per scene history; explicit commit point; native action correlation;
 transaction event/status publication; intrinsic postcondition check;
@@ -214,6 +230,14 @@ unrelated action.
 ### S9-05 — Add create, delete, and reparent operations
 
 **Depends on:** S9-04.
+
+**Status:** Complete. Production create/reparent/delete executors now perform
+one bounded native action, publish post-commit identities only after intrinsic
+validation, and retain deleted subtrees through native Undo references. Focused
+C++ and local macOS gates prove exact topology, owner, order, Node2D/Node3D
+transform, connection, duplicate/recovery, targeted/native Undo/Redo, fault,
+source-hash, and 1000-node boundary behavior. Full Sprint 9 closeout evidence
+remains deferred to S9-10–S9-12.
 
 **Changes:** operation validators and native do/undo registrations for node
 creation, subtree deletion, and same-scene reparenting. Preserve deterministic
@@ -344,6 +368,10 @@ the transaction coordinator.
 
 **Depends on:** S9-03–S9-09.
 
+**Status:** Complete. The closed manifest, independent golden oracle, bounded
+fixture, deterministic fault markers, safe projections, source fingerprinting,
+and direct Bridge regression runners are implemented and locally verified.
+
 **Changes:** hashed fixture manifest; saved open scene with owned, instanced,
 inherited, locked, transform, script, signal, property, and bounded-large
 cases; deterministic editor commands for external native mutation, standard
@@ -372,6 +400,12 @@ unsafe journal/output content.
 
 **Depends on:** S9-10.
 
+**Status:** Complete. The deterministic MCP client exercises all eight
+operation families through real form elicitation, targeted and native
+Undo/Redo, opaque intervening actions, approval/idempotency negatives, and the
+seven-scenario crash/disconnect matrix. Its report contains only bounded
+observations and hashed transaction identities.
+
 **Changes:** temporary fixture copy and real editor/Bridge/sidecar workflow for
 each operation family. The runner records prepared and committed transaction
 IDs, previews/digests, revision/history transitions, fault results, readback,
@@ -396,8 +430,11 @@ restart, unrelated Undo, or manual repair of fixture state.
 
 **Depends on:** all implementation and gate commits complete.
 
-**Changes:** no implementation changes. Run the source-bound acceptance
-wrapper and add only
+**Status:** Acceptance wrapper and validator complete; final qualifying run and
+evidence-only commit remain.
+
+**Changes:** no production implementation changes. Run the source-bound
+acceptance wrapper and add only
 `tests/codex/evidence/sprint-9-editor-transactions-macos.json`.
 
 **Tests:** fixture/oracle and Python policy regressions; Rust fmt, full
@@ -592,7 +629,7 @@ Sprint 9 passes only when the independent oracle proves all of the following:
 16. all Bridge RPC 1.0–1.6, Sprint 7 live-editor, and Sprint 8 runtime
     regressions remain green.
 
-The qualifying command is planned as:
+The qualifying command is:
 
 ```sh
 .venv/bin/python tests/codex/sprint9_acceptance.py --timeout 60
@@ -612,6 +649,19 @@ path. It executes, in order:
 8. Sprint 7/8 regression profiles;
 9. source-byte, journal-permission, cleanup, redaction, and process scans;
 10. source/artifact SHA-256 binding and atomic evidence publication.
+
+All implementation, fixture, runner, and validator changes are committed
+before this command. The generated evidence is committed alone as
+`test(evidence): qualify sprint 9 macos arm64`, then revalidated with:
+
+```sh
+.venv/bin/python tests/codex/sprint9_acceptance.py \
+  --validate tests/codex/evidence/sprint-9-editor-transactions-macos.json
+```
+
+The validator accepts `HEAD == source.commit` before the evidence commit and
+`HEAD^ == source.commit` afterward only when the child commit changes exactly
+that evidence file.
 
 Initial SLOs are prepare/preview p95 at most 500 ms, transaction status p95 at
 most 200 ms, apply and Undo confirmation/visibility p95 at most 2 seconds,

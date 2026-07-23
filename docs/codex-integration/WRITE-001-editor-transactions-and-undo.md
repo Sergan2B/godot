@@ -1,6 +1,7 @@
 # WRITE-001 — Editor transactions, approval, and native Undo
 
-**Status:** Approved Sprint 9 contract; implementation is capability-gated
+**Status:** Approved Sprint 9 contract; S9-04–S9-09 executor, coordinator,
+recovery, approval, and MCP surface implemented
 
 **Contract version:** `1.0`
 
@@ -424,14 +425,14 @@ Bridge RPC 1.7 specifies capability `transaction.scene_v1`, methods
 readiness are separate. Sessions negotiated at 1.0–1.6 omit every transaction
 method, capability, payload, limit, and event.
 
-MCP reserves eight operation-specific preparation tools plus apply, status, and
+MCP exposes eight operation-specific preparation tools plus apply, status, and
 Undo. Preparation is non-read-only because it allocates bounded state, but is
 non-destructive and idempotent for one required key. Status is read-only. Apply
 and Undo are non-read-only and destructive. Every tool is closed-world and
 rejects additional properties.
 
-S9-01 does not register these tools. The production registry remains exactly
-25 until the S9-09 MCP implementation gate. The test-only
+S9-09 registers these eleven tools after the executor/coordinator gates, making
+the production registry exactly 36 tools. The test-only
 `godot_s9_approval_probe` is a separate example binary and is never part of the
 production server.
 
@@ -466,7 +467,8 @@ S9-01 is closed only when:
 4. the installed macOS arm64 Codex host produces a bounded safe protocol trace;
 5. the receipt golden vector and all field-mutation negatives validate;
 6. WRITE-001, PROTOCOL-001, MCP-001, and the Sprint 9 plan agree;
-7. the production registry remains exactly 25 and contains no apply tool;
+7. at the S9-01 boundary, the production registry remains exactly 25 and
+   contains no apply tool;
 8. Bridge RPC 1.0–1.6 and Sprint 7/8 regressions remain unchanged;
 9. no project scene/resource/script bytes change during the approval probe.
 

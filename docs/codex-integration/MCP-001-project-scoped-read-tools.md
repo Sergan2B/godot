@@ -2,9 +2,8 @@
 
 **Status:** Sprint 2/3/4 tools live-verified on macOS arm64 and Windows x86_64;
 the Sprint 5 symbol tools, Sprint 6 find-usages/context surfaces, Sprint 7
-sixteen-tool live-editor surface, and Sprint 8 twenty-five-tool runtime surface
-pass their local gates; the Sprint 9 approval and transaction surface is
-specified by S9-01 but is not registered yet
+sixteen-tool live-editor surface, Sprint 8 twenty-five-tool runtime surface,
+and Sprint 9 thirty-six-tool guarded transaction surface pass their local gates
 
 **MCP protocol:** `2025-11-25`
 
@@ -21,9 +20,8 @@ Sprint 7 remains read-only and is governed by
 [EDITOR-001](EDITOR-001-live-editor-context.md). Sprint 8 adds local game
 process controls without adding project-content write tools and is governed by
 [RUNTIME-001](RUNTIME-001-debugger-and-runtime-observation.md). Sprint 9
-specifies guarded editor transactions through
-[WRITE-001](WRITE-001-editor-transactions-and-undo.md); S9-01 does not expose a
-production write tool.
+implements guarded editor transactions through
+[WRITE-001](WRITE-001-editor-transactions-and-undo.md).
 
 ## Lifecycle and project binding
 
@@ -157,9 +155,9 @@ runtime coordinates. Capture returns metadata in structured/text content and
 the verified PNG bytes exactly once as MCP image content; base64url, callback
 paths, and native handles are never part of the MCP result.
 
-### Sprint 9 transaction tools — specified, not registered by S9-01
+### Sprint 9 transaction tools
 
-The reserved production tools are
+The production tools are
 `godot_prepare_create_node`, `godot_prepare_delete_node`,
 `godot_prepare_reparent_node`, `godot_prepare_set_property`,
 `godot_prepare_attach_script`, `godot_prepare_detach_script`,
@@ -206,11 +204,10 @@ disabled.
 
 ## Security and limits
 
-The implemented registry remains exactly twenty-five tools: Sprint 6 has ten,
-Sprint 7 adds six, and Sprint 8 adds nine. S9-01 reserves eleven transaction
-tools but does not register them; the production count may become 36 only at
-S9-09 after the Bridge executor and approval path are available. Observation
-and capture tools are annotated
+The implemented registry contains exactly thirty-six tools: Sprint 6 has ten,
+Sprint 7 adds six, Sprint 8 adds nine, and Sprint 9 adds eleven guarded
+transaction tools after the Bridge executor and approval path. Observation and
+capture tools are annotated
 read-only and non-destructive. Run, pause, and continue are non-read-only and
 non-destructive. Stop is non-read-only and destructive. All tools reject
 additional input properties.
