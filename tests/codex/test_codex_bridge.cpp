@@ -2122,10 +2122,17 @@ TEST_CASE("[CodexS8Runtime][CodexRTScreenshot] Screenshot policy validates callb
 	DirAccess::remove_absolute(link_path);
 	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	REQUIRE(filesystem.is_valid());
-	REQUIRE(filesystem->create_link(link_target, link_path) == OK);
-	CHECK(filesystem->is_link(link_path));
-	CHECK_FALSE(RuntimeScreenshotPolicy::is_regular_callback_file(link_path, temp_root, regular_path));
-	CHECK(RuntimeScreenshotPolicy::cleanup_callback_path(link_path, temp_root));
+	const Error link_error = filesystem->create_link(link_target, link_path);
+#ifndef WINDOWS_ENABLED
+	REQUIRE(link_error == OK);
+#endif
+	if (link_error == OK) {
+		CHECK(filesystem->is_link(link_path));
+		CHECK_FALSE(RuntimeScreenshotPolicy::is_regular_callback_file(link_path, temp_root, regular_path));
+		CHECK(RuntimeScreenshotPolicy::cleanup_callback_path(link_path, temp_root));
+	} else {
+		MESSAGE("Skipping symlink rejection on Windows because the process lacks symlink privileges.");
+	}
 	CHECK(FileAccess::exists(link_target));
 	CHECK(DirAccess::remove_absolute(link_target) == OK);
 

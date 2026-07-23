@@ -1,7 +1,12 @@
 docs/codex-integration/MCP-001-project-scoped-read-tools.md
 docs/codex-integration/PROTOCOL-001-bridge-rpc-v1.md
 docs/codex-integration/SPRINT-9-PLAN.md
+docs/codex-integration/SPRINT-9-WINDOWS.md
 docs/codex-integration/WRITE-001-editor-transactions-and-undo.md
+editor/run/editor_run.cpp
+editor/run/editor_run.h
+editor/run/game_view_plugin.cpp
+editor/run/game_view_plugin.h
 godot-codex-mcp/Cargo.lock
 godot-codex-mcp/Cargo.toml
 godot-codex-mcp/README.md

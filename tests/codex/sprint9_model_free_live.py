@@ -128,6 +128,28 @@ class WorkflowError(RuntimeError):
     """Raised when the live workflow violates an acceptance invariant."""
 
 
+def target_platform() -> str:
+    machine = platform.machine().lower()
+    if sys.platform == "darwin" and machine in {"arm64", "aarch64"}:
+        return "macos-arm64"
+    if sys.platform == "win32" and machine in {"amd64", "x86_64"}:
+        return "windows-x86_64"
+    raise WorkflowError(
+        f"S9 model-free gate requires macOS arm64 or Windows x86_64, got {sys.platform}/{machine}"
+    )
+
+
+def default_godot_path() -> Path:
+    if sys.platform == "win32":
+        return REPOSITORY_ROOT / "bin/godot.windows.editor.dev.x86_64.console.exe"
+    return REPOSITORY_ROOT / "bin/godot.macos.editor.dev.arm64"
+
+
+def default_sidecar_path() -> Path:
+    executable = "godot-codex-mcp.exe" if sys.platform == "win32" else "godot-codex-mcp"
+    return REPOSITORY_ROOT / "godot-codex-mcp/target/release" / executable
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise WorkflowError(message)
@@ -518,7 +540,7 @@ class FixtureSession:
         self.frame_telemetry: dict[str, Any] | None = None
 
     def __enter__(self) -> FixtureSession:
-        self.temporary = tempfile.TemporaryDirectory(prefix="s9-mcp-", dir="/tmp")
+        self.temporary = tempfile.TemporaryDirectory(prefix="s9-mcp-")
         self.project_root = Path(self.temporary.name) / "project"
         shutil.copytree(
             FIXTURE_ROOT,
@@ -2616,13 +2638,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--godot",
         type=Path,
-        default=REPOSITORY_ROOT / "bin/godot.macos.editor.dev.arm64",
+        default=default_godot_path(),
     )
     parser.add_argument(
         "--sidecar",
         type=Path,
-        default=REPOSITORY_ROOT
-        / "godot-codex-mcp/target/release/godot-codex-mcp",
+        default=default_sidecar_path(),
     )
     parser.add_argument("--report", type=Path)
     parser.add_argument("--timeout", type=float, default=45.0)
@@ -2646,11 +2667,7 @@ def parse_arguments() -> argparse.Namespace:
 
 def main() -> int:
     arguments = parse_arguments()
-    require(sys.platform == "darwin", "S9 model-free gate requires macOS")
-    require(
-        platform.machine().lower() in {"arm64", "aarch64"},
-        "S9 model-free gate requires arm64",
-    )
+    platform_tag = target_platform()
     godot = arguments.godot.resolve(strict=True)
     sidecar = arguments.sidecar.resolve(strict=True)
     golden = oracle.strict_json(GOLDEN_PATH)
@@ -2809,7 +2826,7 @@ def main() -> int:
     report = {
         "schema_version": "s9-model-free-workflow/1.0",
         "status": "passed",
-        "platform": "macos-arm64",
+        "platform": platform_tag,
         "protocol": MCP_PROTOCOL,
         "tool_registry": 36,
         "operations": operations,

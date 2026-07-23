@@ -1,7 +1,9 @@
 # Sprint 9 plan — safe editor transactions
 
 **Status:** Complete. S9-01 through S9-12 are implemented, locally qualified
-on macOS arm64, and closed by source-bound evidence
+on macOS arm64, and closed by source-bound evidence. A native Windows x86_64
+qualification coordinate was added afterward; see
+[SPRINT-9-WINDOWS.md](SPRINT-9-WINDOWS.md).
 
 **Milestone:** Write Foundation
 
@@ -87,9 +89,10 @@ Undo path. It does not save a scene or patch a source file.
 - No supported operation writes or saves `.tscn`, `.tres`, `.gd`, or `.cs`.
   The journal lives only in generated project-private state, contains bounded
   metadata and hashes, and is not an alternative source of scene truth.
-- The blocking acceptance coordinate is local macOS arm64. Windows, Linux,
-  remote CI, model-facing validation, and approval UX outside the proven local
-  host are reported honestly as `not_run`.
+- The original blocking acceptance coordinate is local macOS arm64. Native
+  Windows x86_64 can now produce a separate source-bound evidence artifact.
+  Linux, remote CI, model-facing validation, and approval UX outside the proven
+  local host are reported honestly as `not_run`.
 
 ## 2. Gates and deliverables
 
@@ -631,11 +634,20 @@ Sprint 9 passes only when the independent oracle proves all of the following:
 16. all Bridge RPC 1.0–1.6, Sprint 7 live-editor, and Sprint 8 runtime
     regressions remain green.
 
-The qualifying command is:
+The qualifying command on macOS arm64 is:
 
 ```sh
 .venv/bin/python tests/codex/sprint9_acceptance.py --timeout 60
 ```
+
+The native Windows x86_64 coordinate uses the same wrapper:
+
+```powershell
+python tests\codex\sprint9_acceptance.py --timeout 90
+```
+
+Windows-specific prerequisites, behavior, and evidence naming are documented
+in [SPRINT-9-WINDOWS.md](SPRINT-9-WINDOWS.md).
 
 The wrapper refuses a dirty Sprint 9 source scope or an existing evidence
 path. It executes, in order:
@@ -644,7 +656,8 @@ path. It executes, in order:
 2. Rust formatting, full locked/offline workspace tests, and deny-warning
    Clippy;
 3. Bridge schema/conformance bundle including all older minor profiles;
-4. tests-enabled macOS arm64 Godot editor build and focused `*CodexS9*` tests;
+4. tests-enabled native Godot editor build for the local qualifying coordinate
+   and focused `*CodexS9*` tests;
 5. release sidecar build;
 6. model-free prepare/no-mutation/stale/approval/apply/readback/Undo workflow;
 7. deterministic pre/post-commit fault and reconnect matrix;
@@ -654,7 +667,8 @@ path. It executes, in order:
 
 All implementation, fixture, runner, and validator changes are committed
 before this command. The generated evidence is committed alone as
-`test(evidence): qualify sprint 9 macos arm64`, then revalidated with:
+an evidence-only commit for the local coordinate, then revalidated with the
+matching canonical evidence path. For macOS:
 
 ```sh
 .venv/bin/python tests/codex/sprint9_acceptance.py \
@@ -679,9 +693,9 @@ script/source text patching, C# edits, subresource creation, cross-scene
 transactions, closed-scene file mutation, arbitrary raw file writes, automatic
 diagnostics/test/runtime validation, pre/post semantic graph comparison,
 policy-driven rollback after broader validation, MCP redo, runtime-object
-mutation, persistent Undo across editor restart, Windows/Linux qualification,
-hosted CI, and product approval UI beyond the proven local acceptance path are
-outside Sprint 9.
+  mutation, persistent Undo across editor restart, Linux qualification, hosted
+  CI, and product approval UI beyond the proven local acceptance path are
+  outside Sprint 9.
 
 Sprint 10 consumes the committed transaction foundation and Sprint 8 runtime
 projection to add compound semantic changes, validation, and rollback policy.

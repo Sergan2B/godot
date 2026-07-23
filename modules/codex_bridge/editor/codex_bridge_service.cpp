@@ -885,18 +885,18 @@ void CodexBridgeService::_process_editor_snapshot() {
 void CodexBridgeService::_complete_resource_delta(uint64_t p_request_id, uint64_t p_after_resource_revision) {
 	const ResourceDeltaJournal::QueryResult query = resource_graph_adapter.query_delta(p_after_resource_revision);
 	if (query.status == ResourceDeltaJournal::QUERY_FUTURE) {
-		Dictionary data;
-		data["requested_after"] = (int64_t)p_after_resource_revision;
-		data["current_resource_revision"] = (int64_t)query.current_resource_revision;
-		transport_worker.complete_request_error(p_request_id, "invalid_revision", "The requested resource revision is in the future.", false, data);
+		Dictionary error_data;
+		error_data["requested_after"] = (int64_t)p_after_resource_revision;
+		error_data["current_resource_revision"] = (int64_t)query.current_resource_revision;
+		transport_worker.complete_request_error(p_request_id, "invalid_revision", "The requested resource revision is in the future.", false, error_data);
 		return;
 	}
 	if (query.status == ResourceDeltaJournal::QUERY_GAP) {
-		Dictionary data;
-		data["requested_after"] = (int64_t)p_after_resource_revision;
-		data["oldest_available"] = (int64_t)query.oldest_available_resource_revision;
-		data["current_resource_revision"] = (int64_t)query.current_resource_revision;
-		transport_worker.complete_request_error(p_request_id, "resource_journal_gap", "The requested resource delta is no longer available.", true, data);
+		Dictionary error_data;
+		error_data["requested_after"] = (int64_t)p_after_resource_revision;
+		error_data["oldest_available"] = (int64_t)query.oldest_available_resource_revision;
+		error_data["current_resource_revision"] = (int64_t)query.current_resource_revision;
+		transport_worker.complete_request_error(p_request_id, "resource_journal_gap", "The requested resource delta is no longer available.", true, error_data);
 		return;
 	}
 	Dictionary result;
@@ -913,18 +913,18 @@ void CodexBridgeService::_complete_resource_delta(uint64_t p_request_id, uint64_
 void CodexBridgeService::_complete_scene_delta(uint64_t p_request_id, uint64_t p_after_scene_graph_revision) {
 	const SceneDeltaJournal::QueryResult query = scene_state_adapter.query_delta(p_after_scene_graph_revision);
 	if (query.status == SceneDeltaJournal::QUERY_FUTURE) {
-		Dictionary data;
-		data["requested_after"] = (int64_t)p_after_scene_graph_revision;
-		data["current_scene_graph_revision"] = (int64_t)query.current_scene_graph_revision;
-		transport_worker.complete_request_error(p_request_id, "invalid_revision", "The requested scene graph revision is in the future.", false, data);
+		Dictionary error_data;
+		error_data["requested_after"] = (int64_t)p_after_scene_graph_revision;
+		error_data["current_scene_graph_revision"] = (int64_t)query.current_scene_graph_revision;
+		transport_worker.complete_request_error(p_request_id, "invalid_revision", "The requested scene graph revision is in the future.", false, error_data);
 		return;
 	}
 	if (query.status == SceneDeltaJournal::QUERY_GAP) {
-		Dictionary data;
-		data["requested_after"] = (int64_t)p_after_scene_graph_revision;
-		data["oldest_available"] = (int64_t)query.oldest_available_scene_graph_revision;
-		data["current_scene_graph_revision"] = (int64_t)query.current_scene_graph_revision;
-		transport_worker.complete_request_error(p_request_id, "scene_journal_gap", "The requested scene graph delta is no longer available.", true, data);
+		Dictionary error_data;
+		error_data["requested_after"] = (int64_t)p_after_scene_graph_revision;
+		error_data["oldest_available"] = (int64_t)query.oldest_available_scene_graph_revision;
+		error_data["current_scene_graph_revision"] = (int64_t)query.current_scene_graph_revision;
+		transport_worker.complete_request_error(p_request_id, "scene_journal_gap", "The requested scene graph delta is no longer available.", true, error_data);
 		return;
 	}
 	Dictionary result;
@@ -941,18 +941,18 @@ void CodexBridgeService::_complete_scene_delta(uint64_t p_request_id, uint64_t p
 void CodexBridgeService::_complete_script_delta(uint64_t p_request_id, uint64_t p_after_script_graph_revision) {
 	const ScriptDeltaJournal::QueryResult query = script_graph_adapter.query_delta(p_after_script_graph_revision);
 	if (query.status == ScriptDeltaJournal::QUERY_FUTURE) {
-		Dictionary data;
-		data["requested_after"] = (int64_t)p_after_script_graph_revision;
-		data["current_script_graph_revision"] = (int64_t)query.current_script_graph_revision;
-		transport_worker.complete_request_error(p_request_id, "invalid_revision", "The requested script graph revision is in the future.", false, data);
+		Dictionary error_data;
+		error_data["requested_after"] = (int64_t)p_after_script_graph_revision;
+		error_data["current_script_graph_revision"] = (int64_t)query.current_script_graph_revision;
+		transport_worker.complete_request_error(p_request_id, "invalid_revision", "The requested script graph revision is in the future.", false, error_data);
 		return;
 	}
 	if (query.status == ScriptDeltaJournal::QUERY_GAP) {
-		Dictionary data;
-		data["requested_after"] = (int64_t)p_after_script_graph_revision;
-		data["oldest_available"] = (int64_t)query.oldest_available_script_graph_revision;
-		data["current_script_graph_revision"] = (int64_t)query.current_script_graph_revision;
-		transport_worker.complete_request_error(p_request_id, "script_journal_gap", "The requested script graph delta is no longer available.", true, data);
+		Dictionary error_data;
+		error_data["requested_after"] = (int64_t)p_after_script_graph_revision;
+		error_data["oldest_available"] = (int64_t)query.oldest_available_script_graph_revision;
+		error_data["current_script_graph_revision"] = (int64_t)query.current_script_graph_revision;
+		transport_worker.complete_request_error(p_request_id, "script_journal_gap", "The requested script graph delta is no longer available.", true, error_data);
 		return;
 	}
 	if (script_graph_adapter.has_catalog_limit_failure()) {

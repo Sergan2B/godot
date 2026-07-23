@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the local macOS S9-04 apply/status/Undo acceptance gate."""
+"""Run the local S9-04 apply/status/Undo acceptance gate."""
 
 from __future__ import annotations
 
@@ -149,7 +149,7 @@ def wait_status(client: BridgeClient, transaction_id: str, state: str, timeout: 
 
 
 def run_fault_case(godot: Path, timeout: float, fault: str, expected_state: str) -> dict[str, Any]:
-    with tempfile.TemporaryDirectory(prefix="s9f-", dir="/tmp") as temporary_path:
+    with tempfile.TemporaryDirectory(prefix="s9f-") as temporary_path:
         project_root = Path(temporary_path) / "p"
         shutil.copytree(FIXTURE_ROOT, project_root, ignore=shutil.ignore_patterns(".godot"))
         phase_path = project_root / ".godot/codex-s9-prepare-phase.json"
@@ -224,7 +224,7 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=60.0)
     arguments = parser.parse_args()
     godot = arguments.godot.resolve(strict=True)
-    temporary = tempfile.TemporaryDirectory(prefix="s9a-", dir="/tmp")
+    temporary = tempfile.TemporaryDirectory(prefix="s9a-")
     project_root = Path(temporary.name) / "p"
     shutil.copytree(FIXTURE_ROOT, project_root, ignore=shutil.ignore_patterns(".godot"))
     phase_path = project_root / ".godot/codex-s9-prepare-phase.json"

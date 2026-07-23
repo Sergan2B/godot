@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the local macOS Bridge RPC 1.7 transaction.prepare acceptance gate."""
+"""Run the local Bridge RPC 1.7 transaction.prepare acceptance gate."""
 
 from __future__ import annotations
 
@@ -75,8 +75,9 @@ def decode_base64url(value: str) -> bytes:
 class BridgeClient:
     def __init__(self, project_root: Path):
         discovery = json.loads((project_root / ".godot/codex/bridge.json").read_text(encoding="utf-8"))
-        endpoint = Path(discovery["endpoint"])
-        require(not endpoint.is_absolute() and ".." not in endpoint.parts, "unsafe bridge endpoint")
+        endpoint_value = discovery.get("endpoint")
+        transport = discovery.get("transport")
+        require(isinstance(endpoint_value, str), "bridge endpoint is missing")
         self.project_id = str(discovery["project_id"])
         self.editor_session_id = str(discovery["editor_session_id"])
         self.context = {
@@ -87,9 +88,33 @@ class BridgeClient:
         token = token_path.read_bytes()
         require(len(token) == 32, "session token is not 32 bytes")
         self.token = token
-        self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.socket.settimeout(15.0)
-        self.socket.connect(str(project_root / endpoint))
+        if transport == "uds":
+            endpoint = Path(endpoint_value)
+            require(
+                not endpoint.is_absolute() and ".." not in endpoint.parts,
+                "unsafe bridge UDS endpoint",
+            )
+            self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.socket.settimeout(15.0)
+            self.socket.connect(str(project_root / endpoint))
+        elif transport == "tcp_loopback":
+            host, separator, port_text = endpoint_value.partition(":")
+            require(
+                host == "127.0.0.1"
+                and separator == ":"
+                and port_text.isascii()
+                and port_text.isdigit()
+                and not port_text.startswith("0"),
+                "unsafe bridge loopback endpoint",
+            )
+            port = int(port_text)
+            require(
+                0 < port <= 65_535 and endpoint_value == f"127.0.0.1:{port}",
+                "non-canonical bridge loopback endpoint",
+            )
+            self.socket = socket.create_connection((host, port), timeout=15.0)
+        else:
+            raise AcceptanceError(f"unsupported bridge transport: {transport!r}")
         self.next_request = 1
         self.notifications: list[dict[str, Any]] = []
         self._handshake(token)
@@ -252,7 +277,7 @@ def wait_for(path: Path, predicate: Any, timeout: float) -> dict[str, Any]:
                 raise AcceptanceError(str(last["error"]))
             if isinstance(last, dict) and predicate(last):
                 return last
-        except (FileNotFoundError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError):
             pass
         time.sleep(0.05)
     raise AcceptanceError(f"fixture wait timed out: {path.name}; last={last!r}")
@@ -380,7 +405,7 @@ def main() -> int:
     godot = arguments.godot.resolve(strict=True)
     temporary_project: tempfile.TemporaryDirectory[str] | None = None
     if arguments.project_root is None:
-        temporary_project = tempfile.TemporaryDirectory(prefix="s9p-", dir="/tmp")
+        temporary_project = tempfile.TemporaryDirectory(prefix="s9p-")
         project_root = Path(temporary_project.name) / "p"
         shutil.copytree(FIXTURE_ROOT, project_root, ignore=shutil.ignore_patterns(".godot"))
     else:

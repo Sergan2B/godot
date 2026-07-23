@@ -635,14 +635,14 @@ impl TransactionCoordinator {
                 true,
             )
         })?;
-        let root = canonical_root.to_str().ok_or_else(|| {
-            TransactionError::new(
-                "transaction_coordinator_unavailable",
-                "The project root encoding is unsupported.",
-                false,
-            )
-        })?;
-        let project_id = godot_codex_bridge_client::project_id_for_root(root.as_bytes());
+        let project_id =
+            godot_codex_bridge_client::project_id_for_path(&canonical_root).map_err(|_| {
+                TransactionError::new(
+                    "transaction_coordinator_unavailable",
+                    "The project root encoding is unsupported.",
+                    false,
+                )
+            })?;
         Self::open_with(
             &canonical_root,
             project_id,
