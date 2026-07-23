@@ -4,6 +4,7 @@ mod resource;
 mod runtime;
 mod scene;
 mod script;
+mod transaction;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -50,6 +51,15 @@ pub use script::{
     SourceRange, canonical_content_symbol_id, canonical_diagnostic_id, canonical_named_symbol_id,
     canonical_script_resource_id, normalize_script_graph, normalize_script_snapshot,
 };
+pub use transaction::{
+    AffectedEntity, AffectedEntityRole, ApprovalBinding, ApprovalReceipt, ApprovalReceiptKind,
+    ApprovalScope, DirtyEffect, OperationKind, PrepareResult, RevisionCoordinates, Risk,
+    SafeTransactionError, SaveEffect, SignedApprovalReceipt, TransactionCoordinates,
+    TransactionEvent, TransactionEventReason, TransactionLimits, TransactionOperation,
+    TransactionOutcome, TransactionPathRef, TransactionPreview, TransactionResourceRef,
+    TransactionState, TransactionStatus, TransactionUidRef, UndoEligibility, UndoEligibilityReason,
+    WritableDictionaryEntry, WritableVariant,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NegotiatedBridgeProfile {
@@ -60,6 +70,7 @@ pub struct NegotiatedBridgeProfile {
     pub script_graph_available: bool,
     pub live_editor_available: bool,
     pub runtime_available: bool,
+    pub transaction_available: bool,
 }
 
 /// Backward-compatible short name for callers that adopted the Stage 3 spike API.
@@ -82,37 +93,36 @@ impl BridgeClient {
         let capabilities = self.session.capabilities().clone();
         NegotiatedBridgeProfile {
             protocol_version: self.session.protocol_version().to_owned(),
-            resource_graph_available: matches!(
+            resource_graph_available: protocol::has_resource_profile(
                 self.session.protocol_version(),
-                "1.2" | "1.3" | "1.4" | "1.5" | "1.6"
             ) && capabilities.contains("resource.uid_dependencies")
                 && capabilities.contains("resource.incremental_index"),
-            scene_graph_available: matches!(
-                self.session.protocol_version(),
-                "1.3" | "1.4" | "1.5" | "1.6"
-            ) && capabilities.contains("scene.packed_state")
+            scene_graph_available: protocol::has_scene_profile(self.session.protocol_version())
+                && capabilities.contains("scene.packed_state")
                 && capabilities.contains("scene.incremental_index")
                 && capabilities.contains("scene.project_context"),
-            script_graph_available: matches!(
-                self.session.protocol_version(),
-                "1.4" | "1.5" | "1.6"
-            ) && capabilities.contains("script.gdscript_semantics")
+            script_graph_available: protocol::has_script_profile(self.session.protocol_version())
+                && capabilities.contains("script.gdscript_semantics")
                 && capabilities.contains("script.incremental_index")
                 && capabilities.contains("script.diagnostics")
                 && capabilities.contains("script.csharp_discovery"),
-            live_editor_available: matches!(self.session.protocol_version(), "1.5" | "1.6")
-                && capabilities.contains("editor.open_scenes")
+            live_editor_available: protocol::has_live_editor_profile(
+                self.session.protocol_version(),
+            ) && capabilities.contains("editor.open_scenes")
                 && capabilities.contains("editor.open_scripts")
                 && capabilities.contains("editor.native_history")
                 && capabilities.contains("editor.diagnostics")
                 && capabilities.contains("editor.viewport_metadata"),
-            runtime_available: self.session.protocol_version() == "1.6"
+            runtime_available: protocol::has_runtime_profile(self.session.protocol_version())
                 && capabilities.contains("runtime.debugger")
                 && capabilities.contains("runtime.process_control")
                 && capabilities.contains("runtime.remote_tree")
                 && capabilities.contains("runtime.bounded_properties")
                 && capabilities.contains("runtime.diagnostics")
                 && capabilities.contains("runtime.viewport_capture"),
+            transaction_available: protocol::has_transaction_profile(
+                self.session.protocol_version(),
+            ) && capabilities.contains("transaction.scene_v1"),
             capabilities,
         }
     }
@@ -132,6 +142,70 @@ impl BridgeClient {
     pub async fn next_runtime_notification(&mut self) -> Result<RuntimeNotification, BridgeError> {
         let value = self.session.receive_runtime_notification().await?;
         runtime::parse_runtime_notification(&self.session, value)
+    }
+
+    pub async fn next_transaction_notification(&mut self) -> Result<TransactionEvent, BridgeError> {
+        transaction::next_event(&mut self.session).await
+    }
+
+    pub async fn prepare_transaction(
+        &mut self,
+        idempotency_key: &str,
+        coordinates: RevisionCoordinates,
+        operation: TransactionOperation,
+    ) -> Result<transaction::PrepareResult, BridgeError> {
+        transaction::prepare(&mut self.session, idempotency_key, coordinates, operation).await
+    }
+
+    pub async fn apply_transaction(
+        &mut self,
+        transaction_id: &str,
+        preview_digest: &str,
+        expected_scene_revision: u64,
+        expected_operation_seq: u64,
+        approval: ApprovalReceipt,
+    ) -> Result<TransactionStatus, BridgeError> {
+        transaction::apply(
+            &mut self.session,
+            transaction_id,
+            preview_digest,
+            expected_scene_revision,
+            expected_operation_seq,
+            approval,
+        )
+        .await
+    }
+
+    pub async fn get_transaction_status(
+        &mut self,
+        transaction_id: &str,
+    ) -> Result<TransactionStatus, BridgeError> {
+        transaction::status(&mut self.session, transaction_id).await
+    }
+
+    pub async fn undo_transaction(
+        &mut self,
+        transaction_id: &str,
+        expected_transaction_seq: u64,
+        expected_scene_revision: u64,
+        expected_operation_seq: u64,
+    ) -> Result<TransactionStatus, BridgeError> {
+        transaction::undo(
+            &mut self.session,
+            transaction_id,
+            expected_transaction_seq,
+            expected_scene_revision,
+            expected_operation_seq,
+        )
+        .await
+    }
+
+    pub fn issue_transaction_approval(
+        &self,
+        binding: &ApprovalBinding,
+        issued_at_ms: u64,
+    ) -> Result<SignedApprovalReceipt, BridgeError> {
+        transaction::issue_approval(&self.session, binding, issued_at_ms)
     }
 
     pub async fn stream_resource_snapshot<S: ResourceSnapshotSink>(

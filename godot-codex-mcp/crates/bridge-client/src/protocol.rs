@@ -26,6 +26,37 @@ const IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 #[cfg(any(unix, windows, test))]
 type HmacSha256 = Hmac<Sha256>;
 
+pub(crate) fn supported_protocol_version(version: &str) -> bool {
+    matches!(
+        version,
+        "1.0" | "1.1" | "1.2" | "1.3" | "1.4" | "1.5" | "1.6" | "1.7"
+    )
+}
+
+pub(crate) fn has_resource_profile(version: &str) -> bool {
+    matches!(version, "1.2" | "1.3" | "1.4" | "1.5" | "1.6" | "1.7")
+}
+
+pub(crate) fn has_scene_profile(version: &str) -> bool {
+    matches!(version, "1.3" | "1.4" | "1.5" | "1.6" | "1.7")
+}
+
+pub(crate) fn has_script_profile(version: &str) -> bool {
+    matches!(version, "1.4" | "1.5" | "1.6" | "1.7")
+}
+
+pub(crate) fn has_live_editor_profile(version: &str) -> bool {
+    matches!(version, "1.5" | "1.6" | "1.7")
+}
+
+pub(crate) fn has_runtime_profile(version: &str) -> bool {
+    matches!(version, "1.6" | "1.7")
+}
+
+pub(crate) fn has_transaction_profile(version: &str) -> bool {
+    version == "1.7"
+}
+
 #[derive(Debug, Error)]
 pub enum BridgeError {
     #[error("bridge I/O failed: {0}")]
@@ -249,6 +280,28 @@ fn is_runtime_notification(value: &Value) -> Result<bool, BridgeError> {
 }
 
 #[cfg(any(unix, windows, test))]
+fn is_transaction_notification(value: &Value) -> Result<bool, BridgeError> {
+    if value.get("method").and_then(Value::as_str) != Some("transaction.event") {
+        return Ok(false);
+    }
+    if value.get("kind").and_then(Value::as_str) != Some("notification")
+        || value
+            .pointer("/params/coordinates/transaction_id")
+            .and_then(Value::as_str)
+            .is_none()
+        || value
+            .pointer("/params/coordinates/transaction_seq")
+            .and_then(Value::as_u64)
+            .is_none()
+    {
+        return Err(BridgeError::Invalid(
+            "transaction.event is invalid".to_owned(),
+        ));
+    }
+    Ok(true)
+}
+
+#[cfg(any(unix, windows, test))]
 fn sync_invalidation_affects_editor(value: &Value) -> bool {
     match value.get("method").and_then(Value::as_str) {
         Some("sync.event") => {
@@ -415,7 +468,7 @@ impl Session {
         let mut stream = FrameStream::connect(&discovery.endpoint).await?;
         // Bridge negotiation advertises one highest supported minor per major;
         // the server selects the best 1.x fallback it implements.
-        let offered_versions = vec!["1.6".to_owned()];
+        let offered_versions = vec!["1.7".to_owned()];
         let mut client_nonce = [0_u8; 32];
         getrandom::fill(&mut client_nonce)
             .map_err(|error| BridgeError::Invalid(format!("client nonce failed: {error}")))?;
@@ -432,10 +485,7 @@ impl Session {
         let selected_protocol_version =
             required_str(&challenge, "selected_protocol_version")?.to_owned();
         if required_str(&challenge, "kind")? != "handshake.server_challenge"
-            || !matches!(
-                selected_protocol_version.as_str(),
-                "1.0" | "1.1" | "1.2" | "1.3" | "1.4" | "1.5" | "1.6"
-            )
+            || !supported_protocol_version(&selected_protocol_version)
             || required_str(&challenge, "project_id")? != discovery.project_id
             || required_str(&challenge, "editor_session_id")? != discovery.editor_session_id
         {
@@ -495,24 +545,18 @@ impl Session {
                 "sync.event_stream_v1",
             ]);
         }
-        if matches!(
-            session.selected_protocol_version.as_str(),
-            "1.2" | "1.3" | "1.4" | "1.5" | "1.6"
-        ) {
+        if has_resource_profile(&session.selected_protocol_version) {
             requested_capabilities
                 .extend(["resource.uid_dependencies", "resource.incremental_index"]);
         }
-        if matches!(
-            session.selected_protocol_version.as_str(),
-            "1.3" | "1.4" | "1.5" | "1.6"
-        ) {
+        if has_scene_profile(&session.selected_protocol_version) {
             requested_capabilities.extend([
                 "scene.packed_state",
                 "scene.incremental_index",
                 "scene.project_context",
             ]);
         }
-        if matches!(session.selected_protocol_version.as_str(), "1.5" | "1.6") {
+        if has_live_editor_profile(&session.selected_protocol_version) {
             requested_capabilities.extend([
                 "editor.open_scenes",
                 "editor.open_scripts",
@@ -521,7 +565,7 @@ impl Session {
                 "editor.viewport_metadata",
             ]);
         }
-        if session.selected_protocol_version == "1.6" {
+        if has_runtime_profile(&session.selected_protocol_version) {
             requested_capabilities.extend([
                 "runtime.debugger",
                 "runtime.process_control",
@@ -530,6 +574,9 @@ impl Session {
                 "runtime.diagnostics",
                 "runtime.viewport_capture",
             ]);
+        }
+        if has_transaction_profile(&session.selected_protocol_version) {
+            requested_capabilities.push("transaction.scene_v1");
         }
         let initialize = session
             .request(
@@ -552,6 +599,9 @@ impl Session {
             }
         }
         for capability in requested_capabilities {
+            if capability == "transaction.scene_v1" {
+                continue;
+            }
             if !session.capabilities.contains(capability) {
                 return Err(BridgeError::Invalid(format!(
                     "required capability is unavailable: {capability}"
@@ -579,7 +629,8 @@ impl Session {
             if is_runtime_notification(&message)? {
                 return Ok(message);
             }
-            if is_script_notification(&message)?
+            if is_transaction_notification(&message)?
+                || is_script_notification(&message)?
                 || is_scene_notification(&message)?
                 || is_sync_invalidation(&message)?
             {
@@ -587,6 +638,26 @@ impl Session {
             }
             return Err(BridgeError::Invalid(
                 "unexpected message on runtime event stream".to_owned(),
+            ));
+        }
+    }
+
+    pub(crate) async fn receive_transaction_notification(&mut self) -> Result<Value, BridgeError> {
+        loop {
+            let message = self.stream.receive().await?;
+            validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
+            if is_transaction_notification(&message)? {
+                return Ok(message);
+            }
+            if is_runtime_notification(&message)?
+                || is_script_notification(&message)?
+                || is_scene_notification(&message)?
+                || is_sync_invalidation(&message)?
+            {
+                continue;
+            }
+            return Err(BridgeError::Invalid(
+                "unexpected message on transaction event stream".to_owned(),
             ));
         }
     }
@@ -605,6 +676,9 @@ impl Session {
                 continue;
             }
             if is_runtime_notification(&message)? {
+                continue;
+            }
+            if is_transaction_notification(&message)? {
                 continue;
             }
             if is_sync_invalidation(&message)? {
@@ -698,6 +772,13 @@ impl Session {
         &self.discovery.editor_session_id
     }
 
+    pub(crate) fn transaction_approval_key(&self) -> [u8; 32] {
+        let mut hmac = HmacSha256::new_from_slice(&self.discovery.token)
+            .expect("HMAC accepts a 32-byte session token");
+        hmac.update(b"godot-codex/approval-key/v1");
+        hmac.finalize().into_bytes().into()
+    }
+
     pub(crate) async fn send_ack(
         &mut self,
         snapshot_id: &str,
@@ -747,7 +828,7 @@ impl Session {
         let response = self
             .request(
                 "editor.snapshot.get",
-                if matches!(self.selected_protocol_version.as_str(), "1.5" | "1.6") {
+                if has_live_editor_profile(&self.selected_protocol_version) {
                     json!({"domains": [
                         "editor_context",
                         "editor_inspector",
@@ -859,6 +940,9 @@ impl Session {
             let message = self.stream.receive().await?;
             validate_context(&message, &self.discovery, &self.selected_protocol_version)?;
             if is_runtime_notification(&message)? {
+                continue;
+            }
+            if is_transaction_notification(&message)? {
                 continue;
             }
             let method = message.get("method").and_then(Value::as_str);
@@ -990,6 +1074,27 @@ mod tests {
     }
 
     #[test]
+    fn rpc_1_7_is_additive_and_all_older_minor_profiles_remain_supported() {
+        for version in ["1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7"] {
+            assert!(supported_protocol_version(version));
+        }
+        assert!(!supported_protocol_version("1.8"));
+        assert!(!supported_protocol_version("2.0"));
+        assert!(!has_resource_profile("1.1"));
+        assert!(has_resource_profile("1.7"));
+        assert!(!has_scene_profile("1.2"));
+        assert!(has_scene_profile("1.7"));
+        assert!(!has_script_profile("1.3"));
+        assert!(has_script_profile("1.7"));
+        assert!(!has_live_editor_profile("1.4"));
+        assert!(has_live_editor_profile("1.7"));
+        assert!(!has_runtime_profile("1.5"));
+        assert!(has_runtime_profile("1.7"));
+        assert!(!has_transaction_profile("1.6"));
+        assert!(has_transaction_profile("1.7"));
+    }
+
+    #[test]
     fn sync_notifications_are_recognized_while_waiting_for_rpc_data() {
         assert!(
             is_sync_invalidation(&json!({
@@ -1061,6 +1166,27 @@ mod tests {
                 "kind": "notification",
                 "method": "script_graph_changed",
                 "params": {}
+            }))
+            .is_err()
+        );
+        assert!(
+            is_transaction_notification(&json!({
+                "kind": "notification",
+                "method": "transaction.event",
+                "params": {
+                    "coordinates": {
+                        "transaction_id": format!("transaction:{}", "a".repeat(32)),
+                        "transaction_seq": 2
+                    }
+                }
+            }))
+            .unwrap()
+        );
+        assert!(
+            is_transaction_notification(&json!({
+                "kind": "notification",
+                "method": "transaction.event",
+                "params": {"coordinates": {}}
             }))
             .is_err()
         );

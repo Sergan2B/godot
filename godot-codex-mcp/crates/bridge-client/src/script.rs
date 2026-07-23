@@ -1267,8 +1267,10 @@ fn validate_snapshot_chunk(
     expected_index: usize,
 ) -> Result<(), BridgeError> {
     let canonical_payload = canonical_serialized(&chunk.payload)?;
-    if !matches!(chunk.protocol_version.as_str(), "1.4" | "1.5" | "1.6")
-        || chunk.kind != "chunk"
+    if !matches!(
+        chunk.protocol_version.as_str(),
+        "1.4" | "1.5" | "1.6" | "1.7"
+    ) || chunk.kind != "chunk"
         || chunk.domain != "script_graph"
         || chunk.snapshot_id != accepted.snapshot_id
         || chunk.chunk_index != expected_index
@@ -1348,7 +1350,7 @@ async fn receive_script_snapshot<S: ScriptSnapshotSink>(
             &accepted.revisions.runtime_session_id,
             accepted.revisions.runtime_event_seq,
         )
-        || (session.protocol_version() != "1.6"
+        || (!matches!(session.protocol_version(), "1.6" | "1.7")
             && (accepted.revisions.runtime_session_id.is_some()
                 || accepted.revisions.runtime_event_seq.is_some()))
         || !valid_prefixed_hex(&accepted.snapshot_id, "snapshot:", 32)
@@ -1367,7 +1369,7 @@ async fn receive_script_snapshot<S: ScriptSnapshotSink>(
     .map_err(|error| BridgeError::Invalid(format!("script snapshot begin is invalid: {error}")))?;
     if !matches!(
         begin_message.protocol_version.as_str(),
-        "1.4" | "1.5" | "1.6"
+        "1.4" | "1.5" | "1.6" | "1.7"
     ) || begin_message.kind != "notification"
         || begin_message.method != "snapshot.begin"
         || begin_message.params.snapshot_id != accepted.snapshot_id
@@ -1443,7 +1445,7 @@ async fn receive_script_snapshot<S: ScriptSnapshotSink>(
             })?;
         break end_message;
     };
-    if !matches!(end.protocol_version.as_str(), "1.4" | "1.5" | "1.6")
+    if !matches!(end.protocol_version.as_str(), "1.4" | "1.5" | "1.6" | "1.7")
         || end.kind != "notification"
         || end.method != "snapshot.end"
         || end.params.snapshot_id != accepted.snapshot_id
@@ -2016,7 +2018,7 @@ fn require_script_graph(session: &Session) -> Result<(), BridgeError> {
         "script.diagnostics",
         "script.csharp_discovery",
     ];
-    if !matches!(session.protocol_version(), "1.4" | "1.5" | "1.6")
+    if !matches!(session.protocol_version(), "1.4" | "1.5" | "1.6" | "1.7")
         || required
             .iter()
             .any(|capability| !session.capabilities().contains(*capability))

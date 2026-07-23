@@ -5,6 +5,7 @@ members = [
   "crates/index-store",
   "crates/resource-indexer",
   "crates/semantic-model",
+  "crates/transactions",
   "crates/mcp-server",
   "crates/godot-codex-mcp",
 ]

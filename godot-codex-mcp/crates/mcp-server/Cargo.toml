@@ -12,6 +12,7 @@ godot-codex-bridge-client = { path = "../bridge-client" }
 godot-codex-index-store = { path = "../index-store" }
 godot-codex-resource-indexer = { path = "../resource-indexer" }
 godot-codex-semantic-model = { path = "../semantic-model" }
+godot-codex-transactions = { path = "../transactions" }
 hmac.workspace = true
 rmcp.workspace = true
 schemars.workspace = true
@@ -24,6 +25,7 @@ tokio.workspace = true
 [dev-dependencies]
 rmcp = { workspace = true, features = ["client"] }
 tempfile = "3.27.0"
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

@@ -325,6 +325,7 @@ dependencies = [
  "godot-codex-semantic-model",
  "hmac",
  "rustix",
+ "schemars",
  "serde",
  "serde_json",
  "sha2",
@@ -351,6 +352,7 @@ dependencies = [
  "godot-codex-mcp-server",
  "godot-codex-resource-indexer",
  "godot-codex-semantic-model",
+ "godot-codex-transactions",
  "rmcp",
  "tokio",
 ]
@@ -365,6 +367,7 @@ dependencies = [
  "godot-codex-index-store",
  "godot-codex-resource-indexer",
  "godot-codex-semantic-model",
+ "godot-codex-transactions",
  "hmac",
  "rmcp",
  "schemars",
@@ -400,6 +403,21 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
+]
+
+[[package]]
+name = "godot-codex-transactions"
+version = "0.1.0"
+dependencies = [
+ "getrandom",
+ "godot-codex-bridge-client",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

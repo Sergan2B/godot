@@ -10,6 +10,7 @@ godot-codex-bridge-client = { path = "../bridge-client" }
 godot-codex-mcp-server = { path = "../mcp-server" }
 godot-codex-resource-indexer = { path = "../resource-indexer" }
 godot-codex-semantic-model = { path = "../semantic-model" }
+godot-codex-transactions = { path = "../transactions" }
 rmcp.workspace = true
 tokio.workspace = true
 

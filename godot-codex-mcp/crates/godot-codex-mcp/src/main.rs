@@ -5,6 +5,7 @@ use godot_codex_bridge_client::run_bridge_sync;
 use godot_codex_mcp_server::GodotMcpServer;
 use godot_codex_resource_indexer::ResourceIndexCoordinator;
 use godot_codex_semantic_model::SnapshotReplicator;
+use godot_codex_transactions::{TransactionCoordinator, run_transaction_events};
 use rmcp::ServiceExt;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -52,18 +53,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ResourceIndexCoordinator::new_semantic(&project_root)?;
     let (shutdown_sender, shutdown_receiver) = tokio::sync::watch::channel(false);
     let resource_task = tokio::spawn(resource_coordinator.run(shutdown_receiver));
-    let server = GodotMcpServer::with_all_indexes_and_project_root(
-        replicator,
-        resource_index_reader,
-        scene_index_reader,
-        script_index_reader,
-        project_root,
-    )
+    let transaction_coordinator = match TransactionCoordinator::open(&project_root) {
+        Ok(coordinator) => {
+            if coordinator.journal_recovered_corruption() {
+                eprintln!(
+                    "godot-codex-mcp: quarantined an invalid transaction journal; recovery index rebuilt"
+                );
+            }
+            Some(coordinator)
+        }
+        Err(_) => {
+            eprintln!(
+                "godot-codex-mcp: transaction coordinator unavailable; diagnostic tools remain active"
+            );
+            None
+        }
+    };
+    let transaction_task = transaction_coordinator.as_ref().map(|coordinator| {
+        tokio::spawn(run_transaction_events(
+            project_root.clone(),
+            coordinator.clone(),
+            shutdown_sender.subscribe(),
+        ))
+    });
+    let server = if let Some(coordinator) = transaction_coordinator {
+        GodotMcpServer::with_all_indexes_and_project_services(
+            replicator,
+            resource_index_reader,
+            scene_index_reader,
+            script_index_reader,
+            project_root,
+            coordinator,
+        )
+    } else {
+        GodotMcpServer::with_all_indexes_and_project_root(
+            replicator,
+            resource_index_reader,
+            scene_index_reader,
+            script_index_reader,
+            project_root,
+        )
+    }
     .serve(rmcp::transport::stdio())
     .await?;
     server.waiting().await?;
     let _ = shutdown_sender.send(true);
     let _ = resource_task.await;
+    if let Some(transaction_task) = transaction_task {
+        let _ = transaction_task.await;
+    }
     bridge_task.abort();
     Ok(())
 }

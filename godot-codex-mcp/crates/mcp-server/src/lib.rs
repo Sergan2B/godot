@@ -1,6 +1,7 @@
 mod cursor;
 mod live_overlay;
 mod runtime_overlay;
+mod transaction_tools;
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -29,6 +30,7 @@ use godot_codex_resource_indexer::{
     SemanticPartialCode, SemanticPartialDomain, SemanticPartialReason, normalize_resource_path,
 };
 use godot_codex_semantic_model::{SemanticSnapshot, SnapshotReplicator};
+use godot_codex_transactions::{ApplyCommand, PrepareCommand, TransactionCoordinator, UndoCommand};
 use live_overlay::{LiveOverlay, overlay_metadata};
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
@@ -43,6 +45,13 @@ use rmcp::{
 };
 use runtime_overlay::{CachedRuntimeSnapshot, RuntimeOverlay};
 use serde_json::{Value, json};
+use transaction_tools::{
+    ApplyTransactionInput, McpApprovalProvider, PrepareAttachScriptInput,
+    PrepareConnectSignalInput, PrepareCreateNodeInput, PrepareDeleteNodeInput,
+    PrepareDetachScriptInput, PrepareDisconnectSignalInput, PrepareReparentNodeInput,
+    PrepareSetPropertyInput, TransactionStatusInput, UndoTransactionInput, coordinator_unavailable,
+    transaction_error, transaction_result,
+};
 
 const DEFAULT_RESOURCE_LIMIT: usize = 50;
 const MAX_RESOURCE_LIMIT: usize = 200;
@@ -496,6 +505,7 @@ pub struct GodotMcpServer {
     semantic_index: SemanticIndexReader,
     cursor_codec: CursorCodec,
     runtime_overlay: RuntimeOverlay,
+    transaction_coordinator: Option<Arc<TransactionCoordinator>>,
 }
 
 impl std::fmt::Debug for GodotMcpServer {
@@ -507,6 +517,10 @@ impl std::fmt::Debug for GodotMcpServer {
             .field("scene_index_status", &self.scene_index.status())
             .field("script_index_status", &self.script_index.status())
             .field("runtime_summary", &self.runtime_overlay.summary())
+            .field(
+                "transaction_coordinator_available",
+                &self.transaction_coordinator.is_some(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -552,6 +566,7 @@ impl GodotMcpServer {
             scene_index,
             script_index,
             RuntimeOverlay::unavailable(),
+            None,
         )
     }
 
@@ -568,6 +583,25 @@ impl GodotMcpServer {
             scene_index,
             script_index,
             RuntimeOverlay::for_project(project_root),
+            None,
+        )
+    }
+
+    pub fn with_all_indexes_and_project_services(
+        replicator: SnapshotReplicator,
+        resource_index: ResourceIndexReader,
+        scene_index: SceneIndexReader,
+        script_index: ScriptIndexReader,
+        project_root: PathBuf,
+        transaction_coordinator: Arc<TransactionCoordinator>,
+    ) -> Self {
+        Self::with_all_indexes_and_runtime(
+            replicator,
+            resource_index,
+            scene_index,
+            script_index,
+            RuntimeOverlay::for_project(project_root),
+            Some(transaction_coordinator),
         )
     }
 
@@ -577,6 +611,7 @@ impl GodotMcpServer {
         scene_index: SceneIndexReader,
         script_index: ScriptIndexReader,
         runtime_overlay: RuntimeOverlay,
+        transaction_coordinator: Option<Arc<TransactionCoordinator>>,
     ) -> Self {
         let semantic_index = SemanticIndexReader::new(
             resource_index.clone(),
@@ -592,6 +627,27 @@ impl GodotMcpServer {
             semantic_index,
             cursor_codec: CursorCodec::new(),
             runtime_overlay,
+            transaction_coordinator,
+        }
+    }
+
+    async fn prepare_transaction(&self, command: PrepareCommand) -> CallToolResult {
+        let Some(coordinator) = &self.transaction_coordinator else {
+            return coordinator_unavailable();
+        };
+        match coordinator.prepare(command).await {
+            Ok(result) => transaction_result(result),
+            Err(error) => transaction_error(error),
+        }
+    }
+
+    async fn transaction_status(&self, transaction_id: &str) -> CallToolResult {
+        let Some(coordinator) = &self.transaction_coordinator else {
+            return coordinator_unavailable();
+        };
+        match coordinator.status(transaction_id).await {
+            Ok(result) => transaction_result(result),
+            Err(error) => transaction_error(error),
         }
     }
 
@@ -4855,6 +4911,226 @@ impl GodotMcpServer {
     fn godot_find_usages(&self, Parameters(input): Parameters<FindUsagesInput>) -> CallToolResult {
         self.find_usages_query(input)
     }
+
+    #[tool(
+        description = "Prepare an immutable bounded preview for creating one node in the current open Godot scene; this allocates transaction state but does not mutate the scene",
+        annotations(
+            title = "Prepare Godot node creation",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_prepare_create_node(
+        &self,
+        Parameters(input): Parameters<PrepareCreateNodeInput>,
+    ) -> CallToolResult {
+        self.prepare_transaction(input.into_command()).await
+    }
+
+    #[tool(
+        description = "Prepare an immutable bounded preview for deleting one editable node from the current open Godot scene; this does not mutate the scene",
+        annotations(
+            title = "Prepare Godot node deletion",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_prepare_delete_node(
+        &self,
+        Parameters(input): Parameters<PrepareDeleteNodeInput>,
+    ) -> CallToolResult {
+        self.prepare_transaction(input.into_command()).await
+    }
+
+    #[tool(
+        description = "Prepare an immutable bounded preview for reparenting one editable node inside the same current Godot scene; this does not mutate the scene",
+        annotations(
+            title = "Prepare Godot node reparent",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_prepare_reparent_node(
+        &self,
+        Parameters(input): Parameters<PrepareReparentNodeInput>,
+    ) -> CallToolResult {
+        self.prepare_transaction(input.into_command()).await
+    }
+
+    #[tool(
+        description = "Prepare an immutable redacted preview for setting one safely projected property on an editable node; this does not mutate the scene",
+        annotations(
+            title = "Prepare Godot property change",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_prepare_set_property(
+        &self,
+        Parameters(input): Parameters<PrepareSetPropertyInput>,
+    ) -> CallToolResult {
+        self.prepare_transaction(input.into_command()).await
+    }
+
+    #[tool(
+        description = "Prepare an immutable bounded preview for attaching an existing project script to one editable node; this does not mutate the scene or script source",
+        annotations(
+            title = "Prepare Godot script attachment",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_prepare_attach_script(
+        &self,
+        Parameters(input): Parameters<PrepareAttachScriptInput>,
+    ) -> CallToolResult {
+        self.prepare_transaction(input.into_command()).await
+    }
+
+    #[tool(
+        description = "Prepare an immutable bounded preview for detaching the current script from one editable node; this does not mutate the scene or script source",
+        annotations(
+            title = "Prepare Godot script detachment",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_prepare_detach_script(
+        &self,
+        Parameters(input): Parameters<PrepareDetachScriptInput>,
+    ) -> CallToolResult {
+        self.prepare_transaction(input.into_command()).await
+    }
+
+    #[tool(
+        description = "Prepare an immutable bounded preview for connecting one same-scene Godot signal; this does not mutate the scene",
+        annotations(
+            title = "Prepare Godot signal connection",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_prepare_connect_signal(
+        &self,
+        Parameters(input): Parameters<PrepareConnectSignalInput>,
+    ) -> CallToolResult {
+        self.prepare_transaction(input.into_command()).await
+    }
+
+    #[tool(
+        description = "Prepare an immutable bounded preview for disconnecting one exact same-scene Godot signal connection; this does not mutate the scene",
+        annotations(
+            title = "Prepare Godot signal disconnection",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_prepare_disconnect_signal(
+        &self,
+        Parameters(input): Parameters<PrepareDisconnectSignalInput>,
+    ) -> CallToolResult {
+        self.prepare_transaction(input.into_command()).await
+    }
+
+    #[tool(
+        description = "Apply one previously prepared Godot editor transaction after an exact standard MCP form approval; never replay this tool after an uncertain outcome",
+        annotations(
+            title = "Apply Godot editor transaction",
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_apply_transaction(
+        &self,
+        Parameters(input): Parameters<ApplyTransactionInput>,
+        context: RequestContext<RoleServer>,
+    ) -> CallToolResult {
+        let Some(coordinator) = &self.transaction_coordinator else {
+            return coordinator_unavailable();
+        };
+        let approval = McpApprovalProvider::new(context);
+        match coordinator
+            .apply(
+                ApplyCommand {
+                    transaction_id: input.transaction_id,
+                    preview_digest: input.preview_digest,
+                    expected_scene_revision: input.expected_scene_revision,
+                    expected_operation_seq: input.expected_operation_seq,
+                },
+                &approval,
+            )
+            .await
+        {
+            Ok(result) => transaction_result(result),
+            Err(error) => transaction_error(error),
+        }
+    }
+
+    #[tool(
+        description = "Return the bounded reconciled state of one opaque Godot editor transaction without exposing native history identifiers or mutation payloads",
+        annotations(
+            title = "Godot transaction status",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_get_transaction_status(
+        &self,
+        Parameters(input): Parameters<TransactionStatusInput>,
+    ) -> CallToolResult {
+        self.transaction_status(&input.transaction_id).await
+    }
+
+    #[tool(
+        description = "Undo one committed Godot editor transaction only when it is still the newest eligible action in its exact native history",
+        annotations(
+            title = "Undo Godot editor transaction",
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_undo_transaction(
+        &self,
+        Parameters(input): Parameters<UndoTransactionInput>,
+    ) -> CallToolResult {
+        let Some(coordinator) = &self.transaction_coordinator else {
+            return coordinator_unavailable();
+        };
+        match coordinator
+            .undo(UndoCommand {
+                transaction_id: input.transaction_id,
+                expected_transaction_seq: input.expected_transaction_seq,
+                expected_scene_revision: input.expected_scene_revision,
+                expected_operation_seq: input.expected_operation_seq,
+            })
+            .await
+        {
+            Ok(result) => transaction_result(result),
+            Err(error) => transaction_error(error),
+        }
+    }
 }
 
 #[tool_handler]
@@ -4896,7 +5172,7 @@ impl ServerHandler for GodotMcpServer {
         )
             .with_protocol_version(ProtocolVersion::V_2025_11_25)
             .with_instructions(
-                "Project-scoped Godot diagnostics. Read godot://project/summary for saved-project questions, godot://editor/summary for current editor questions, godot://runtime/summary for the local game lifecycle, and a godot://scene/{scene_id}/summary resource for indexed scene questions. Runtime controls affect only the ephemeral local game and never write scenes or scripts; always pass the returned runtime_session_id and expected sequence to guarded operations. Use the focused editor/runtime tools, cite evidence IDs, and distinguish disk, editor, and runtime state. Snapshot-backed results are checksum verified and bounded.",
+                "Project-scoped Godot diagnostics and guarded editor transactions. Read godot://project/summary for saved-project questions, godot://editor/summary for current editor questions, godot://runtime/summary for the local game lifecycle, and a godot://scene/{scene_id}/summary resource for indexed scene questions. Runtime controls affect only the ephemeral local game and never write scenes or scripts; always pass the returned runtime_session_id and expected sequence to guarded operations. Editor writes must use one godot_prepare_* tool, present its immutable preview through MCP form elicitation in godot_apply_transaction, and may use godot_undo_transaction only while the exact native history action remains eligible. Never infer approval or replay apply after an uncertain response. Use the focused editor/runtime tools, cite evidence IDs, and distinguish disk, editor, and runtime state. Snapshot-backed results and transaction projections are verified and bounded.",
             )
     }
 }
@@ -5781,31 +6057,52 @@ mod tests {
     }
 
     #[test]
-    fn exactly_twenty_five_tools_have_closed_schemas_and_runtime_annotations() {
+    fn exactly_thirty_six_tools_have_closed_schemas_and_transaction_annotations() {
         let server = GodotMcpServer::new(SnapshotReplicator::new());
         let tools = server.tool_router.list_all();
-        assert_eq!(tools.len(), 25);
+        assert_eq!(tools.len(), 36);
         let names: BTreeSet<_> = tools.iter().map(|tool| tool.name.as_ref()).collect();
-        assert!(names.contains("godot_get_scene_graph"));
-        assert!(names.contains("godot_inspect_node"));
-        assert!(names.contains("godot_search_symbols"));
-        assert!(names.contains("godot_inspect_symbol"));
-        assert!(names.contains("godot_find_usages"));
-        assert!(names.contains("godot_get_open_scenes"));
-        assert!(names.contains("godot_get_inspector_state"));
-        assert!(names.contains("godot_get_open_scripts"));
-        assert!(names.contains("godot_get_editor_history"));
-        assert!(names.contains("godot_get_diagnostics"));
-        assert!(names.contains("godot_get_viewport_state"));
-        assert!(names.contains("godot_run_project"));
-        assert!(names.contains("godot_run_current_scene"));
-        assert!(names.contains("godot_stop_project"));
-        assert!(names.contains("godot_pause_project"));
-        assert!(names.contains("godot_continue_project"));
-        assert!(names.contains("godot_get_runtime_tree"));
-        assert!(names.contains("godot_inspect_runtime_object"));
-        assert!(names.contains("godot_get_stack_trace"));
-        assert!(names.contains("godot_capture_viewport"));
+        let expected: BTreeSet<_> = [
+            "godot_get_editor_state",
+            "godot_get_current_scene",
+            "godot_get_selected_nodes",
+            "godot_get_open_scenes",
+            "godot_get_inspector_state",
+            "godot_get_open_scripts",
+            "godot_get_editor_history",
+            "godot_get_diagnostics",
+            "godot_get_viewport_state",
+            "godot_run_project",
+            "godot_run_current_scene",
+            "godot_stop_project",
+            "godot_pause_project",
+            "godot_continue_project",
+            "godot_get_runtime_tree",
+            "godot_inspect_runtime_object",
+            "godot_get_stack_trace",
+            "godot_capture_viewport",
+            "godot_get_resource_dependencies",
+            "godot_find_resource_owners",
+            "godot_get_scene_graph",
+            "godot_inspect_node",
+            "godot_search_symbols",
+            "godot_inspect_symbol",
+            "godot_find_usages",
+            "godot_prepare_create_node",
+            "godot_prepare_delete_node",
+            "godot_prepare_reparent_node",
+            "godot_prepare_set_property",
+            "godot_prepare_attach_script",
+            "godot_prepare_detach_script",
+            "godot_prepare_connect_signal",
+            "godot_prepare_disconnect_signal",
+            "godot_apply_transaction",
+            "godot_get_transaction_status",
+            "godot_undo_transaction",
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(names, expected);
         for tool in &tools {
             let annotations = tool.annotations.as_ref().expect("annotations");
             assert_eq!(annotations.open_world_hint, Some(false));
@@ -5950,6 +6247,112 @@ mod tests {
         assert_eq!(
             find.input_schema["$defs"]["SemanticConfidenceInput"]["enum"],
             json!(["dynamic", "probable", "runtime_confirmed", "exact"])
+        );
+        for name in [
+            "godot_prepare_create_node",
+            "godot_prepare_delete_node",
+            "godot_prepare_reparent_node",
+            "godot_prepare_set_property",
+            "godot_prepare_attach_script",
+            "godot_prepare_detach_script",
+            "godot_prepare_connect_signal",
+            "godot_prepare_disconnect_signal",
+        ] {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.name.as_ref() == name)
+                .expect("transaction prepare tool");
+            let annotations = tool.annotations.as_ref().unwrap();
+            assert_eq!(annotations.read_only_hint, Some(false));
+            assert_eq!(annotations.destructive_hint, Some(false));
+            assert_eq!(annotations.idempotent_hint, Some(true));
+            let required = tool
+                .input_schema
+                .get("required")
+                .and_then(Value::as_array)
+                .expect("prepare required fields");
+            for field in [
+                "project_id",
+                "editor_session_id",
+                "scene_id",
+                "history_id",
+                "scene_revision",
+                "operation_seq",
+                "idempotency_key",
+            ] {
+                assert!(required.iter().any(|value| value.as_str() == Some(field)));
+            }
+        }
+        let status = tools
+            .iter()
+            .find(|tool| tool.name.as_ref() == "godot_get_transaction_status")
+            .unwrap()
+            .annotations
+            .as_ref()
+            .unwrap();
+        assert_eq!(status.read_only_hint, Some(true));
+        assert_eq!(status.destructive_hint, Some(false));
+        assert_eq!(status.idempotent_hint, Some(true));
+        for name in ["godot_apply_transaction", "godot_undo_transaction"] {
+            let annotations = tools
+                .iter()
+                .find(|tool| tool.name.as_ref() == name)
+                .unwrap()
+                .annotations
+                .as_ref()
+                .unwrap();
+            assert_eq!(annotations.read_only_hint, Some(false));
+            assert_eq!(annotations.destructive_hint, Some(true));
+            assert_eq!(annotations.idempotent_hint, Some(false));
+        }
+        let apply = tools
+            .iter()
+            .find(|tool| tool.name.as_ref() == "godot_apply_transaction")
+            .unwrap();
+        assert_eq!(
+            apply.input_schema["properties"]["transaction_id"]["pattern"],
+            "^transaction:[0-9a-f]{32}$"
+        );
+        assert_eq!(
+            apply.input_schema["properties"]["preview_digest"]["pattern"],
+            "^sha256:[0-9a-f]{64}$"
+        );
+        assert!(apply.input_schema["properties"].get("approval").is_none());
+        assert!(apply.input_schema["properties"].get("receipt").is_none());
+        assert!(apply.input_schema["properties"].get("approved").is_none());
+    }
+
+    #[tokio::test]
+    async fn transaction_tools_remain_registered_but_fail_stably_without_a_coordinator() {
+        let server = GodotMcpServer::new(SnapshotReplicator::new());
+        let result = server
+            .prepare_transaction(PrepareCommand {
+                project_id: format!("project:sha256:{}", "1".repeat(64)),
+                editor_session_id: format!("editor:{}", "2".repeat(32)),
+                idempotency_key: format!("idempotency:{}", "3".repeat(32)),
+                coordinates: godot_codex_bridge_client::RevisionCoordinates {
+                    scene_id: format!("scene:{}", "4".repeat(32)),
+                    history_id: format!("history:{}", "5".repeat(32)),
+                    scene_revision: 1,
+                    operation_seq: 1,
+                },
+                operation: godot_codex_bridge_client::TransactionOperation::DeleteNode {
+                    node_id: format!("node:{}", "6".repeat(32)),
+                },
+            })
+            .await;
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(
+            structured_content(&result).unwrap()["error"]["code"],
+            "transaction_coordinator_unavailable"
+        );
+        let status = server
+            .transaction_status(&format!("transaction:{}", "7".repeat(32)))
+            .await;
+        assert_eq!(status.is_error, Some(true));
+        assert_eq!(
+            structured_content(&status).unwrap()["error"]["code"],
+            "transaction_coordinator_unavailable"
         );
     }
 
