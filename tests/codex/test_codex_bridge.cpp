@@ -252,6 +252,8 @@ namespace TestCodexBridge {
 
 struct HandlerContext {
 	LocalVector<uint64_t> handled_ids;
+	LocalVector<MainThreadDispatcher::CommandType> handled_types;
+	LocalVector<bool> cancelled_before_dispatch;
 	uint64_t now_usec = 0;
 	uint64_t advance_usec = 0;
 };
@@ -259,6 +261,8 @@ struct HandlerContext {
 static void record_command(const MainThreadDispatcher::Command &p_command, void *p_userdata) {
 	HandlerContext *context = static_cast<HandlerContext *>(p_userdata);
 	context->handled_ids.push_back(p_command.request_id);
+	context->handled_types.push_back(p_command.type);
+	context->cancelled_before_dispatch.push_back(p_command.cancelled_before_dispatch);
 	context->now_usec += context->advance_usec;
 }
 
@@ -333,6 +337,7 @@ TEST_CASE("[CodexBridge] Evidence telemetry is opt-in, bounded, and records budg
 	telemetry.reset(false);
 	telemetry.record(100, true);
 	CHECK((int64_t)telemetry.to_dictionary()["busy_frame_count"] == 0);
+	CHECK((int64_t)telemetry.to_dictionary()["dispatcher_sample_count"] == 0);
 
 	telemetry.reset(true);
 	telemetry.record(42, false);
@@ -342,6 +347,12 @@ TEST_CASE("[CodexBridge] Evidence telemetry is opt-in, bounded, and records budg
 	CHECK((int64_t)result["busy_frame_count"] == 2);
 	CHECK((int64_t)result["over_budget_count"] == 1);
 	CHECK((int64_t)result["max_elapsed_usec"] == (int64_t)BridgeFrameTelemetry::BUDGET_USEC + 1);
+	telemetry.record_dispatcher(BridgeFrameTelemetry::BUDGET_USEC, true);
+	telemetry.record_dispatcher(BridgeFrameTelemetry::BUDGET_USEC + 1, true);
+	result = telemetry.to_dictionary();
+	CHECK((int64_t)result["dispatcher_sample_count"] == 2);
+	CHECK((int64_t)result["dispatcher_over_budget_count"] == 1);
+	CHECK((int64_t)result["dispatcher_max_elapsed_usec"] == (int64_t)BridgeFrameTelemetry::BUDGET_USEC + 1);
 	CHECK_FALSE((bool)result["overflow"]);
 	CHECK(Array(result["samples_usec"]).size() == 2);
 
@@ -1561,7 +1572,7 @@ TEST_CASE("[CodexS8BridgeProfile] RPC 1.6 exposes bounded runtime methods and st
 	CHECK(rpc_error_code(outcome) == "capability_unavailable");
 }
 
-TEST_CASE("[CodexS9TransactionProfile] RPC 1.7 preserves the version matrix and fails closed") {
+TEST_CASE("[CodexS9TransactionProfile] RPC 1.7 preserves the version matrix and routes the guarded core") {
 	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
 	const char *versions[] = { "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7" };
@@ -1583,8 +1594,9 @@ TEST_CASE("[CodexS9TransactionProfile] RPC 1.7 preserves the version matrix and 
 		if (version == "1.7") {
 			const Dictionary transaction = capabilities[capabilities.size() - 1];
 			CHECK(transaction["name"] == "transaction.scene_v1");
-			CHECK(transaction["readiness"] == "unavailable");
-			CHECK(Dictionary(transaction["transaction_readiness"])["reason"] == "approval_unavailable");
+			CHECK(transaction["readiness"] == "ready");
+			CHECK(Dictionary(transaction["transaction_readiness"])["approval_state"] == "available");
+			CHECK(Dictionary(transaction["transaction_readiness"])["reason"] == "ready");
 			CHECK((int64_t)limits["transaction_prepared_records"] == 64);
 		} else {
 			CHECK_FALSE(limits.has("transaction_prepared_records"));
@@ -1655,16 +1667,17 @@ TEST_CASE("[CodexS9TransactionProfile] RPC 1.7 preserves the version matrix and 
 		CHECK(outcome.response["protocol_version"] == "1.7");
 	}
 	const char *request_names[] = { "prepare_request", "apply_request", "status_request", "undo_request" };
+	const BridgeRpcSession::Method request_methods[] = { BridgeRpcSession::METHOD_TRANSACTION_PREPARE, BridgeRpcSession::METHOD_TRANSACTION_APPLY, BridgeRpcSession::METHOD_TRANSACTION_STATUS, BridgeRpcSession::METHOD_TRANSACTION_UNDO };
 	for (int index = 0; index < 4; index++) {
 		REQUIRE(rpc.handle_message(vector[request_names[index]], 2 + index, 11 + index, outcome) == OK);
+		CHECK(outcome.dispatch);
+		CHECK(outcome.method == request_methods[index]);
 		if (index == 0) {
-			CHECK(outcome.dispatch);
-			CHECK(outcome.method == BridgeRpcSession::METHOD_TRANSACTION_PREPARE);
 			REQUIRE(rpc.complete(11, 7, vector["prepare_result"], outcome) == OK);
 			CHECK(Dictionary(outcome.response["result"])["state"] == "previewed");
 		} else {
-			CHECK(rpc_error_code(outcome) == "capability_unavailable");
-			CHECK_FALSE(outcome.dispatch);
+			REQUIRE(rpc.complete(11 + index, 7 + index, vector["status_result"], outcome) == OK);
+			CHECK(Dictionary(outcome.response["result"])["schema_version"] == "transaction/1.0");
 		}
 		CHECK(rpc.get_in_flight_count() == 0);
 	}
@@ -1774,6 +1787,42 @@ TEST_CASE("[CodexS9TransactionProfile] C++ validates the shared transaction vect
 	wire_integer["value"] = 9007199254740992.0;
 	operation["value"] = wire_integer;
 	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+	operation = Dictionary(operations[3]).duplicate(true);
+	Dictionary wrong_arity;
+	wrong_arity["type"] = "vector2";
+	Array three_components;
+	three_components.push_back(1.0);
+	three_components.push_back(2.0);
+	three_components.push_back(3.0);
+	wrong_arity["value"] = three_components;
+	operation["value"] = wrong_arity;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+	Dictionary absolute_node_path;
+	absolute_node_path["type"] = "node_path";
+	absolute_node_path["value"] = "/root/native";
+	operation["value"] = absolute_node_path;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+	Dictionary duplicate_dictionary;
+	duplicate_dictionary["type"] = "dictionary";
+	Array duplicate_entries;
+	Dictionary duplicate_nil_value;
+	duplicate_nil_value["type"] = "nil";
+	for (int index = 0; index < 2; index++) {
+		Dictionary entry;
+		entry["key"] = "duplicate";
+		entry["value"] = duplicate_nil_value;
+		duplicate_entries.push_back(entry);
+	}
+	duplicate_dictionary["value"] = duplicate_entries;
+	operation["value"] = duplicate_dictionary;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+	operation = Dictionary(operations[6]).duplicate(true);
+	operation["flags"] = 0;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+	operation["flags"] = 10;
+	CHECK_FALSE(BridgeTransactionProfile::validate_operation(operation));
+	operation["flags"] = 2;
+	CHECK(BridgeTransactionProfile::validate_operation(operation));
 
 	Dictionary apply = Dictionary(Dictionary(vector["apply_request"])["params"]).duplicate(true);
 	apply["preview_digest"] = "sha256:ABC";
@@ -1848,6 +1897,21 @@ TEST_CASE("[CodexS9TransactionProfile] C++ validates the shared transaction vect
 	status = Dictionary(vector["status_result"]).duplicate(true);
 	status["native_handle"] = (int64_t)42;
 	CHECK_FALSE(BridgeTransactionProfile::validate_status_result(status));
+	status = Dictionary(vector["status_result"]).duplicate(true);
+	Array committed_entities;
+	Dictionary committed_entity;
+	committed_entity["node_id"] = "node:44444444444444444444444444444444";
+	committed_entity["role"] = "created";
+	committed_entities.push_back(committed_entity);
+	status["committed_entities"] = committed_entities;
+	CHECK_FALSE(BridgeTransactionProfile::validate_status_result(status));
+	status["state"] = "committed";
+	status["outcome"] = "committed";
+	CHECK(BridgeTransactionProfile::validate_status_result(status));
+	committed_entity["native_object_id"] = (int64_t)42;
+	committed_entities[0] = committed_entity;
+	status["committed_entities"] = committed_entities;
+	CHECK_FALSE(BridgeTransactionProfile::validate_status_result(status));
 
 	Dictionary event = Dictionary(Dictionary(vector["event"])["params"]).duplicate(true);
 	event["reason"] = "arbitrary_native_reason";
@@ -1855,6 +1919,30 @@ TEST_CASE("[CodexS9TransactionProfile] C++ validates the shared transaction vect
 	event = Dictionary(Dictionary(vector["event"])["params"]).duplicate(true);
 	event["state"] = "committed";
 	CHECK_FALSE(BridgeTransactionProfile::validate_event_params(event));
+}
+
+TEST_CASE("[CodexS9TransactionProfile] Capability readiness reports coordinator, scene, approval, and busy guards") {
+	Dictionary capability = BridgeTransactionProfile::make_ready_capability();
+	CHECK(capability["readiness"] == "ready");
+	CHECK(Dictionary(capability["transaction_readiness"])["scene_state"] == "available");
+	CHECK(Dictionary(capability["transaction_readiness"])["reason"] == "ready");
+
+	capability = BridgeTransactionProfile::make_ready_capability(true);
+	CHECK(capability["readiness"] == "unavailable");
+	CHECK((bool)Dictionary(capability["transaction_readiness"])["busy"]);
+	CHECK(Dictionary(capability["transaction_readiness"])["reason"] == "transaction_busy");
+
+	capability = BridgeTransactionProfile::make_ready_capability(false, false);
+	CHECK(Dictionary(capability["transaction_readiness"])["scene_state"] == "unavailable");
+	CHECK(Dictionary(capability["transaction_readiness"])["reason"] == "scene_not_open");
+
+	capability = BridgeTransactionProfile::make_ready_capability(false, true, false);
+	CHECK(Dictionary(capability["transaction_readiness"])["approval_state"] == "unavailable");
+	CHECK(Dictionary(capability["transaction_readiness"])["reason"] == "approval_unavailable");
+
+	capability = BridgeTransactionProfile::make_ready_capability(false, true, true, false);
+	CHECK(Dictionary(capability["transaction_readiness"])["scene_state"] == "not_evaluated");
+	CHECK(Dictionary(capability["transaction_readiness"])["reason"] == "transaction_coordinator_unavailable");
 }
 
 TEST_CASE("[CodexBridge] Revision clock advances selection and scene domains monotonically") {
@@ -3046,6 +3134,24 @@ TEST_CASE("[CodexBridge] Dispatcher preserves an already queued terminal cancell
 	CHECK(stats.remaining == 0);
 	REQUIRE(context.handled_ids.size() == 1);
 	CHECK(context.handled_ids[0] == 42);
+}
+
+TEST_CASE("[CodexBridge][S9] Dispatcher preserves cancelled apply admission") {
+	MainThreadDispatcher dispatcher;
+	dispatcher.start_accepting();
+	MainThreadDispatcher::Command apply = make_command(42);
+	apply.type = MainThreadDispatcher::COMMAND_TRANSACTION_APPLY;
+	REQUIRE(dispatcher.enqueue(apply) == MainThreadDispatcher::ENQUEUE_OK);
+	CHECK(dispatcher.cancel(42));
+	CHECK(dispatcher.get_queue_size() == 1);
+
+	HandlerContext context;
+	const MainThreadDispatcher::ProcessStats stats = dispatcher.process(record_command, &context, 8, 2000, test_clock, &context);
+	REQUIRE(stats.processed == 1);
+	REQUIRE(context.handled_ids.size() == 1);
+	CHECK(context.handled_ids[0] == 42);
+	CHECK(context.handled_types[0] == MainThreadDispatcher::COMMAND_TRANSACTION_APPLY);
+	CHECK(context.cancelled_before_dispatch[0]);
 }
 
 TEST_CASE("[CodexBridge] Dispatcher reserves priority capacity for terminal cancellation") {

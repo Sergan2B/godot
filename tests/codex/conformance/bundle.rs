@@ -317,7 +317,7 @@ mod tests {
 
     #[test]
     fn canonical_schema_fixture_bundle_is_self_consistent() {
-        assert_eq!(validate_canonical_bundle().unwrap(), 161);
+        assert_eq!(validate_canonical_bundle().unwrap(), 167);
     }
 
     #[test]

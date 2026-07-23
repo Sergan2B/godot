@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -315,6 +316,17 @@ fn validate_variant(value: &Value, depth: usize, items: &mut usize) -> Result<()
         .get("type")
         .and_then(Value::as_str)
         .ok_or("property_value_unsupported")?;
+    let exact_keys = |expected: &[&str]| {
+        object.len() == expected.len() && expected.iter().all(|key| object.contains_key(*key))
+    };
+    if kind == "nil" {
+        return exact_keys(&["type"])
+            .then_some(())
+            .ok_or("property_value_unsupported");
+    }
+    if !exact_keys(&["type", "value"]) {
+        return Err("property_value_unsupported");
+    }
     match kind {
         "string" | "string_name" | "node_path" => {
             let text = object
@@ -322,6 +334,9 @@ fn validate_variant(value: &Value, depth: usize, items: &mut usize) -> Result<()
                 .and_then(Value::as_str)
                 .ok_or("property_value_unsupported")?;
             if text.chars().count() > MAX_STRING_CHARACTERS {
+                return Err("property_value_unsupported");
+            }
+            if kind == "node_path" && text.starts_with('/') {
                 return Err("property_value_unsupported");
             }
         }
@@ -347,13 +362,20 @@ fn validate_variant(value: &Value, depth: usize, items: &mut usize) -> Result<()
             if *items > MAX_CONTAINER_ITEMS {
                 return Err("property_value_unsupported");
             }
+            let mut keys = HashSet::new();
             for entry in entries {
                 let entry = entry.as_object().ok_or("property_value_unsupported")?;
+                if entry.len() != 2 || !entry.contains_key("key") || !entry.contains_key("value") {
+                    return Err("property_value_unsupported");
+                }
                 let key = entry
                     .get("key")
                     .and_then(Value::as_str)
                     .ok_or("property_value_unsupported")?;
                 if key.chars().count() > MAX_STRING_CHARACTERS {
+                    return Err("property_value_unsupported");
+                }
+                if !keys.insert(key) {
                     return Err("property_value_unsupported");
                 }
                 validate_variant(
@@ -363,9 +385,42 @@ fn validate_variant(value: &Value, depth: usize, items: &mut usize) -> Result<()
                 )?;
             }
         }
-        "nil" | "bool" | "int" | "float" | "vector2" | "vector2i" | "vector3" | "vector3i"
-        | "vector4" | "vector4i" | "rect2" | "rect2i" | "transform2d" | "plane" | "quaternion"
-        | "aabb" | "basis" | "transform3d" | "projection" | "color" | "resource" => {}
+        "bool" if object["value"].is_boolean() => {}
+        "int"
+            if object["value"]
+                .as_i64()
+                .is_some_and(|number| number.unsigned_abs() <= 9_007_199_254_740_991) => {}
+        "float" if object["value"].as_f64().is_some_and(f64::is_finite) => {}
+        "resource" if object["value"].is_object() => {}
+        "vector2" | "vector2i" | "vector3" | "vector3i" | "vector4" | "vector4i" | "rect2"
+        | "rect2i" | "transform2d" | "plane" | "quaternion" | "aabb" | "basis" | "transform3d"
+        | "projection" | "color" => {
+            let arity = match kind {
+                "vector2" | "vector2i" => 2,
+                "vector3" | "vector3i" => 3,
+                "vector4" | "vector4i" | "rect2" | "rect2i" | "plane" | "quaternion" | "color" => 4,
+                "transform2d" | "aabb" => 6,
+                "basis" => 9,
+                "transform3d" => 12,
+                "projection" => 16,
+                _ => unreachable!(),
+            };
+            let components = object["value"]
+                .as_array()
+                .ok_or("property_value_unsupported")?;
+            if components.len() != arity
+                || !components
+                    .iter()
+                    .all(|value| value.as_f64().is_some_and(f64::is_finite))
+            {
+                return Err("property_value_unsupported");
+            }
+            if matches!(kind, "vector2i" | "vector3i" | "vector4i" | "rect2i")
+                && !components.iter().all(Value::is_i64)
+            {
+                return Err("property_value_unsupported");
+            }
+        }
         _ => return Err("property_value_unsupported"),
     }
     Ok(())
@@ -500,8 +555,7 @@ fn transaction_canonical_preview_vectors_match_all_operations() {
         };
         let affected_entities = match kind {
             "create_node" => serde_json::json!([
-                {"node_id":"node:11111111111111111111111111111111","role":"parent"},
-                {"node_id":"node:44444444444444444444444444444444","role":"created"}
+                {"node_id":"node:11111111111111111111111111111111","role":"parent"}
             ]),
             "reparent_node" => serde_json::json!([
                 {"node_id":"node:22222222222222222222222222222222","role":"target"},
@@ -515,8 +569,37 @@ fn transaction_canonical_preview_vectors_match_all_operations() {
                 {"node_id":"node:22222222222222222222222222222222","role":"target"}
             ]),
         };
+        let operation_bytes = serde_json::to_vec(operation).expect("canonical operation");
+        let mut operation_hasher = Sha256::new();
+        operation_hasher.update(b"godot-codex-preview-operation/v1\n");
+        operation_hasher.update(&operation_bytes);
+        let operation_digest = format!("sha256:{:x}", operation_hasher.finalize());
+        let redacted_operation = match kind {
+            "set_property" => serde_json::json!({
+                "kind": kind,
+                "node_id": operation["node_id"],
+                "property": operation["property"],
+                "value_summary": {"type":"value", "redacted":true, "digest":operation_digest}
+            }),
+            "attach_script" => serde_json::json!({
+                "kind": kind,
+                "node_id": operation["node_id"],
+                "script_summary": {"type":"script", "redacted":true, "digest":operation_digest}
+            }),
+            "connect_signal" | "disconnect_signal" => serde_json::json!({
+                "kind": kind,
+                "emitter_node_id": operation["emitter_node_id"],
+                "signal": operation["signal"],
+                "receiver_node_id": operation["receiver_node_id"],
+                "method": operation["method"],
+                "flags": operation["flags"],
+                "unbinds": operation["unbinds"],
+                "binds_summary": {"type":"binds", "redacted":true, "digest":operation_digest}
+            }),
+            _ => operation.clone(),
+        };
         let payload = serde_json::json!({
-            "schema_version": "canonical-transaction-preview/1.0",
+            "schema_version": "canonical-transaction-preview/1.1",
             "coordinates": {
                 "transaction_id": "transaction:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "scene_id": "scene:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
@@ -525,7 +608,8 @@ fn transaction_canonical_preview_vectors_match_all_operations() {
                 "operation_seq": 11,
                 "transaction_seq": 2
             },
-            "operation": operation,
+            "operation": redacted_operation,
+            "operation_digest": operation_digest,
             "risk": risk,
             "scope": scope,
             "affected_entities": affected_entities,
@@ -601,6 +685,58 @@ fn transaction_semantic_limits_fail_closed() {
         validate_variant(&oversized_string, 1, &mut 0),
         Err("property_value_unsupported")
     );
+    let wrong_arity = serde_json::json!({"type":"vector2", "value":[1.0, 2.0, 3.0]});
+    assert_eq!(
+        validate_variant(&wrong_arity, 1, &mut 0),
+        Err("property_value_unsupported")
+    );
+    let absolute_node_path = serde_json::json!({"type":"node_path", "value":"/root/native"});
+    assert_eq!(
+        validate_variant(&absolute_node_path, 1, &mut 0),
+        Err("property_value_unsupported")
+    );
+    let duplicate_dictionary = serde_json::json!({
+        "type":"dictionary",
+        "value":[
+            {"key":"duplicate", "value":{"type":"nil"}},
+            {"key":"duplicate", "value":{"type":"bool", "value":true}}
+        ]
+    });
+    assert_eq!(
+        validate_variant(&duplicate_dictionary, 1, &mut 0),
+        Err("property_value_unsupported")
+    );
+}
+
+#[test]
+fn transaction_schema_rejects_wrong_arity_absolute_paths_and_unsafe_signal_flags() {
+    for value in [
+        serde_json::json!({"type":"vector2", "value":[1.0, 2.0, 3.0]}),
+        serde_json::json!({"type":"node_path", "value":"/root/native"}),
+    ] {
+        assert!(crate::bundle::validate_instance(
+            "transaction.schema.json#/$defs/writableVariant",
+            &value
+        )
+        .is_err());
+    }
+    for flags in [0, 8, 10] {
+        let operation = serde_json::json!({
+            "kind":"connect_signal",
+            "emitter_node_id":"node:22222222222222222222222222222222",
+            "signal":"pulse",
+            "receiver_node_id":"node:33333333333333333333333333333333",
+            "method":"_on_pulse",
+            "flags":flags,
+            "unbinds":0,
+            "binds":[]
+        });
+        assert!(crate::bundle::validate_instance(
+            "transaction.schema.json#/$defs/operation",
+            &operation
+        )
+        .is_err());
+    }
 }
 
 #[test]

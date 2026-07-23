@@ -353,7 +353,7 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 		}
 	}
 	if (has_transaction_profile(protocol_version)) {
-		capabilities.push_back(BridgeTransactionProfile::make_unavailable_capability());
+		capabilities.push_back(BridgeTransactionProfile::make_ready_capability(transaction_busy, transaction_scene_available, transaction_approval_available, transaction_coordinator_available));
 	}
 	Dictionary result;
 	result["capabilities"] = capabilities;
@@ -931,10 +931,6 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 				_set_error_outcome(request_id, "invalid_request", "The transaction parameters are invalid.", false, r_outcome);
 				return OK;
 			}
-			if (method != METHOD_TRANSACTION_PREPARE) {
-				_set_error_outcome(request_id, "capability_unavailable", "Transaction apply, status, and undo are not available until the approval workflow is enabled.", false, r_outcome);
-				return OK;
-			}
 		} else if (method_name == "bridge.shutdown") {
 			if (!_validate_shutdown_params(params)) {
 				_set_error_outcome(request_id, "invalid_request", "The shutdown parameters are invalid.", false, r_outcome);
@@ -1140,10 +1136,13 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 		case METHOD_TRANSACTION_APPLY:
 		case METHOD_TRANSACTION_STATUS:
 		case METHOD_TRANSACTION_UNDO: {
-			_set_error_outcome(pending.request_id, "capability_unavailable", "Transaction apply, status, and undo are not available until the approval workflow is enabled.", false, r_outcome);
-			_remove_pending(p_internal_request_id);
-			return OK;
-		}
+			if (p_result_override.is_empty() || !BridgeTransactionProfile::validate_status_result(p_result_override)) {
+				_set_error_outcome(pending.request_id, "internal_error", "The transaction status response was not produced or failed validation.", true, r_outcome);
+				_remove_pending(p_internal_request_id);
+				return OK;
+			}
+			result = p_result_override;
+		} break;
 		case METHOD_SHUTDOWN: {
 			result["closing"] = true;
 			closing = true;
@@ -1257,6 +1256,13 @@ void BridgeRpcSession::set_protocol_version(const String &p_protocol_version) {
 	ERR_FAIL_COND_MSG(initialized, "The negotiated protocol version cannot change after initialization.");
 	ERR_FAIL_COND_MSG(p_protocol_version != "1.0" && !has_editor_profile(p_protocol_version), "Unsupported Bridge RPC protocol version.");
 	protocol_version = p_protocol_version;
+}
+
+void BridgeRpcSession::set_transaction_readiness(bool p_coordinator_available, bool p_scene_available, bool p_approval_available, bool p_busy) {
+	transaction_coordinator_available = p_coordinator_available;
+	transaction_scene_available = p_scene_available;
+	transaction_approval_available = p_approval_available;
+	transaction_busy = p_busy;
 }
 
 const String &BridgeRpcSession::get_protocol_version() const {

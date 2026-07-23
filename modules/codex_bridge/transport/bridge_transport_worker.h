@@ -88,6 +88,12 @@ public:
 		String project_root;
 		String project_id;
 		String editor_session_id;
+		PackedByteArray approval_key;
+		Mutex transaction_readiness_mutex;
+		bool transaction_coordinator_available = false;
+		bool transaction_scene_available = false;
+		bool transaction_approval_available = false;
+		bool transaction_busy = false;
 		Mutex dispatcher_mutex;
 		MainThreadDispatcher *dispatcher = nullptr;
 		Mutex completion_mutex;
@@ -126,6 +132,8 @@ public:
 	bool publish_notification(const Dictionary &p_notification);
 	String get_project_id() const;
 	String get_editor_session_id() const;
+	PackedByteArray get_approval_key() const;
+	void update_transaction_readiness(bool p_coordinator_available, bool p_scene_available, bool p_approval_available, bool p_busy);
 
 	bool is_running() const;
 

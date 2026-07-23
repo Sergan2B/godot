@@ -15,7 +15,7 @@
 
 namespace {
 
-static Dictionary normalize_wire_variant(const Dictionary &p_value) {
+Dictionary normalize_wire_variant_impl(const Dictionary &p_value) {
 	Dictionary normalized = p_value.duplicate(true);
 	const String type = normalized.get("type", String());
 	if (type == "int") {
@@ -25,15 +25,24 @@ static Dictionary normalize_wire_variant(const Dictionary &p_value) {
 	} else if (type == "array") {
 		Array values = normalized["value"];
 		for (int index = 0; index < values.size(); index++) {
-			values[index] = normalize_wire_variant(values[index]);
+			values[index] = normalize_wire_variant_impl(values[index]);
 		}
 		normalized["value"] = values;
 	} else if (type == "dictionary") {
 		Array entries = normalized["value"];
 		for (int index = 0; index < entries.size(); index++) {
 			Dictionary entry = entries[index];
-			entry["value"] = normalize_wire_variant(entry["value"]);
+			entry["value"] = normalize_wire_variant_impl(entry["value"]);
 			entries[index] = entry;
+		}
+		for (int left = 1; left < entries.size(); left++) {
+			const Dictionary candidate = entries[left];
+			int right = left - 1;
+			while (right >= 0 && String(Dictionary(entries[right])["key"]) > String(candidate["key"])) {
+				entries[right + 1] = entries[right];
+				right--;
+			}
+			entries[right + 1] = candidate;
 		}
 		normalized["value"] = entries;
 	} else if (type == "vector2" || type == "vector2i" || type == "vector3" || type == "vector3i" || type == "vector4" || type == "vector4i" || type == "rect2" || type == "rect2i" || type == "transform2d" || type == "plane" || type == "quaternion" || type == "aabb" || type == "basis" || type == "transform3d" || type == "projection" || type == "color") {
@@ -48,6 +57,10 @@ static Dictionary normalize_wire_variant(const Dictionary &p_value) {
 
 } // namespace
 
+Dictionary BridgeTransactionCanonicalizer::normalize_wire_variant(const Dictionary &p_value) {
+	return normalize_wire_variant_impl(p_value);
+}
+
 Dictionary BridgeTransactionCanonicalizer::normalize_operation(const Dictionary &p_operation) {
 	Dictionary normalized = p_operation.duplicate(true);
 	const String kind = normalized.get("kind", String());
@@ -55,13 +68,13 @@ Dictionary BridgeTransactionCanonicalizer::normalize_operation(const Dictionary 
 		normalized["insertion_index"] = (int64_t)normalized["insertion_index"];
 	}
 	if (kind == "set_property") {
-		normalized["value"] = normalize_wire_variant(normalized["value"]);
+		normalized["value"] = normalize_wire_variant_impl(normalized["value"]);
 	} else if (kind == "connect_signal" || kind == "disconnect_signal") {
 		normalized["flags"] = (int64_t)normalized["flags"];
 		normalized["unbinds"] = (int64_t)normalized["unbinds"];
 		Array binds = normalized["binds"];
 		for (int index = 0; index < binds.size(); index++) {
-			binds[index] = normalize_wire_variant(binds[index]);
+			binds[index] = normalize_wire_variant_impl(binds[index]);
 		}
 		normalized["binds"] = binds;
 	}

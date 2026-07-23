@@ -18,6 +18,7 @@ public:
 	static constexpr int64_t MAX_STRING_CHARACTERS = 16384;
 
 	static Dictionary make_unavailable_capability();
+	static Dictionary make_ready_capability(bool p_busy = false, bool p_scene_available = true, bool p_approval_available = true, bool p_coordinator_available = true);
 	static Dictionary make_limits();
 	static void append_global_limits(Dictionary &r_limits);
 
@@ -28,6 +29,7 @@ public:
 	static bool validate_operation(const Dictionary &p_operation);
 	static bool validate_prepare_result(const Dictionary &p_result);
 	static bool validate_status_result(const Dictionary &p_result);
+	static bool validate_affected_entities(const Array &p_entities, bool p_allow_empty = false);
 	static bool validate_event_params(const Dictionary &p_params);
 	static bool is_legal_transition(const String &p_previous_state, const String &p_state);
 };

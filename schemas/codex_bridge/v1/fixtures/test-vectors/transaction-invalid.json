@@ -58,6 +58,34 @@
     "type": "rid",
     "value": 42
   },
+  "wrong_math_arity": {
+    "type": "vector2",
+    "value": [1.0, 2.0, 3.0]
+  },
+  "absolute_node_path": {
+    "type": "node_path",
+    "value": "/root/native"
+  },
+  "non_persistent_signal": {
+    "kind": "connect_signal",
+    "emitter_node_id": "node:22222222222222222222222222222222",
+    "signal": "pulse",
+    "receiver_node_id": "node:33333333333333333333333333333333",
+    "method": "_on_pulse",
+    "flags": 0,
+    "unbinds": 0,
+    "binds": []
+  },
+  "reference_counted_signal": {
+    "kind": "connect_signal",
+    "emitter_node_id": "node:22222222222222222222222222222222",
+    "signal": "pulse",
+    "receiver_node_id": "node:33333333333333333333333333333333",
+    "method": "_on_pulse",
+    "flags": 10,
+    "unbinds": 0,
+    "binds": []
+  },
   "malformed_receipt": {
     "kind": "mcp_form_v1",
     "scope": "scene.node.create",
@@ -65,6 +93,11 @@
     "issued_at_ms": 1784690010000,
     "expires_at_ms": 1784690040000,
     "mac": "GATXghx6burI5ZwUowKmqkJkxE8noYdibeDsrOiBGQI"
+  },
+  "committed_entity_native_id": {
+    "node_id": "node:44444444444444444444444444444444",
+    "role": "created",
+    "native_object_id": 42
   },
   "extra_event_field": {
     "coordinates": {

@@ -288,22 +288,43 @@ static bool validate_writable_variant(const Dictionary &p_value, int p_depth, in
 		return (value.get_type() == Variant::FLOAT || value.get_type() == Variant::INT) && Math::is_finite((double)value);
 	}
 	if (type == "string" || type == "string_name" || type == "node_path") {
-		return value.get_type() == Variant::STRING && String(value).length() <= BridgeTransactionProfile::MAX_STRING_CHARACTERS;
+		if (value.get_type() != Variant::STRING || String(value).length() > BridgeTransactionProfile::MAX_STRING_CHARACTERS) {
+			return false;
+		}
+		return type != "node_path" || !NodePath(String(value)).is_absolute();
 	}
 	if (type == "resource") {
 		return value.get_type() == Variant::DICTIONARY && is_resource_ref(value);
 	}
-	const bool math_type = type == "vector2" || type == "vector2i" || type == "vector3" || type == "vector3i" || type == "vector4" || type == "vector4i" || type == "rect2" || type == "rect2i" || type == "transform2d" || type == "plane" || type == "quaternion" || type == "aabb" || type == "basis" || type == "transform3d" || type == "projection" || type == "color";
-	if (math_type) {
+	int math_arity = -1;
+	if (type == "vector2" || type == "vector2i") {
+		math_arity = 2;
+	} else if (type == "vector3" || type == "vector3i") {
+		math_arity = 3;
+	} else if (type == "vector4" || type == "vector4i" || type == "rect2" || type == "rect2i" || type == "plane" || type == "quaternion" || type == "color") {
+		math_arity = 4;
+	} else if (type == "transform2d" || type == "aabb") {
+		math_arity = 6;
+	} else if (type == "basis") {
+		math_arity = 9;
+	} else if (type == "transform3d") {
+		math_arity = 12;
+	} else if (type == "projection") {
+		math_arity = 16;
+	}
+	if (math_arity >= 0) {
 		if (value.get_type() != Variant::ARRAY) {
 			return false;
 		}
 		const Array values = value;
-		if (values.size() < 2 || values.size() > 16) {
+		if (values.size() != math_arity) {
 			return false;
 		}
 		for (int index = 0; index < values.size(); index++) {
 			if ((values[index].get_type() != Variant::INT && values[index].get_type() != Variant::FLOAT) || !Math::is_finite((double)values[index])) {
+				return false;
+			}
+			if ((type == "vector2i" || type == "vector3i" || type == "vector4i" || type == "rect2i") && (double)(int64_t)(double)values[index] != (double)values[index]) {
 				return false;
 			}
 		}
@@ -320,6 +341,7 @@ static bool validate_writable_variant(const Dictionary &p_value, int p_depth, in
 	if (r_items > BridgeTransactionProfile::MAX_CONTAINER_ITEMS) {
 		return false;
 	}
+	HashSet<String> dictionary_keys;
 	for (int index = 0; index < values.size(); index++) {
 		if (values[index].get_type() != Variant::DICTIONARY) {
 			return false;
@@ -330,6 +352,10 @@ static bool validate_writable_variant(const Dictionary &p_value, int p_depth, in
 			if (!has_exact_keys(child, { "key", "value" }) || !get_string(child, "key", key) || key.length() > BridgeTransactionProfile::MAX_STRING_CHARACTERS || child["value"].get_type() != Variant::DICTIONARY) {
 				return false;
 			}
+			if (dictionary_keys.has(key)) {
+				return false;
+			}
+			dictionary_keys.insert(key);
 			child = child["value"];
 		}
 		if (!validate_writable_variant(child, p_depth + 1, r_items)) {
@@ -445,6 +471,32 @@ Dictionary BridgeTransactionProfile::make_unavailable_capability() {
 	return capability;
 }
 
+Dictionary BridgeTransactionProfile::make_ready_capability(bool p_busy, bool p_scene_available, bool p_approval_available, bool p_coordinator_available) {
+	String reason = "ready";
+	if (!p_coordinator_available) {
+		reason = "transaction_coordinator_unavailable";
+	} else if (!p_approval_available) {
+		reason = "approval_unavailable";
+	} else if (!p_scene_available) {
+		reason = "scene_not_open";
+	} else if (p_busy) {
+		reason = "transaction_busy";
+	}
+	const bool ready = reason == "ready";
+	Dictionary readiness;
+	readiness["scene_state"] = p_coordinator_available ? (p_scene_available ? "available" : "unavailable") : "not_evaluated";
+	readiness["approval_state"] = p_approval_available ? "available" : "unavailable";
+	readiness["busy"] = p_busy;
+	readiness["reason"] = reason;
+	Dictionary capability;
+	capability["name"] = "transaction.scene_v1";
+	capability["version"] = "1.0";
+	capability["readiness"] = ready ? "ready" : "unavailable";
+	capability["transaction_readiness"] = readiness;
+	capability["limits"] = make_limits();
+	return capability;
+}
+
 void BridgeTransactionProfile::append_global_limits(Dictionary &r_limits) {
 	const Dictionary limits = make_limits();
 	const Array keys = limits.keys();
@@ -486,7 +538,7 @@ bool BridgeTransactionProfile::validate_operation(const Dictionary &p_operation)
 	if (kind == "attach_script") {
 		return has_exact_keys(p_operation, { "kind", "node_id", "script_ref" }) && get_string(p_operation, "node_id", first) && is_prefixed_lower_hex_id(first, "node:") && p_operation["script_ref"].get_type() == Variant::DICTIONARY && is_resource_ref(p_operation["script_ref"]);
 	}
-	if (!has_exact_keys(p_operation, { "kind", "emitter_node_id", "signal", "receiver_node_id", "method", "flags", "unbinds", "binds" }) || !get_string(p_operation, "emitter_node_id", first) || !is_prefixed_lower_hex_id(first, "node:") || !get_string(p_operation, "receiver_node_id", second) || !is_prefixed_lower_hex_id(second, "node:") || !get_string(p_operation, "signal", first) || !is_bounded_string(first, 1, 512) || !get_string(p_operation, "method", first) || !is_bounded_string(first, 1, 512) || !get_integer(p_operation, "flags", 0, INT32_MAX, number) || !get_integer(p_operation, "unbinds", 0, MAX_CONTAINER_ITEMS, number) || p_operation["binds"].get_type() != Variant::ARRAY) {
+	if (!has_exact_keys(p_operation, { "kind", "emitter_node_id", "signal", "receiver_node_id", "method", "flags", "unbinds", "binds" }) || !get_string(p_operation, "emitter_node_id", first) || !is_prefixed_lower_hex_id(first, "node:") || !get_string(p_operation, "receiver_node_id", second) || !is_prefixed_lower_hex_id(second, "node:") || !get_string(p_operation, "signal", first) || !is_bounded_string(first, 1, 512) || !get_string(p_operation, "method", first) || !is_bounded_string(first, 1, 512) || !get_integer(p_operation, "flags", 2, 7, number) || (number & 2) == 0 || (number & ~7) != 0 || !get_integer(p_operation, "unbinds", 0, MAX_CONTAINER_ITEMS, number) || p_operation["binds"].get_type() != Variant::ARRAY) {
 		return false;
 	}
 	const Array binds = p_operation["binds"];
@@ -553,20 +605,11 @@ bool BridgeTransactionProfile::validate_prepare_result(const Dictionary &p_resul
 	if (!get_string(p_result, "schema_version", value) || value != "transaction/1.0" || p_result["coordinates"].get_type() != Variant::DICTIONARY || !validate_revision_coordinates(p_result["coordinates"], true) || !get_string(p_result, "state", value) || value != "previewed" || !get_string(p_result, "operation_kind", value) || !is_operation_kind(value) || !get_string(p_result, "risk", value) || (value != "write" && value != "destructive") || !get_string(p_result, "scope", value) || !is_scope(value) || p_result["affected_entities"].get_type() != Variant::ARRAY || p_result["preview"].get_type() != Variant::DICTIONARY || !validate_preview(p_result["preview"]) || !get_string(p_result, "preview_payload_json", preview_payload) || preview_payload.utf8().length() < 2 || preview_payload.utf8().length() > MAX_STATUS_BYTES || !get_string(p_result, "preview_digest", preview_digest) || !is_digest(preview_digest) || !preview_digest_matches(preview_payload, preview_digest) || !get_integer(p_result, "created_at_ms", 0, MAX_SAFE_INTEGER, created_at) || !get_integer(p_result, "expires_at_ms", 0, MAX_SAFE_INTEGER, expires_at) || expires_at < created_at || p_result["limits_applied"].get_type() != Variant::DICTIONARY || !validate_limits(p_result["limits_applied"])) {
 		return false;
 	}
-	const Array affected = p_result["affected_entities"];
-	if (affected.is_empty() || affected.size() > 16) {
-		return false;
-	}
-	for (int index = 0; index < affected.size(); index++) {
-		if (affected[index].get_type() != Variant::DICTIONARY || !validate_affected_entity(affected[index])) {
-			return false;
-		}
-	}
-	return true;
+	return validate_affected_entities(p_result["affected_entities"]);
 }
 
 bool BridgeTransactionProfile::validate_status_result(const Dictionary &p_result) {
-	if (!has_only_keys(p_result, { "schema_version", "coordinates", "state", "operation_kind", "risk", "scope", "preview_digest", "current_scene_revision", "current_operation_seq", "outcome", "error", "undo_eligibility", "updated_at_ms", "limits_applied", "truncated" }) || p_result.size() < 13 || !encoded_within(p_result, MAX_STATUS_BYTES)) {
+	if (!has_only_keys(p_result, { "schema_version", "coordinates", "state", "operation_kind", "risk", "scope", "preview_digest", "current_scene_revision", "current_operation_seq", "outcome", "error", "undo_eligibility", "committed_entities", "updated_at_ms", "limits_applied", "truncated" }) || p_result.size() < 13 || !encoded_within(p_result, MAX_STATUS_BYTES)) {
 		return false;
 	}
 	String value;
@@ -579,7 +622,28 @@ bool BridgeTransactionProfile::validate_status_result(const Dictionary &p_result
 			return false;
 		}
 	}
+	if (p_result.has("committed_entities")) {
+		if (p_result["committed_entities"].get_type() != Variant::ARRAY || !validate_affected_entities(p_result["committed_entities"])) {
+			return false;
+		}
+		const String state = p_result["state"];
+		if (state != "committed" && state != "undone") {
+			return false;
+		}
+	}
 	return !p_result.has("error") || (p_result["error"].get_type() == Variant::DICTIONARY && validate_safe_error(p_result["error"]));
+}
+
+bool BridgeTransactionProfile::validate_affected_entities(const Array &p_entities, bool p_allow_empty) {
+	if ((!p_allow_empty && p_entities.is_empty()) || p_entities.size() > 16) {
+		return false;
+	}
+	for (int index = 0; index < p_entities.size(); index++) {
+		if (p_entities[index].get_type() != Variant::DICTIONARY || !validate_affected_entity(p_entities[index])) {
+			return false;
+		}
+	}
+	return true;
 }
 
 bool BridgeTransactionProfile::validate_event_params(const Dictionary &p_params) {

@@ -45,10 +45,14 @@ private:
 	uint64_t over_budget_count = 0;
 	uint64_t max_elapsed_usec = 0;
 	Vector<int64_t> samples_usec;
+	uint64_t dispatcher_sample_count = 0;
+	uint64_t dispatcher_over_budget_count = 0;
+	uint64_t dispatcher_max_elapsed_usec = 0;
 
 public:
 	void reset(bool p_enabled);
 	void record(uint64_t p_elapsed_usec, bool p_busy);
+	void record_dispatcher(uint64_t p_elapsed_usec, bool p_consumed);
 
 	bool is_enabled() const;
 	Dictionary to_dictionary() const;

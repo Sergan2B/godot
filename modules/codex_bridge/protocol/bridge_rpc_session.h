@@ -101,6 +101,10 @@ private:
 	HashMap<String, uint64_t> pending_by_request_id;
 	bool initialized = false;
 	bool closing = false;
+	bool transaction_coordinator_available = true;
+	bool transaction_scene_available = true;
+	bool transaction_approval_available = true;
+	bool transaction_busy = false;
 	uint64_t initialize_pending_id = 0;
 	uint64_t shutdown_pending_id = 0;
 
@@ -149,6 +153,7 @@ public:
 
 	bool is_initialized() const;
 	void set_protocol_version(const String &p_protocol_version);
+	void set_transaction_readiness(bool p_coordinator_available, bool p_scene_available, bool p_approval_available, bool p_busy);
 	const String &get_protocol_version() const;
 	uint32_t get_in_flight_count() const;
 	bool has_pending_request(uint64_t p_internal_request_id) const;

@@ -407,7 +407,7 @@ bool ScriptGraphAdapter::_invalidate_one_cached_script() {
 	const RefreshFile file = cache_invalidation_file->value();
 	cache_invalidation_file = cache_invalidation_file->next();
 	const RBMap<String, CatalogRecord>::Element *existing = catalog.find(file.key);
-	const bool source_changed = !existing || existing->value().source_modified_time != FileAccess::get_modified_time(file.path) || existing->value().source_bytes != FileAccess::get_size(file.path);
+	const bool source_changed = !existing || existing->value().source_modified_time != FileAccess::get_modified_time(file.path) || existing->value().source_bytes != (uint64_t)FileAccess::get_size(file.path);
 #ifdef MODULE_GDSCRIPT_ENABLED
 	if (source_changed && file.path.ends_with(".gd")) {
 		GDScriptCache::remove_script(file.path);

@@ -7,19 +7,21 @@
 
 #include "transaction_scene_resolver.h"
 
+#include "script_transaction_executor.h"
+#include "signal_transaction_executor.h"
+#include "writable_variant_codec.h"
+
 #include "bridge_editor_identity.h"
 
-#include "core/io/file_access.h"
-#include "core/io/resource_loader.h"
-#include "core/io/resource_uid.h"
 #include "core/object/class_db.h"
 #include "core/object/object.h"
-#include "core/object/script_language.h"
 #include "core/os/os.h"
 #include "core/os/thread.h"
 #include "editor/editor_data.h"
 #include "editor/editor_node.h"
 #include "editor/editor_undo_redo_manager.h"
+#include "scene/2d/node_2d.h"
+#include "scene/3d/node_3d.h"
 #include "scene/main/node.h"
 
 namespace {
@@ -67,108 +69,39 @@ static ObjectID resolve_node(const TransactionSceneResolver::Job &p_job, const S
 	return object_id ? *object_id : ObjectID();
 }
 
-static bool direct_child_named(Node *p_parent, const StringName &p_name) {
+static bool direct_child_named(Node *p_parent, const StringName &p_name, Node *p_except = nullptr) {
 	for (int index = 0; index < p_parent->get_child_count(); index++) {
-		if (p_parent->get_child(index)->get_name() == p_name) {
+		Node *child = p_parent->get_child(index);
+		if (child != p_except && child->get_name() == p_name) {
 			return true;
 		}
 	}
 	return false;
 }
 
-static String resource_ref_path(const Dictionary &p_reference) {
-	if (p_reference.has("path")) {
-		return p_reference["path"];
+static uint32_t subtree_node_count(const TransactionSceneResolver::Job &p_job, Node *p_target) {
+	uint32_t count = 0;
+	for (const KeyValue<ObjectID, String> &entry : p_job.node_ids_by_object) {
+		Node *candidate = node_from_id(entry.key);
+		if (candidate && (candidate == p_target || p_target->is_ancestor_of(candidate))) {
+			count++;
+		}
 	}
-	if (!p_reference.has("uid") || !ResourceUID::get_singleton()) {
-		return String();
-	}
-	const ResourceUID::ID uid = ResourceUID::get_singleton()->text_to_id(p_reference["uid"]);
-	if (uid == ResourceUID::INVALID_ID || !ResourceUID::get_singleton()->has_id(uid)) {
-		return String();
-	}
-	return ResourceUID::get_singleton()->get_id_path(uid);
+	return count;
 }
 
-static bool wire_type_matches_property(const Dictionary &p_value, Variant::Type p_property_type) {
-	const String type = p_value.get("type", String());
-	switch (p_property_type) {
-		case Variant::NIL:
-			return type == "nil";
-		case Variant::BOOL:
-			return type == "bool";
-		case Variant::INT:
-			return type == "int";
-		case Variant::FLOAT:
-			return type == "float" || type == "int";
-		case Variant::STRING:
-			return type == "string";
-		case Variant::STRING_NAME:
-			return type == "string_name";
-		case Variant::NODE_PATH:
-			return type == "node_path";
-		case Variant::VECTOR2:
-			return type == "vector2";
-		case Variant::VECTOR2I:
-			return type == "vector2i";
-		case Variant::VECTOR3:
-			return type == "vector3";
-		case Variant::VECTOR3I:
-			return type == "vector3i";
-		case Variant::VECTOR4:
-			return type == "vector4";
-		case Variant::VECTOR4I:
-			return type == "vector4i";
-		case Variant::RECT2:
-			return type == "rect2";
-		case Variant::RECT2I:
-			return type == "rect2i";
-		case Variant::TRANSFORM2D:
-			return type == "transform2d";
-		case Variant::PLANE:
-			return type == "plane";
-		case Variant::QUATERNION:
-			return type == "quaternion";
-		case Variant::AABB:
-			return type == "aabb";
-		case Variant::BASIS:
-			return type == "basis";
-		case Variant::TRANSFORM3D:
-			return type == "transform3d";
-		case Variant::PROJECTION:
-			return type == "projection";
-		case Variant::COLOR:
-			return type == "color";
-		case Variant::OBJECT:
-			return type == "resource";
-		case Variant::ARRAY:
-			return type == "array";
-		case Variant::DICTIONARY:
-			return type == "dictionary";
-		default:
+static bool subtree_owners_remain_valid(const TransactionSceneResolver::Job &p_job, Node *p_root, Node *p_target, Node *p_new_parent) {
+	for (const KeyValue<ObjectID, String> &entry : p_job.node_ids_by_object) {
+		Node *candidate = node_from_id(entry.key);
+		if (!candidate || (candidate != p_target && !p_target->is_ancestor_of(candidate))) {
+			continue;
+		}
+		Node *owner = candidate->get_owner();
+		if (!owner || (owner != p_root && !p_root->is_ancestor_of(owner)) || (owner != p_target && !p_target->is_ancestor_of(owner) && owner != p_root && owner != p_new_parent && !owner->is_ancestor_of(p_new_parent))) {
 			return false;
-	}
-}
-
-static bool connection_matches(Node *p_emitter, Node *p_receiver, const Dictionary &p_operation) {
-	List<Object::Connection> connections;
-	p_emitter->get_signal_connection_list(StringName(p_operation["signal"]), &connections);
-	for (const Object::Connection &connection : connections) {
-		if (connection.callable.get_object_id() != p_receiver->get_instance_id() || connection.callable.get_method() != StringName(p_operation["method"]) || connection.flags != (uint32_t)(int64_t)p_operation["flags"] || connection.callable.get_unbound_arguments_count() != (int)(int64_t)p_operation["unbinds"]) {
-			continue;
-		}
-		const Array requested_binds = p_operation["binds"];
-		if (connection.callable.get_bound_arguments_count() != requested_binds.size()) {
-			continue;
-		}
-		// S9-03 never evaluates user code to decode or compare arbitrary bound
-		// values. An empty bind list is exact; non-empty lists fail closed until
-		// the S9-06 value decoder is available.
-		if (requested_binds.is_empty()) {
-			return true;
 		}
 	}
-	return false;
+	return true;
 }
 
 static TransactionSceneResolver::ProcessOutcome resolve_operation(TransactionSceneResolver::Job &r_job) {
@@ -187,7 +120,7 @@ static TransactionSceneResolver::ProcessOutcome resolve_operation(TransactionSce
 		if (!parent) {
 			return failure("node_not_editable", "The requested parent node was not found in the open scene.");
 		}
-		if (!is_editable(root, parent)) {
+		if (!is_editable(root, parent) || parent->is_internal()) {
 			return failure("node_not_editable", "The requested parent is outside the editable scene boundary.");
 		}
 		const StringName type = operation["godot_type"];
@@ -200,15 +133,16 @@ static TransactionSceneResolver::ProcessOutcome resolve_operation(TransactionSce
 		if (direct_child_named(parent, StringName(operation["name"]))) {
 			return failure("scene_operation_unsupported", "The requested child name is already in use.");
 		}
-		const String parent_path = String(root->get_path_to(parent));
-		const String created_path = parent_path == "." ? String(operation["name"]) : parent_path.path_join(operation["name"]);
+		outcome.resolution.structural_nodes = 1;
 		entities.push_back(affected(operation["parent_node_id"], "parent"));
-		entities.push_back(affected(BridgeEditorIdentity::make_node_id(r_job.editor_session_id, r_job.scene_id, created_path), "created"));
 	} else if (kind == "reparent_node") {
 		Node *target = node_from_id(resolve_node(r_job, operation["node_id"]));
 		Node *new_parent = node_from_id(resolve_node(r_job, operation["new_parent_node_id"]));
-		if (!target || !new_parent || target == root || target == new_parent || target->is_ancestor_of(new_parent)) {
-			return failure("node_not_editable", "The requested reparent targets are missing or would create a cycle.");
+		if (!target || !new_parent) {
+			return failure("node_not_editable", "The requested reparent targets are missing.");
+		}
+		if (target == root || target->is_internal() || new_parent->is_internal() || target == new_parent || target->is_ancestor_of(new_parent)) {
+			return failure("scene_operation_unsupported", "The requested reparent operation targets a root/internal node or would create a cycle.");
 		}
 		if (!is_editable(root, target) || !is_editable(root, new_parent)) {
 			return failure("node_not_editable", "The requested reparent targets are outside the editable scene boundary.");
@@ -216,23 +150,35 @@ static TransactionSceneResolver::ProcessOutcome resolve_operation(TransactionSce
 		if (!owner_is_valid(root, target) || !owner_is_valid(root, new_parent)) {
 			return failure("node_ownership_invalid", "The requested reparent targets have invalid scene ownership.");
 		}
-		if ((int64_t)operation["insertion_index"] > new_parent->get_child_count()) {
+		Node *old_parent = target->get_parent();
+		const int insertion_index = (int)(int64_t)operation["insertion_index"];
+		const bool same_parent = old_parent == new_parent;
+		const int maximum_index = same_parent ? new_parent->get_child_count() - 1 : new_parent->get_child_count();
+		if (insertion_index < 0 || insertion_index > maximum_index) {
 			return failure("scene_operation_unsupported", "The requested insertion index is outside the new parent bounds.");
 		}
+		if (same_parent && insertion_index == target->get_index(false)) {
+			return failure("scene_operation_unsupported", "The requested reparent operation would not change the scene.");
+		}
+		if (direct_child_named(new_parent, target->get_name(), target)) {
+			return failure("scene_operation_unsupported", "The requested node name is already in use under the new parent.");
+		}
+		if ((bool)operation["keep_global_transform"] && !Object::cast_to<Node2D>(target) && !Object::cast_to<Node3D>(target)) {
+			return failure("scene_operation_unsupported", "Global transform retention is supported only for Node2D and Node3D targets.");
+		}
+		if (!subtree_owners_remain_valid(r_job, root, target, new_parent)) {
+			return failure("node_ownership_invalid", "The requested reparent would invalidate a subtree owner relationship.");
+		}
+		outcome.resolution.structural_nodes = subtree_node_count(r_job, target);
 		entities.push_back(affected(operation["node_id"], "target"));
 		entities.push_back(affected(operation["new_parent_node_id"], "new_parent"));
 	} else if (kind == "connect_signal" || kind == "disconnect_signal") {
 		Node *emitter = node_from_id(resolve_node(r_job, operation["emitter_node_id"]));
 		Node *receiver = node_from_id(resolve_node(r_job, operation["receiver_node_id"]));
-		if (!emitter || !receiver || !is_editable(root, emitter) || !is_editable(root, receiver)) {
-			return failure("node_not_editable", "A signal endpoint is missing or outside the editable scene boundary.");
-		}
-		if (!emitter->has_signal(StringName(operation["signal"])) || !receiver->has_method(StringName(operation["method"]))) {
-			return failure("signal_connection_invalid", "The requested signal or receiver method is not available.");
-		}
-		const bool exists = connection_matches(emitter, receiver, operation);
-		if ((kind == "connect_signal" && exists) || (kind == "disconnect_signal" && !exists)) {
-			return failure("signal_connection_invalid", "The exact signal connection is already in the requested state or cannot be proven.");
+		String error_code;
+		String error_message;
+		if (SignalTransactionExecutor::prepare_resolution(root, emitter, receiver, operation, outcome.resolution, error_code, error_message) != OK) {
+			return failure(error_code, error_message);
 		}
 		entities.push_back(affected(operation["emitter_node_id"], "emitter"));
 		entities.push_back(affected(operation["receiver_node_id"], "receiver"));
@@ -245,37 +191,52 @@ static TransactionSceneResolver::ProcessOutcome resolve_operation(TransactionSce
 			return failure("node_ownership_invalid", "The requested target has invalid scene ownership.");
 		}
 		if (kind == "delete_node") {
-			if (target == root) {
-				return failure("scene_operation_unsupported", "The root of an open scene cannot be deleted by this operation.");
+			if (target == root || target->is_internal()) {
+				return failure("scene_operation_unsupported", "The root or an internal node of an open scene cannot be deleted by this operation.");
 			}
-			uint32_t subtree_nodes = 0;
-			for (const KeyValue<ObjectID, String> &entry : r_job.node_ids_by_object) {
-				Node *candidate = node_from_id(entry.key);
-				if (candidate && (candidate == target || target->is_ancestor_of(candidate))) {
-					subtree_nodes++;
-				}
-			}
-			outcome.resolution.structural_nodes = subtree_nodes;
+			outcome.resolution.structural_nodes = subtree_node_count(r_job, target);
 		} else if (kind == "set_property") {
 			const StringName property = operation["property"];
 			PropertyInfo property_info;
-			if (property == SNAME("script") || !ClassDB::get_property_info(target->get_class_name(), property, &property_info) || ClassDB::get_property_setter(target->get_class_name(), property).is_empty() || !(property_info.usage & PROPERTY_USAGE_EDITOR) || (property_info.usage & (PROPERTY_USAGE_INTERNAL | PROPERTY_USAGE_READ_ONLY)) || !wire_type_matches_property(operation["value"], property_info.type)) {
+			if (property == SNAME("script") || !ClassDB::get_property_info(target->get_class_name(), property, &property_info) || ClassDB::get_property_setter(target->get_class_name(), property).is_empty() || ClassDB::get_property_getter(target->get_class_name(), property).is_empty() || !(property_info.usage & PROPERTY_USAGE_EDITOR) || (property_info.usage & (PROPERTY_USAGE_INTERNAL | PROPERTY_USAGE_READ_ONLY | PROPERTY_USAGE_SECRET))) {
 				return failure("property_not_writable", "The property is not a proven native editor-writable property for the requested value type.");
 			}
+			String error_code;
+			String error_message;
+			WritableVariantCodec::Result decoded;
+			const Error decode_error = WritableVariantCodec::decode(operation["value"], root, target, decoded, error_code, error_message);
+			if (decode_error != OK) {
+				return failure(error_code, error_message);
+			}
+			if (WritableVariantCodec::validate_property_compatibility(property_info, decoded.value, error_code, error_message) != OK) {
+				return failure(error_code, error_message);
+			}
+			const Variant normalized_new_value = WritableVariantCodec::normalize_property_value(property_info, decoded.value);
+			bool valid = false;
+			const Variant old_value = target->get(property, &valid);
+			if (!valid) {
+				return failure("property_not_writable", "The current property value could not be read through its native getter.");
+			}
+			WritableVariantCodec::Result old_value_evidence;
+			if (WritableVariantCodec::inspect_native(old_value, root, target, old_value_evidence, error_code, error_message) != OK) {
+				return failure(error_code, error_message);
+			}
+			if (WritableVariantCodec::values_equal(old_value, normalized_new_value)) {
+				return failure("property_value_unsupported", "The requested property write would not change the canonical value.");
+			}
+			outcome.resolution.redacted_change = decoded.redacted_summary;
+			outcome.resolution.precondition_digest = old_value_evidence.canonical_digest;
 		} else if (kind == "attach_script") {
-			const String path = resource_ref_path(operation["script_ref"]);
-			const String type = path.is_empty() || !FileAccess::exists(path) ? String() : ResourceLoader::get_resource_type(path);
-			Ref<Script> script;
-			if (!type.is_empty() && ClassDB::is_parent_class(type, "Script")) {
-				script = ResourceLoader::load(path, "Script");
+			String error_code;
+			String error_message;
+			if (ScriptTransactionExecutor::prepare_resolution(root, target, operation, outcome.resolution, error_code, error_message) != OK) {
+				return failure(error_code, error_message);
 			}
-			if (script.is_null() || script->get_instance_base_type().is_empty() || !ClassDB::is_parent_class(target->get_class_name(), script->get_instance_base_type())) {
-				return failure("script_incompatible", "The requested script resource is missing or incompatible.");
-			}
-			outcome.resolution.script_already_attached = target->get_script().get_type() != Variant::NIL;
 		} else if (kind == "detach_script") {
-			if (target->get_script().get_type() == Variant::NIL) {
-				return failure("script_incompatible", "The requested target has no attached script.");
+			String error_code;
+			String error_message;
+			if (ScriptTransactionExecutor::prepare_resolution(root, target, operation, outcome.resolution, error_code, error_message) != OK) {
+				return failure(error_code, error_message);
 			}
 		}
 		entities.push_back(affected(operation["node_id"], "target"));

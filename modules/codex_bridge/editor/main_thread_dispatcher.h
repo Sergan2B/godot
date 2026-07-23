@@ -68,6 +68,7 @@ public:
 		CommandType type = COMMAND_NO_OP;
 		uint64_t request_id = 0;
 		uint64_t deadline_usec = 0;
+		bool cancelled_before_dispatch = false;
 		Dictionary params;
 	};
 

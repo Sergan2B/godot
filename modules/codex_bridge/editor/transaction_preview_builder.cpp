@@ -93,6 +93,44 @@ static Array operation_preconditions(const String &p_kind) {
 	return preconditions;
 }
 
+static Dictionary redacted_operation(const Dictionary &p_operation, const TransactionPreviewBuilder::Resolution &p_resolution, const String &p_operation_digest) {
+	const Dictionary normalized = BridgeTransactionCanonicalizer::normalize_operation(p_operation);
+	const String kind = normalized["kind"];
+	if (kind != "set_property" && kind != "attach_script" && kind != "connect_signal" && kind != "disconnect_signal") {
+		return normalized;
+	}
+	Dictionary redacted;
+	redacted["kind"] = kind;
+	Dictionary fallback;
+	String summary_type = "binds";
+	if (kind == "set_property") {
+		summary_type = "value";
+	} else if (kind == "attach_script") {
+		summary_type = "script";
+	}
+	fallback["type"] = summary_type;
+	fallback["redacted"] = true;
+	fallback["digest"] = p_operation_digest;
+	const Dictionary summary = p_resolution.redacted_change.is_empty() ? fallback : p_resolution.redacted_change;
+	if (kind == "set_property") {
+		redacted["node_id"] = normalized["node_id"];
+		redacted["property"] = normalized["property"];
+		redacted["value_summary"] = summary;
+	} else if (kind == "attach_script") {
+		redacted["node_id"] = normalized["node_id"];
+		redacted["script_summary"] = summary;
+	} else {
+		redacted["emitter_node_id"] = normalized["emitter_node_id"];
+		redacted["signal"] = normalized["signal"];
+		redacted["receiver_node_id"] = normalized["receiver_node_id"];
+		redacted["method"] = normalized["method"];
+		redacted["flags"] = normalized["flags"];
+		redacted["unbinds"] = normalized["unbinds"];
+		redacted["binds_summary"] = summary;
+	}
+	return redacted;
+}
+
 } // namespace
 
 Error TransactionPreviewBuilder::build(const String &p_transaction_id, const PreparedTransactionStore::Binding &p_binding, const Dictionary &p_operation, const Resolution &p_resolution, uint64_t p_created_at_ms, uint64_t p_expires_at_ms, Output &r_output) {
@@ -106,6 +144,10 @@ Error TransactionPreviewBuilder::build(const String &p_transaction_id, const Pre
 		return ERR_INVALID_DATA;
 	}
 	const Dictionary normalized_operation = BridgeTransactionCanonicalizer::normalize_operation(p_operation);
+	String operation_digest;
+	if (BridgeTransactionCanonicalizer::sha256_utf8(JSON::stringify(normalized_operation, "", true, true), operation_digest, "godot-codex-preview-operation/v1\n") != OK) {
+		return ERR_OUT_OF_MEMORY;
+	}
 
 	Dictionary coordinates;
 	coordinates["transaction_id"] = p_transaction_id;
@@ -124,9 +166,10 @@ Error TransactionPreviewBuilder::build(const String &p_transaction_id, const Pre
 	preview["truncated"] = false;
 
 	Dictionary payload;
-	payload["schema_version"] = "canonical-transaction-preview/1.0";
+	payload["schema_version"] = "canonical-transaction-preview/1.1";
 	payload["coordinates"] = coordinates.duplicate(true);
-	payload["operation"] = normalized_operation;
+	payload["operation"] = redacted_operation(normalized_operation, p_resolution, operation_digest);
+	payload["operation_digest"] = operation_digest;
 	payload["risk"] = risk;
 	payload["scope"] = scope;
 	payload["affected_entities"] = p_resolution.affected_entities.duplicate(true);

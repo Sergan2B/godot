@@ -85,6 +85,13 @@ bool MainThreadDispatcher::cancel(uint64_t p_request_id) {
 			if (element->get().type == COMMAND_CANCEL) {
 				return true;
 			}
+			// Apply admission owns transaction lifecycle even when its only
+			// waiter is cancelled before main-thread dispatch. Preserve the
+			// command so the coordinator can terminalize it without mutation.
+			if (element->get().type == COMMAND_TRANSACTION_APPLY) {
+				element->get().cancelled_before_dispatch = true;
+				return true;
+			}
 			queue.erase(element);
 			return true;
 		}

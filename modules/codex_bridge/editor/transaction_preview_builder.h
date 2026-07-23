@@ -15,6 +15,8 @@ public:
 		Array affected_entities;
 		uint32_t structural_nodes = 0;
 		bool script_already_attached = false;
+		Dictionary redacted_change;
+		String precondition_digest;
 	};
 
 	struct Output {

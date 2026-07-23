@@ -116,6 +116,14 @@
     {
       "expect": "valid",
       "fixture": "test-vectors/transaction.json",
+      "id": "schema.transaction.committed-entity",
+      "instance_pointer": "/committed_entities/0",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/affectedEntity"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/transaction.json",
       "id": "schema.transaction.undo-request",
       "instance_pointer": "/undo_request",
       "kind": "schema",
@@ -188,10 +196,50 @@
     {
       "expect": "invalid_schema",
       "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.wrong-math-arity",
+      "instance_pointer": "/wrong_math_arity",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/writableVariant"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.absolute-node-path",
+      "instance_pointer": "/absolute_node_path",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/writableVariant"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.non-persistent-signal",
+      "instance_pointer": "/non_persistent_signal",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.reference-counted-signal",
+      "instance_pointer": "/reference_counted_signal",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
       "id": "schema.transaction.malformed-receipt",
       "instance_pointer": "/malformed_receipt",
       "kind": "schema",
       "schema_ref": "transaction.schema.json#/$defs/approvalReceipt"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/transaction-invalid.json",
+      "id": "schema.transaction.committed-entity-native-id",
+      "instance_pointer": "/committed_entity_native_id",
+      "kind": "schema",
+      "schema_ref": "transaction.schema.json#/$defs/affectedEntity"
     },
     {
       "expect": "invalid_schema",

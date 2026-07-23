@@ -40,6 +40,9 @@ void BridgeFrameTelemetry::reset(bool p_enabled) {
 	over_budget_count = 0;
 	max_elapsed_usec = 0;
 	samples_usec.clear();
+	dispatcher_sample_count = 0;
+	dispatcher_over_budget_count = 0;
+	dispatcher_max_elapsed_usec = 0;
 }
 
 void BridgeFrameTelemetry::record(uint64_t p_elapsed_usec, bool p_busy) {
@@ -56,6 +59,17 @@ void BridgeFrameTelemetry::record(uint64_t p_elapsed_usec, bool p_busy) {
 		samples_usec.push_back((int64_t)p_elapsed_usec);
 	} else {
 		overflow = true;
+	}
+}
+
+void BridgeFrameTelemetry::record_dispatcher(uint64_t p_elapsed_usec, bool p_consumed) {
+	if (!enabled || !p_consumed) {
+		return;
+	}
+	dispatcher_sample_count++;
+	dispatcher_max_elapsed_usec = MAX(dispatcher_max_elapsed_usec, p_elapsed_usec);
+	if (p_elapsed_usec > BUDGET_USEC) {
+		dispatcher_over_budget_count++;
 	}
 }
 
@@ -79,5 +93,8 @@ Dictionary BridgeFrameTelemetry::to_dictionary() const {
 	result["max_elapsed_usec"] = (int64_t)max_elapsed_usec;
 	result["over_budget_count"] = (int64_t)over_budget_count;
 	result["overflow"] = overflow;
+	result["dispatcher_sample_count"] = (int64_t)dispatcher_sample_count;
+	result["dispatcher_max_elapsed_usec"] = (int64_t)dispatcher_max_elapsed_usec;
+	result["dispatcher_over_budget_count"] = (int64_t)dispatcher_over_budget_count;
 	return result;
 }

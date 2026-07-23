@@ -3,46 +3,52 @@
   "preview_payload_json": "{\"affected_entities\":[\"node:11111111111111111111111111111111\"],\"operation_kind\":\"create_node\",\"scope\":\"scene.node.create\"}",
   "preview_payload_bytes": 122,
   "preview_digest": "sha256:27bacb82a24c3d8ed7d464d6c574d57dce5b91792126eb7a3add92f2f1dc50bf",
+  "committed_entities": [
+    {
+      "node_id": "node:44444444444444444444444444444444",
+      "role": "created"
+    }
+  ],
   "canonical_preview_digests": [
     {
       "operation_kind": "create_node",
-      "preview_payload_bytes": 1492,
-      "preview_digest": "sha256:762075adbc6d3b1d40254721c4978931cb2275203fa207ffd888a49c1bee4c53"
+      "preview_payload_bytes": 1516,
+      "preview_digest": "sha256:d7d665a6f8ee1f42bbf26217dbb411b79aaa86b26b1a89b638465253eec5ece4"
     },
     {
       "operation_kind": "delete_node",
-      "preview_payload_bytes": 1357,
-      "preview_digest": "sha256:3ae4d0dd6d10296bfa2b0eba6322717a03eac85fb302786eeeb520f23779249b"
+      "preview_payload_bytes": 1450,
+      "preview_digest": "sha256:e93c191f9eab76847523603e647b6b9cf04727602c33032f9db4e351a8f40ea7"
     },
     {
       "operation_kind": "reparent_node",
-      "preview_payload_bytes": 1533,
-      "preview_digest": "sha256:e0a7a9fb1dc1016432ac9e509093ada9f5fdc60eb0187bc7c4e9f7c0b8df8ba9"
+      "preview_payload_bytes": 1626,
+      "preview_digest": "sha256:1c0d1ecad6cafa9bb16fc0ae2a9101b72a63a304359a1924c7f13bd3e74799db"
     },
     {
       "operation_kind": "set_property",
-      "preview_payload_bytes": 1417,
-      "preview_digest": "sha256:843f3225da880d4948aa5f184132ce3fd8e87fac77e252783c4b51de93b59605"
+      "preview_payload_bytes": 1595,
+      "preview_digest": "sha256:87676e8a00bfeaac90ccbec8f30166c8d147cac33cf404aea71a4e9dde6d624c"
     },
     {
       "operation_kind": "attach_script",
-      "preview_payload_bytes": 1435,
-      "preview_digest": "sha256:553db5e439a8d84bd5829d0698eecce9fdcdd9e891da0b9d2a8623e3b1d6b662"
+      "preview_payload_bytes": 1587,
+      "preview_digest": "sha256:fc1b0ae3f82ca4bc208aeb232ca4068b61929f10a11be0bb44a94e1ac85791d1"
     },
     {
       "operation_kind": "detach_script",
-      "preview_payload_bytes": 1335,
-      "preview_digest": "sha256:b27c9719fdd5f554cc71316e3c34cce5947530d648d6a67da8cfc6b0babb8653"
+      "preview_payload_bytes": 1428,
+      "preview_digest": "sha256:2b08b9dab9b815ef55ff7c79cd2687e76b36137b994005b98bec6813bc4467d6"
     },
     {
       "operation_kind": "connect_signal",
-      "preview_payload_bytes": 1644,
-      "preview_digest": "sha256:5fbd30930a9a9cc986632c1b5a16b719b15f3ab35b85f3f901922f1da17d4f6e"
+      "preview_payload_bytes": 1823,
+      "preview_digest": "sha256:05b0444f68dfc7367e50d0454da5441856476e8c6e8858222edc694c6d79df97"
     },
     {
       "operation_kind": "disconnect_signal",
-      "preview_payload_bytes": 1664,
-      "preview_digest": "sha256:3ba41cce7c5c05403f228734cf2088c45e16d2330a4e58fa5704bf188eece02a"
+      "preview_payload_bytes": 1843,
+      "preview_digest": "sha256:8d3d19fae87ca932a15612b8fe23e2415acf47fffc8834b26bacf24a3987bcc2"
     }
   ],
   "capability": {
@@ -122,7 +128,7 @@
       "signal": "health_changed",
       "receiver_node_id": "node:33333333333333333333333333333333",
       "method": "_on_health_changed",
-      "flags": 1,
+      "flags": 3,
       "unbinds": 0,
       "binds": [
         { "type": "string", "value": "fixture" }
@@ -134,7 +140,7 @@
       "signal": "health_changed",
       "receiver_node_id": "node:33333333333333333333333333333333",
       "method": "_on_health_changed",
-      "flags": 1,
+      "flags": 3,
       "unbinds": 0,
       "binds": [
         { "type": "string", "value": "fixture" }

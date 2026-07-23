@@ -40,6 +40,7 @@
 #include "core/templates/vector.h"
 
 #include "modules/codex_bridge/editor/main_thread_dispatcher.h"
+#include "modules/codex_bridge/editor/transaction_approval_verifier.h"
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
 #include "modules/codex_bridge/protocol/bridge_frame_codec.h"
 #include "modules/codex_bridge/protocol/bridge_handshake.h"
@@ -641,6 +642,10 @@ static bool process_client(TransportClient &r_client, uint64_t p_now_usec, uint6
 				return false;
 			}
 			if (r_client.handshake.get_state() == BridgeHandshakeSession::STATE_AUTHENTICATED) {
+				{
+					MutexLock lock(p_context->transaction_readiness_mutex);
+					r_client.rpc.set_transaction_readiness(p_context->transaction_coordinator_available, p_context->transaction_scene_available, p_context->transaction_approval_available, p_context->transaction_busy);
+				}
 				BridgeRpcSession::Outcome rpc_outcome;
 				const uint64_t internal_request_id = r_next_internal_request_id++;
 				const uint64_t validated_at_usec = OS::get_singleton()->get_ticks_usec();
@@ -944,6 +949,7 @@ void BridgeTransportWorker::_thread_main(void *p_userdata) {
 		if (worker_context->startup_error == OK) {
 			worker_context->project_id = runtime.get_project_id();
 			worker_context->editor_session_id = runtime.get_editor_session_id();
+			worker_context->startup_error = TransactionApprovalVerifier::derive_approval_key(runtime.get_token(), worker_context->approval_key);
 		}
 	}
 	worker_context->startup_done.set();
@@ -959,6 +965,13 @@ void BridgeTransportWorker::_thread_main(void *p_userdata) {
 		}
 	}
 	runtime.cleanup();
+	if (!worker_context->approval_key.is_empty()) {
+		uint8_t *approval_key = worker_context->approval_key.ptrw();
+		for (int index = 0; index < worker_context->approval_key.size(); index++) {
+			approval_key[index] = 0;
+		}
+		worker_context->approval_key.clear();
+	}
 
 	worker_context->exited.set();
 	_release_context(worker_context);
@@ -1178,6 +1191,21 @@ String BridgeTransportWorker::get_project_id() const {
 
 String BridgeTransportWorker::get_editor_session_id() const {
 	return context ? context->editor_session_id : String();
+}
+
+PackedByteArray BridgeTransportWorker::get_approval_key() const {
+	return context ? context->approval_key : PackedByteArray();
+}
+
+void BridgeTransportWorker::update_transaction_readiness(bool p_coordinator_available, bool p_scene_available, bool p_approval_available, bool p_busy) {
+	if (!context) {
+		return;
+	}
+	MutexLock lock(context->transaction_readiness_mutex);
+	context->transaction_coordinator_available = p_coordinator_available;
+	context->transaction_scene_available = p_scene_available;
+	context->transaction_approval_available = p_approval_available;
+	context->transaction_busy = p_busy;
 }
 
 bool BridgeTransportWorker::is_running() const {

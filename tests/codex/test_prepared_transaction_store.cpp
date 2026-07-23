@@ -170,6 +170,46 @@ TEST_CASE("[CodexS9PreparedStore] Preview replay is immutable") {
 	CHECK(JSON::stringify(returned_again, "", true, true) == result_json);
 }
 
+TEST_CASE("[CodexS9PreparedStore] Retained apply and native Undo lifecycle is monotonic") {
+	DeterministicIds ids;
+	PreparedTransactionStore store(generate_id, &ids);
+	String canonical;
+	String digest;
+	const Dictionary params = prepare_params();
+	canonical_request(params, canonical, digest);
+	const String operation_json = JSON::stringify(params["operation"], "", true, true);
+	const PreparedTransactionStore::Admission admission = store.admit(params["idempotency_key"], digest, canonical, operation_json, binding(), 1000, 2000);
+	REQUIRE(admission.kind == PreparedTransactionStore::ADMISSION_CREATED);
+
+	Dictionary result;
+	result["operation_kind"] = "create_node";
+	result["risk"] = "write";
+	result["scope"] = "scene.node.create";
+	REQUIRE(store.publish_preview(admission.transaction_id, JSON::stringify(result, "", true, true), "{\"safe\":true}", "sha256:1111111111111111111111111111111111111111111111111111111111111111") == OK);
+	REQUIRE(store.transition(admission.transaction_id, PreparedTransactionStore::STATE_AWAITING_APPROVAL, 3000) == OK);
+	REQUIRE(store.transition(admission.transaction_id, PreparedTransactionStore::STATE_APPLYING, 4000) == OK);
+	REQUIRE(store.transition(admission.transaction_id, PreparedTransactionStore::STATE_APPLIED, 5000, "applied") == OK);
+	REQUIRE(store.transition(admission.transaction_id, PreparedTransactionStore::STATE_VALIDATING, 6000, "applied") == OK);
+	REQUIRE(store.transition(admission.transaction_id, PreparedTransactionStore::STATE_COMMITTED, 7000, "committed") == OK);
+
+	PreparedTransactionStore::Record record;
+	REQUIRE(store.get_record(admission.transaction_id, record));
+	CHECK(record.state == PreparedTransactionStore::STATE_COMMITTED);
+	CHECK(record.transaction_seq == 7);
+	CHECK(record.operation_kind == "create_node");
+	CHECK(record.canonical_operation_json == operation_json);
+	CHECK(record.canonical_request_json.is_empty());
+	CHECK(store.get_active_count() == 0);
+	CHECK(store.get_terminal_count() == 1);
+	CHECK(store.transition(admission.transaction_id, PreparedTransactionStore::STATE_FAILED, 8000) == ERR_INVALID_DATA);
+
+	REQUIRE(store.transition(admission.transaction_id, PreparedTransactionStore::STATE_UNDONE, 8000, "undone") == OK);
+	REQUIRE(store.transition(admission.transaction_id, PreparedTransactionStore::STATE_COMMITTED, 9000, "committed") == OK);
+	REQUIRE(store.get_record(admission.transaction_id, record));
+	CHECK(record.transaction_seq == 9);
+	CHECK(store.get_terminal_count() == 1);
+}
+
 TEST_CASE("[CodexS9PreparedStore] Expiry and conflict release active capacity but preserve bounded tombstones") {
 	DeterministicIds ids;
 	PreparedTransactionStore store(generate_id, &ids);

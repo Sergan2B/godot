@@ -32,6 +32,8 @@
 
 #include "core/config/project_settings.h"
 #include "core/crypto/crypto_core.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/object/callable_mp.h"
 #include "core/os/os.h"
@@ -185,12 +187,31 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 			} else if (!outcome.pending) {
 				service->transport_worker.complete_request_error(p_command.request_id, outcome.error_code, outcome.error_message, outcome.retryable);
 			}
+			service->_update_transaction_readiness();
 		} break;
 		case MainThreadDispatcher::COMMAND_TRANSACTION_APPLY:
 		case MainThreadDispatcher::COMMAND_TRANSACTION_STATUS:
-		case MainThreadDispatcher::COMMAND_TRANSACTION_UNDO:
-			service->transport_worker.complete_request_error(p_command.request_id, "capability_unavailable", "Transaction apply, status, and undo require the approval workflow.", false);
-			break;
+		case MainThreadDispatcher::COMMAND_TRANSACTION_UNDO: {
+			const uint64_t now_usec = OS::get_singleton()->get_ticks_usec();
+			const uint64_t now_ms = (uint64_t)(Time::get_singleton()->get_unix_time_from_system() * 1000.0);
+			TransactionCoordinator::StartOutcome outcome;
+			if (p_command.type == MainThreadDispatcher::COMMAND_TRANSACTION_APPLY) {
+				outcome = service->transaction_coordinator.apply(p_command.request_id, p_command.params, now_usec, now_ms);
+				if (p_command.cancelled_before_dispatch) {
+					service->transaction_coordinator.cancel_waiter(p_command.request_id);
+				}
+			} else if (p_command.type == MainThreadDispatcher::COMMAND_TRANSACTION_STATUS) {
+				outcome = service->transaction_coordinator.status(p_command.params, now_ms);
+			} else {
+				outcome = service->transaction_coordinator.undo(p_command.request_id, p_command.params, now_ms);
+			}
+			if (outcome.has_result) {
+				service->transport_worker.complete_request(p_command.request_id, outcome.result);
+			} else if (!outcome.pending) {
+				service->transport_worker.complete_request_error(p_command.request_id, outcome.error_code, outcome.error_message, outcome.retryable);
+			}
+			service->_update_transaction_readiness();
+		} break;
 		case MainThreadDispatcher::COMMAND_CANCEL: {
 			service->transaction_coordinator.cancel_waiter(p_command.request_id);
 			service->runtime_debugger_adapter->cancel(p_command.request_id);
@@ -223,6 +244,11 @@ Dictionary CodexBridgeService::_make_context() const {
 
 String CodexBridgeService::_get_current_scene_id() const {
 	return EditorContextAdapter::make_scene_id(transport_worker.get_editor_session_id(), EditorNode::get_editor_data().get_edited_scene_root());
+}
+
+void CodexBridgeService::_update_transaction_readiness() {
+	const bool scene_available = EditorNode::get_singleton() && EditorNode::get_editor_data().get_edited_scene_root() != nullptr;
+	transport_worker.update_transaction_readiness(state == STATE_RUNNING || state == STATE_STARTING, scene_available, transaction_coordinator.is_approval_available(), transaction_coordinator.is_busy());
 }
 
 void CodexBridgeService::_connect_editor_signals() {
@@ -341,6 +367,7 @@ void CodexBridgeService::_on_selection_changed() {
 
 void CodexBridgeService::_on_scene_changed() {
 	_refresh_open_scene_ids(true);
+	_update_transaction_readiness();
 	_publish_event("scene_changed", String(), true);
 }
 
@@ -348,6 +375,7 @@ void CodexBridgeService::_on_scene_closed(const String &p_path) {
 	(void)p_path;
 	transaction_coordinator.invalidate_all();
 	_refresh_open_scene_ids(true);
+	_update_transaction_readiness();
 	_publish_event("scene_closed");
 }
 
@@ -410,9 +438,11 @@ bool CodexBridgeService::_observe_native_histories(bool p_record_changes) {
 				}
 			}
 			const uint64_t operation_seq = revision_clock.record_native_operation(scene_id);
+			const bool transaction_owned = transaction_coordinator.observe_native_history(history_id, current.action_count, current.current_action, current.version, (uint64_t)(Time::get_singleton()->get_unix_time_from_system() * 1000.0));
 			Dictionary summary;
 			summary["transition_kind"] = transition_kind;
 			summary["last_operation_seq"] = (int64_t)operation_seq;
+			summary["transaction_correlated"] = transaction_owned;
 			native_history_transitions[String::num_int64(history_id)] = summary;
 			changed = true;
 		}
@@ -1121,7 +1151,49 @@ void CodexBridgeService::_process_transaction_coordinator(uint64_t p_budget_usec
 			transport_worker.complete_request_error(completion.request_id, completion.error_code, completion.error_message, completion.retryable);
 		}
 	}
+	Vector<Dictionary> events;
+	transaction_coordinator.drain_events(events);
+	for (const Dictionary &params : events) {
+		Dictionary notification;
+		notification["protocol_version"] = "1.7";
+		notification["kind"] = "notification";
+		notification["method"] = "transaction.event";
+		notification["params"] = params;
+		notification["context"] = _make_context();
+		transport_worker.publish_notification(notification);
+	}
+	_update_transaction_readiness();
 }
+
+#ifdef CODEX_BRIDGE_TESTS_ENABLED
+void CodexBridgeService::_process_transaction_acceptance_markers() {
+	if (OS::get_singleton()->get_environment("GODOT_CODEX_S9_MODEL_FREE_AUTOMATION") != "1") {
+		return;
+	}
+	struct MarkerAction {
+		const char *path;
+		bool undo;
+	};
+	static constexpr MarkerAction marker_actions[] = {
+		{ "res://.godot/codex-s9-model-free-native-undo", true },
+		{ "res://.godot/codex-s9-model-free-native-redo", false },
+	};
+	for (const MarkerAction &marker_action : marker_actions) {
+		const String marker_path = marker_action.path;
+		if (!FileAccess::exists(marker_path)) {
+			continue;
+		}
+		const String absolute_path = ProjectSettings::get_singleton()->globalize_path(marker_path);
+		const Error remove_error = DirAccess::remove_absolute(absolute_path);
+		ERR_FAIL_COND_MSG(remove_error != OK, "Could not consume a Sprint 9 acceptance marker.");
+		EditorUndoRedoManager *manager = EditorUndoRedoManager::get_singleton();
+		ERR_FAIL_NULL(manager);
+		const bool changed = marker_action.undo ? manager->undo() : manager->redo();
+		ERR_FAIL_COND_MSG(!changed, marker_action.undo ? "Sprint 9 native Undo marker found no action." : "Sprint 9 native Redo marker found no action.");
+		break;
+	}
+}
+#endif
 
 void CodexBridgeService::_notification(int p_what) {
 	switch (p_what) {
@@ -1130,6 +1202,9 @@ void CodexBridgeService::_notification(int p_what) {
 		} break;
 		case NOTIFICATION_PROCESS: {
 			if (state == STATE_RUNNING) {
+#ifdef CODEX_BRIDGE_TESTS_ENABLED
+				_process_transaction_acceptance_markers();
+#endif
 				runtime_debugger_adapter->process();
 				if (scene_change_pending && OS::get_singleton()->get_ticks_usec() >= scene_change_not_before_usec) {
 					_flush_scene_change();
@@ -1191,6 +1266,7 @@ void CodexBridgeService::_notification(int p_what) {
 					_process_transaction_coordinator(TransactionCoordinator::WORK_BUDGET_USEC);
 				}
 				const uint64_t frame_elapsed_usec = OS::get_singleton()->get_ticks_usec() - frame_started_usec;
+				frame_telemetry.record_dispatcher(dispatcher_stats.elapsed_usec, dispatcher_stats.consumed > 0);
 				frame_telemetry.record(frame_elapsed_usec, resource_work || scene_work || script_work || transaction_work || control_work || dispatcher_stats.consumed > 0);
 			}
 		} break;
@@ -1225,7 +1301,20 @@ Error CodexBridgeService::start() {
 	}
 
 	revision_clock.initialize(transport_worker.get_editor_session_id());
-	transaction_coordinator.initialize(transport_worker.get_project_id(), transport_worker.get_editor_session_id(), &revision_clock);
+	transaction_coordinator.initialize(transport_worker.get_project_id(), transport_worker.get_editor_session_id(), &revision_clock, transport_worker.get_approval_key());
+	transaction_coordinator.register_executor("create_node", &structural_transaction_executor);
+	transaction_coordinator.register_executor("reparent_node", &structural_transaction_executor);
+	transaction_coordinator.register_executor("delete_node", &structural_transaction_executor);
+	transaction_coordinator.register_executor("set_property", &property_transaction_executor);
+	transaction_coordinator.register_executor("attach_script", &script_transaction_executor);
+	transaction_coordinator.register_executor("detach_script", &script_transaction_executor);
+	transaction_coordinator.register_executor("connect_signal", &signal_transaction_executor);
+	transaction_coordinator.register_executor("disconnect_signal", &signal_transaction_executor);
+#ifdef CODEX_BRIDGE_TESTS_ENABLED
+	if (OS::get_singleton()->get_environment("GODOT_CODEX_TRANSACTION_TEST_EXECUTOR") == "1") {
+		transaction_coordinator.register_executor("set_property", &transaction_test_executor);
+	}
+#endif
 	resource_graph_adapter.initialize(&revision_clock);
 	scene_state_adapter.initialize(&revision_clock);
 	script_graph_adapter.initialize(&revision_clock);
@@ -1242,6 +1331,7 @@ Error CodexBridgeService::start() {
 	_observe_native_histories(false);
 	_connect_editor_signals();
 	state = STATE_RUNNING;
+	_update_transaction_readiness();
 	print_verbose("[codex_bridge] Service started.");
 	return OK;
 }
@@ -1252,6 +1342,7 @@ void CodexBridgeService::stop() {
 	}
 
 	state = STATE_STOPPING;
+	transport_worker.update_transaction_readiness(false, false, false, false);
 	_disconnect_editor_signals();
 	if (runtime_debugger_adapter.is_valid()) {
 		runtime_debugger_adapter->shutdown();

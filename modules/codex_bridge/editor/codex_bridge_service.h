@@ -33,11 +33,18 @@
 #include "bridge_frame_telemetry.h"
 #include "bridge_revision_clock.h"
 #include "main_thread_dispatcher.h"
+#include "property_transaction_executor.h"
 #include "resource_graph_adapter.h"
 #include "runtime_debugger_adapter.h"
 #include "scene_state_adapter.h"
 #include "script_graph_adapter.h"
+#include "script_transaction_executor.h"
+#include "signal_transaction_executor.h"
+#include "structural_transaction_executor.h"
 #include "transaction_coordinator.h"
+#ifdef CODEX_BRIDGE_TESTS_ENABLED
+#include "transaction_test_executor.h"
+#endif
 
 #include "core/templates/hash_set.h"
 #include "editor/plugins/editor_plugin.h"
@@ -66,6 +73,13 @@ private:
 	SceneStateAdapter scene_state_adapter;
 	ScriptGraphAdapter script_graph_adapter;
 	TransactionCoordinator transaction_coordinator;
+	StructuralTransactionExecutor structural_transaction_executor;
+	PropertyTransactionExecutor property_transaction_executor;
+	ScriptTransactionExecutor script_transaction_executor;
+	SignalTransactionExecutor signal_transaction_executor;
+#ifdef CODEX_BRIDGE_TESTS_ENABLED
+	TransactionTestExecutor transaction_test_executor;
+#endif
 	Ref<RuntimeDebuggerAdapter> runtime_debugger_adapter;
 	BridgeFrameTelemetry frame_telemetry;
 	bool editor_signals_connected = false;
@@ -112,6 +126,7 @@ private:
 	static void _dispatch_command(const MainThreadDispatcher::Command &p_command, void *p_userdata);
 	Dictionary _make_context() const;
 	String _get_current_scene_id() const;
+	void _update_transaction_readiness();
 	void _connect_editor_signals();
 	void _disconnect_editor_signals();
 	void _publish_event(const String &p_event_type, const String &p_property = String(), bool p_scene_mutation = false, bool p_native_operation = false);
@@ -136,6 +151,9 @@ private:
 	void _process_scene_graph(uint64_t p_budget_usec);
 	void _process_script_graph(uint64_t p_budget_usec);
 	void _process_transaction_coordinator(uint64_t p_budget_usec);
+#ifdef CODEX_BRIDGE_TESTS_ENABLED
+	void _process_transaction_acceptance_markers();
+#endif
 
 protected:
 	void _notification(int p_what);

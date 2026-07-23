@@ -103,7 +103,7 @@ static Array operations() {
 		signal["signal"] = "health_changed";
 		signal["receiver_node_id"] = node_c;
 		signal["method"] = "_on_health_changed";
-		signal["flags"] = 1;
+		signal["flags"] = 3;
 		signal["unbinds"] = 0;
 		Array binds;
 		binds.push_back(scalar("string", "fixture"));
@@ -118,7 +118,6 @@ static TransactionPreviewBuilder::Resolution resolution_for(const Dictionary &p_
 	const String kind = p_operation["kind"];
 	if (kind == "create_node") {
 		resolution.affected_entities.push_back(entity(p_operation["parent_node_id"], "parent"));
-		resolution.affected_entities.push_back(entity("node:44444444444444444444444444444444", "created"));
 	} else if (kind == "reparent_node") {
 		resolution.affected_entities.push_back(entity(p_operation["node_id"], "target"));
 		resolution.affected_entities.push_back(entity(p_operation["new_parent_node_id"], "new_parent"));
@@ -148,7 +147,21 @@ TEST_CASE("[CodexS9Preview] All operations produce bounded canonical immutable p
 		Dictionary payload;
 		REQUIRE(BridgeJson::parse_strict_object(output.preview_payload_json.to_utf8_buffer(), payload) == OK);
 		CHECK(Dictionary(payload["operation"])["kind"] == operation["kind"]);
-		CHECK(payload["schema_version"] == "canonical-transaction-preview/1.0");
+		CHECK(payload["schema_version"] == "canonical-transaction-preview/1.1");
+		CHECK(String(payload["operation_digest"]).begins_with("sha256:"));
+		const String encoded_operation = JSON::stringify(payload["operation"], "", true, true);
+		if (operation["kind"] == "set_property") {
+			CHECK_FALSE(encoded_operation.contains("12.5"));
+		} else if (operation["kind"] == "attach_script") {
+			CHECK_FALSE(encoded_operation.contains("existing_actor.gd"));
+		} else if (operation["kind"] == "connect_signal" || operation["kind"] == "disconnect_signal") {
+			CHECK_FALSE(encoded_operation.contains("fixture"));
+		}
+		if (operation["kind"] == "create_node") {
+			const Array affected_entities = output.result["affected_entities"];
+			REQUIRE(affected_entities.size() == 1);
+			CHECK(Dictionary(affected_entities[0])["role"] == "parent");
+		}
 		Dictionary exposed = output.result.duplicate(true);
 		Dictionary exposed_preview = exposed["preview"];
 		exposed_preview["summary"] = "tampered";
