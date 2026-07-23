@@ -84,6 +84,21 @@ def percentile(samples: list[float] | list[int], value: int) -> float:
     return round(ordered[index], 3)
 
 
+def require_dispatcher_within_budget(
+    telemetry: dict[str, Any],
+    context: str,
+) -> None:
+    require(
+        telemetry.get("budget_usec") == 2_000
+        and isinstance(telemetry.get("dispatcher_sample_count"), int)
+        and telemetry["dispatcher_sample_count"] > 0
+        and isinstance(telemetry.get("dispatcher_max_elapsed_usec"), int)
+        and telemetry["dispatcher_max_elapsed_usec"] <= 2_000
+        and telemetry.get("dispatcher_over_budget_count") == 0,
+        f"{context} dispatcher exceeded its budget: {telemetry}",
+    )
+
+
 def target_platform() -> str:
     machine = platform.machine().lower()
     require(
@@ -163,7 +178,14 @@ def initialize_sidecar(
     require_safe_value(listed, "MCP tool registry")
     tools = listed.get("result", {}).get("tools")
     require(isinstance(tools, list), "MCP tool registry omitted tools")
-    require({tool.get("name") for tool in tools} == TOOL_NAMES, "MCP tool registry differs")
+    tool_names = {tool.get("name") for tool in tools}
+    require(
+        len(tools) == 36 and TOOL_NAMES <= tool_names,
+        "MCP registry does not preserve the 16-tool Sprint 7 surface",
+    )
+    sprint7_tools = [
+        tool for tool in tools if tool.get("name") in TOOL_NAMES
+    ]
     require(
         all(
             tool.get("inputSchema", {}).get("type") == "object"
@@ -171,9 +193,9 @@ def initialize_sidecar(
             and tool.get("annotations", {}).get("readOnlyHint") is True
             and tool.get("annotations", {}).get("destructiveHint") is False
             and tool.get("annotations", {}).get("openWorldHint") is False
-            for tool in tools
+            for tool in sprint7_tools
         ),
-        "an MCP tool schema or annotation differs",
+        "a Sprint 7 MCP tool schema or annotation differs",
     )
     return process, client, {
         "exact_sixteen_tool_registry": True,
@@ -256,10 +278,7 @@ def stop_editor(
     log.close()
     require(process.returncode == 0, f"Godot editor exited with status {process.returncode}")
     telemetry = parse_telemetry(Path(log.name))
-    require(
-        telemetry.get("over_budget_count") == 0,
-        f"Bridge dispatcher exceeded its budget: {telemetry}",
-    )
+    require_dispatcher_within_budget(telemetry, "Bridge")
     del phase
     return telemetry
 
@@ -560,10 +579,7 @@ def run_session(
             sidecar_process = None
             log.close()
             telemetry = parse_telemetry(log_path)
-            require(
-                telemetry.get("over_budget_count") == 0,
-                f"restart dispatcher exceeded its budget: {telemetry}",
-            )
+            require_dispatcher_within_budget(telemetry, "restart")
             require(not any(path.exists() for path in paths), "restart left Bridge runtime files")
             return {
                 "session_id_changed": True,
@@ -722,10 +738,7 @@ def run_session(
         sidecar_process = None
         log.close()
         telemetry = parse_telemetry(log_path)
-        require(
-            telemetry.get("over_budget_count") == 0,
-            f"Bridge dispatcher exceeded its budget: {telemetry}",
-        )
+        require_dispatcher_within_budget(telemetry, "Bridge")
         require(not any(path.exists() for path in paths), "editor left Bridge runtime files")
 
         require(percentile(selection_samples, 95) <= 500, f"selection p95 exceeded 500 ms: {selection_samples}")
@@ -829,7 +842,10 @@ def run(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
             timeout,
             old_session_id=first["coordinates"]["editor_session_id"],
         )
-        telemetry_samples = first["telemetry"]["samples_usec"] + restart["telemetry"]["samples_usec"]
+        telemetry_samples = [
+            first["telemetry"]["dispatcher_max_elapsed_usec"],
+            restart["telemetry"]["dispatcher_max_elapsed_usec"],
+        ]
         report = {
             "schema_version": 1,
             "sprint": 7,

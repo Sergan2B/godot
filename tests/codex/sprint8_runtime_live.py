@@ -420,7 +420,11 @@ def initialize_sidecar(sidecar: Path, project: Path, timeout: float) -> tuple[Li
     listed = client.request("tools/list", {})
     tools = listed.get("result", {}).get("tools")
     require(isinstance(tools, list), "MCP tool list is absent")
-    require({tool.get("name") for tool in tools} == TOOL_NAMES, "25-tool registry differs")
+    tool_names = {tool.get("name") for tool in tools}
+    require(
+        len(tools) == 36 and TOOL_NAMES <= tool_names,
+        "MCP registry does not preserve the 25-tool Sprint 8 surface",
+    )
     require(
         all(
             tool.get("inputSchema", {}).get("additionalProperties") is False
@@ -450,6 +454,44 @@ def tool_call(
         cast(dict[str, Any], structured), cast(list[dict[str, Any]], content)
     )
     return cast(dict[str, Any], structured), result.get("isError") is True, cast(list[dict[str, Any]], content), elapsed
+
+
+def runtime_control(
+    client: McpClient,
+    name: str,
+    runtime_session_id: str,
+    expected_runtime_event_seq: int,
+    target_state: str,
+) -> tuple[dict[str, Any], bool, list[dict[str, Any]], float]:
+    total_elapsed = 0.0
+    last: dict[str, Any] = {}
+    content: list[dict[str, Any]] = []
+    for _ in range(4):
+        last, is_error, content, elapsed = tool_call(
+            client,
+            name,
+            {
+                "runtime_session_id": runtime_session_id,
+                "expected_runtime_event_seq": expected_runtime_event_seq,
+            },
+        )
+        total_elapsed += elapsed
+        if not is_error:
+            return last, False, content, round(total_elapsed, 3)
+        error_value = last.get("error", {})
+        error = error_value if isinstance(error_value, dict) else {}
+        current = error.get("current", {})
+        if (
+            not isinstance(current, dict)
+            or error.get("code") != "stale_runtime_state"
+            or current.get("runtime_session_id") != runtime_session_id
+            or not isinstance(current.get("runtime_event_seq"), int)
+        ):
+            return last, True, content, round(total_elapsed, 3)
+        if current.get("state") == target_state:
+            return current, False, content, round(total_elapsed, 3)
+        expected_runtime_event_seq = current["runtime_event_seq"]
+    return last, True, content, round(total_elapsed, 3)
 
 
 def wait_editor_ready(client: McpClient, timeout: float) -> dict[str, Any]:
@@ -1270,19 +1312,20 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 == current_seq,
                 f"stale runtime control did not fail closed: {stale_pause}",
             )
-            paused, pause_error, _, pause_ms = tool_call(
+            paused, pause_error, _, pause_ms = runtime_control(
                 client,
                 "godot_pause_project",
-                {"runtime_session_id": first_session, "expected_runtime_event_seq": current_seq},
+                first_session,
+                current_seq,
+                "paused",
             )
             require(not pause_error and paused.get("state") == "paused", f"pause failed: {paused}")
-            continued, continue_error, _, continue_ms = tool_call(
+            continued, continue_error, _, continue_ms = runtime_control(
                 client,
                 "godot_continue_project",
-                {
-                    "runtime_session_id": first_session,
-                    "expected_runtime_event_seq": paused["runtime_event_seq"],
-                },
+                first_session,
+                paused["runtime_event_seq"],
+                "running",
             )
             require(
                 not continue_error and continued.get("state") == "running",
@@ -1349,15 +1392,12 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 ),
                 f"pause stack differs: {pause_functions}",
             )
-            breakpoint_continued, breakpoint_continue_error, _, _ = tool_call(
+            breakpoint_continued, breakpoint_continue_error, _, _ = runtime_control(
                 client,
                 "godot_continue_project",
-                {
-                    "runtime_session_id": first_session,
-                    "expected_runtime_event_seq": pause_snapshot[
-                        "runtime_event_seq"
-                    ],
-                },
+                first_session,
+                pause_snapshot["runtime_event_seq"],
+                "running",
             )
             require(
                 not breakpoint_continue_error
@@ -1375,15 +1415,12 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 and continued_snapshot.get("active_stack_id") is None,
                 "continue did not clear active pause stack",
             )
-            stopped, stop_error, _, stop_ms = tool_call(
+            stopped, stop_error, _, stop_ms = runtime_control(
                 client,
                 "godot_stop_project",
-                {
-                    "runtime_session_id": first_session,
-                    "expected_runtime_event_seq": continued_snapshot[
-                        "runtime_event_seq"
-                    ],
-                },
+                first_session,
+                continued_snapshot["runtime_event_seq"],
+                "stopped",
             )
             require(not stop_error and stopped.get("state") == "stopped", f"stop failed: {stopped}")
             terminal, terminal_error, _, _ = tool_call(
@@ -1478,13 +1515,12 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 percentile_95(large_tree_timings) <= 500,
                 f"cached runtime page p95 exceeded 500 ms: {large_tree_timings}",
             )
-            large_stop, large_stop_error, _, _ = tool_call(
+            large_stop, large_stop_error, _, _ = runtime_control(
                 client,
                 "godot_stop_project",
-                {
-                    "runtime_session_id": large_session,
-                    "expected_runtime_event_seq": large_meta["runtime_event_seq"],
-                },
+                large_session,
+                large_meta["runtime_event_seq"],
+                "stopped",
             )
             require(not large_stop_error and large_stop.get("state") == "stopped", "large-tree stop failed")
 
@@ -1603,13 +1639,12 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 and 2500 <= hung_tree_ms <= 5000,
                 f"hung runtime tree did not time out safely: {hung_tree}",
             )
-            hang_stop, hang_stop_error, _, hang_stop_ms = tool_call(
+            hang_stop, hang_stop_error, _, hang_stop_ms = runtime_control(
                 client,
                 "godot_stop_project",
-                {
-                    "runtime_session_id": hang_session,
-                    "expected_runtime_event_seq": hang_meta["runtime_event_seq"],
-                },
+                hang_session,
+                hang_meta["runtime_event_seq"],
+                "stopped",
             )
             require(
                 not hang_stop_error and hang_stop.get("state") == "stopped" and hang_stop_ms <= 5000,
