@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godotengine.org/codex/s9/transaction-fixture-manifest.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "project",
+    "golden",
+    "golden_sha256",
+    "files",
+    "operations",
+    "fault_points",
+    "canary_classes",
+    "forbidden_output_fields"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s9-transaction-fixture-manifest/1.0"
+    },
+    "project": {
+      "const": "../transaction_prepare_project"
+    },
+    "golden": {
+      "const": "golden-transactions.json"
+    },
+    "golden_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "pattern": "^(?:\\.gitignore|[A-Za-z0-9_-][A-Za-z0-9_.-]*)(?:/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*$"
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/operation"
+      }
+    },
+    "fault_points": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/faultPoint"
+      }
+    },
+    "canary_classes": {
+      "type": "array",
+      "minItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^S9_[A-Z0-9_]{8,96}$"
+      }
+    },
+    "forbidden_output_fields": {
+      "type": "array",
+      "minItems": 12,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 2,
+        "maxLength": 64
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "operation": {
+      "enum": [
+        "attach_script",
+        "connect_signal",
+        "create_node",
+        "delete_node",
+        "detach_script",
+        "disconnect_signal",
+        "reparent_node",
+        "set_property"
+      ]
+    },
+    "faultPoint": {
+      "enum": [
+        "after_action_created_before_commit",
+        "after_approval_before_preflight",
+        "after_bridge_response_before_journal_ack",
+        "after_commit_before_response",
+        "after_prepare",
+        "before_commit",
+        "restart_after_commit",
+        "restart_while_prepared"
+      ]
+    }
+  }
+}

@@ -1,0 +1,238 @@
+{
+  "schema_version": "s9-transaction-golden/1.0",
+  "identity_policy": {
+    "volatile": [
+      "editor_session_id",
+      "history_id",
+      "native_history_id",
+      "node_id",
+      "object_id",
+      "transaction_id"
+    ],
+    "stable_relations": [
+      "fresh transaction_id for distinct canonical request",
+      "same transaction_id for identical idempotency replay",
+      "same node_id within one editor session",
+      "transaction coordinates stay bound to one scene and history"
+    ]
+  },
+  "baseline": {
+    "tree": [
+      {"path": ".", "type": "Node2D", "owner": "", "index": 0, "transform": {"kind": "2d", "local": [1, 0, 0, 1, 0, 0], "global": [1, 0, 0, 1, 0, 0]}},
+      {"path": "Deletable", "type": "Node", "owner": ".", "index": 5, "transform": null},
+      {"path": "Deletable/Descendant", "type": "Node", "owner": ".", "index": 0, "transform": null},
+      {"path": "Emitter", "type": "Node", "owner": ".", "index": 2, "transform": null},
+      {"path": "InheritedCase", "type": "Node2D", "owner": ".", "index": 11, "transform": {"kind": "2d", "local": [1, 0, 0, 1, 3, 5], "global": [1, 0, 0, 1, 3, 5]}},
+      {"path": "InheritedCase/LockedInherited", "type": "Node2D", "owner": "InheritedCase", "index": 0, "transform": {"kind": "2d", "local": [1, 0, 0, 1, 7, 11], "global": [1, 0, 0, 1, 10, 16]}},
+      {"path": "InheritedCase/OwnedDerived", "type": "Node2D", "owner": "InheritedCase", "index": 1, "transform": {"kind": "2d", "local": [1, 0, 0, 1, 13, 17], "global": [1, 0, 0, 1, 16, 22]}},
+      {"path": "Instance", "type": "Node", "owner": ".", "index": 10, "transform": null},
+      {"path": "Instance/LockedChild", "type": "Node", "owner": "Instance", "index": 0, "transform": null},
+      {"path": "NewParent", "type": "Node", "owner": ".", "index": 7, "transform": null},
+      {"path": "NewParent3D", "type": "Node3D", "owner": ".", "index": 9, "transform": {"kind": "3d", "local": [1, 0, 0, 0, 1, 0, 0, 0, 1, -11, 7, 5], "global": [1, 0, 0, 0, 1, 0, 0, 0, 1, -11, 7, 5]}},
+      {"path": "Parent3D", "type": "Node3D", "owner": ".", "index": 8, "transform": {"kind": "3d", "local": [1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 20, 30], "global": [1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 20, 30]}},
+      {"path": "Parent3D/ReparentTarget3D", "type": "Node3D", "owner": ".", "index": 0, "transform": {"kind": "3d", "local": [1, 0, 0, 0, 1, 0, 0, 0, 1, 4, 5, 6], "global": [1, 0, 0, 0, 1, 0, 0, 0, 1, 14, 25, 36]}},
+      {"path": "Player", "type": "CharacterBody2D", "owner": ".", "index": 0, "transform": {"kind": "2d", "local": [1, 0, 0, 1, 8, 12], "global": [1, 0, 0, 1, 8, 12]}},
+      {"path": "Receiver", "type": "Node", "owner": ".", "index": 1, "transform": null},
+      {"path": "ReparentTarget", "type": "Node", "owner": ".", "index": 6, "transform": null},
+      {"path": "Scripted", "type": "Node", "owner": ".", "index": 3, "transform": null},
+      {"path": "Scriptless", "type": "Node", "owner": ".", "index": 4, "transform": null}
+    ],
+    "properties": [
+      {"path": "Deletable", "name": "secret_value", "type": "string", "value": null, "redacted_sha256": "269f759b09dd698439db5e398244fb1eb4a1e7251db30c9b1a7276047adc5c08"},
+      {"path": "Deletable/Descendant", "name": "secret_value", "type": "string", "value": null, "redacted_sha256": "affb63d0a8546e9883467a396b454203b761e8208e0f44d07672705d1e94fd12"},
+      {"path": "Player", "name": "position", "type": "vector2", "value": [8, 12], "redacted_sha256": null},
+      {"path": "Scripted", "name": "custom_value", "type": "int", "value": 41, "redacted_sha256": null}
+    ],
+    "scripts": [
+      {"path": "Deletable", "script": "res://scripts/fixture_endpoint.gd"},
+      {"path": "Deletable/Descendant", "script": "res://scripts/fixture_endpoint.gd"},
+      {"path": "Emitter", "script": "res://scripts/fixture_endpoint.gd"},
+      {"path": "Receiver", "script": "res://scripts/fixture_endpoint.gd"},
+      {"path": "Scripted", "script": "res://scripts/fixture_endpoint.gd"},
+      {"path": "Scriptless", "script": ""}
+    ],
+    "connections": [
+      {"emitter": "Deletable", "signal": "tree_entered", "receiver": "Receiver", "method": "_on_tree_entered", "flags": 2, "unbinds": 0, "bind_hashes": []},
+      {"emitter": "Emitter", "signal": "pulse", "receiver": "Receiver", "method": "_on_pulse", "flags": 2, "unbinds": 0, "bind_hashes": []},
+      {"emitter": "ReparentTarget", "signal": "tree_entered", "receiver": "Receiver", "method": "_on_tree_entered", "flags": 2, "unbinds": 0, "bind_hashes": []}
+    ],
+    "selection": ["Player"]
+  },
+  "operations": [
+    {
+      "kind": "attach_script",
+      "target": "Scriptless",
+      "risk": "write",
+      "scope": "scene.script.attach",
+      "states": {"pre": "baseline", "prepared": "baseline", "applied": "materialize_applied_delta", "undone": "baseline", "redone": "materialize_applied_delta"},
+      "applied_delta": {
+        "add_nodes": [], "remove_nodes": [], "move_nodes": [],
+        "property_changes": [{
+          "path": "Scriptless", "name": "custom_value",
+          "before": {"path": "Scriptless", "name": "custom_value", "type": "int", "value": null, "redacted_sha256": null},
+          "after": {"path": "Scriptless", "name": "custom_value", "type": "int", "value": 7, "redacted_sha256": null}
+        }],
+        "script_changes": [{"path": "Scriptless", "before": "", "after": "res://scripts/fixture_endpoint.gd"}],
+        "transform_changes": [], "add_connections": [], "remove_connections": []
+      },
+      "revision_deltas": {"prepare": 0, "apply": 1, "undo": 1, "redo": 1},
+      "native_actions": 1,
+      "undo_eligible": true
+    },
+    {
+      "kind": "connect_signal",
+      "target": "Emitter.pulse -> Receiver._on_bound",
+      "risk": "write",
+      "scope": "scene.signal.connect",
+      "states": {"pre": "baseline", "prepared": "baseline", "applied": "materialize_applied_delta", "undone": "baseline", "redone": "materialize_applied_delta"},
+      "applied_delta": {
+        "add_nodes": [], "remove_nodes": [], "move_nodes": [], "property_changes": [], "script_changes": [], "transform_changes": [],
+        "add_connections": [{"emitter": "Emitter", "signal": "pulse", "receiver": "Receiver", "method": "_on_bound", "flags": 3, "unbinds": 0, "bind_hashes": ["ba6c8d2be7dc90fc205ac45a04d0a61d8530f4d1b54ff07e79f39c1fece00377"]}],
+        "remove_connections": []
+      },
+      "revision_deltas": {"prepare": 0, "apply": 1, "undo": 1, "redo": 1},
+      "native_actions": 1,
+      "undo_eligible": true
+    },
+    {
+      "kind": "create_node",
+      "target": "./OracleCreated",
+      "risk": "write",
+      "scope": "scene.node.create",
+      "states": {"pre": "baseline", "prepared": "baseline", "applied": "materialize_applied_delta", "undone": "baseline", "redone": "materialize_applied_delta"},
+      "applied_delta": {
+        "add_nodes": [{"path": "OracleCreated", "type": "Node", "owner": ".", "index": 12, "transform": null}],
+        "remove_nodes": [], "move_nodes": [], "property_changes": [], "script_changes": [], "transform_changes": [], "add_connections": [], "remove_connections": []
+      },
+      "revision_deltas": {"prepare": 0, "apply": 1, "undo": 1, "redo": 1},
+      "native_actions": 1,
+      "undo_eligible": true
+    },
+    {
+      "kind": "delete_node",
+      "target": "Deletable",
+      "risk": "destructive",
+      "scope": "scene.node.delete",
+      "states": {"pre": "baseline", "prepared": "baseline", "applied": "materialize_applied_delta", "undone": "baseline", "redone": "materialize_applied_delta"},
+      "applied_delta": {
+        "add_nodes": [],
+        "remove_nodes": ["Deletable", "Deletable/Descendant"],
+        "move_nodes": [], "property_changes": [], "script_changes": [], "transform_changes": [], "add_connections": [],
+        "remove_connections": [{"emitter": "Deletable", "signal": "tree_entered", "receiver": "Receiver", "method": "_on_tree_entered", "flags": 2, "unbinds": 0, "bind_hashes": []}]
+      },
+      "revision_deltas": {"prepare": 0, "apply": 1, "undo": 1, "redo": 1},
+      "native_actions": 1,
+      "undo_eligible": true
+    },
+    {
+      "kind": "detach_script",
+      "target": "Scripted",
+      "risk": "destructive",
+      "scope": "scene.script.detach",
+      "states": {"pre": "baseline", "prepared": "baseline", "applied": "materialize_applied_delta", "undone": "baseline", "redone": "materialize_applied_delta"},
+      "applied_delta": {
+        "add_nodes": [], "remove_nodes": [], "move_nodes": [],
+        "property_changes": [{
+          "path": "Scripted", "name": "custom_value",
+          "before": {"path": "Scripted", "name": "custom_value", "type": "int", "value": 41, "redacted_sha256": null},
+          "after": {"path": "Scripted", "name": "custom_value", "type": "int", "value": null, "redacted_sha256": null}
+        }],
+        "script_changes": [{"path": "Scripted", "before": "res://scripts/fixture_endpoint.gd", "after": ""}],
+        "transform_changes": [], "add_connections": [], "remove_connections": []
+      },
+      "revision_deltas": {"prepare": 0, "apply": 1, "undo": 1, "redo": 1},
+      "native_actions": 1,
+      "undo_eligible": true
+    },
+    {
+      "kind": "disconnect_signal",
+      "target": "Emitter.pulse -> Receiver._on_pulse",
+      "risk": "destructive",
+      "scope": "scene.signal.disconnect",
+      "states": {"pre": "baseline", "prepared": "baseline", "applied": "materialize_applied_delta", "undone": "baseline", "redone": "materialize_applied_delta"},
+      "applied_delta": {
+        "add_nodes": [], "remove_nodes": [], "move_nodes": [], "property_changes": [], "script_changes": [], "transform_changes": [], "add_connections": [],
+        "remove_connections": [{"emitter": "Emitter", "signal": "pulse", "receiver": "Receiver", "method": "_on_pulse", "flags": 2, "unbinds": 0, "bind_hashes": []}]
+      },
+      "revision_deltas": {"prepare": 0, "apply": 1, "undo": 1, "redo": 1},
+      "native_actions": 1,
+      "undo_eligible": true
+    },
+    {
+      "kind": "reparent_node",
+      "target": "ReparentTarget -> NewParent/ReparentTarget",
+      "risk": "destructive",
+      "scope": "scene.node.reparent",
+      "states": {"pre": "baseline", "prepared": "baseline", "applied": "materialize_applied_delta", "undone": "baseline", "redone": "materialize_applied_delta"},
+      "applied_delta": {
+        "add_nodes": [], "remove_nodes": [],
+        "move_nodes": [{"from": "ReparentTarget", "to": "NewParent/ReparentTarget", "owner": ".", "index": 0, "keep_global_transform": false}],
+        "property_changes": [], "script_changes": [], "transform_changes": [],
+        "add_connections": [{"emitter": "NewParent/ReparentTarget", "signal": "tree_entered", "receiver": "Receiver", "method": "_on_tree_entered", "flags": 2, "unbinds": 0, "bind_hashes": []}],
+        "remove_connections": [{"emitter": "ReparentTarget", "signal": "tree_entered", "receiver": "Receiver", "method": "_on_tree_entered", "flags": 2, "unbinds": 0, "bind_hashes": []}]
+      },
+      "revision_deltas": {"prepare": 0, "apply": 1, "undo": 1, "redo": 1},
+      "native_actions": 1,
+      "undo_eligible": true
+    },
+    {
+      "kind": "set_property",
+      "target": "Player.position",
+      "risk": "destructive",
+      "scope": "scene.property.set",
+      "states": {"pre": "baseline", "prepared": "baseline", "applied": "materialize_applied_delta", "undone": "baseline", "redone": "materialize_applied_delta"},
+      "applied_delta": {
+        "add_nodes": [], "remove_nodes": [], "move_nodes": [],
+        "property_changes": [{
+          "path": "Player",
+          "name": "position",
+          "before": {"path": "Player", "name": "position", "type": "vector2", "value": [8, 12], "redacted_sha256": null},
+          "after": {"path": "Player", "name": "position", "type": "vector2", "value": [20, 30], "redacted_sha256": null}
+        }],
+        "script_changes": [],
+        "transform_changes": [{
+          "path": "Player",
+          "before": {"kind": "2d", "local": [1, 0, 0, 1, 8, 12], "global": [1, 0, 0, 1, 8, 12]},
+          "after": {"kind": "2d", "local": [1, 0, 0, 1, 20, 30], "global": [1, 0, 0, 1, 20, 30]}
+        }],
+        "add_connections": [], "remove_connections": []
+      },
+      "revision_deltas": {"prepare": 0, "apply": 1, "undo": 1, "redo": 1},
+      "native_actions": 1,
+      "undo_eligible": true
+    }
+  ],
+  "faults": [
+    {"point": "after_action_created_before_commit", "phase": "bridge", "expected_state": "failed", "mutation": false, "native_actions": 0, "replay_forbidden": false, "bridge_responsive": false},
+    {"point": "after_approval_before_preflight", "phase": "bridge", "expected_state": "failed", "mutation": false, "native_actions": 0, "replay_forbidden": false, "bridge_responsive": true},
+    {"point": "after_bridge_response_before_journal_ack", "phase": "sidecar", "expected_state": "reconcile_committed", "mutation": true, "native_actions": 1, "replay_forbidden": true, "bridge_responsive": true},
+    {"point": "after_commit_before_response", "phase": "bridge", "expected_state": "committed", "mutation": true, "native_actions": 1, "replay_forbidden": true, "bridge_responsive": true},
+    {"point": "after_prepare", "phase": "bridge", "expected_state": "previewed", "mutation": false, "native_actions": 0, "replay_forbidden": false, "bridge_responsive": true},
+    {"point": "before_commit", "phase": "bridge", "expected_state": "failed", "mutation": false, "native_actions": 0, "replay_forbidden": false, "bridge_responsive": true},
+    {"point": "restart_after_commit", "phase": "sidecar", "expected_state": "reconcile_committed", "mutation": true, "native_actions": 1, "replay_forbidden": true, "bridge_responsive": true},
+    {"point": "restart_while_prepared", "phase": "sidecar", "expected_state": "requires_reprepare", "mutation": false, "native_actions": 0, "replay_forbidden": false, "bridge_responsive": true}
+  ],
+  "stale_cases": [
+    {"kind": "changed_target", "expected_error": "stale_editor_state", "native_actions": 0, "executor_reached": false},
+    {"kind": "editor_session_replaced", "expected_error": "transaction_conflicted", "native_actions": 0, "executor_reached": false},
+    {"kind": "history_advanced", "expected_error": "stale_editor_state", "native_actions": 0, "executor_reached": false},
+    {"kind": "operation_sequence_advanced", "expected_error": "stale_editor_state", "native_actions": 0, "executor_reached": false},
+    {"kind": "scene_closed", "expected_error": "scene_not_open", "native_actions": 0, "executor_reached": false},
+    {"kind": "scene_revision_advanced", "expected_error": "stale_scene_revision", "native_actions": 0, "executor_reached": false}
+  ],
+  "limits": {
+    "preview_bytes": 65536,
+    "operation_bytes": 65536,
+    "structural_nodes": 1000,
+    "journal_records": 1024,
+    "journal_bytes": 8388608,
+    "status_bytes": 65536,
+    "main_thread_slice_usec": 2000
+  },
+  "leak_policy": {
+    "surfaces": ["bridge_errors", "bridge_results", "evidence", "journal", "logs", "mcp_results", "quarantine"],
+    "forbidden_key_fragments": ["approval", "binds", "handle", "mac", "native_history_id", "nonce", "object_id", "pointer", "preview_payload_json", "receipt", "rid", "session_token"],
+    "forbidden_value_classes": ["absolute_path", "approval_material", "canary", "native_id", "retained_payload", "session_token"],
+    "private_snapshot_retention": "ephemeral_delete_after_case"
+  }
+}

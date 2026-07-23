@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/fixture_endpoint.gd" id="1_endpoint"]
 [ext_resource type="PackedScene" path="res://instance_source.tscn" id="2_instance"]
+[ext_resource type="PackedScene" path="res://inherited_variant.tscn" id="3_inherited"]
 
 [node name="TransactionFixture" type="Node2D"]
 
@@ -16,17 +17,35 @@ script = ExtResource("1_endpoint")
 
 [node name="Scripted" type="Node" parent="."]
 script = ExtResource("1_endpoint")
+custom_value = 41
 
 [node name="Scriptless" type="Node" parent="."]
 
 [node name="Deletable" type="Node" parent="."]
+script = ExtResource("1_endpoint")
+secret_value = "S9_DELETED_SUBTREE_CANARY_7b1f0a26"
 
 [node name="Descendant" type="Node" parent="Deletable"]
+script = ExtResource("1_endpoint")
+secret_value = "S9_PROPERTY_CANARY_3d842ac9"
 
 [node name="ReparentTarget" type="Node" parent="."]
 
 [node name="NewParent" type="Node" parent="."]
 
+[node name="Parent3D" type="Node3D" parent="."]
+position = Vector3(10, 20, 30)
+
+[node name="ReparentTarget3D" type="Node3D" parent="Parent3D"]
+position = Vector3(4, 5, 6)
+
+[node name="NewParent3D" type="Node3D" parent="."]
+position = Vector3(-11, 7, 5)
+
 [node name="Instance" parent="." instance=ExtResource("2_instance")]
 
+[node name="InheritedCase" parent="." instance=ExtResource("3_inherited")]
+
 [connection signal="pulse" from="Emitter" to="Receiver" method="_on_pulse"]
+[connection signal="tree_entered" from="Deletable" to="Receiver" method="_on_tree_entered"]
+[connection signal="tree_entered" from="ReparentTarget" to="Receiver" method="_on_tree_entered"]

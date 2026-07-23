@@ -1,0 +1,150 @@
+{
+  "exact_exported_value_restored": true,
+  "exact_signal_callable_restored": true,
+  "fault_results": {
+    "attach_script:postcondition": {
+      "bridge_responsive": true,
+      "error": "transaction_apply_failed",
+      "operation_seq_delta": 2,
+      "state": "failed_rolled_back"
+    },
+    "attach_script:preflight": {
+      "bridge_responsive": true,
+      "error": "transaction_apply_failed",
+      "operation_seq_delta": 0,
+      "state": "failed"
+    },
+    "attach_script:registration": {
+      "bridge_responsive": true,
+      "error": "transaction_in_doubt",
+      "operation_seq_delta": 1,
+      "state": "in_doubt"
+    },
+    "attach_script:rollback_proof": {
+      "bridge_responsive": true,
+      "error": "transaction_in_doubt",
+      "operation_seq_delta": 2,
+      "state": "in_doubt"
+    },
+    "connect_signal:postcondition": {
+      "bridge_responsive": true,
+      "error": "transaction_apply_failed",
+      "operation_seq_delta": 2,
+      "state": "failed_rolled_back"
+    },
+    "connect_signal:preflight": {
+      "bridge_responsive": true,
+      "error": "transaction_apply_failed",
+      "operation_seq_delta": 0,
+      "state": "failed"
+    },
+    "connect_signal:registration": {
+      "bridge_responsive": true,
+      "error": "transaction_in_doubt",
+      "operation_seq_delta": 1,
+      "state": "in_doubt"
+    },
+    "connect_signal:rollback_proof": {
+      "bridge_responsive": true,
+      "error": "transaction_in_doubt",
+      "operation_seq_delta": 2,
+      "state": "in_doubt"
+    },
+    "detach_script:postcondition": {
+      "bridge_responsive": true,
+      "error": "transaction_apply_failed",
+      "operation_seq_delta": 2,
+      "state": "failed_rolled_back"
+    },
+    "detach_script:preflight": {
+      "bridge_responsive": true,
+      "error": "transaction_apply_failed",
+      "operation_seq_delta": 0,
+      "state": "failed"
+    },
+    "detach_script:registration": {
+      "bridge_responsive": true,
+      "error": "transaction_in_doubt",
+      "operation_seq_delta": 1,
+      "state": "in_doubt"
+    },
+    "detach_script:rollback_proof": {
+      "bridge_responsive": true,
+      "error": "transaction_in_doubt",
+      "operation_seq_delta": 2,
+      "state": "in_doubt"
+    },
+    "disconnect_signal:postcondition": {
+      "bridge_responsive": true,
+      "error": "transaction_apply_failed",
+      "operation_seq_delta": 2,
+      "state": "failed_rolled_back"
+    },
+    "disconnect_signal:preflight": {
+      "bridge_responsive": true,
+      "error": "transaction_apply_failed",
+      "operation_seq_delta": 0,
+      "state": "failed"
+    },
+    "disconnect_signal:registration": {
+      "bridge_responsive": true,
+      "error": "transaction_in_doubt",
+      "operation_seq_delta": 1,
+      "state": "in_doubt"
+    },
+    "disconnect_signal:rollback_proof": {
+      "bridge_responsive": true,
+      "error": "transaction_in_doubt",
+      "operation_seq_delta": 2,
+      "state": "in_doubt"
+    },
+    "set_property:postcondition": {
+      "bridge_responsive": true,
+      "error": "transaction_apply_failed",
+      "operation_seq_delta": 2,
+      "state": "failed_rolled_back"
+    },
+    "set_property:preflight": {
+      "bridge_responsive": true,
+      "error": "transaction_apply_failed",
+      "operation_seq_delta": 0,
+      "state": "failed"
+    },
+    "set_property:registration": {
+      "bridge_responsive": true,
+      "error": "transaction_in_doubt",
+      "operation_seq_delta": 1,
+      "state": "in_doubt"
+    },
+    "set_property:rollback_proof": {
+      "bridge_responsive": true,
+      "error": "transaction_in_doubt",
+      "operation_seq_delta": 2,
+      "state": "in_doubt"
+    }
+  },
+  "native_undo_redo_cases": 6,
+  "production_operations": [
+    "set_property",
+    "attach_script",
+    "replace_script",
+    "detach_script",
+    "connect_signal",
+    "disconnect_signal"
+  ],
+  "protocol_version": "1.7",
+  "redacted_preview_cases": 5,
+  "rejected_zero_action_cases": 7,
+  "schema_version": "s9-06-s9-07-acceptance/1.0",
+  "source_hashes": {
+    "addons/codex_s9_prepare/codex_s9_prepare.gd": "ff7bc88ebe89a53a5f7d4d70c2243deb210b656b0f61d1ba1fb93fce8b4a4e13",
+    "instance_source.tscn": "bb056e0b07ae06bc8c41a956e61f0c585faae54bc249898fa7642863a4ee6579",
+    "main.tscn": "4d26973b5c0116790376ab9221e55312e8cfba1e93b865b42d584111beb05982",
+    "scripts/fixture_endpoint.gd": "a9310e86dc120cb1adcde69e03ef523790a5cad69e95bbaa228d38fd6e72713c",
+    "scripts/incompatible.gd": "087d184f7cbac52200b4c44963fffd5ead7b411dd4e1b0dcfd5a71344d8cd442",
+    "scripts/replacement_endpoint.gd": "f734cc47a76a331c2a9d4a01c4877948a4a9d367edf9f40d158db366530ad23f"
+  },
+  "status": "passed",
+  "status_bytes_max": 1110,
+  "targeted_undo_cases": 6
+}

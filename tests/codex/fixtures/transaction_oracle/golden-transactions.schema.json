@@ -1,0 +1,517 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godotengine.org/codex/s9/golden-transactions.schema.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "identity_policy",
+    "baseline",
+    "operations",
+    "faults",
+    "stale_cases",
+    "limits",
+    "leak_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s9-transaction-golden/1.0"
+    },
+    "identity_policy": {
+      "type": "object",
+      "required": ["volatile", "stable_relations"],
+      "properties": {
+        "volatile": {
+          "type": "array",
+          "minItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "editor_session_id",
+              "history_id",
+              "native_history_id",
+              "node_id",
+              "object_id",
+              "transaction_id"
+            ]
+          }
+        },
+        "stable_relations": {
+          "type": "array",
+          "minItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 96
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "baseline": {
+      "$ref": "#/$defs/state"
+    },
+    "operations": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/operationTruth"
+      }
+    },
+    "faults": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/faultTruth"
+      }
+    },
+    "stale_cases": {
+      "type": "array",
+      "minItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": ["kind", "expected_error", "native_actions", "executor_reached"],
+        "properties": {
+          "kind": {
+            "enum": [
+              "changed_target",
+              "editor_session_replaced",
+              "history_advanced",
+              "operation_sequence_advanced",
+              "scene_closed",
+              "scene_revision_advanced"
+            ]
+          },
+          "expected_error": {
+            "enum": [
+              "scene_not_open",
+              "stale_editor_state",
+              "stale_scene_revision",
+              "transaction_conflicted"
+            ]
+          },
+          "native_actions": {
+            "const": 0
+          },
+          "executor_reached": {
+            "const": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "limits": {
+      "type": "object",
+      "required": [
+        "preview_bytes",
+        "operation_bytes",
+        "structural_nodes",
+        "journal_records",
+        "journal_bytes",
+        "status_bytes",
+        "main_thread_slice_usec"
+      ],
+      "properties": {
+        "preview_bytes": {"const": 65536},
+        "operation_bytes": {"const": 65536},
+        "structural_nodes": {"const": 1000},
+        "journal_records": {"const": 1024},
+        "journal_bytes": {"const": 8388608},
+        "status_bytes": {"const": 65536},
+        "main_thread_slice_usec": {"const": 2000}
+      },
+      "additionalProperties": false
+    },
+    "leak_policy": {
+      "type": "object",
+      "required": [
+        "surfaces",
+        "forbidden_key_fragments",
+        "forbidden_value_classes",
+        "private_snapshot_retention"
+      ],
+      "properties": {
+        "surfaces": {
+          "type": "array",
+          "minItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "bridge_errors",
+              "bridge_results",
+              "evidence",
+              "journal",
+              "logs",
+              "mcp_results",
+              "quarantine"
+            ]
+          }
+        },
+        "forbidden_key_fragments": {
+          "type": "array",
+          "minItems": 12,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 64
+          }
+        },
+        "forbidden_value_classes": {
+          "type": "array",
+          "minItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "absolute_path",
+              "approval_material",
+              "canary",
+              "native_id",
+              "retained_payload",
+              "session_token"
+            ]
+          }
+        },
+        "private_snapshot_retention": {
+          "const": "ephemeral_delete_after_case"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "jsonValue": {
+      "type": ["null", "boolean", "integer", "number", "string", "array", "object"]
+    },
+    "transform": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["kind", "local", "global"],
+          "properties": {
+            "kind": {"enum": ["2d", "3d"]},
+            "local": {
+              "type": "array",
+              "minItems": 6,
+              "maxItems": 12,
+              "items": {"type": "number"}
+            },
+            "global": {
+              "type": "array",
+              "minItems": 6,
+              "maxItems": 12,
+              "items": {"type": "number"}
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "node": {
+      "type": "object",
+      "required": ["path", "type", "owner", "index", "transform"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 256},
+        "type": {"type": "string", "minLength": 1, "maxLength": 128},
+        "owner": {"type": "string", "maxLength": 256},
+        "index": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "transform": {"$ref": "#/$defs/transform"}
+      },
+      "additionalProperties": false
+    },
+    "property": {
+      "type": "object",
+      "required": ["path", "name", "type", "value", "redacted_sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 256},
+        "name": {"type": "string", "minLength": 1, "maxLength": 128},
+        "type": {"type": "string", "minLength": 1, "maxLength": 64},
+        "value": {"$ref": "#/$defs/jsonValue"},
+        "redacted_sha256": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/sha256"}
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "script": {
+      "type": "object",
+      "required": ["path", "script"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 256},
+        "script": {"type": "string", "maxLength": 256}
+      },
+      "additionalProperties": false
+    },
+    "connection": {
+      "type": "object",
+      "required": [
+        "emitter",
+        "signal",
+        "receiver",
+        "method",
+        "flags",
+        "unbinds",
+        "bind_hashes"
+      ],
+      "properties": {
+        "emitter": {"type": "string", "minLength": 1, "maxLength": 256},
+        "signal": {"type": "string", "minLength": 1, "maxLength": 128},
+        "receiver": {"type": "string", "minLength": 1, "maxLength": 256},
+        "method": {"type": "string", "minLength": 1, "maxLength": 128},
+        "flags": {"type": "integer", "minimum": 0, "maximum": 15},
+        "unbinds": {"type": "integer", "minimum": 0, "maximum": 32},
+        "bind_hashes": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {"$ref": "#/$defs/sha256"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "state": {
+      "type": "object",
+      "required": ["tree", "properties", "scripts", "connections", "selection"],
+      "properties": {
+        "tree": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1001,
+          "items": {"$ref": "#/$defs/node"}
+        },
+        "properties": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/property"}
+        },
+        "scripts": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/script"}
+        },
+        "connections": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/connection"}
+        },
+        "selection": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 256}
+        }
+      },
+      "additionalProperties": false
+    },
+    "move": {
+      "type": "object",
+      "required": ["from", "to", "owner", "index", "keep_global_transform"],
+      "properties": {
+        "from": {"type": "string", "minLength": 1, "maxLength": 256},
+        "to": {"type": "string", "minLength": 1, "maxLength": 256},
+        "owner": {"type": "string", "maxLength": 256},
+        "index": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "keep_global_transform": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "propertyChange": {
+      "type": "object",
+      "required": ["path", "name", "before", "after"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 256},
+        "name": {"type": "string", "minLength": 1, "maxLength": 128},
+        "before": {"$ref": "#/$defs/property"},
+        "after": {"$ref": "#/$defs/property"}
+      },
+      "additionalProperties": false
+    },
+    "scriptChange": {
+      "type": "object",
+      "required": ["path", "before", "after"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 256},
+        "before": {"type": "string", "maxLength": 256},
+        "after": {"type": "string", "maxLength": 256}
+      },
+      "additionalProperties": false
+    },
+    "transformChange": {
+      "type": "object",
+      "required": ["path", "before", "after"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1, "maxLength": 256},
+        "before": {"$ref": "#/$defs/transform"},
+        "after": {"$ref": "#/$defs/transform"}
+      },
+      "additionalProperties": false
+    },
+    "delta": {
+      "type": "object",
+      "required": [
+        "add_nodes",
+        "remove_nodes",
+        "move_nodes",
+        "property_changes",
+        "script_changes",
+        "transform_changes",
+        "add_connections",
+        "remove_connections"
+      ],
+      "properties": {
+        "add_nodes": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/node"}
+        },
+        "remove_nodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 256}
+        },
+        "move_nodes": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/move"}
+        },
+        "property_changes": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/propertyChange"}
+        },
+        "script_changes": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/scriptChange"}
+        },
+        "transform_changes": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/transformChange"}
+        },
+        "add_connections": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/connection"}
+        },
+        "remove_connections": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/connection"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "operationTruth": {
+      "type": "object",
+      "required": [
+        "kind",
+        "target",
+        "risk",
+        "scope",
+        "states",
+        "applied_delta",
+        "revision_deltas",
+        "native_actions",
+        "undo_eligible"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "attach_script",
+            "connect_signal",
+            "create_node",
+            "delete_node",
+            "detach_script",
+            "disconnect_signal",
+            "reparent_node",
+            "set_property"
+          ]
+        },
+        "target": {"type": "string", "minLength": 1, "maxLength": 256},
+        "risk": {"enum": ["write", "destructive"]},
+        "scope": {
+          "enum": [
+            "scene.node.create",
+            "scene.node.delete",
+            "scene.node.reparent",
+            "scene.property.set",
+            "scene.script.attach",
+            "scene.script.detach",
+            "scene.signal.connect",
+            "scene.signal.disconnect"
+          ]
+        },
+        "states": {
+          "type": "object",
+          "required": ["pre", "prepared", "applied", "undone", "redone"],
+          "properties": {
+            "pre": {"const": "baseline"},
+            "prepared": {"const": "baseline"},
+            "applied": {"const": "materialize_applied_delta"},
+            "undone": {"const": "baseline"},
+            "redone": {"const": "materialize_applied_delta"}
+          },
+          "additionalProperties": false
+        },
+        "applied_delta": {"$ref": "#/$defs/delta"},
+        "revision_deltas": {
+          "type": "object",
+          "required": ["prepare", "apply", "undo", "redo"],
+          "properties": {
+            "prepare": {"const": 0},
+            "apply": {"const": 1},
+            "undo": {"const": 1},
+            "redo": {"const": 1}
+          },
+          "additionalProperties": false
+        },
+        "native_actions": {"const": 1},
+        "undo_eligible": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "faultTruth": {
+      "type": "object",
+      "required": [
+        "point",
+        "phase",
+        "expected_state",
+        "mutation",
+        "native_actions",
+        "replay_forbidden",
+        "bridge_responsive"
+      ],
+      "properties": {
+        "point": {
+          "enum": [
+            "after_action_created_before_commit",
+            "after_approval_before_preflight",
+            "after_bridge_response_before_journal_ack",
+            "after_commit_before_response",
+            "after_prepare",
+            "before_commit",
+            "restart_after_commit",
+            "restart_while_prepared"
+          ]
+        },
+        "phase": {"enum": ["bridge", "sidecar"]},
+        "expected_state": {
+          "enum": [
+            "committed",
+            "failed",
+            "in_doubt",
+            "previewed",
+            "reconcile_committed",
+            "requires_reprepare"
+          ]
+        },
+        "mutation": {"type": "boolean"},
+        "native_actions": {"type": "integer", "minimum": 0, "maximum": 1},
+        "replay_forbidden": {"type": "boolean"},
+        "bridge_responsive": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -86,10 +86,12 @@ class BridgeClient:
         token_path = project_root / str(discovery["token_file"])
         token = token_path.read_bytes()
         require(len(token) == 32, "session token is not 32 bytes")
+        self.token = token
         self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.socket.settimeout(15.0)
         self.socket.connect(str(project_root / endpoint))
         self.next_request = 1
+        self.notifications: list[dict[str, Any]] = []
         self._handshake(token)
 
     def close(self) -> None:
@@ -107,6 +109,8 @@ class BridgeClient:
         payload = self._read_exact(length)
         value = json.loads(payload)
         require(isinstance(value, dict), "incoming frame is not an object")
+        if value.get("kind") == "notification" and len(self.notifications) < 2048:
+            self.notifications.append(value)
         return value, payload
 
     def _read_exact(self, length: int) -> bytes:
@@ -411,7 +415,7 @@ def main() -> int:
             client = BridgeClient(project_root)
             initialized = client.initialize()
             capability = next(value for value in initialized["capabilities"] if value.get("name") == "transaction.scene_v1")
-            require(capability["transaction_readiness"]["reason"] == "approval_unavailable", "capability readiness still reports coordinator unavailable")
+            require(capability["transaction_readiness"]["reason"] == "ready", "transaction coordinator is not ready")
 
             snapshot_result, entities = client.snapshot()
             coordinates, before_prepare = snapshot_evidence(snapshot_result, entities)
@@ -450,6 +454,7 @@ def main() -> int:
             )
             require(isinstance(pulse, dict) and isinstance(pulse.get("flags"), int), "saved signal connection evidence is missing")
             script_ref = {"uid_missing": True, "path": "res://scripts/fixture_endpoint.gd"}
+            replacement_script_ref = {"uid_missing": True, "path": "res://scripts/replacement_endpoint.gd"}
             operations = [
                 {"kind": "delete_node", "node_id": node_ids["Deletable"]},
                 {
@@ -466,7 +471,7 @@ def main() -> int:
                     "value": {"type": "vector2", "value": [20.0, 30.0]},
                 },
                 {"kind": "attach_script", "node_id": node_ids["Scriptless"], "script_ref": script_ref},
-                {"kind": "attach_script", "node_id": node_ids["Scripted"], "script_ref": script_ref},
+                {"kind": "attach_script", "node_id": node_ids["Scripted"], "script_ref": replacement_script_ref},
                 {"kind": "detach_script", "node_id": node_ids["Scripted"]},
                 {
                     "kind": "connect_signal",
@@ -474,7 +479,7 @@ def main() -> int:
                     "signal": "pulse",
                     "receiver_node_id": node_ids["Receiver"],
                     "method": "_on_tree_entered",
-                    "flags": 0,
+                    "flags": 2,
                     "unbinds": 0,
                     "binds": [],
                 },
@@ -600,7 +605,7 @@ def main() -> int:
                 "schema_version": "s9-03-acceptance/1.0",
                 "status": "passed",
                 "protocol_version": "1.7",
-                "capability_reason": "approval_unavailable",
+                "capability_reason": "ready",
                 "initial_node_count": phase_one["node_count"],
                 "manual_change_node_count": phase_two["node_count"],
                 "bounded_node_count": phase_three["node_count"],

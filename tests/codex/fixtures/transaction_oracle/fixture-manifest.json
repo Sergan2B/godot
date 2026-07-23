@@ -1,0 +1,61 @@
+{
+  "schema_version": "s9-transaction-fixture-manifest/1.0",
+  "project": "../transaction_prepare_project",
+  "golden": "golden-transactions.json",
+  "golden_sha256": "9dd9725d5c668ae7e126c45a54c0e8ab9f55856abb24c4dc96a8f4ed90c48c58",
+  "files": [
+    {"path": ".gitignore", "sha256": "531d0d253cec1addb97b2cb2d144b6589ff934513eb9c9b8cf882cb49e4c0c32"},
+    {"path": "addons/codex_s9_prepare/codex_s9_prepare.gd", "sha256": "a2551005c89e8209f0c324bff890aee89a4472573b47ea076ec019de3271914d"},
+    {"path": "addons/codex_s9_prepare/codex_s9_prepare.gd.uid", "sha256": "09cc0d1c4d76c69c538cab7c5e40c6ea29a96116f3b1d97b0a8663a89ffe7b8b"},
+    {"path": "addons/codex_s9_prepare/plugin.cfg", "sha256": "ae38dc076edfb3c28c54f79580efe67279f3ab54c7f8f8bec2c6ce25dce428f0"},
+    {"path": "inherited_base.tscn", "sha256": "50c1089e695c72dfe948f43e05d1c55ca089412126ebda9c7a7e14d41e66d0b7"},
+    {"path": "inherited_variant.tscn", "sha256": "520d156055a2eb1e149e61160270d4ebf7b0383ed8911ac8c06c5d68c5fac24b"},
+    {"path": "instance_source.tscn", "sha256": "bb056e0b07ae06bc8c41a956e61f0c585faae54bc249898fa7642863a4ee6579"},
+    {"path": "main.tscn", "sha256": "8e7cdcc4f3e4efee66151cfa4714de97ea7f61f06d31f27152cbea6ed84693fd"},
+    {"path": "project.godot", "sha256": "099944c6f225634575ecd26b55d85b76718e0af0f2f0f0662d5af97ed033566d"},
+    {"path": "scripts/fixture_endpoint.gd", "sha256": "15a8e8a918b97dde3c339c870bb6f531b6daca33e00d26d1027e5740f91a9851"},
+    {"path": "scripts/fixture_endpoint.gd.uid", "sha256": "eadec58e3be20b4aad09034a2fbc5b7b006fc4cd0aac8b35ea3e53f691c912ed"},
+    {"path": "scripts/incompatible.gd", "sha256": "087d184f7cbac52200b4c44963fffd5ead7b411dd4e1b0dcfd5a71344d8cd442"},
+    {"path": "scripts/incompatible.gd.uid", "sha256": "50bf542d0878ab82b4d2405e15a401a7bb504b05bfa3f7e832df595fc0beb543"},
+    {"path": "scripts/replacement_endpoint.gd", "sha256": "f734cc47a76a331c2a9d4a01c4877948a4a9d367edf9f40d158db366530ad23f"}
+  ],
+  "operations": [
+    "attach_script",
+    "connect_signal",
+    "create_node",
+    "delete_node",
+    "detach_script",
+    "disconnect_signal",
+    "reparent_node",
+    "set_property"
+  ],
+  "fault_points": [
+    "after_action_created_before_commit",
+    "after_approval_before_preflight",
+    "after_bridge_response_before_journal_ack",
+    "after_commit_before_response",
+    "after_prepare",
+    "before_commit",
+    "restart_after_commit",
+    "restart_while_prepared"
+  ],
+  "canary_classes": [
+    "S9_BIND_SECRET_SENTINEL",
+    "S9_DELETED_SUBTREE_CANARY_7B1F0A26",
+    "S9_PROPERTY_CANARY_3D842AC9"
+  ],
+  "forbidden_output_fields": [
+    "approval",
+    "binds",
+    "handle",
+    "mac",
+    "native_history_id",
+    "nonce",
+    "object_id",
+    "pointer",
+    "preview_payload_json",
+    "receipt",
+    "rid",
+    "session_token"
+  ]
+}

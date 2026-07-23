@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[node name="InheritedBase" type="Node2D"]
+position = Vector2(3, 5)
+
+[node name="LockedInherited" type="Node2D" parent="."]
+position = Vector2(7, 11)

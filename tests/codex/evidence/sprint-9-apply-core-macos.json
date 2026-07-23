@@ -1,0 +1,69 @@
+{
+  "approval_binding": [
+    "scope_mismatch",
+    "invalid_mac",
+    "replayed_nonce"
+  ],
+  "concurrent_duplicate_joined": true,
+  "duplicate_apply_operation_seq_unchanged": true,
+  "duplicate_apply_transaction_seq_unchanged": true,
+  "fault_results": {
+    "postcondition": {
+      "error": "transaction_apply_failed",
+      "operation_seq_delta": 2,
+      "position": [
+        8.0,
+        12.0
+      ],
+      "state": "failed_rolled_back"
+    },
+    "preflight": {
+      "error": "transaction_apply_failed",
+      "operation_seq_delta": 0,
+      "position": [
+        8.0,
+        12.0
+      ],
+      "state": "failed"
+    },
+    "registration": {
+      "error": "transaction_in_doubt",
+      "operation_seq_delta": 1,
+      "position": [
+        8.0,
+        12.0
+      ],
+      "state": "in_doubt"
+    },
+    "rollback_proof": {
+      "error": "transaction_in_doubt",
+      "operation_seq_delta": 2,
+      "position": [
+        8.0,
+        12.0
+      ],
+      "state": "in_doubt"
+    }
+  },
+  "final_operation_seq": 7,
+  "first_apply_native_actions": 1,
+  "native_redo_state": "committed",
+  "native_undo_state": "undone",
+  "precommit_cancel_error": "approval_cancelled",
+  "precommit_cancel_state": "failed",
+  "protocol_version": "1.7",
+  "response_loss_recovered": true,
+  "schema_version": "s9-04-acceptance/1.0",
+  "source_hashes": {
+    "addons/codex_s9_prepare/codex_s9_prepare.gd": "ff711f444d25838f49f40b87a73fc421b88e4b9d5e97d38fcbbe650beeaa7f17",
+    "instance_source.tscn": "bb056e0b07ae06bc8c41a956e61f0c585faae54bc249898fa7642863a4ee6579",
+    "main.tscn": "9b49b952398790a51146878cfb7e714d0d72171ea048662099a457a49e59b0b7",
+    "scripts/fixture_endpoint.gd": "e167a27d580a276d3e4bd7ba2bffb1c0f8941d92262b437788114ec9eee74fd2",
+    "scripts/incompatible.gd": "087d184f7cbac52200b4c44963fffd5ead7b411dd4e1b0dcfd5a71344d8cd442"
+  },
+  "status": "passed",
+  "status_bytes_max": 1226,
+  "targeted_undo": "undone",
+  "transaction_event_count": 7,
+  "unrelated_action_blocked": true
+}
