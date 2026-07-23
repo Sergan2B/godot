@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the independent S9-01 approval and WRITE-001 contract evidence."""
+"""Validate the independent S9 approval boundary and current WRITE-001 surface."""
 
 from __future__ import annotations
 
@@ -325,15 +325,18 @@ def audit_documents_and_registry() -> dict[str, Any]:
         require(phrase in documents["protocol"], f"PROTOCOL-001 traceability phrase missing: {phrase}")
     for tool in RESERVED_WRITE_TOOLS:
         require(f"`{tool}`" in documents["mcp"], f"MCP-001 reserved tool missing: {tool}")
-    require("production registry remains exactly 25" in documents["write"], "WRITE-001 registry gate missing")
+    require("production registry exactly 36 tools" in documents["write"], "WRITE-001 registry gate missing")
     require("`WRITE-001` is frozen by `S9-01`" in documents["plan"], "Sprint plan does not bind S9-01")
     require("forward reference" not in documents["plan"].lower(), "Sprint plan still calls WRITE-001 a forward reference")
 
     server = SERVER_PATH.read_text(encoding="utf-8")
     tool_count = len(re.findall(r"^    #\[tool\(", server, flags=re.MULTILINE))
-    require(tool_count == 25, f"production MCP registry source has {tool_count} tools, expected 25")
+    require(tool_count == 36, f"production MCP registry source has {tool_count} tools, expected 36")
     present = sorted(tool for tool in RESERVED_WRITE_TOOLS if tool in server)
-    require(not present, f"S9 write tools leaked into production registry: {present}")
+    require(
+        present == sorted(RESERVED_WRITE_TOOLS),
+        f"S9 write-tool registry differs: {present}",
+    )
     manifest = WORKSPACE_MANIFEST.read_text(encoding="utf-8")
     require(
         '"elicitation"' in manifest and 'rmcp = { version = "=2.2.0"' in manifest,

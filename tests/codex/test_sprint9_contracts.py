@@ -1,4 +1,4 @@
-"""Tests for the independent S9-01 approval and WRITE-001 contract evidence."""
+"""Tests for the independent S9 approval and current WRITE-001 contract."""
 
 from __future__ import annotations
 
@@ -79,7 +79,7 @@ class Sprint9ContractTests(unittest.TestCase):
     def test_docs_and_production_registry_match_the_gate(self) -> None:
         audit = contract.audit_documents_and_registry()
         self.assertEqual(4, audit["documents"])
-        self.assertEqual(25, audit["production_tools"])
+        self.assertEqual(36, audit["production_tools"])
         self.assertEqual(11, audit["reserved_tools"])
 
     def test_validator_is_independent_of_production_implementation(self) -> None:

@@ -431,8 +431,9 @@ non-destructive and idempotent for one required key. Status is read-only. Apply
 and Undo are non-read-only and destructive. Every tool is closed-world and
 rejects additional properties.
 
-S9-09 registers these eleven tools after the executor/coordinator gates, making
-the production registry exactly 36 tools. The test-only
+S9-01 does not register these tools. S9-09 registers the eleven tools after the
+executor/coordinator gates, making the production registry exactly 36 tools.
+The test-only
 `godot_s9_approval_probe` is a separate example binary and is never part of the
 production server.
 
