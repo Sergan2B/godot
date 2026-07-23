@@ -2541,6 +2541,66 @@ def validate_native_history_matrix(operations: list[Mapping[str, Any]]) -> None:
         )
 
 
+def validate_fault_matrix(
+    faults: Mapping[str, Mapping[str, Any]],
+    expected: set[str],
+) -> None:
+    require(set(faults) == expected, "fault matrix coverage differs")
+    predicates: dict[str, tuple[tuple[str, Any], ...]] = {
+        "sidecar_disconnect_prepared": (
+            ("same_transaction", True),
+            ("same_preview_digest", True),
+            ("native_actions", 0),
+            ("source_unchanged", True),
+        ),
+        "bridge_response_loss_after_commit": (
+            ("state", "committed"),
+            ("apply_dispatched_durable", True),
+            ("reconciled_without_replay", True),
+            ("transaction_native_actions", 1),
+            ("source_unchanged", True),
+        ),
+        "disconnect_before_commit": (
+            ("classification", "failed"),
+            ("automatic_replay", False),
+            ("transaction_native_actions", 0),
+            ("source_unchanged", True),
+        ),
+        "restart_after_bridge_response_before_journal_ack": (
+            ("status_reconciled", "committed"),
+            ("apply_dispatched_durable", True),
+            ("automatic_replay", False),
+            ("coverage", "deterministic_rust_fault_gate"),
+        ),
+        "editor_crash_before_commit": (
+            ("pre_state_restored", True),
+            ("new_editor_session", True),
+            ("old_transaction_unavailable", True),
+            ("transaction_native_actions", 0),
+            ("source_unchanged", True),
+        ),
+        "editor_restart_after_commit": (
+            ("new_editor_session", True),
+            ("old_transaction_unavailable", True),
+            ("persistent_undo_claimed", False),
+            ("source_unchanged", True),
+        ),
+        "corrupt_journal": (
+            ("quarantined", True),
+            ("old_transaction_fail_closed", True),
+            ("diagnostic_reads_available", True),
+            ("native_actions", 0),
+            ("source_unchanged", True),
+        ),
+    }
+    for name, observation in faults.items():
+        require(name in predicates, f"unknown fault observation: {name}")
+        require(
+            all(observation.get(field) == value for field, value in predicates[name]),
+            f"{name} fault recovery outcome differs",
+        )
+
+
 def atomic_json(path: Path, value: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -2667,6 +2727,7 @@ def main() -> int:
                 )
             )
     faults: dict[str, Any] = {}
+    selected_faults: set[str] = set()
     if not arguments.skip_faults:
         print("[S9 model-free] crash and disconnect matrix...", flush=True)
         selected_faults = set(arguments.fault_scenarios)
@@ -2715,6 +2776,7 @@ def main() -> int:
             faults[
                 "restart_after_bridge_response_before_journal_ack"
             ] = run_restart_after_journal_ack_gate(arguments.timeout)
+    validate_fault_matrix(faults, selected_faults)
     transaction_hashes = [item["transaction_sha256"] for item in operations]
     require(
         len(transaction_hashes) == len(set(transaction_hashes)),
