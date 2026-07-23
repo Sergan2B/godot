@@ -1,0 +1,204 @@
+{
+  "artifacts": {
+    "godot_sha256": "sha256:f481ee807c8f13aa13ab6bade17b253f609cc15cd07ea6b4d5c8fa981c582b9b",
+    "model_free_report_sha256": "sha256:3ffdfa9ecb5a38eb36a2d73a6da91c4df96ee235253aabd15b81add2d71e437f",
+    "model_free_runner_sha256": "sha256:af20890a662daef639f6890a8c6196b78e1da97d42dd92ace9e8dbb7f905c316",
+    "sidecar_sha256": "sha256:ece1e086ea852693ba358fdd1f2dcd8cb5ce3b81da42a7ce1de2e17be3a297a1",
+    "validator_sha256": "sha256:2cb6ee0454c01549bcdc294c0a3216b6aa4839aee59d9dd0f9085e44e7371877"
+  },
+  "checks": {
+    "approval_form_only": true,
+    "bounded_reports": true,
+    "corrupt_journal_fail_closed": true,
+    "eight_operation_workflow": true,
+    "exact_targeted_undo": true,
+    "idempotency_closed": true,
+    "intervening_action_blocks_targeted_undo": true,
+    "native_undo_redo_correlated": true,
+    "no_mutation_after_prepare": true,
+    "no_persistent_undo_after_editor_restart": true,
+    "preapproval_rejections": true,
+    "response_loss_no_replay": true,
+    "source_content_unchanged": true,
+    "tool_registry_exact": true
+  },
+  "cleanup": {
+    "editor_processes_stopped": true,
+    "game_processes_stopped": true,
+    "sidecar_processes_stopped": true,
+    "temporary_workspaces_removed": true
+  },
+  "external_gates": {
+    "linux": {
+      "reason": "local qualifying coordinate is windows-x86_64",
+      "status": "not_run"
+    },
+    "macos": {
+      "reason": "local qualifying coordinate is windows-x86_64",
+      "status": "not_run"
+    },
+    "model_facing": {
+      "reason": "qualification uses a deterministic model-free client",
+      "status": "not_run"
+    },
+    "remote_ci": {
+      "reason": "no remote CI coordinate was requested",
+      "status": "not_run"
+    }
+  },
+  "lifecycle": {
+    "apply_exactly_once": true,
+    "native_redo_same_transaction": true,
+    "prepare_read_only": true,
+    "revision_relations_exact": true,
+    "targeted_undo_exact": true
+  },
+  "local_gates": {
+    "approval_contracts": {
+      "duration_ms": 639.493,
+      "status": "passed"
+    },
+    "cpp_s9_profiles": {
+      "duration_ms": 399.092,
+      "status": "passed"
+    },
+    "direct_bridge_matrix": {
+      "duration_ms": 406271.996,
+      "status": "passed"
+    },
+    "final_integrity": {
+      "duration_ms": 162.044,
+      "status": "passed"
+    },
+    "fixture_oracle": {
+      "duration_ms": 700.793,
+      "status": "passed"
+    },
+    "godot_editor_build": {
+      "duration_ms": 32002.481,
+      "status": "passed"
+    },
+    "model_free_mcp": {
+      "duration_ms": 376526.364,
+      "status": "passed"
+    },
+    "release_sidecar_build": {
+      "duration_ms": 224.819,
+      "status": "passed"
+    },
+    "rpc_conformance": {
+      "duration_ms": 1940.866,
+      "status": "passed"
+    },
+    "rust_clippy": {
+      "duration_ms": 291.334,
+      "status": "passed"
+    },
+    "rust_format": {
+      "duration_ms": 637.569,
+      "status": "passed"
+    },
+    "rust_workspace_tests": {
+      "duration_ms": 3206.662,
+      "status": "passed"
+    },
+    "sprint7_regression": {
+      "duration_ms": 33262.526,
+      "status": "passed"
+    },
+    "sprint8_regressions": {
+      "duration_ms": 120007.558,
+      "status": "passed"
+    }
+  },
+  "performance": {
+    "apply": {
+      "max_ms": 297.624,
+      "p50_ms": 291.42,
+      "p95_ms": 297.624
+    },
+    "bridge_dispatcher": {
+      "budget_usec": 2000,
+      "over_budget_count": 0,
+      "within_budget": true
+    },
+    "prepare": {
+      "max_ms": 49.965,
+      "p50_ms": 42.995,
+      "p95_ms": 49.965
+    },
+    "status": {
+      "max_ms": 30.758,
+      "p50_ms": 20.658,
+      "p95_ms": 30.758
+    },
+    "undo": {
+      "max_ms": 42.037,
+      "p50_ms": 34.829,
+      "p95_ms": 42.037
+    }
+  },
+  "platform": {
+    "architecture": "x86_64",
+    "os": "windows"
+  },
+  "profile": "qualifying_local_windows_x86_64",
+  "protocols": {
+    "bridge_rpc": "1.7",
+    "mcp": "2025-11-25",
+    "tools": 36
+  },
+  "recovery": {
+    "bridge_response_loss": "committed_without_replay",
+    "corrupt_journal": "quarantined_reads_available",
+    "disconnect_before_commit": "failed_without_action",
+    "editor_crash_before_commit": "pre_state_new_session",
+    "editor_restart_after_commit": "no_persistent_undo",
+    "journal_ack_restart": "committed_without_replay",
+    "sidecar_disconnect_prepared": "immutable_reprepare"
+  },
+  "redaction": {
+    "absolute_paths_absent": true,
+    "approval_material_absent": true,
+    "canaries_absent": true,
+    "native_ids_absent": true
+  },
+  "schema_version": "s9-editor-transactions-evidence/1.0",
+  "source": {
+    "commit": "3003f0a673cb26762242b99374b58f00047832ed",
+    "file_count": 327,
+    "fixture_manifest_sha256": "sha256:e72677b03fd632fdd6af57dd6baa3308e404ff28e5b55a2b6137ac086b4c231a",
+    "golden_sha256": "sha256:9dd9725d5c668ae7e126c45a54c0e8ab9f55856abb24c4dc96a8f4ed90c48c58",
+    "scope_manifest": "tests/codex/sprint9_source_scopes.txt",
+    "sha256": "sha256:4f22a0184f9a359d1daf06925a2e38846a75b33cafdc76f1414773b6c9d018b8"
+  },
+  "sprint": 9,
+  "status": "passed",
+  "summary": {
+    "elicitation_count": 13,
+    "fault_scenarios": 7,
+    "intervening_native_actions": 4,
+    "operations": 8,
+    "primary_transactions": 8,
+    "transaction_native_actions": 8
+  },
+  "toolchain": {
+    "cargo": "cargo 1.94.1 (29ea6fb6a 2026-03-24)",
+    "msvc": "17.14.37216.2",
+    "python": "3.14.5",
+    "rust_host": "x86_64-pc-windows-msvc",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)",
+    "scons": "SCons by Steven Knight et al.:",
+    "windows_sdk": "10.0.26100.0"
+  },
+  "transaction_identity_sha256": [
+    "sha256:f70ae136255dd600411f2968fd17491677f45f46394f6f8ccce6dcf01b034b52",
+    "sha256:55690954485d3c576d49a420f4574791bde0e58d050aa7c1e91c10c1860a4939",
+    "sha256:a5319e809d4205f3446f94f6a23fdde1060a83cc547052519d3f475e909fff95",
+    "sha256:41470cc4be25853ad9fb640d5b3f609530ea627da5be3091cc761922541a7b80",
+    "sha256:6af0f18e2a5cd495b4a5361628fd40e7138a6332e051c83ad799a82a7cf51c3b",
+    "sha256:8e48089394840672d2f668e438f6b6f5d9f0e655918f1f49b0035333e9e704fe",
+    "sha256:1632628c3e33b766df36e2f1e6f6f03562609a1332a584f6c8cdbf487b86f1b3",
+    "sha256:3fe5c6e7f329cee932264b43dc0c1773aea9f8f8d660865c1c66680902219c86"
+  ]
+}
