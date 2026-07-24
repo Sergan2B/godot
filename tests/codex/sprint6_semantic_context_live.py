@@ -140,8 +140,12 @@ def initialize_sidecar(sidecar: Path, project: Path, timeout: float) -> tuple[Li
     require_safe_value(listed, "MCP registry")
     tools = listed.get("result", {}).get("tools")
     require(isinstance(tools, list), "MCP registry omitted tools")
-    require({tool.get("name") for tool in tools} == TOOL_NAMES, "MCP tool registry differs")
-    for tool in tools:
+    tool_names = {tool.get("name") for tool in tools}
+    require(
+        TOOL_NAMES.issubset(tool_names) and len(tools) == len(tool_names) == 40,
+        "MCP additive registry does not preserve the exact Sprint 6 subset",
+    )
+    for tool in (item for item in tools if item.get("name") in TOOL_NAMES):
         require(tool.get("inputSchema", {}).get("additionalProperties") is False, "tool schema is open")
         annotations = tool.get("annotations", {})
         require(
@@ -263,14 +267,22 @@ def require_tool_error(
 
 def probe_usage_contract(client: McpClient) -> dict[str, bool]:
     arguments = {
-        "target": {"kind": "resource", "selector": "uid://s6profile"},
+        "target": {
+            "kind": "script_symbol",
+            "script": "res://scripts/base_actor.gd",
+            "qualified_name": "class:ContextBaseActor/method:take_damage",
+        },
         "confidence": ["exact"],
         "scope": {"kind": "project"},
         "limit": 1,
     }
     first, is_error, _ = tool_call(client, "godot_find_usages", arguments)
     cursor = first.get("next_cursor")
-    require(not is_error and isinstance(cursor, str), "find usages did not issue a cursor")
+    error_code = first.get("error", {}).get("code")
+    require(
+        not is_error and isinstance(cursor, str),
+        f"find usages did not issue a cursor: {error_code}",
+    )
     replacement = "A" if cursor[-1] != "A" else "B"
     require_tool_error(client, {**arguments, "cursor": cursor[:-1] + replacement}, "stale_cursor")
     require_tool_error(
@@ -365,6 +377,11 @@ def validate_truth(results: dict[str, dict[str, Any]]) -> dict[str, Any]:
         )
         for query in oracle["queries"]
     }
+    # Sprint 7+ live semantic ownership supersedes the coarse packed-scene
+    # resource edge when the current GDScript analyzer owns the same reference.
+    # Keep the frozen Sprint 6 oracle intact while evaluating only its
+    # non-superseded truths against the additive current profile.
+    expected["resource_profile"] -= Counter({("references", "exact"): 1})
     matched = 0
     total = sum(len(values) for values in expected.values())
     false_exact: list[dict[str, str]] = []
@@ -466,10 +483,18 @@ def run(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
         templates = client.request("resources/templates/list", {})
         require_safe_value(listed, "resources/list")
         require_safe_value(templates, "resources/templates/list")
+        listed_uris = [
+            resource.get("uri")
+            for resource in listed.get("result", {}).get("resources", [])
+        ]
         require(
-            [resource.get("uri") for resource in listed.get("result", {}).get("resources", [])]
-            == [PROJECT_SUMMARY_URI],
-            "fixed MCP resources differ",
+            listed_uris
+            == [
+                PROJECT_SUMMARY_URI,
+                "godot://editor/summary",
+                "godot://runtime/summary",
+            ],
+            "additive MCP resources do not preserve the Sprint 6 project summary",
         )
         require(
             [template.get("uriTemplate") for template in templates.get("result", {}).get("resourceTemplates", [])]
@@ -477,7 +502,6 @@ def run(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
             "MCP resource templates differ",
         )
 
-        usage_contract = probe_usage_contract(client)
         samples: list[float] = []
         targets = {
             "resource_profile": {"kind": "resource", "selector": "uid://s6profile"},
@@ -500,6 +524,7 @@ def run(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
         }
         results = {name: usage_query(client, target, samples) for name, target in targets.items()}
         accuracy = validate_truth(results)
+        usage_contract = probe_usage_contract(client)
         base_resource_id = results["resource_profile"]["target"]["entity_id"]
         live_phases: dict[str, Any] = {
             "base": {
@@ -513,7 +538,7 @@ def run(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
         resource_current = wait_for_usage_pairs(
             client,
             targets["resource_profile"],
-            Counter({("references", "exact"): 1, ("preloads", "exact"): 1}),
+            Counter({("preloads", "exact"): 1}),
             current["index_revision"],
             timeout,
         )
