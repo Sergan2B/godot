@@ -550,7 +550,10 @@ class FixtureSession:
         self.frame_telemetry: dict[str, Any] | None = None
 
     def __enter__(self) -> FixtureSession:
-        self.temporary = tempfile.TemporaryDirectory(prefix="s9-mcp-")
+        self.temporary = tempfile.TemporaryDirectory(
+            prefix="s9-mcp-",
+            dir=None if os.name == "nt" else "/tmp",
+        )
         self.project_root = Path(self.temporary.name) / "project"
         shutil.copytree(
             FIXTURE_ROOT,
