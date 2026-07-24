@@ -1,0 +1,134 @@
+{
+  "schema_version": "s10-change-set-golden/1.0",
+  "operation_kinds": [
+    "attach_script",
+    "connect_signal",
+    "create_node",
+    "create_resource",
+    "delete_node",
+    "detach_script",
+    "disconnect_signal",
+    "reparent_node",
+    "set_property",
+    "update_gdscript",
+    "update_resource"
+  ],
+  "valid_change_sets": [
+    {
+      "id": "memory_alias_property",
+      "operation_count": 2,
+      "operation_kinds": ["create_node", "set_property"],
+      "aliases": ["alias:created"],
+      "save_scope": [],
+      "native_actions": 1
+    },
+    {
+      "id": "compound_scene_resource_script",
+      "operation_count": 4,
+      "operation_kinds": [
+        "create_node",
+        "connect_signal",
+        "update_resource",
+        "update_gdscript"
+      ],
+      "aliases": ["alias:created"],
+      "save_scope": [
+        "res://validation/accent.tres",
+        "res://validation/fixture.gd",
+        "res://validation/main.tscn"
+      ],
+      "native_actions": 1
+    },
+    {
+      "id": "maximum_bounded_change_set",
+      "operation_count": 16,
+      "operation_kinds": [
+        "create_node",
+        "create_node",
+        "create_node",
+        "create_node",
+        "set_property",
+        "set_property",
+        "set_property",
+        "set_property",
+        "reparent_node",
+        "reparent_node",
+        "attach_script",
+        "detach_script",
+        "connect_signal",
+        "disconnect_signal",
+        "create_resource",
+        "update_resource"
+      ],
+      "aliases": [
+        "alias:node-a",
+        "alias:node-b",
+        "alias:node-c",
+        "alias:node-d",
+        "alias:resource"
+      ],
+      "save_scope": [
+        "res://validation/generated.tres",
+        "res://validation/main.tscn"
+      ],
+      "native_actions": 1
+    }
+  ],
+  "invalid_change_sets": [
+    {"id": "zero_operations", "error": "change_set_operation_count", "operation_count": 0},
+    {"id": "seventeen_operations", "error": "change_set_operation_count", "operation_count": 17},
+    {"id": "alias_used_before_create", "error": "change_set_dependency_invalid", "operation_count": 2},
+    {"id": "duplicate_alias", "error": "change_set_dependency_invalid", "operation_count": 2},
+    {"id": "dependency_cycle", "error": "change_set_dependency_invalid", "operation_count": 2},
+    {"id": "duplicate_persistent_path", "error": "change_set_conflict", "operation_count": 2},
+    {"id": "path_outside_save_scope", "error": "save_scope_mismatch", "operation_count": 1},
+    {"id": "closed_resource_type", "error": "resource_type_unsupported", "operation_count": 1}
+  ],
+  "rollback_matrix": {
+    "never": {
+      "required_failure": "validation_failed",
+      "required_inconclusive": "validation_inconclusive"
+    },
+    "on_required_failure": {
+      "required_failure": "failed_rolled_back",
+      "required_inconclusive": "failed_rolled_back"
+    },
+    "on_any_failure": {
+      "required_failure": "failed_rolled_back",
+      "optional_failure": "failed_rolled_back"
+    }
+  },
+  "confirmation_matrix": {
+    "always_ask": ["low", "destructive"],
+    "session_grant": ["low"],
+    "session_grant_ttl_ms": 900000,
+    "forbidden_grant_risks": ["destructive", "runtime", "persistent"]
+  },
+  "report_limits": {
+    "page_bytes": 65536,
+    "pages": 4,
+    "retained_bytes": 262144
+  },
+  "fault_scenarios": [
+    "apply_response_loss",
+    "approval_response_loss",
+    "bridge_disconnect_after_commit",
+    "bridge_disconnect_before_commit",
+    "editor_crash_after_commit",
+    "editor_crash_before_commit",
+    "external_postimage_conflict",
+    "finalization_response_loss",
+    "rollback_response_loss",
+    "sidecar_restart_during_validation",
+    "validation_timeout"
+  ],
+  "required_checks": [
+    "intrinsic",
+    "persistence",
+    "reload_reparse",
+    "index_convergence",
+    "semantic_graph",
+    "diagnostics"
+  ],
+  "optional_checks": ["runtime"]
+}

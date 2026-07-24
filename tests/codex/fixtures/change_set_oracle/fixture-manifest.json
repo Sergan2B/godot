@@ -1,0 +1,29 @@
+{
+  "schema_version": "s10-change-set-fixture-manifest/1.0",
+  "project": "../transaction_prepare_project",
+  "golden": "golden-change-sets.json",
+  "golden_sha256": "e440a85c9d837c7d42bdf0c3977eede964cb2915d3fa967789e4c7ee0816c076",
+  "operation_count": {"minimum": 1, "maximum": 16, "first_rejected": 17},
+  "rpc": {"minimum": "1.0", "maximum": "1.8", "change_set": "1.8"},
+  "mcp_tools": {"sprint9": 36, "sprint10": 40},
+  "canaries": [
+    "S10_APPROVAL_CANARY",
+    "S10_POSTIMAGE_CANARY",
+    "S10_SCRIPT_SOURCE_CANARY"
+  ],
+  "forbidden_output_fields": [
+    "approval",
+    "escrow",
+    "handle",
+    "mac",
+    "native_history_id",
+    "nonce",
+    "object_id",
+    "pointer",
+    "postimage_bytes",
+    "preimage_bytes",
+    "receipt",
+    "session_token",
+    "source_text"
+  ]
+}
