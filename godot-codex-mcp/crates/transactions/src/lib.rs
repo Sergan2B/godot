@@ -1,4 +1,5 @@
 mod journal;
+mod recovery;
 mod validation;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,6 +19,10 @@ pub use journal::{
     JOURNAL_SCHEMA, JournalError, MAX_JOURNAL_BYTES, MAX_JOURNAL_RECORDS, TransactionJournalRecord,
 };
 use journal::{JournalState, JournalStore};
+pub use recovery::{
+    RecoveryDisposition, RollbackDecision, RollbackEvidence, RollbackPolicy, RuntimeValidationGate,
+    RuntimeValidationObservation, RuntimeValidationState,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 pub use validation::{
