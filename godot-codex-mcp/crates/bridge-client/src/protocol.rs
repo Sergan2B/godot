@@ -29,32 +29,39 @@ type HmacSha256 = Hmac<Sha256>;
 pub(crate) fn supported_protocol_version(version: &str) -> bool {
     matches!(
         version,
-        "1.0" | "1.1" | "1.2" | "1.3" | "1.4" | "1.5" | "1.6" | "1.7"
+        "1.0" | "1.1" | "1.2" | "1.3" | "1.4" | "1.5" | "1.6" | "1.7" | "1.8"
     )
 }
 
 pub(crate) fn has_resource_profile(version: &str) -> bool {
-    matches!(version, "1.2" | "1.3" | "1.4" | "1.5" | "1.6" | "1.7")
+    matches!(
+        version,
+        "1.2" | "1.3" | "1.4" | "1.5" | "1.6" | "1.7" | "1.8"
+    )
 }
 
 pub(crate) fn has_scene_profile(version: &str) -> bool {
-    matches!(version, "1.3" | "1.4" | "1.5" | "1.6" | "1.7")
+    matches!(version, "1.3" | "1.4" | "1.5" | "1.6" | "1.7" | "1.8")
 }
 
 pub(crate) fn has_script_profile(version: &str) -> bool {
-    matches!(version, "1.4" | "1.5" | "1.6" | "1.7")
+    matches!(version, "1.4" | "1.5" | "1.6" | "1.7" | "1.8")
 }
 
 pub(crate) fn has_live_editor_profile(version: &str) -> bool {
-    matches!(version, "1.5" | "1.6" | "1.7")
+    matches!(version, "1.5" | "1.6" | "1.7" | "1.8")
 }
 
 pub(crate) fn has_runtime_profile(version: &str) -> bool {
-    matches!(version, "1.6" | "1.7")
+    matches!(version, "1.6" | "1.7" | "1.8")
 }
 
 pub(crate) fn has_transaction_profile(version: &str) -> bool {
-    version == "1.7"
+    matches!(version, "1.7" | "1.8")
+}
+
+pub(crate) fn has_change_set_profile(version: &str) -> bool {
+    version == "1.8"
 }
 
 #[derive(Debug, Error)]
@@ -468,7 +475,7 @@ impl Session {
         let mut stream = FrameStream::connect(&discovery.endpoint).await?;
         // Bridge negotiation advertises one highest supported minor per major;
         // the server selects the best 1.x fallback it implements.
-        let offered_versions = vec!["1.7".to_owned()];
+        let offered_versions = vec!["1.8".to_owned()];
         let mut client_nonce = [0_u8; 32];
         getrandom::fill(&mut client_nonce)
             .map_err(|error| BridgeError::Invalid(format!("client nonce failed: {error}")))?;
@@ -1074,24 +1081,28 @@ mod tests {
     }
 
     #[test]
-    fn rpc_1_7_is_additive_and_all_older_minor_profiles_remain_supported() {
-        for version in ["1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7"] {
+    fn rpc_1_8_is_additive_and_all_older_minor_profiles_remain_supported() {
+        for version in [
+            "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8",
+        ] {
             assert!(supported_protocol_version(version));
         }
-        assert!(!supported_protocol_version("1.8"));
+        assert!(!supported_protocol_version("1.9"));
         assert!(!supported_protocol_version("2.0"));
         assert!(!has_resource_profile("1.1"));
-        assert!(has_resource_profile("1.7"));
+        assert!(has_resource_profile("1.8"));
         assert!(!has_scene_profile("1.2"));
-        assert!(has_scene_profile("1.7"));
+        assert!(has_scene_profile("1.8"));
         assert!(!has_script_profile("1.3"));
-        assert!(has_script_profile("1.7"));
+        assert!(has_script_profile("1.8"));
         assert!(!has_live_editor_profile("1.4"));
-        assert!(has_live_editor_profile("1.7"));
+        assert!(has_live_editor_profile("1.8"));
         assert!(!has_runtime_profile("1.5"));
-        assert!(has_runtime_profile("1.7"));
+        assert!(has_runtime_profile("1.8"));
         assert!(!has_transaction_profile("1.6"));
-        assert!(has_transaction_profile("1.7"));
+        assert!(has_transaction_profile("1.8"));
+        assert!(!has_change_set_profile("1.7"));
+        assert!(has_change_set_profile("1.8"));
     }
 
     #[test]

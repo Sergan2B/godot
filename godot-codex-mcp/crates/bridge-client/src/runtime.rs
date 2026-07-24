@@ -621,7 +621,7 @@ pub(crate) fn parse_runtime_notification(
             let mut domains = event.changed_domains.clone();
             domains.sort_by_key(|domain| *domain as u8);
             domains.dedup();
-            if !matches!(message.protocol_version.as_str(), "1.6" | "1.7")
+            if !matches!(message.protocol_version.as_str(), "1.6" | "1.7" | "1.8")
                 || message.kind != "notification"
                 || message.method != "runtime.event"
                 || message.context.project_id != session.project_id()
@@ -645,7 +645,7 @@ pub(crate) fn parse_runtime_notification(
                     BridgeError::Invalid(format!("runtime.invalidated is invalid: {error}"))
                 })?;
             let invalidated = message.params;
-            if !matches!(message.protocol_version.as_str(), "1.6" | "1.7")
+            if !matches!(message.protocol_version.as_str(), "1.6" | "1.7" | "1.8")
                 || message.kind != "notification"
                 || message.method != "runtime.invalidated"
                 || message.context.project_id != session.project_id()
@@ -680,7 +680,7 @@ fn require_runtime(session: &Session) -> Result<(), BridgeError> {
         "runtime.diagnostics",
         "runtime.viewport_capture",
     ];
-    if !matches!(session.protocol_version(), "1.6" | "1.7")
+    if !matches!(session.protocol_version(), "1.6" | "1.7" | "1.8")
         || CAPABILITIES
             .iter()
             .any(|capability| !session.capabilities().contains(*capability))
@@ -923,7 +923,7 @@ async fn receive_runtime_snapshot(
             .await?,
     )
     .map_err(|error| BridgeError::Invalid(format!("runtime snapshot begin is invalid: {error}")))?;
-    if !matches!(begin.protocol_version.as_str(), "1.6" | "1.7")
+    if !matches!(begin.protocol_version.as_str(), "1.6" | "1.7" | "1.8")
         || begin.kind != "notification"
         || begin.method != "snapshot.begin"
         || begin.params.snapshot_id != accepted.snapshot_id
@@ -954,7 +954,7 @@ async fn receive_runtime_snapshot(
             .map_err(|error| {
                 BridgeError::Invalid(format!("runtime payload_json is invalid: {error}"))
             })?;
-        if !matches!(chunk.protocol_version.as_str(), "1.6" | "1.7")
+        if !matches!(chunk.protocol_version.as_str(), "1.6" | "1.7" | "1.8")
             || chunk.kind != "chunk"
             || chunk.snapshot_id != accepted.snapshot_id
             || chunk.domain != "runtime"
@@ -989,7 +989,7 @@ async fn receive_runtime_snapshot(
             .await?,
     )
     .map_err(|error| BridgeError::Invalid(format!("runtime snapshot end is invalid: {error}")))?;
-    if !matches!(end.protocol_version.as_str(), "1.6" | "1.7")
+    if !matches!(end.protocol_version.as_str(), "1.6" | "1.7" | "1.8")
         || end.kind != "notification"
         || end.method != "snapshot.end"
         || end.params.snapshot_id != accepted.snapshot_id

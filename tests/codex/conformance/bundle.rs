@@ -34,8 +34,13 @@ mod transaction_contract {
     include!("transaction_contract.rs");
 }
 
+#[cfg(test)]
+mod change_set_contract {
+    include!("change_set_contract.rs");
+}
+
 const SCHEMA_BASE_URI: &str = "https://godot-codex.local/schema/v1/";
-const SCHEMA_FILES: [&str; 12] = [
+const SCHEMA_FILES: [&str; 13] = [
     "common.schema.json",
     "discovery.schema.json",
     "fixture-manifest.schema.json",
@@ -48,6 +53,7 @@ const SCHEMA_FILES: [&str; 12] = [
     "script.schema.json",
     "runtime.schema.json",
     "transaction.schema.json",
+    "change-set.schema.json",
 ];
 
 fn bundle_root() -> PathBuf {
@@ -317,7 +323,7 @@ mod tests {
 
     #[test]
     fn canonical_schema_fixture_bundle_is_self_consistent() {
-        assert_eq!(validate_canonical_bundle().unwrap(), 167);
+        assert_eq!(validate_canonical_bundle().unwrap(), 177);
     }
 
     #[test]

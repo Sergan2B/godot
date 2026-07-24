@@ -8,7 +8,7 @@
   ],
   "properties": {
     "bundle_version": {
-      "const": "1.7"
+      "const": "1.8"
     },
     "cases": {
       "type": "array",

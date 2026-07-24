@@ -940,7 +940,7 @@ TEST_CASE("[CodexBridge] Handshake negotiates the compatible 1.1 minor") {
 	CHECK(handshake.get_selected_protocol_version() == "1.1");
 }
 
-TEST_CASE("[CodexS9TransactionProfile] Handshake negotiates Bridge RPC 1.7 and preserves exact downgrades") {
+TEST_CASE("[CodexS10Rpc18Profile] Handshake negotiates Bridge RPC 1.8 and preserves exact downgrades") {
 	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
 	const PackedByteArray token = bytes_from_range(0xa0, 32);
@@ -950,10 +950,10 @@ TEST_CASE("[CodexS9TransactionProfile] Handshake negotiates Bridge RPC 1.7 and p
 	BridgeHandshakeSession handshake(token, project_id, editor_session_id, 0);
 	BridgeHandshakeSession::Outcome challenge;
 	REQUIRE(handshake.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, "1.9"), 1, challenge) == OK);
-	CHECK(challenge.response["selected_protocol_version"] == "1.7");
-	CHECK(handshake.get_selected_protocol_version() == "1.7");
+	CHECK(challenge.response["selected_protocol_version"] == "1.8");
+	CHECK(handshake.get_selected_protocol_version() == "1.8");
 
-	const char *versions[] = { "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7" };
+	const char *versions[] = { "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8" };
 	for (const char *version : versions) {
 		BridgeHandshakeSession exact(token, project_id, editor_session_id, 0);
 		REQUIRE(exact.handle_message(make_client_hello(project_id, editor_session_id, nonce_encoded, version), 1, challenge) == OK);
@@ -1572,13 +1572,13 @@ TEST_CASE("[CodexS8BridgeProfile] RPC 1.6 exposes bounded runtime methods and st
 	CHECK(rpc_error_code(outcome) == "capability_unavailable");
 }
 
-TEST_CASE("[CodexS9TransactionProfile] RPC 1.7 preserves the version matrix and routes the guarded core") {
+TEST_CASE("[CodexS10Rpc18Profile] RPC 1.8 preserves the version matrix and routes the guarded core") {
 	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
-	const char *versions[] = { "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7" };
-	const int capability_counts[] = { 2, 6, 8, 11, 15, 20, 26, 27 };
+	const char *versions[] = { "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8" };
+	const int capability_counts[] = { 2, 6, 8, 11, 15, 20, 26, 27, 29 };
 	const Dictionary vector = load_transaction_vector();
-	for (int version_index = 0; version_index < 8; version_index++) {
+	for (int version_index = 0; version_index < 9; version_index++) {
 		const String version = versions[version_index];
 		BridgeRpcSession rpc(project_id, editor_session_id);
 		rpc.set_protocol_version(version);
@@ -1591,13 +1591,27 @@ TEST_CASE("[CodexS9TransactionProfile] RPC 1.7 preserves the version matrix and 
 		const Array capabilities = result["capabilities"];
 		CHECK(capabilities.size() == capability_counts[version_index]);
 		const Dictionary limits = result["limits"];
-		if (version == "1.7") {
-			const Dictionary transaction = capabilities[capabilities.size() - 1];
+		if (version == "1.7" || version == "1.8") {
+			const int transaction_index = version == "1.8" ? capabilities.size() - 3 : capabilities.size() - 1;
+			const Dictionary transaction = capabilities[transaction_index];
 			CHECK(transaction["name"] == "transaction.scene_v1");
 			CHECK(transaction["readiness"] == "ready");
 			CHECK(Dictionary(transaction["transaction_readiness"])["approval_state"] == "available");
 			CHECK(Dictionary(transaction["transaction_readiness"])["reason"] == "ready");
 			CHECK((int64_t)limits["transaction_prepared_records"] == 64);
+			if (version == "1.8") {
+				const Dictionary change_set = capabilities[capabilities.size() - 2];
+				const Dictionary validation = capabilities[capabilities.size() - 1];
+				CHECK(change_set["name"] == "transaction.change_set_v1");
+				CHECK(change_set["readiness"] == "unavailable");
+				CHECK(change_set["reason"] == "compound_executor_unavailable");
+				CHECK(validation["name"] == "validation.automatic_v1");
+				CHECK(validation["readiness"] == "unavailable");
+				CHECK((int64_t)limits["change_set_operations"] == 16);
+				REQUIRE(rpc.handle_message(make_rpc_request("req:compound-unavailable", "transaction.prepare_change_set", Dictionary(), project_id, editor_session_id, 5000, version), 2, 2, outcome) == OK);
+				CHECK(rpc_error_code(outcome) == "capability_unavailable");
+				CHECK_FALSE(outcome.dispatch);
+			}
 		} else {
 			CHECK_FALSE(limits.has("transaction_prepared_records"));
 			const Dictionary prepare_params = Dictionary(Dictionary(vector["prepare_request"])["params"]);

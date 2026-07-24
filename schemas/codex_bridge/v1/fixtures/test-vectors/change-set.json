@@ -1,0 +1,165 @@
+{
+  "capabilities": [
+    {
+      "name": "transaction.change_set_v1",
+      "version": "1.0",
+      "readiness": "unavailable",
+      "reason": "compound_executor_unavailable",
+      "limits": {
+        "operations": 16,
+        "report_page_bytes": 65536,
+        "report_pages": 4,
+        "retained_report_bytes": 262144
+      }
+    },
+    {
+      "name": "validation.automatic_v1",
+      "version": "1.0",
+      "readiness": "unavailable",
+      "reason": "validation_coordinator_unavailable",
+      "limits": {
+        "operations": 16,
+        "report_page_bytes": 65536,
+        "report_pages": 4,
+        "retained_report_bytes": 262144
+      }
+    }
+  ],
+  "operations": [
+    {
+      "kind": "create_resource",
+      "alias": "alias:accent",
+      "path": "res://validation/accent.tres",
+      "resource_class": "Gradient",
+      "properties": [
+        {
+          "name": "interpolation_mode",
+          "value": { "type": "int", "value": 1 }
+        }
+      ]
+    },
+    {
+      "kind": "update_resource",
+      "resource": "alias:accent",
+      "expected_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "properties": [
+        {
+          "name": "interpolation_color_space",
+          "value": { "type": "int", "value": 0 }
+        }
+      ]
+    },
+    {
+      "kind": "update_gdscript",
+      "path": "res://validation/fixture.gd",
+      "expected_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "edits": [
+        {
+          "start_byte": 10,
+          "end_byte": 15,
+          "replacement": "ready"
+        }
+      ]
+    }
+  ],
+  "prepare_request": {
+    "protocol_version": "1.8",
+    "kind": "request",
+    "request_id": "req:s10-prepare",
+    "method": "transaction.prepare_change_set",
+    "context": {
+      "project_id": "project:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "deadline_ms": 5000,
+    "params": {
+      "idempotency_key": "idempotency:cccccccccccccccccccccccccccccccc",
+      "coordinates": {
+        "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "scene_id": "scene:dddddddddddddddddddddddddddddddd",
+        "scene_revision": 7,
+        "operation_seq": 12,
+        "resource_revision": 4,
+        "script_graph_revision": 9
+      },
+      "operations": [
+        {
+          "kind": "create_resource",
+          "alias": "alias:accent",
+          "path": "res://validation/accent.tres",
+          "resource_class": "Gradient",
+          "properties": []
+        },
+        {
+          "kind": "update_gdscript",
+          "path": "res://validation/fixture.gd",
+          "expected_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "edits": [
+            {
+              "start_byte": 10,
+              "end_byte": 15,
+              "replacement": "ready"
+            }
+          ]
+        }
+      ],
+      "save_scope": {
+        "paths": [
+          "res://validation/accent.tres",
+          "res://validation/fixture.gd"
+        ]
+      },
+      "validation_policy": {
+        "rollback": "on_required_failure",
+        "warnings": "fail_on_introduced",
+        "runtime": "skip"
+      }
+    }
+  },
+  "validation_complete_request": {
+    "protocol_version": "1.8",
+    "kind": "request",
+    "request_id": "req:s10-validation-complete",
+    "method": "transaction.validation_complete",
+    "context": {
+      "project_id": "project:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "params": {
+      "change_set_id": "change-set:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "validation_report_id": "validation-report:ffffffffffffffffffffffffffffffff",
+      "report_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "outcome": "passed"
+    }
+  },
+  "rollback_request": {
+    "protocol_version": "1.8",
+    "kind": "request",
+    "request_id": "req:s10-rollback",
+    "method": "transaction.rollback",
+    "context": {
+      "project_id": "project:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "params": {
+      "change_set_id": "change-set:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "expected_transaction_seq": 4,
+      "expected_postimage_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    }
+  },
+  "event": {
+    "protocol_version": "1.8",
+    "kind": "notification",
+    "context": {
+      "project_id": "project:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "method": "transaction.event",
+    "params": {
+      "change_set_id": "change-set:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "transaction_seq": 4,
+      "state": "validating",
+      "validation_report_id": "validation-report:ffffffffffffffffffffffffffffffff"
+    }
+  }
+}

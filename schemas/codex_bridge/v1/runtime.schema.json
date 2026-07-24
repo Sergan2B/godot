@@ -297,7 +297,7 @@
         { "$ref": "rpc.schema.json#/$defs/request" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.6", "1.7"] },
+            "protocol_version": { "enum": ["1.6", "1.7", "1.8"] },
             "method": { "const": "runtime.run" },
             "params": { "$ref": "#/$defs/runParams" }
           }
@@ -309,7 +309,7 @@
         { "$ref": "rpc.schema.json#/$defs/request" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.6", "1.7"] },
+            "protocol_version": { "enum": ["1.6", "1.7", "1.8"] },
             "params": { "$ref": "#/$defs/guardParams" }
           }
         }
@@ -394,7 +394,7 @@
         { "$ref": "rpc.schema.json#/$defs/request" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.6", "1.7"] },
+            "protocol_version": { "enum": ["1.6", "1.7", "1.8"] },
             "method": { "const": "runtime.snapshot.get" },
             "params": { "$ref": "#/$defs/runtimeSnapshotParams" }
           }
@@ -436,7 +436,7 @@
         { "$ref": "rpc.schema.json#/$defs/notification" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.6", "1.7"] },
+            "protocol_version": { "enum": ["1.6", "1.7", "1.8"] },
             "method": { "const": "snapshot.begin" },
             "params": {
               "type": "object",
@@ -461,7 +461,7 @@
         {
           "required": ["payload_json"],
           "properties": {
-            "protocol_version": { "enum": ["1.6", "1.7"] },
+            "protocol_version": { "enum": ["1.6", "1.7", "1.8"] },
             "payload_json": { "type": "string", "maxLength": 524288 },
             "payload": {
               "type": "object",
@@ -487,7 +487,7 @@
         { "$ref": "rpc.schema.json#/$defs/notification" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.6", "1.7"] },
+            "protocol_version": { "enum": ["1.6", "1.7", "1.8"] },
             "method": { "const": "snapshot.end" },
             "params": {
               "type": "object",
@@ -522,7 +522,7 @@
         { "$ref": "rpc.schema.json#/$defs/ack" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.6", "1.7"] },
+            "protocol_version": { "enum": ["1.6", "1.7", "1.8"] },
             "params": {
               "type": "object",
               "required": ["snapshot_id", "domain", "through_chunk"],
@@ -556,7 +556,7 @@
         { "$ref": "rpc.schema.json#/$defs/request" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.6", "1.7"] },
+            "protocol_version": { "enum": ["1.6", "1.7", "1.8"] },
             "method": { "const": "runtime.object.inspect" },
             "params": { "$ref": "#/$defs/objectInspectParams" }
           }
@@ -634,7 +634,7 @@
         { "$ref": "rpc.schema.json#/$defs/request" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.6", "1.7"] },
+            "protocol_version": { "enum": ["1.6", "1.7", "1.8"] },
             "method": { "const": "runtime.stack.get" },
             "params": { "$ref": "#/$defs/stackGetParams" }
           }
@@ -673,7 +673,7 @@
         { "$ref": "rpc.schema.json#/$defs/request" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.6", "1.7"] },
+            "protocol_version": { "enum": ["1.6", "1.7", "1.8"] },
             "method": { "const": "runtime.viewport.capture" },
             "params": { "$ref": "#/$defs/viewportCaptureParams" }
           }
@@ -718,7 +718,7 @@
         { "$ref": "rpc.schema.json#/$defs/notification" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.6", "1.7"] },
+            "protocol_version": { "enum": ["1.6", "1.7", "1.8"] },
             "method": { "const": "runtime.event" },
             "params": {
               "type": "object",
@@ -775,7 +775,7 @@
         { "$ref": "rpc.schema.json#/$defs/notification" },
         {
           "properties": {
-            "protocol_version": { "enum": ["1.6", "1.7"] },
+            "protocol_version": { "enum": ["1.6", "1.7", "1.8"] },
             "method": { "const": "runtime.invalidated" },
             "params": {
               "type": "object",

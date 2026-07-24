@@ -703,7 +703,7 @@ struct ApplyParams<'a> {
 }
 
 fn ensure_available(session: &Session) -> Result<(), BridgeError> {
-    if session.protocol_version() != "1.7"
+    if !matches!(session.protocol_version(), "1.7" | "1.8")
         || !session.capabilities().contains("transaction.scene_v1")
     {
         return Err(BridgeError::CapabilityUnavailable {
@@ -843,7 +843,7 @@ pub(crate) async fn next_event(session: &mut Session) -> Result<TransactionEvent
     let mut value = session.receive_transaction_notification().await?;
     normalize_wire_integers(&mut value);
     let envelope: TransactionEventEnvelope = serde_json::from_value(value)?;
-    if envelope.protocol_version != "1.7"
+    if !matches!(envelope.protocol_version.as_str(), "1.7" | "1.8")
         || envelope.kind != "notification"
         || envelope.method != "transaction.event"
         || envelope.context.project_id != session.project_id()

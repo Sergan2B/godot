@@ -1,0 +1,382 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Bridge RPC 1.8 compound changes and automatic validation",
+  "oneOf": [
+    { "$ref": "#/$defs/prepareChangeSetRequest" },
+    { "$ref": "#/$defs/validationCompleteRequest" },
+    { "$ref": "#/$defs/rollbackRequest" },
+    { "$ref": "#/$defs/changeSetEvent" }
+  ],
+  "$defs": {
+    "safeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "changeSetId": {
+      "type": "string",
+      "pattern": "^change-set:[0-9a-f]{32}$"
+    },
+    "validationReportId": {
+      "type": "string",
+      "pattern": "^validation-report:[0-9a-f]{32}$"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^idempotency:[0-9a-f]{32}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "projectPath": {
+      "type": "string",
+      "minLength": 7,
+      "maxLength": 1024,
+      "pattern": "^res://(?!/)(?!.*(?:/\\.\\./|/\\.\\.$))(?!.*\\\\)[^\\u0000-\\u001f]*$"
+    },
+    "planRef": {
+      "oneOf": [
+        { "type": "string", "pattern": "^node:[0-9a-f]{32}$" },
+        { "type": "string", "pattern": "^resource:(?:uid:[0-9]+|path:[0-9a-f]{64})$" },
+        { "type": "string", "pattern": "^alias:[a-z][a-z0-9_]{0,63}$" }
+      ]
+    },
+    "saveScope": {
+      "type": "object",
+      "required": ["paths"],
+      "properties": {
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 18,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/projectPath" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "rollbackPolicy": {
+      "enum": ["never", "on_required_failure", "on_any_failure"]
+    },
+    "warningPolicy": {
+      "enum": ["allow", "fail_on_introduced"]
+    },
+    "runtimePolicy": {
+      "enum": ["skip", "run_current_scene", "run_project"]
+    },
+    "validationPolicy": {
+      "type": "object",
+      "required": ["rollback", "warnings", "runtime"],
+      "properties": {
+        "rollback": { "$ref": "#/$defs/rollbackPolicy" },
+        "warnings": { "$ref": "#/$defs/warningPolicy" },
+        "runtime": { "$ref": "#/$defs/runtimePolicy" },
+        "runtime_timeout_ms": {
+          "type": "integer",
+          "minimum": 250,
+          "maximum": 30000
+        }
+      },
+      "additionalProperties": false
+    },
+    "resourceClass": {
+      "enum": [
+        "Gradient",
+        "Curve",
+        "Curve2D",
+        "Curve3D",
+        "Animation",
+        "CanvasItemMaterial",
+        "StandardMaterial3D"
+      ]
+    },
+    "storedProperty": {
+      "type": "object",
+      "required": ["name", "value"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "value": { "$ref": "transaction.schema.json#/$defs/writableVariant" }
+      },
+      "additionalProperties": false
+    },
+    "createResource": {
+      "type": "object",
+      "required": ["kind", "alias", "path", "resource_class", "properties"],
+      "properties": {
+        "kind": { "const": "create_resource" },
+        "alias": { "type": "string", "pattern": "^alias:[a-z][a-z0-9_]{0,63}$" },
+        "path": { "$ref": "#/$defs/projectPath" },
+        "resource_class": { "$ref": "#/$defs/resourceClass" },
+        "properties": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/storedProperty" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "updateResource": {
+      "type": "object",
+      "required": ["kind", "resource", "expected_hash", "properties"],
+      "properties": {
+        "kind": { "const": "update_resource" },
+        "resource": { "$ref": "#/$defs/planRef" },
+        "expected_hash": { "$ref": "#/$defs/digest" },
+        "properties": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/storedProperty" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "scriptEdit": {
+      "type": "object",
+      "required": ["start_byte", "end_byte", "replacement"],
+      "properties": {
+        "start_byte": { "$ref": "#/$defs/safeInteger" },
+        "end_byte": { "$ref": "#/$defs/safeInteger" },
+        "replacement": {
+          "type": "string",
+          "maxLength": 65536
+        }
+      },
+      "additionalProperties": false
+    },
+    "updateGdscript": {
+      "type": "object",
+      "required": ["kind", "path", "expected_hash", "edits"],
+      "properties": {
+        "kind": { "const": "update_gdscript" },
+        "path": {
+          "allOf": [
+            { "$ref": "#/$defs/projectPath" },
+            { "pattern": "\\.gd$" }
+          ]
+        },
+        "expected_hash": { "$ref": "#/$defs/digest" },
+        "edits": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/scriptEdit" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "legacyOperation": {
+      "$ref": "transaction.schema.json#/$defs/operation"
+    },
+    "operation": {
+      "oneOf": [
+        { "$ref": "#/$defs/legacyOperation" },
+        { "$ref": "#/$defs/createResource" },
+        { "$ref": "#/$defs/updateResource" },
+        { "$ref": "#/$defs/updateGdscript" }
+      ]
+    },
+    "revisionCoordinates": {
+      "type": "object",
+      "required": [
+        "editor_session_id",
+        "scene_id",
+        "scene_revision",
+        "operation_seq",
+        "resource_revision",
+        "script_graph_revision"
+      ],
+      "properties": {
+        "editor_session_id": {
+          "type": "string",
+          "pattern": "^editor-session:[0-9a-f]{32}$"
+        },
+        "scene_id": {
+          "type": "string",
+          "pattern": "^scene:[0-9a-f]{32}$"
+        },
+        "scene_revision": { "$ref": "#/$defs/safeInteger" },
+        "operation_seq": { "$ref": "#/$defs/safeInteger" },
+        "resource_revision": { "$ref": "#/$defs/safeInteger" },
+        "script_graph_revision": { "$ref": "#/$defs/safeInteger" }
+      },
+      "additionalProperties": false
+    },
+    "prepareChangeSetParams": {
+      "type": "object",
+      "required": [
+        "idempotency_key",
+        "coordinates",
+        "operations",
+        "save_scope",
+        "validation_policy"
+      ],
+      "properties": {
+        "idempotency_key": { "$ref": "#/$defs/idempotencyKey" },
+        "coordinates": { "$ref": "#/$defs/revisionCoordinates" },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/operation" }
+        },
+        "save_scope": { "$ref": "#/$defs/saveScope" },
+        "validation_policy": { "$ref": "#/$defs/validationPolicy" }
+      },
+      "additionalProperties": false
+    },
+    "rpcContext": {
+      "type": "object",
+      "required": ["project_id", "editor_session_id"],
+      "properties": {
+        "project_id": { "type": "string", "pattern": "^project:[0-9a-f]{64}$" },
+        "editor_session_id": { "type": "string", "pattern": "^editor-session:[0-9a-f]{32}$" }
+      },
+      "additionalProperties": false
+    },
+    "prepareChangeSetRequest": {
+      "type": "object",
+      "required": ["protocol_version", "kind", "request_id", "method", "context", "params"],
+      "properties": {
+        "protocol_version": { "const": "1.8" },
+        "kind": { "const": "request" },
+        "request_id": { "type": "string", "pattern": "^req:[A-Za-z0-9._-]{1,124}$" },
+        "method": { "const": "transaction.prepare_change_set" },
+        "context": { "$ref": "#/$defs/rpcContext" },
+        "deadline_ms": { "type": "integer", "minimum": 1, "maximum": 30000 },
+        "params": { "$ref": "#/$defs/prepareChangeSetParams" }
+      },
+      "additionalProperties": false
+    },
+    "validationOutcome": {
+      "enum": ["passed", "failed", "inconclusive", "timed_out"]
+    },
+    "validationCompleteParams": {
+      "type": "object",
+      "required": ["change_set_id", "validation_report_id", "report_digest", "outcome"],
+      "properties": {
+        "change_set_id": { "$ref": "#/$defs/changeSetId" },
+        "validation_report_id": { "$ref": "#/$defs/validationReportId" },
+        "report_digest": { "$ref": "#/$defs/digest" },
+        "outcome": { "$ref": "#/$defs/validationOutcome" }
+      },
+      "additionalProperties": false
+    },
+    "validationCompleteRequest": {
+      "type": "object",
+      "required": ["protocol_version", "kind", "request_id", "method", "context", "params"],
+      "properties": {
+        "protocol_version": { "const": "1.8" },
+        "kind": { "const": "request" },
+        "request_id": { "type": "string", "pattern": "^req:[A-Za-z0-9._-]{1,124}$" },
+        "method": { "const": "transaction.validation_complete" },
+        "context": { "$ref": "#/$defs/rpcContext" },
+        "deadline_ms": { "type": "integer", "minimum": 1, "maximum": 30000 },
+        "params": { "$ref": "#/$defs/validationCompleteParams" }
+      },
+      "additionalProperties": false
+    },
+    "rollbackParams": {
+      "type": "object",
+      "required": ["change_set_id", "expected_transaction_seq", "expected_postimage_digest"],
+      "properties": {
+        "change_set_id": { "$ref": "#/$defs/changeSetId" },
+        "expected_transaction_seq": { "$ref": "#/$defs/safeInteger" },
+        "expected_postimage_digest": { "$ref": "#/$defs/digest" }
+      },
+      "additionalProperties": false
+    },
+    "rollbackRequest": {
+      "type": "object",
+      "required": ["protocol_version", "kind", "request_id", "method", "context", "params"],
+      "properties": {
+        "protocol_version": { "const": "1.8" },
+        "kind": { "const": "request" },
+        "request_id": { "type": "string", "pattern": "^req:[A-Za-z0-9._-]{1,124}$" },
+        "method": { "const": "transaction.rollback" },
+        "context": { "$ref": "#/$defs/rpcContext" },
+        "deadline_ms": { "type": "integer", "minimum": 1, "maximum": 30000 },
+        "params": { "$ref": "#/$defs/rollbackParams" }
+      },
+      "additionalProperties": false
+    },
+    "capability": {
+      "type": "object",
+      "required": ["name", "version", "readiness", "limits"],
+      "properties": {
+        "name": { "enum": ["transaction.change_set_v1", "validation.automatic_v1"] },
+        "version": { "const": "1.0" },
+        "readiness": { "enum": ["ready", "unavailable"] },
+        "reason": {
+          "enum": [
+            "ready",
+            "compound_executor_unavailable",
+            "validation_coordinator_unavailable",
+            "approval_unavailable",
+            "transaction_busy"
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "required": ["operations", "report_page_bytes", "report_pages", "retained_report_bytes"],
+          "properties": {
+            "operations": { "const": 16 },
+            "report_page_bytes": { "const": 65536 },
+            "report_pages": { "const": 4 },
+            "retained_report_bytes": { "const": 262144 }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "changeSetEvent": {
+      "type": "object",
+      "required": ["protocol_version", "kind", "context", "method", "params"],
+      "properties": {
+        "protocol_version": { "const": "1.8" },
+        "kind": { "const": "notification" },
+        "context": { "$ref": "#/$defs/rpcContext" },
+        "method": { "const": "transaction.event" },
+        "params": {
+          "type": "object",
+          "required": ["change_set_id", "transaction_seq", "state"],
+          "properties": {
+            "change_set_id": { "$ref": "#/$defs/changeSetId" },
+            "transaction_seq": { "$ref": "#/$defs/safeInteger" },
+            "state": {
+              "enum": [
+                "preparing",
+                "previewed",
+                "awaiting_approval",
+                "applying",
+                "persisting",
+                "validating",
+                "committed",
+                "rolling_back",
+                "rolled_back",
+                "rollback_blocked",
+                "undone",
+                "failed",
+                "in_doubt"
+              ]
+            },
+            "validation_report_id": { "$ref": "#/$defs/validationReportId" },
+            "runtime_session_id": {
+              "type": "string",
+              "pattern": "^runtime-session:[0-9a-f]{32}$"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

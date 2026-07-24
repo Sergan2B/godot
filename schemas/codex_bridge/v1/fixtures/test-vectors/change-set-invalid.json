@@ -1,0 +1,77 @@
+{
+  "old_minor": {
+    "protocol_version": "1.7",
+    "kind": "request",
+    "request_id": "req:old-minor",
+    "method": "transaction.prepare_change_set",
+    "context": {
+      "project_id": "project:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "params": {}
+  },
+  "too_many_operations": {
+    "idempotency_key": "idempotency:cccccccccccccccccccccccccccccccc",
+    "coordinates": {
+      "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "scene_id": "scene:dddddddddddddddddddddddddddddddd",
+      "scene_revision": 1,
+      "operation_seq": 1,
+      "resource_revision": 1,
+      "script_graph_revision": 1
+    },
+    "operations": [
+      { "kind": "detach_script", "node_id": "node:00000000000000000000000000000000" },
+      { "kind": "detach_script", "node_id": "node:00000000000000000000000000000001" },
+      { "kind": "detach_script", "node_id": "node:00000000000000000000000000000002" },
+      { "kind": "detach_script", "node_id": "node:00000000000000000000000000000003" },
+      { "kind": "detach_script", "node_id": "node:00000000000000000000000000000004" },
+      { "kind": "detach_script", "node_id": "node:00000000000000000000000000000005" },
+      { "kind": "detach_script", "node_id": "node:00000000000000000000000000000006" },
+      { "kind": "detach_script", "node_id": "node:00000000000000000000000000000007" },
+      { "kind": "detach_script", "node_id": "node:00000000000000000000000000000008" },
+      { "kind": "detach_script", "node_id": "node:00000000000000000000000000000009" },
+      { "kind": "detach_script", "node_id": "node:0000000000000000000000000000000a" },
+      { "kind": "detach_script", "node_id": "node:0000000000000000000000000000000b" },
+      { "kind": "detach_script", "node_id": "node:0000000000000000000000000000000c" },
+      { "kind": "detach_script", "node_id": "node:0000000000000000000000000000000d" },
+      { "kind": "detach_script", "node_id": "node:0000000000000000000000000000000e" },
+      { "kind": "detach_script", "node_id": "node:0000000000000000000000000000000f" },
+      { "kind": "detach_script", "node_id": "node:00000000000000000000000000000010" }
+    ],
+    "save_scope": { "paths": ["res://validation/fixture.tscn"] },
+    "validation_policy": {
+      "rollback": "on_required_failure",
+      "warnings": "allow",
+      "runtime": "skip"
+    }
+  },
+  "unsafe_path": {
+    "kind": "create_resource",
+    "alias": "alias:bad",
+    "path": "res://validation\\outside.tres",
+    "resource_class": "Gradient",
+    "properties": []
+  },
+  "unknown_resource_class": {
+    "kind": "create_resource",
+    "alias": "alias:custom",
+    "path": "res://validation/custom.tres",
+    "resource_class": "CustomResource",
+    "properties": []
+  },
+  "overlapping_edit_shape": {
+    "kind": "update_gdscript",
+    "path": "res://validation/fixture.gd",
+    "expected_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "edits": [
+      { "start_byte": 8, "end_byte": 4, "replacement": "invalid" }
+    ]
+  },
+  "extra_policy_field": {
+    "rollback": "on_required_failure",
+    "warnings": "allow",
+    "runtime": "skip",
+    "receipt": "model-controlled"
+  }
+}

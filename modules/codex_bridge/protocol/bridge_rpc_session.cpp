@@ -30,6 +30,7 @@
 
 #include "bridge_rpc_session.h"
 
+#include "bridge_change_set_profile.h"
 #include "bridge_frame_codec.h"
 #include "bridge_transaction_profile.h"
 
@@ -173,31 +174,35 @@ static bool is_client_name(const String &p_value) {
 }
 
 static bool has_editor_profile(const String &p_version) {
-	return p_version == "1.1" || p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6" || p_version == "1.7";
+	return p_version == "1.1" || p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6" || p_version == "1.7" || p_version == "1.8";
 }
 
 static bool has_resource_profile(const String &p_version) {
-	return p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6" || p_version == "1.7";
+	return p_version == "1.2" || p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6" || p_version == "1.7" || p_version == "1.8";
 }
 
 static bool has_scene_profile(const String &p_version) {
-	return p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6" || p_version == "1.7";
+	return p_version == "1.3" || p_version == "1.4" || p_version == "1.5" || p_version == "1.6" || p_version == "1.7" || p_version == "1.8";
 }
 
 static bool has_script_profile(const String &p_version) {
-	return p_version == "1.4" || p_version == "1.5" || p_version == "1.6" || p_version == "1.7";
+	return p_version == "1.4" || p_version == "1.5" || p_version == "1.6" || p_version == "1.7" || p_version == "1.8";
 }
 
 static bool has_live_editor_profile(const String &p_version) {
-	return p_version == "1.5" || p_version == "1.6" || p_version == "1.7";
+	return p_version == "1.5" || p_version == "1.6" || p_version == "1.7" || p_version == "1.8";
 }
 
 static bool has_runtime_profile(const String &p_version) {
-	return p_version == "1.6" || p_version == "1.7";
+	return p_version == "1.6" || p_version == "1.7" || p_version == "1.8";
 }
 
 static bool has_transaction_profile(const String &p_version) {
-	return p_version == "1.7";
+	return p_version == "1.7" || p_version == "1.8";
+}
+
+static bool has_change_set_profile(const String &p_version) {
+	return p_version == "1.8";
 }
 
 } // namespace
@@ -355,6 +360,10 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 	if (has_transaction_profile(protocol_version)) {
 		capabilities.push_back(BridgeTransactionProfile::make_ready_capability(transaction_busy, transaction_scene_available, transaction_approval_available, transaction_coordinator_available));
 	}
+	if (has_change_set_profile(protocol_version)) {
+		capabilities.push_back(BridgeChangeSetProfile::make_capability("transaction.change_set_v1", false, "compound_executor_unavailable"));
+		capabilities.push_back(BridgeChangeSetProfile::make_capability("validation.automatic_v1", false, "validation_coordinator_unavailable"));
+	}
 	Dictionary result;
 	result["capabilities"] = capabilities;
 	return result;
@@ -458,6 +467,9 @@ Dictionary BridgeRpcSession::_make_limits() const {
 	}
 	if (has_transaction_profile(protocol_version)) {
 		BridgeTransactionProfile::append_global_limits(limits);
+	}
+	if (has_change_set_profile(protocol_version)) {
+		BridgeChangeSetProfile::append_global_limits(limits);
 	}
 	return limits;
 }
@@ -908,6 +920,13 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 				return OK;
 			}
 			method = METHOD_RUNTIME_VIEWPORT_CAPTURE;
+		} else if (method_name == "transaction.prepare_change_set" || method_name == "transaction.validation_complete" || method_name == "transaction.rollback") {
+			if (!has_change_set_profile(protocol_version)) {
+				_set_error_outcome(request_id, "capability_unavailable", "Compound changes require Bridge RPC 1.8.", false, r_outcome);
+			} else {
+				_set_error_outcome(request_id, "capability_unavailable", "The negotiated compound executor is not ready.", false, r_outcome);
+			}
+			return OK;
 		} else if (method_name == "transaction.prepare" || method_name == "transaction.apply" || method_name == "transaction.status" || method_name == "transaction.undo") {
 			if (!has_transaction_profile(protocol_version)) {
 				_set_error_outcome(request_id, "capability_unavailable", "Editor transactions require Bridge RPC 1.7.", false, r_outcome);

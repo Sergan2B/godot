@@ -1,6 +1,86 @@
 {
-  "bundle_version": "1.7",
+  "bundle_version": "1.8",
   "cases": [
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/change-set.json",
+      "id": "schema.change-set.capability",
+      "instance_pointer": "/capabilities/0",
+      "kind": "schema",
+      "schema_ref": "change-set.schema.json#/$defs/capability"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/change-set.json",
+      "id": "schema.change-set.prepare",
+      "instance_pointer": "/prepare_request",
+      "kind": "schema",
+      "schema_ref": "change-set.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/change-set.json",
+      "id": "schema.change-set.resource-operation",
+      "instance_pointer": "/operations/0",
+      "kind": "schema",
+      "schema_ref": "change-set.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/change-set.json",
+      "id": "schema.change-set.script-operation",
+      "instance_pointer": "/operations/2",
+      "kind": "schema",
+      "schema_ref": "change-set.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/change-set.json",
+      "id": "schema.change-set.validation-complete",
+      "instance_pointer": "/validation_complete_request",
+      "kind": "schema",
+      "schema_ref": "change-set.schema.json"
+    },
+    {
+      "expect": "valid",
+      "fixture": "test-vectors/change-set.json",
+      "id": "schema.change-set.rollback",
+      "instance_pointer": "/rollback_request",
+      "kind": "schema",
+      "schema_ref": "change-set.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/change-set-invalid.json",
+      "id": "schema.change-set.old-minor",
+      "instance_pointer": "/old_minor",
+      "kind": "schema",
+      "schema_ref": "change-set.schema.json"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/change-set-invalid.json",
+      "id": "schema.change-set.operation-limit",
+      "instance_pointer": "/too_many_operations",
+      "kind": "schema",
+      "schema_ref": "change-set.schema.json#/$defs/prepareChangeSetParams"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/change-set-invalid.json",
+      "id": "schema.change-set.unsafe-path",
+      "instance_pointer": "/unsafe_path",
+      "kind": "schema",
+      "schema_ref": "change-set.schema.json#/$defs/operation"
+    },
+    {
+      "expect": "invalid_schema",
+      "fixture": "test-vectors/change-set-invalid.json",
+      "id": "schema.change-set.closed-policy",
+      "instance_pointer": "/extra_policy_field",
+      "kind": "schema",
+      "schema_ref": "change-set.schema.json#/$defs/validationPolicy"
+    },
     {
       "expect": "valid",
       "fixture": "test-vectors/transaction.json",

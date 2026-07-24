@@ -547,7 +547,7 @@ fn validate_snapshot_chunk(
 ) -> Result<(), BridgeError> {
     if !matches!(
         chunk.protocol_version.as_str(),
-        "1.2" | "1.3" | "1.4" | "1.5" | "1.6" | "1.7"
+        "1.2" | "1.3" | "1.4" | "1.5" | "1.6" | "1.7" | "1.8"
     ) || chunk.kind != "chunk"
         || chunk.domain != "resource_graph"
         || chunk.snapshot_id != accepted.snapshot_id
@@ -650,7 +650,7 @@ async fn receive_resource_snapshot<S: ResourceSnapshotSink>(
     if accepted.domain != "resource_graph"
         || accepted.revisions.resource_revision != accepted.resource_revision
         || match session.protocol_version() {
-            "1.4" | "1.5" | "1.6" | "1.7" => accepted
+            "1.4" | "1.5" | "1.6" | "1.7" | "1.8" => accepted
                 .revisions
                 .script_graph_revision
                 .is_none_or(|revision| revision > MAX_SAFE_REVISION),
@@ -661,7 +661,7 @@ async fn receive_resource_snapshot<S: ResourceSnapshotSink>(
             &accepted.revisions.runtime_session_id,
             accepted.revisions.runtime_event_seq,
         )
-        || (!matches!(session.protocol_version(), "1.6" | "1.7")
+        || (!matches!(session.protocol_version(), "1.6" | "1.7" | "1.8")
             && (accepted.revisions.runtime_session_id.is_some()
                 || accepted.revisions.runtime_event_seq.is_some()))
         || !accepted.snapshot_id.starts_with("snapshot:")
@@ -910,7 +910,7 @@ pub(crate) async fn get_next_resource_delta(
 fn require_resource_graph(session: &Session) -> Result<(), BridgeError> {
     if !matches!(
         session.protocol_version(),
-        "1.2" | "1.3" | "1.4" | "1.5" | "1.6" | "1.7"
+        "1.2" | "1.3" | "1.4" | "1.5" | "1.6" | "1.7" | "1.8"
     ) || !session.capabilities().contains("resource.uid_dependencies")
         || !session
             .capabilities()

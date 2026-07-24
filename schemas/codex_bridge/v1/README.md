@@ -1,6 +1,6 @@
 # Codex Bridge RPC v1 schemas
 
-This directory is the canonical machine-readable contract for Bridge RPC major version 1. The current protocol version is `1.7`; `1.0`–`1.6` remain supported capability-gated fallbacks. [PROTOCOL-001](../../../docs/codex-integration/PROTOCOL-001-bridge-rpc-v1.md) is the normative behavioral specification.
+This directory is the canonical machine-readable contract for Bridge RPC major version 1. The current protocol version is `1.8`; `1.0`–`1.7` remain supported capability-gated fallbacks. [PROTOCOL-001](../../../docs/codex-integration/PROTOCOL-001-bridge-rpc-v1.md) is the normative behavioral specification.
 
 ## Files
 
@@ -20,6 +20,9 @@ This directory is the canonical machine-readable contract for Bridge RPC major v
 - `transaction.schema.json` — strict guarded editor transaction operations,
   previews, approval receipts, status, Undo, readiness, limits, and events
   added in Bridge RPC 1.7.
+- `change-set.schema.json` — closed compound operation, explicit save scope,
+  automatic validation, report identity, and guarded rollback messages added in
+  Bridge RPC 1.8.
 - `fixture-manifest.schema.json` — metadata for schema, framing, sequence, and cryptographic conformance cases.
 - `fixtures/manifest.json` — the ordered conformance case index.
 - `fixtures/valid` and `fixtures/invalid` — wire-message examples.
