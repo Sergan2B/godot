@@ -1182,9 +1182,7 @@ def acquire_host_provenance(
             "{extension_package_json}": str(extension_package_json),
             "{ide_client}": str(ide_client),
             "{measurement}": str(measurement_path),
-            "{profile}": HOST_PROFILE_PATH,
         }
-        argv = tuple(substitutions.get(item, item) for item in template)
         with source_snapshot(source_commit) as snapshot:
             runner = snapshot.root / HOST_RUNNER
             profile = snapshot.root / HOST_PROFILE_PATH
@@ -1202,7 +1200,16 @@ def acquire_host_provenance(
             ):
                 require_regular(source)
             runner_sha256 = _snapshot_file_digest(snapshot, HOST_RUNNER)
+            substitutions["{profile}"] = str(profile)
+            argv = tuple(
+                substitutions.get(item, item)
+                for item in template
+            )
             execution = executor(argv, snapshot.root, timeout)
+            require(
+                execution.exit_code == 0,
+                "host provenance runner failed",
+            )
             _verify_snapshot_file(
                 snapshot,
                 HOST_RUNNER,

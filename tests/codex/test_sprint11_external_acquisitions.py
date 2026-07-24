@@ -648,9 +648,15 @@ class Sprint11ExternalAcquisitionTests(unittest.TestCase):
 
         def executor(
             argv: tuple[str, ...],
-            _cwd: Path,
+            cwd: Path,
             _timeout: float,
         ) -> acquisitions.Execution:
+            profile = Path(argv[argv.index("--profile") + 1])
+            self.assertTrue(profile.is_absolute())
+            self.assertEqual(
+                profile,
+                cwd / acquisitions.HOST_PROFILE_PATH,
+            )
             output = Path(argv[argv.index("--output") + 1])
             output.write_bytes(
                 host_provenance.canonical_json(measurement) + b"\n"
@@ -734,6 +740,65 @@ class Sprint11ExternalAcquisitionTests(unittest.TestCase):
                 json.loads((output / "receipt.json").read_text()),
                 receipt,
             )
+
+    def test_host_acquisition_rejects_a_failed_public_runner(self) -> None:
+        def executor(
+            _argv: tuple[str, ...],
+            _cwd: Path,
+            _timeout: float,
+        ) -> acquisitions.Execution:
+            return acquisitions.Execution(
+                exit_code=1,
+                stdout=b"",
+                stderr=b"safe failure",
+                duration_ms=1,
+            )
+
+        tests_root = acquisitions.REPOSITORY_ROOT / "tests/codex"
+        with tempfile.TemporaryDirectory(
+            prefix=".s11-host-test.",
+            dir=tests_root,
+        ) as temporary:
+            output = Path(temporary) / "result"
+            with (
+                mock.patch.object(
+                    acquisitions,
+                    "repository_head",
+                    return_value="a" * 40,
+                ),
+                mock.patch.object(
+                    acquisitions,
+                    "require_clean_checkout",
+                ),
+                mock.patch.object(
+                    acquisitions,
+                    "source_snapshot",
+                    side_effect=current_source_snapshot,
+                ),
+                mock.patch.object(
+                    acquisitions,
+                    "_snapshot_file_digest",
+                    side_effect=current_runner_digest,
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    acquisitions.AcquisitionError,
+                    "runner failed",
+                ):
+                    acquisitions.acquire_host_provenance(
+                        app_bundle=Path("/fixture/App.app"),
+                        app_executable=Path("/fixture/App"),
+                        app_client=Path("/fixture/codex"),
+                        vscode_bundle=Path("/fixture/Code.app"),
+                        vscode_executable=Path("/fixture/Code"),
+                        extension_root=Path("/fixture/extension"),
+                        extension_package_json=Path("/fixture/package.json"),
+                        ide_client=Path("/fixture/ide-codex"),
+                        output_root=output,
+                        timeout=10,
+                        executor=executor,
+                    )
+            self.assertFalse(output.exists())
 
     def test_host_acquisition_rejects_a_tampered_measurement(self) -> None:
         measurement = host_measurement()
