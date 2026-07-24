@@ -41,6 +41,7 @@ MACHO_CPU_TYPE_ARM64: Final = 0x0100000C
 MAX_FILES: Final = 512
 MAX_INPUT_BYTES: Final = 512 * 1024 * 1024
 MAX_SINGLE_FILE_BYTES: Final = 256 * 1024 * 1024
+MAX_GODOT_PREREQUISITE_BYTES: Final = 384 * 1024 * 1024
 MAX_LICENSE_CHECK_OUTPUT_BYTES: Final = 4096
 MAX_SOURCE_FILES: Final = 8192
 MAX_SOURCE_BYTES: Final = 512 * 1024 * 1024
@@ -1389,10 +1390,23 @@ def build_release_binaries(
 
 
 def snapshot_executable(source: Path, destination: Path) -> bytes:
-    content = read_regular_input(source, executable=True, nonempty=True)
+    content = read_regular_input(
+        source,
+        executable=True,
+        maximum=MAX_GODOT_PREREQUISITE_BYTES,
+        nonempty=True,
+    )
     require_arm64_macho_bytes(content)
     write_owned_file(destination, content, 0o500)
-    if read_regular_input(destination, executable=True, nonempty=True) != content:
+    if (
+        read_regular_input(
+            destination,
+            executable=True,
+            maximum=MAX_GODOT_PREREQUISITE_BYTES,
+            nonempty=True,
+        )
+        != content
+    ):
         raise PackageError("private executable snapshot differs")
     return content
 
@@ -1428,7 +1442,15 @@ def verify_godot_prerequisite(
         raise PackageError("Godot prerequisite version is invalid") from error
     if result.returncode != 0 or version != expected_build:
         raise PackageError("Godot prerequisite build ID does not match the matrix")
-    if read_regular_input(path, executable=True, nonempty=True) != content:
+    if (
+        read_regular_input(
+            path,
+            executable=True,
+            maximum=MAX_GODOT_PREREQUISITE_BYTES,
+            nonempty=True,
+        )
+        != content
+    ):
         raise PackageError("Godot prerequisite changed during verification")
     return {
         "architecture": TARGET_ARCH,

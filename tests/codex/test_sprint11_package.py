@@ -746,10 +746,31 @@ class Sprint11PackageTests(unittest.TestCase):
         source = self.root / "Godot"
         write(source, original, 0o755)
         destination = self.root / "private-Godot"
-        observed = package_builder.snapshot_executable(source, destination)
+        with mock.patch.object(
+            package_builder,
+            "read_regular_input",
+            wraps=package_builder.read_regular_input,
+        ) as reader:
+            observed = package_builder.snapshot_executable(source, destination)
         source.write_bytes(thin_arm64_macho(b"replaced Godot"))
         self.assertEqual(observed, original)
         self.assertEqual(destination.read_bytes(), original)
+        self.assertGreaterEqual(
+            package_builder.MAX_GODOT_PREREQUISITE_BYTES,
+            301_877_808,
+        )
+        self.assertLessEqual(
+            package_builder.MAX_GODOT_PREREQUISITE_BYTES,
+            384 * 1024 * 1024,
+        )
+        self.assertEqual(reader.call_count, 2)
+        self.assertTrue(
+            all(
+                call.kwargs["maximum"]
+                == package_builder.MAX_GODOT_PREREQUISITE_BYTES
+                for call in reader.call_args_list
+            )
+        )
 
         linked = self.root / "linked-Godot"
         linked.symlink_to(source)
