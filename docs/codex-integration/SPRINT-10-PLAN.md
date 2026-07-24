@@ -1,6 +1,7 @@
 # Sprint 10 plan — compound changes and automatic validation
 
-**Status:** Proposed; implementation has not started
+**Status:** Complete locally on macOS arm64; source-bound evidence is published
+by the final evidence-only commit
 
 **Milestone:** Read/Write Beta Foundation / M3
 
@@ -905,7 +906,7 @@ Sprint 10 passes only when the independent oracle proves:
 22. the read/write beta checklist maps every roadmap criterion to immutable
     source-bound evidence.
 
-The qualifying command is planned as:
+The qualifying command is:
 
 ```sh
 .venv/bin/python tests/codex/sprint10_acceptance.py --timeout 120
@@ -941,7 +942,32 @@ Correctness overrides latency. A deadline can produce `timed_out`,
 `rollback_pending`, `rollback_blocked`, or `in_doubt`; it can never publish a
 false pass, discard escrow early, overwrite a conflict, or replay apply.
 
-## 6. Explicitly deferred
+## 6. Local closeout
+
+All `S10-01` through `S10-14` deliverables are implemented. Bridge RPC 1.8
+publishes the additive `transaction.change_set_v1` and
+`validation.automatic_v1` capabilities while the 1.0–1.7 matrix remains
+unchanged. The MCP registry contains exactly 40 tools, and compound apply is
+still unreachable without a host-owned approval binding.
+
+The independent oracle freezes all 11 operation kinds, the 1/16/17 operation
+boundary, alias/dependency negatives, rollback and confirmation matrices,
+report limits, and recovery scenarios. The model-free live path proves:
+
+```text
+read → prepare/replay → approve → apply → validate/report
+     → readback → status → targeted Undo → verify
+```
+
+The qualifying macOS arm64 artifact is
+`tests/codex/evidence/sprint-10-read-write-beta-macos.json`. It is generated
+only from a clean implementation commit by
+`tests/codex/sprint10_acceptance.py`, validates its own source/artifact hashes,
+and is committed without production, fixture, oracle, runner, validator, or
+documentation changes. Windows, Linux, hosted CI, and model-facing
+qualification remain explicit `not_run` coordinates.
+
+## 7. Explicitly deferred
 
 Multi-scene and cross-history atomic transactions; resource delete/rename/move;
 scene save-as; closed-scene mutation; binary `.res`; imported assets; addon,
