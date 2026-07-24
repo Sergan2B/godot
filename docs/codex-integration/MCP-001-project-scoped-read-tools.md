@@ -3,7 +3,8 @@
 **Status:** Sprint 2/3/4 tools live-verified on macOS arm64 and Windows x86_64;
 the Sprint 5 symbol tools, Sprint 6 find-usages/context surfaces, Sprint 7
 sixteen-tool live-editor surface, Sprint 8 twenty-five-tool runtime surface,
-and Sprint 9 thirty-six-tool guarded transaction surface pass their local gates
+and Sprint 9 thirty-six-tool guarded transaction surface pass their local
+gates; the Sprint 10 forty-tool compound surface is proposed
 
 **MCP protocol:** `2025-11-25`
 
@@ -21,7 +22,9 @@ Sprint 7 remains read-only and is governed by
 process controls without adding project-content write tools and is governed by
 [RUNTIME-001](RUNTIME-001-debugger-and-runtime-observation.md). Sprint 9
 implements guarded editor transactions through
-[WRITE-001](WRITE-001-editor-transactions-and-undo.md).
+[WRITE-001](WRITE-001-editor-transactions-and-undo.md). Sprint 10 adds bounded
+change sets and automatic validation through
+[VALIDATION-001](VALIDATION-001-automatic-validation-and-rollback.md).
 
 ## Lifecycle and project binding
 
@@ -190,6 +193,34 @@ write readiness is false. Decline is terminal for the prepared transaction;
 cancel or timeout may prompt again before plan expiry. Session/persistent
 approval policies are deferred. The test-only `godot_s9_approval_probe` lives
 in a separate example binary and is never part of this registry.
+
+### Sprint 10 compound tools — proposed
+
+Sprint 10 adds four closed tools after the compound executor, persistence,
+validation, rollback, and confirmation-policy gates:
+
+- `godot_prepare_change_set`;
+- `godot_get_validation_report`;
+- `godot_get_confirmation_policy`;
+- `godot_reset_confirmation_policy`.
+
+The registry becomes exactly forty tools only at S10-12. Existing apply,
+status, Undo, and all thirty-six Sprint 9 tools retain their current schemas
+and semantics.
+
+Change-set preparation accepts the closed operation union, exact coordinates,
+save/validation/rollback policies, and a required idempotency key. It allocates
+bounded state but mutates no editor or project content. It never accepts an
+approval receipt, confirmation grant, validation result, rollback proof,
+absolute path, directory, glob, or raw file payload.
+
+Validation report and confirmation-policy reads are read-only. Policy reset is
+non-read-only and non-destructive; it can only remove a host-issued grant.
+Apply confirmation remains nested form elicitation. The default is
+`always_ask`; the only grant is a 15-minute project/editor-session-bound
+`allow_low_risk_for_session` for memory-only low-risk sets. Persistence,
+delete, source/resource content, runtime launch, elevated risk, or changed
+scope always prompts again.
 
 ## Resources
 

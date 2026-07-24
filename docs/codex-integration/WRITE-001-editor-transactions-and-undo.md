@@ -1,11 +1,13 @@
 # WRITE-001 — Editor transactions, approval, and native Undo
 
-**Status:** Approved Sprint 9 contract; S9-04–S9-09 executor, coordinator,
-recovery, approval, and MCP surface implemented
+**Status:** Sprint 9 version implemented and qualified; Sprint 10 compound
+extension proposed by VALIDATION-001
 
-**Contract version:** `1.0`
+**Contract version:** `1.0` for single-operation transactions; `2.0` compound
+extension
 
-**Wire version:** Bridge RPC `1.7` specified
+**Wire version:** Bridge RPC `1.7` implemented; `1.8` compound extension
+proposed
 
 **MCP protocol:** server profile `2025-11-25`; form-compatible negotiated
 fallback `2025-06-18`
@@ -14,7 +16,8 @@ fallback `2025-06-18`
 [ARCHITECTURE-001](ARCHITECTURE-001-bridge-sidecar-index-and-evidence-plan.md),
 [EDITOR-001](EDITOR-001-live-editor-context.md),
 [PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md), and
-[MCP-001](MCP-001-project-scoped-read-tools.md)
+[MCP-001](MCP-001-project-scoped-read-tools.md), and
+[VALIDATION-001](VALIDATION-001-automatic-validation-and-rollback.md)
 
 ## 1. Purpose and authority
 
@@ -476,11 +479,41 @@ S9-01 is closed only when:
 No production apply surface may merge until this contract and approval path
 remain green in S9-02 through S9-04.
 
-## 16. Explicit deferrals
+## 16. Sprint 10 compound extension
 
-Atomic multi-operation transactions, scene save, resource creation/update,
-script/source patching, runtime mutation, automatic diagnostics/tests/run
-validation, semantic graph comparison, policy rollback, user-selectable
-confirmation, allow-for-session/always, URL elicitation, verified user
+WRITE-001 version `2.0` adds change sets without widening version `1.0`.
+`transaction.scene_v1` remains a one-operation editor-memory transaction.
+Negotiated Bridge RPC 1.8 capability `transaction.change_set_v1` owns ordered
+multi-operation plans, explicit persistence, validation, and guarded rollback
+as specified by VALIDATION-001.
+
+The compound extension fixes these invariants:
+
+- `1..16` operations, at most one saved open scene, and one anchor history;
+- one immutable preview and one native `EditorUndoRedoManager` action;
+- all do/undo steps are detached from child executors and retained by one
+  compound context;
+- save is an explicit approved scope, never an apply side effect;
+- project files are staged and hash-guarded before native commit;
+- required validation is asynchronous but mandatory before `committed`;
+- automatic rollback is allowed only with newest-action and exact postimage
+  guards;
+- a missing, stale, truncated, disconnected, or timed-out required proof is
+  inconclusive rather than successful;
+- standard Undo/Redo and targeted Undo never skip unrelated work;
+- response loss allows reconciliation only, never apply replay.
+
+The Sprint 10 operation union adds allowlisted `.tres` create/update and
+bounded existing `.gd` source edits. The exact resource classes/properties,
+script-edit constraints, persistence/escrow boundary, report, confirmation
+grant, rollback policies, errors, and limits are normative in VALIDATION-001.
+
+## 17. Explicit deferrals
+
+For WRITE-001 version `1.0`, atomic multi-operation transactions, scene save,
+resource creation/update, script/source patching, runtime validation, semantic
+graph comparison, policy rollback, and session confirmation remain outside
+the contract. Version `2.0` admits only the bounded Sprint 10 forms in
+VALIDATION-001. Runtime mutation, arbitrary file patches, verified user
 identity, embedded Godot approval UI, persistent Undo across editor restart,
-Windows/Linux qualification, and hosted CI are outside S9-01.
+Windows/Linux qualification, and hosted CI remain deferred.

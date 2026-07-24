@@ -1,12 +1,11 @@
 # PROTOCOL-001 — Bridge RPC 1.x
 
-**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.7 extensions, Rust
-transaction coordinator, recovery journal, and guarded MCP route implemented
-and locally verified
+**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.7 extensions implemented
+and qualified; additive 1.8 compound validation profile proposed
 
 **Date:** 2026-07-21
 
-**Protocol versions:** `1.0` baseline; `1.1`–`1.6` fallback; `1.7` current
+**Protocol versions:** `1.0` baseline; `1.1`–`1.7` fallback; `1.8` proposed
 
 **Decision owner:** `Sergan2B` (interim Sidecar/Protocol and Security owner)
 
@@ -824,3 +823,39 @@ S9-08 adds the authenticated Rust 1.7 client, status/event reconciliation,
 bounded private recovery journal, and no-replay latch. S9-09 publishes the
 eleven guarded MCP tools only through that coordinator; approval receipts and
 their key material remain private to the authenticated Bridge connection.
+
+## 24. Bridge RPC 1.8 compound transactions and validation
+
+Bridge RPC 1.8 retains every lower-minor capability and adds
+`transaction.change_set_v1` and `validation.automatic_v1`. It does not widen
+the one-operation meaning of `transaction.scene_v1`.
+
+The 1.8-only methods are `transaction.prepare_change_set`,
+`transaction.validation_complete`, and `transaction.rollback`. Existing
+`transaction.apply`, `transaction.status`, `transaction.undo`, and
+`transaction.event` retain their 1.7 request meaning and expose additional
+fields only after a 1.8 negotiation.
+
+Prepare binds the ordered operation DAG, exact revision/hash vector, one
+history anchor, plan-local aliases, affected closure, explicit save scope,
+validation and rollback policy, confirmation requirement, limits, canonical
+preview bytes, digest, and expiry. It does not write project content, reload
+scripts, advance history/revisions, or start a runtime.
+
+Apply still crosses one native commit point. A compound action owns all
+detached do/undo steps and persistence hooks. Project-file postimages are
+serialized into bounded private staging and exact preimages are durably held
+in a separate rollback escrow before commit. Neither content store crosses the
+wire.
+
+Validation is asynchronous. The sidecar sends
+`transaction.validation_complete` only with a transaction/report digest,
+applied revision vector, closed check summary, result, and active validation
+lease. The Bridge validates the binding before finalizing or accepting a
+rollback request. The complete report remains sidecar-owned and MCP-paginated.
+
+Sessions negotiated at 1.0–1.7 omit all 1.8 capabilities, methods, states,
+limits, fields, errors, and notifications. Before S10 executor readiness,
+1.8 capabilities may be advertised only with `readiness: unavailable`;
+validated calls fail with `capability_unavailable` and create no editor,
+project-file, index, diagnostic, runtime, or history mutation.
