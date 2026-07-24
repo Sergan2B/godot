@@ -309,6 +309,18 @@ class Sprint11ExternalAcquisitionTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 0)
         self.assertEqual(result.stdout, b"absent\n")
 
+    def test_private_temporary_roots_are_canonical_and_owner_only(
+        self,
+    ) -> None:
+        with acquisitions._safe_temporary_root(
+            ".s11-canonical-test.",
+        ) as directory:
+            root = Path(directory)
+            self.assertEqual(root, root.resolve(strict=True))
+            self.assertEqual(root.parent, Path("/tmp").resolve(strict=True))
+            self.assertEqual(root.stat().st_mode & 0o077, 0)
+        self.assertFalse(root.exists())
+
     def test_execute_scrubs_secret_home_and_path_for_runner_and_child(
         self,
     ) -> None:

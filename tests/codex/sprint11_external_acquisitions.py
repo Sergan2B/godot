@@ -590,7 +590,17 @@ def _acquisition_environment(
 
 
 def _safe_temporary_root(prefix: str) -> tempfile.TemporaryDirectory[str]:
-    return tempfile.TemporaryDirectory(prefix=prefix, dir="/tmp")
+    try:
+        parent = Path("/tmp").resolve(strict=True)
+    except OSError as error:
+        raise AcquisitionError(
+            "canonical private temporary parent is unavailable"
+        ) from error
+    require(
+        parent.is_dir() and parent.is_absolute(),
+        "canonical private temporary parent differs",
+    )
+    return tempfile.TemporaryDirectory(prefix=prefix, dir=parent)
 
 
 def execute(argv: tuple[str, ...], cwd: Path, timeout: float) -> Execution:
