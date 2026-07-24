@@ -125,9 +125,8 @@ impl BridgeClient {
             transaction_available: protocol::has_transaction_profile(
                 self.session.protocol_version(),
             ) && capabilities.contains("transaction.scene_v1"),
-            change_set_available: protocol::has_change_set_profile(
-                self.session.protocol_version(),
-            ) && capabilities.contains("transaction.change_set_v1"),
+            change_set_available: protocol::has_change_set_profile(self.session.protocol_version())
+                && capabilities.contains("transaction.change_set_v1"),
             automatic_validation_available: protocol::has_change_set_profile(
                 self.session.protocol_version(),
             ) && capabilities.contains("validation.automatic_v1"),

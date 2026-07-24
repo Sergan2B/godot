@@ -1,4 +1,5 @@
 mod journal;
+mod validation;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
@@ -19,6 +20,12 @@ pub use journal::{
 use journal::{JournalState, JournalStore};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+pub use validation::{
+    CheckAuthority, CheckOutcome, DiagnosticFingerprint, DiagnosticSeverity, DiagnosticSummary,
+    ExpectedSemanticDelta, ReportPage, SemanticComparison, SemanticRelation, SemanticSnapshot,
+    ValidationCheck, ValidationCoordinator, ValidationError, ValidationPolicy, ValidationReport,
+    ValidationReportOutcome,
+};
 
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
