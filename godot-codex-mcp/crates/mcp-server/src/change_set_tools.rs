@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
-use godot_codex_bridge_client::{TransactionOperation, WritableVariant};
+use godot_codex_bridge_client::{TransactionOperation, TransactionResourceRef, WritableVariant};
 use godot_codex_transactions::{ReportPage, ValidationError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -10,14 +10,20 @@ use serde_json::{Value, json};
 pub(crate) const CONFIRMATION_GRANT_MAX_MS: u64 = 15 * 60 * 1_000;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
 pub(crate) enum ResourceClassInput {
+    #[serde(rename = "Gradient")]
     Gradient,
+    #[serde(rename = "Curve")]
     Curve,
+    #[serde(rename = "Curve2D")]
     Curve2d,
+    #[serde(rename = "Curve3D")]
     Curve3d,
+    #[serde(rename = "Animation")]
     Animation,
+    #[serde(rename = "CanvasItemMaterial")]
     CanvasItemMaterial,
+    #[serde(rename = "StandardMaterial3D")]
     StandardMaterial3d,
 }
 
@@ -57,7 +63,7 @@ pub(crate) enum PersistenceOperationInput {
     },
     UpdateResource {
         #[schemars(regex(
-            pattern = r"^(?:resource:(?:uid:[0-9]+|path:[0-9a-f]{64})|alias:[a-z][a-z0-9_]{0,63})$"
+            pattern = r"^(?:godot:resource:(?:uid|path-content):v1:[A-Za-z0-9_-]{43}|alias:[a-z][a-z0-9_]{0,63})$"
         ))]
         resource: String,
         #[schemars(regex(pattern = r"^sha256:[0-9a-f]{64}$"))]
@@ -76,16 +82,125 @@ pub(crate) enum PersistenceOperationInput {
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
+pub(crate) enum CompoundSceneOperationInput {
+    CreateNode {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(regex(pattern = r"^alias:[a-z][a-z0-9_]{0,63}$"))]
+        alias: Option<String>,
+        #[schemars(regex(pattern = r"^(?:node:[0-9a-f]{32}|alias:[a-z][a-z0-9_]{0,63})$"))]
+        parent_node_id: String,
+        #[schemars(regex(pattern = r"^[A-Za-z_][A-Za-z0-9_]{0,127}$"))]
+        godot_type: String,
+        #[schemars(length(min = 1, max = 255))]
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[schemars(range(max = 2_147_483_647_u32))]
+        insertion_index: Option<u32>,
+    },
+    DeleteNode {
+        #[schemars(regex(pattern = r"^(?:node:[0-9a-f]{32}|alias:[a-z][a-z0-9_]{0,63})$"))]
+        node_id: String,
+    },
+    ReparentNode {
+        #[schemars(regex(pattern = r"^(?:node:[0-9a-f]{32}|alias:[a-z][a-z0-9_]{0,63})$"))]
+        node_id: String,
+        #[schemars(regex(pattern = r"^(?:node:[0-9a-f]{32}|alias:[a-z][a-z0-9_]{0,63})$"))]
+        new_parent_node_id: String,
+        #[schemars(range(max = 2_147_483_647_u32))]
+        insertion_index: u32,
+        keep_global_transform: bool,
+    },
+    SetProperty {
+        #[schemars(regex(pattern = r"^(?:node:[0-9a-f]{32}|alias:[a-z][a-z0-9_]{0,63})$"))]
+        node_id: String,
+        #[schemars(regex(pattern = r"^[A-Za-z_][A-Za-z0-9_]*$"))]
+        property: String,
+        value: WritableVariant,
+    },
+    AttachScript {
+        #[schemars(regex(pattern = r"^(?:node:[0-9a-f]{32}|alias:[a-z][a-z0-9_]{0,63})$"))]
+        node_id: String,
+        script_ref: TransactionResourceRef,
+    },
+    DetachScript {
+        #[schemars(regex(pattern = r"^(?:node:[0-9a-f]{32}|alias:[a-z][a-z0-9_]{0,63})$"))]
+        node_id: String,
+    },
+    ConnectSignal {
+        #[schemars(regex(pattern = r"^(?:node:[0-9a-f]{32}|alias:[a-z][a-z0-9_]{0,63})$"))]
+        emitter_node_id: String,
+        #[schemars(regex(pattern = r"^[A-Za-z_][A-Za-z0-9_]*$"))]
+        signal: String,
+        #[schemars(regex(pattern = r"^(?:node:[0-9a-f]{32}|alias:[a-z][a-z0-9_]{0,63})$"))]
+        receiver_node_id: String,
+        #[schemars(regex(pattern = r"^[A-Za-z_][A-Za-z0-9_]*$"))]
+        method: String,
+        flags: u8,
+        unbinds: u16,
+        #[schemars(length(max = 1_000))]
+        binds: Vec<WritableVariant>,
+    },
+    DisconnectSignal {
+        #[schemars(regex(pattern = r"^(?:node:[0-9a-f]{32}|alias:[a-z][a-z0-9_]{0,63})$"))]
+        emitter_node_id: String,
+        #[schemars(regex(pattern = r"^[A-Za-z_][A-Za-z0-9_]*$"))]
+        signal: String,
+        #[schemars(regex(pattern = r"^(?:node:[0-9a-f]{32}|alias:[a-z][a-z0-9_]{0,63})$"))]
+        receiver_node_id: String,
+        #[schemars(regex(pattern = r"^[A-Za-z_][A-Za-z0-9_]*$"))]
+        method: String,
+        flags: u8,
+        unbinds: u16,
+        #[schemars(length(max = 1_000))]
+        binds: Vec<WritableVariant>,
+    },
+}
+
+impl CompoundSceneOperationInput {
+    fn validate(&self) -> Result<(), &'static str> {
+        let mut value = serde_json::to_value(self).map_err(|_| "a scene operation is invalid")?;
+        let object = value
+            .as_object_mut()
+            .ok_or("a scene operation is invalid")?;
+        object.remove("alias");
+        for key in [
+            "node_id",
+            "parent_node_id",
+            "new_parent_node_id",
+            "emitter_node_id",
+            "receiver_node_id",
+        ] {
+            if object
+                .get(key)
+                .and_then(Value::as_str)
+                .is_some_and(|reference| reference.starts_with("alias:"))
+            {
+                object.insert(
+                    key.to_owned(),
+                    Value::String("node:00000000000000000000000000000000".to_owned()),
+                );
+            }
+        }
+        let operation: TransactionOperation =
+            serde_json::from_value(value).map_err(|_| "a scene operation is invalid")?;
+        operation
+            .validate()
+            .map_err(|_| "a scene operation is invalid")
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 #[serde(untagged)]
 pub(crate) enum ChangeSetOperationInput {
-    Scene(TransactionOperation),
+    Scene(CompoundSceneOperationInput),
     Persistence(PersistenceOperationInput),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChangeSetCoordinatesInput {
-    #[schemars(regex(pattern = r"^editor(?:-session)?:[0-9a-f]{32}$"))]
+    #[schemars(regex(pattern = r"^editor:[0-9a-f]{32}$"))]
     pub editor_session_id: String,
     #[schemars(regex(pattern = r"^scene:[0-9a-f]{32}$"))]
     pub scene_id: String,
@@ -102,7 +217,7 @@ pub(crate) struct ChangeSetCoordinatesInput {
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct SaveScopeInput {
-    #[schemars(length(min = 1, max = 18))]
+    #[schemars(length(max = 18))]
     pub paths: Vec<String>,
 }
 
@@ -143,7 +258,7 @@ pub(crate) struct ValidationPolicyInput {
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PrepareChangeSetInput {
-    #[schemars(regex(pattern = r"^project:(?:sha256:)?[0-9a-f]{64}$"))]
+    #[schemars(regex(pattern = r"^project:sha256:[0-9a-f]{64}$"))]
     pub project_id: String,
     #[schemars(regex(pattern = r"^idempotency:[0-9a-f]{32}$"))]
     pub idempotency_key: String,
@@ -159,8 +274,8 @@ impl PrepareChangeSetInput {
         if self.operations.is_empty() || self.operations.len() > 16 {
             return Err("operations must contain between 1 and 16 entries");
         }
-        if self.save_scope.paths.is_empty() || self.save_scope.paths.len() > 18 {
-            return Err("save_scope.paths must contain between 1 and 18 entries");
+        if self.save_scope.paths.len() > 18 {
+            return Err("save_scope.paths cannot contain more than 18 entries");
         }
         let mut paths = BTreeSet::new();
         for path in &self.save_scope.paths {
@@ -179,6 +294,30 @@ impl PrepareChangeSetInput {
                     validate_persistence_operation(operation)?;
                 }
             }
+        }
+        let has_persistence = self
+            .operations
+            .iter()
+            .any(|operation| matches!(operation, ChangeSetOperationInput::Persistence(_)));
+        let has_scene = self
+            .operations
+            .iter()
+            .any(|operation| matches!(operation, ChangeSetOperationInput::Scene(_)));
+        let scene_paths = self
+            .save_scope
+            .paths
+            .iter()
+            .filter(|path| path.ends_with(".tscn"))
+            .count();
+        if scene_paths > usize::from(has_scene)
+            || (!has_persistence
+                && !self.save_scope.paths.is_empty()
+                && !(has_scene && scene_paths == self.save_scope.paths.len()))
+            || (has_persistence && self.save_scope.paths.is_empty())
+        {
+            return Err(
+                "save_scope must contain only affected persistence targets and at most one saved open scene",
+            );
         }
         Ok(())
     }

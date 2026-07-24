@@ -291,15 +291,27 @@ fn is_transaction_notification(value: &Value) -> Result<bool, BridgeError> {
     if value.get("method").and_then(Value::as_str) != Some("transaction.event") {
         return Ok(false);
     }
-    if value.get("kind").and_then(Value::as_str) != Some("notification")
-        || value
-            .pointer("/params/coordinates/transaction_id")
-            .and_then(Value::as_str)
-            .is_none()
-        || value
+    let sprint9 = value
+        .pointer("/params/coordinates/transaction_id")
+        .and_then(Value::as_str)
+        .is_some()
+        && value
             .pointer("/params/coordinates/transaction_seq")
             .and_then(Value::as_u64)
-            .is_none()
+            .is_some();
+    let sprint10 = value
+        .pointer("/params/change_set_id")
+        .and_then(Value::as_str)
+        .is_some_and(|identifier| identifier.starts_with("change-set:"))
+        && value
+            .pointer("/params/transaction_seq")
+            .and_then(Value::as_u64)
+            .is_some()
+        && value
+            .pointer("/params/state")
+            .and_then(Value::as_str)
+            .is_some();
+    if value.get("kind").and_then(Value::as_str) != Some("notification") || (!sprint9 && !sprint10)
     {
         return Err(BridgeError::Invalid(
             "transaction.event is invalid".to_owned(),
@@ -1189,6 +1201,18 @@ mod tests {
                         "transaction_id": format!("transaction:{}", "a".repeat(32)),
                         "transaction_seq": 2
                     }
+                }
+            }))
+            .unwrap()
+        );
+        assert!(
+            is_transaction_notification(&json!({
+                "kind": "notification",
+                "method": "transaction.event",
+                "params": {
+                    "change_set_id": format!("change-set:{}", "b".repeat(32)),
+                    "transaction_seq": 3,
+                    "state": "validating"
                 }
             }))
             .unwrap()

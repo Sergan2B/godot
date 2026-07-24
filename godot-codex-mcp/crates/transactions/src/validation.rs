@@ -455,7 +455,9 @@ impl ValidationCoordinator {
         change_set_id: &str,
         runtime_session_id: &str,
     ) -> Result<(), ValidationError> {
-        if !runtime_session_id.starts_with("runtime-session:") {
+        if !runtime_session_id.starts_with("runtime:")
+            && !runtime_session_id.starts_with("runtime-session:")
+        {
             return Err(ValidationError::InvalidCheck);
         }
         self.active
@@ -503,6 +505,10 @@ impl ValidationCoordinator {
         let required_failed = active.checks.values().any(|record| {
             record.authority == CheckAuthority::Required && record.outcome == CheckOutcome::Failed
         });
+        let any_failed = active
+            .checks
+            .values()
+            .any(|record| record.outcome == CheckOutcome::Failed);
         let timed_out = active
             .checks
             .values()
@@ -517,7 +523,11 @@ impl ValidationCoordinator {
                         | CheckOutcome::Truncated
                 )
         });
-        let outcome = if required_failed || diagnostics_fail || semantic_fail {
+        let outcome = if required_failed
+            || diagnostics_fail
+            || semantic_fail
+            || (active.policy.rollback == "on_any_failure" && any_failed)
+        {
             ValidationReportOutcome::Failed
         } else if timed_out {
             ValidationReportOutcome::TimedOut
@@ -738,5 +748,44 @@ mod tests {
         let report = coordinator.finalize(id, 100).unwrap();
         assert_eq!(report.outcome, ValidationReportOutcome::TimedOut);
         assert_eq!(report.checks[0].outcome, CheckOutcome::TimedOut);
+    }
+
+    #[test]
+    fn on_any_failure_promotes_optional_failure_and_accepts_canonical_runtime_id() {
+        let mut coordinator = ValidationCoordinator::default();
+        let id = "change-set:dddddddddddddddddddddddddddddddd";
+        coordinator
+            .begin(
+                id,
+                "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                ValidationPolicy {
+                    rollback: "on_any_failure".to_owned(),
+                    warnings: "allow".to_owned(),
+                    runtime: "run_current_scene".to_owned(),
+                },
+                10,
+                100,
+                &[(ValidationCheck::Runtime, CheckAuthority::Optional)],
+            )
+            .unwrap();
+        coordinator
+            .set_runtime_session(id, "runtime:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+            .unwrap();
+        coordinator
+            .complete_check(
+                id,
+                ValidationCheck::Runtime,
+                CheckOutcome::Failed,
+                "fresh runtime failed",
+                None,
+                20,
+            )
+            .unwrap();
+        let report = coordinator.finalize(id, 30).unwrap();
+        assert_eq!(report.outcome, ValidationReportOutcome::Failed);
+        assert_eq!(
+            report.runtime_session_id.as_deref(),
+            Some("runtime:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
     }
 }

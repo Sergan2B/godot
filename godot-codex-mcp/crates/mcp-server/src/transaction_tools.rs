@@ -227,7 +227,7 @@ impl PrepareDisconnectSignalInput {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ApplyTransactionInput {
-    #[schemars(regex(pattern = r"^transaction:[0-9a-f]{32}$"))]
+    #[schemars(regex(pattern = r"^(?:transaction|change-set):[0-9a-f]{32}$"))]
     pub transaction_id: String,
     #[schemars(regex(pattern = r"^sha256:[0-9a-f]{64}$"))]
     pub preview_digest: String,
@@ -240,14 +240,14 @@ pub(crate) struct ApplyTransactionInput {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct TransactionStatusInput {
-    #[schemars(regex(pattern = r"^transaction:[0-9a-f]{32}$"))]
+    #[schemars(regex(pattern = r"^(?:transaction|change-set):[0-9a-f]{32}$"))]
     pub transaction_id: String,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct UndoTransactionInput {
-    #[schemars(regex(pattern = r"^transaction:[0-9a-f]{32}$"))]
+    #[schemars(regex(pattern = r"^(?:transaction|change-set):[0-9a-f]{32}$"))]
     pub transaction_id: String,
     #[schemars(range(min = 1, max = 9_007_199_254_740_991_u64))]
     pub expected_transaction_seq: u64,
@@ -259,6 +259,42 @@ pub(crate) struct UndoTransactionInput {
 
 pub(crate) struct McpApprovalProvider {
     context: RequestContext<RoleServer>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ChangeSetApprovalDecision {
+    Accept { grant_low_risk: bool },
+    Decline,
+    Cancel,
+    Timeout,
+    Invalid,
+    Unsupported,
+}
+
+fn change_set_approval_decision(
+    action: ElicitationAction,
+    content: Option<&Value>,
+    grant_eligible: bool,
+) -> ChangeSetApprovalDecision {
+    let content = content.and_then(Value::as_object);
+    let exact = content.is_some_and(|object| {
+        object.get("confirm").and_then(Value::as_bool) == Some(true)
+            && object.keys().all(|key| {
+                key == "confirm" || (grant_eligible && key == "allow_low_risk_for_session")
+            })
+            && object.len() <= if grant_eligible { 2 } else { 1 }
+    });
+    let grant_low_risk = content
+        .and_then(|object| object.get("allow_low_risk_for_session"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    match action {
+        ElicitationAction::Accept if exact => ChangeSetApprovalDecision::Accept { grant_low_risk },
+        ElicitationAction::Accept => ChangeSetApprovalDecision::Invalid,
+        ElicitationAction::Decline => ChangeSetApprovalDecision::Decline,
+        ElicitationAction::Cancel => ChangeSetApprovalDecision::Cancel,
+        _ => ChangeSetApprovalDecision::Invalid,
+    }
 }
 
 impl McpApprovalProvider {
@@ -302,6 +338,73 @@ impl McpApprovalProvider {
             meta: None,
             message: format!("{fixed}{preview}"),
             requested_schema: schema,
+        }
+    }
+
+    pub(crate) async fn request_change_set(
+        &self,
+        change_set_id: &str,
+        preview_digest: &str,
+        risk: &str,
+        preview: &Value,
+        grant_eligible: bool,
+    ) -> ChangeSetApprovalDecision {
+        if !self
+            .context
+            .peer
+            .supported_elicitation_modes()
+            .contains(&ElicitationMode::Form)
+        {
+            return ChangeSetApprovalDecision::Unsupported;
+        }
+        let mut schema = ElicitationSchema::builder().required_property(
+            "confirm",
+            PrimitiveSchemaDefinition::Boolean(
+                BooleanSchema::new()
+                    .description("Confirm this exact atomic Godot change-set preview."),
+            ),
+        );
+        if grant_eligible {
+            schema = schema.property(
+                "allow_low_risk_for_session",
+                PrimitiveSchemaDefinition::Boolean(BooleanSchema::new().description(
+                    "Also allow matching low-risk memory-only change sets for up to 15 minutes in this editor session.",
+                )),
+            );
+        }
+        let Ok(schema) = schema.build() else {
+            return ChangeSetApprovalDecision::Invalid;
+        };
+        let fixed = format!(
+            "Approve this exact atomic Godot change set.\nChange set: {change_set_id}\nDigest: {preview_digest}\nScope: change_set.atomic\nRisk: {risk}\nPreview JSON: "
+        );
+        let remaining = 8_192_usize.saturating_sub(fixed.len());
+        let preview = serde_json::to_string(preview).unwrap_or_else(|_| "{}".to_owned());
+        let preview = if preview.len() <= remaining {
+            preview
+        } else {
+            const SUFFIX: &str = "\n[preview truncated to MCP approval limit]";
+            format!(
+                "{}{SUFFIX}",
+                truncate_utf8(&preview, remaining.saturating_sub(SUFFIX.len()))
+            )
+        };
+        let params = ElicitRequestParams::FormElicitationParams {
+            meta: None,
+            message: format!("{fixed}{preview}"),
+            requested_schema: schema,
+        };
+        match self
+            .context
+            .peer
+            .create_elicitation_with_timeout(params, Some(Duration::from_secs(120)))
+            .await
+        {
+            Ok(result) => {
+                change_set_approval_decision(result.action, result.content.as_ref(), grant_eligible)
+            }
+            Err(ServiceError::Timeout { .. }) => ChangeSetApprovalDecision::Timeout,
+            Err(_) => ChangeSetApprovalDecision::Unsupported,
         }
     }
 }
@@ -437,5 +540,43 @@ mod tests {
         let request = McpApprovalProvider::elicitation(&prompt);
         let serialized = serde_json::to_value(request).unwrap();
         assert!(serialized["message"].as_str().unwrap().len() <= 8_192);
+    }
+
+    #[test]
+    fn compound_approval_accepts_only_exact_host_form_content() {
+        assert_eq!(
+            change_set_approval_decision(
+                ElicitationAction::Accept,
+                Some(&json!({"confirm": true})),
+                false,
+            ),
+            ChangeSetApprovalDecision::Accept {
+                grant_low_risk: false
+            }
+        );
+        assert_eq!(
+            change_set_approval_decision(
+                ElicitationAction::Accept,
+                Some(&json!({
+                    "confirm": true,
+                    "allow_low_risk_for_session": true
+                })),
+                true,
+            ),
+            ChangeSetApprovalDecision::Accept {
+                grant_low_risk: true
+            }
+        );
+        for content in [
+            json!({"confirm": false}),
+            json!({}),
+            json!({"confirm": true, "receipt": "model-controlled"}),
+            json!({"confirm": true, "allow_low_risk_for_session": true}),
+        ] {
+            assert_eq!(
+                change_set_approval_decision(ElicitationAction::Accept, Some(&content), false,),
+                ChangeSetApprovalDecision::Invalid
+            );
+        }
     }
 }

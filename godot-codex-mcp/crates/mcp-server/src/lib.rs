@@ -4,10 +4,10 @@ mod live_overlay;
 mod runtime_overlay;
 mod transaction_tools;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
 use change_set_tools::{
@@ -16,13 +16,14 @@ use change_set_tools::{
 };
 use cursor::{CursorBinding, CursorCodec, CursorTool};
 use godot_codex_bridge_client::{
-    BridgeError, RuntimeDomain, RuntimeEntity, RuntimeNode, RuntimeTarget, RuntimeViewportCapture,
+    ApprovalBinding, ApprovalScope, BridgeError, Risk, RuntimeDomain, RuntimeEntity, RuntimeNode,
+    RuntimeTarget, RuntimeViewportCapture,
 };
 use godot_codex_index_store::{
     ContextSummaryError, DependencyEdge, FIND_USAGES_DEFAULT_LIMIT, FindUsagesQuery,
-    FindUsagesQueryError, FindUsagesScope, IndexRead, IndexReadSnapshot, ResourceEntity,
-    ResourceQuery, ResourceSelector, SceneEntity, SceneNode, SceneProperty, SceneRelation,
-    ScriptAdapterAvailability, ScriptCompleteness, ScriptDiagnostic, ScriptDocument,
+    FindUsagesQueryError, FindUsagesScope, IndexRead, IndexReadSnapshot, RecordValidity,
+    ResourceEntity, ResourceQuery, ResourceSelector, SceneEntity, SceneNode, SceneProperty,
+    SceneRelation, ScriptAdapterAvailability, ScriptCompleteness, ScriptDiagnostic, ScriptDocument,
     ScriptEndpoint, ScriptLanguage, ScriptPredicate, ScriptRelation, ScriptSourceRange,
     ScriptSymbol, ScriptSymbolInspectionQuery, ScriptSymbolInspectionResult, ScriptSymbolKind,
     ScriptSymbolMatch, ScriptSymbolQuery, ScriptSymbolQueryResult, ScriptSymbolSelector,
@@ -36,7 +37,10 @@ use godot_codex_resource_indexer::{
 };
 use godot_codex_semantic_model::{SemanticSnapshot, SnapshotReplicator};
 use godot_codex_transactions::{
-    ApplyCommand, PrepareCommand, TransactionCoordinator, UndoCommand, ValidationCoordinator,
+    ApplyCommand, CheckAuthority, CheckOutcome, DiagnosticFingerprint, DiagnosticSeverity,
+    DiagnosticSummary, ExpectedSemanticDelta, PrepareCommand, SemanticComparison,
+    SemanticSnapshot as ValidationSemanticSnapshot, TransactionCoordinator, UndoCommand,
+    ValidationCheck, ValidationCoordinator, ValidationPolicy, ValidationReportOutcome,
 };
 use live_overlay::{LiveOverlay, overlay_metadata};
 use rmcp::{
@@ -52,12 +56,13 @@ use rmcp::{
 };
 use runtime_overlay::{CachedRuntimeSnapshot, RuntimeOverlay};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use transaction_tools::{
-    ApplyTransactionInput, McpApprovalProvider, PrepareAttachScriptInput,
-    PrepareConnectSignalInput, PrepareCreateNodeInput, PrepareDeleteNodeInput,
-    PrepareDetachScriptInput, PrepareDisconnectSignalInput, PrepareReparentNodeInput,
-    PrepareSetPropertyInput, TransactionStatusInput, UndoTransactionInput, coordinator_unavailable,
-    transaction_error, transaction_result,
+    ApplyTransactionInput, ChangeSetApprovalDecision, McpApprovalProvider,
+    PrepareAttachScriptInput, PrepareConnectSignalInput, PrepareCreateNodeInput,
+    PrepareDeleteNodeInput, PrepareDetachScriptInput, PrepareDisconnectSignalInput,
+    PrepareReparentNodeInput, PrepareSetPropertyInput, TransactionStatusInput,
+    UndoTransactionInput, coordinator_unavailable, transaction_error, transaction_result,
 };
 
 const DEFAULT_RESOURCE_LIMIT: usize = 50;
@@ -501,6 +506,29 @@ enum RuntimeControl {
     Continue,
 }
 
+#[derive(Clone, Debug)]
+struct CompoundIndexBaseline {
+    generation_id: String,
+    index_revision: u64,
+    resource_revision: u64,
+    scene_graph_revision: u64,
+    script_graph_revision: u64,
+    validation_digest: String,
+}
+
+#[derive(Clone, Debug)]
+struct PreparedChangeSetBaseline {
+    project_id: String,
+    editor_session_id: String,
+    scene_id: String,
+    preview_digest: String,
+    preview: Value,
+    live: Option<Arc<SemanticSnapshot>>,
+    semantic: Option<ValidationSemanticSnapshot>,
+    index: Option<CompoundIndexBaseline>,
+    completed_report: Option<(String, String, String)>,
+}
+
 #[derive(Clone)]
 pub struct GodotMcpServer {
     #[allow(dead_code, reason = "tool_handler macro accesses this router field")]
@@ -512,9 +540,12 @@ pub struct GodotMcpServer {
     semantic_index: SemanticIndexReader,
     cursor_codec: CursorCodec,
     runtime_overlay: RuntimeOverlay,
+    project_root: Option<PathBuf>,
     transaction_coordinator: Option<Arc<TransactionCoordinator>>,
     validation_coordinator: Arc<tokio::sync::Mutex<ValidationCoordinator>>,
     confirmation_policy: ConfirmationPolicyStore,
+    change_set_baselines: Arc<tokio::sync::Mutex<BTreeMap<String, PreparedChangeSetBaseline>>>,
+    change_set_validation_tasks: Arc<tokio::sync::Mutex<BTreeSet<String>>>,
 }
 
 impl std::fmt::Debug for GodotMcpServer {
@@ -535,6 +566,185 @@ impl std::fmt::Debug for GodotMcpServer {
 }
 
 impl GodotMcpServer {
+    fn compound_index_baseline(&self) -> Option<CompoundIndexBaseline> {
+        let snapshot = self.semantic_index.pin_current().ok()?;
+        let generation = snapshot.generation();
+        Some(CompoundIndexBaseline {
+            generation_id: generation.generation_id.clone(),
+            index_revision: generation.index_revision,
+            resource_revision: generation.checkpoint.resource_revision,
+            scene_graph_revision: generation.scene.scene_graph_revision,
+            script_graph_revision: generation.script.script_graph_revision,
+            validation_digest: generation.validation_digest.clone(),
+        })
+    }
+
+    fn compound_semantic_snapshot(
+        &self,
+        preview: &Value,
+        live: &SemanticSnapshot,
+        scene_id: &str,
+    ) -> Option<ValidationSemanticSnapshot> {
+        if !live_scene_projection_complete(live, scene_id) {
+            return None;
+        }
+        let mut snapshot = ValidationSemanticSnapshot::default();
+        for (id, entity) in live.scenes.iter().chain(&live.nodes) {
+            if snapshot.entities.len() >= 2_000 {
+                return None;
+            }
+            snapshot.entities.insert(id.clone(), entity.clone());
+        }
+        let paths = change_set_paths(preview);
+        if paths.is_empty() {
+            return Some(snapshot);
+        }
+        let index = self.semantic_index.pin_current().ok()?;
+        let generation = index.generation();
+        for resource in &generation.resources {
+            if paths.contains(&resource.display_path) {
+                snapshot.entities.insert(
+                    resource.entity_id.clone(),
+                    serde_json::to_value(resource).ok()?,
+                );
+            }
+        }
+        for document in &generation.script.documents {
+            if paths.contains(&document.path) {
+                snapshot.entities.insert(
+                    document.script_resource_id.clone(),
+                    serde_json::to_value(document).ok()?,
+                );
+            }
+        }
+        (snapshot.entities.len() <= 2_000).then_some(snapshot)
+    }
+
+    async fn retain_change_set_baseline(&self, input: &PrepareChangeSetInput, result: &Value) {
+        let Some(change_set_id) = result.get("change_set_id").and_then(Value::as_str) else {
+            return;
+        };
+        let Some(preview_digest) = result.get("preview_digest").and_then(Value::as_str) else {
+            return;
+        };
+        let Some(preview) = result.get("preview").cloned() else {
+            return;
+        };
+        let live = self.replicator.read().ok();
+        let semantic = live.as_deref().and_then(|snapshot| {
+            self.compound_semantic_snapshot(&preview, snapshot, &input.coordinates.scene_id)
+        });
+        let baseline = PreparedChangeSetBaseline {
+            project_id: input.project_id.clone(),
+            editor_session_id: input.coordinates.editor_session_id.clone(),
+            scene_id: input.coordinates.scene_id.clone(),
+            preview_digest: preview_digest.to_owned(),
+            preview,
+            live,
+            semantic,
+            index: self.compound_index_baseline(),
+            completed_report: None,
+        };
+        let mut baselines = self.change_set_baselines.lock().await;
+        baselines.insert(change_set_id.to_owned(), baseline);
+        while baselines.len() > 64 {
+            let Some(oldest) = baselines.keys().next().cloned() else {
+                break;
+            };
+            baselines.remove(&oldest);
+        }
+    }
+
+    fn bind_change_set_resource_paths(&self, params: &mut Value) -> Result<(), (String, String)> {
+        let save_scope: BTreeSet<String> = params
+            .pointer("/save_scope/paths")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect();
+        let Some(operations) = params.get_mut("operations").and_then(Value::as_array_mut) else {
+            return Err((
+                "change_set_invalid".to_owned(),
+                "The normalized change set is missing its operations.".to_owned(),
+            ));
+        };
+        if !operations.iter().any(|operation| {
+            operation.get("kind").and_then(Value::as_str) == Some("update_resource")
+                && operation
+                    .get("resource")
+                    .and_then(Value::as_str)
+                    .is_some_and(|resource| !resource.starts_with("alias:"))
+        }) {
+            return Ok(());
+        }
+        let snapshot = self.semantic_index.pin_current().map_err(|_| {
+            (
+                "resource_index_unavailable".to_owned(),
+                "The current resource index is unavailable for opaque-ID resolution.".to_owned(),
+            )
+        })?;
+        let generation = snapshot.generation();
+        for operation in operations {
+            if operation.get("kind").and_then(Value::as_str) != Some("update_resource") {
+                continue;
+            }
+            let Some(resource_id) = operation.get("resource").and_then(Value::as_str) else {
+                return Err((
+                    "change_set_invalid".to_owned(),
+                    "A resource update is missing its opaque resource ID.".to_owned(),
+                ));
+            };
+            if resource_id.starts_with("alias:") {
+                continue;
+            }
+            let expected_hash = operation
+                .get("expected_hash")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            let Some(resource) = generation
+                .resources
+                .iter()
+                .find(|candidate| candidate.entity_id == resource_id)
+            else {
+                return Err((
+                    "resource_not_found".to_owned(),
+                    "The opaque resource ID is not present in the current index generation."
+                        .to_owned(),
+                ));
+            };
+            if resource.validity != RecordValidity::Valid
+                || !resource.display_path.ends_with(".tres")
+                || resource.content_generation.as_deref() != Some(expected_hash)
+            {
+                return Err((
+                    "stale_resource_state".to_owned(),
+                    "The resource is not a current, exact .tres generation matching expected_hash."
+                        .to_owned(),
+                ));
+            }
+            if !save_scope.contains(&resource.display_path) {
+                return Err((
+                    "save_scope_mismatch".to_owned(),
+                    "The resolved resource path is not explicitly present in save_scope."
+                        .to_owned(),
+                ));
+            }
+            let Some(object) = operation.as_object_mut() else {
+                return Err((
+                    "change_set_invalid".to_owned(),
+                    "A resource update is not an object.".to_owned(),
+                ));
+            };
+            object.insert(
+                "resolved_path".to_owned(),
+                Value::String(resource.display_path.clone()),
+            );
+        }
+        Ok(())
+    }
+
     pub fn new(replicator: SnapshotReplicator) -> Self {
         Self::with_semantic_indexes(
             replicator,
@@ -576,6 +786,7 @@ impl GodotMcpServer {
             script_index,
             RuntimeOverlay::unavailable(),
             None,
+            None,
         )
     }
 
@@ -591,7 +802,8 @@ impl GodotMcpServer {
             resource_index,
             scene_index,
             script_index,
-            RuntimeOverlay::for_project(project_root),
+            RuntimeOverlay::for_project(project_root.clone()),
+            Some(project_root),
             None,
         )
     }
@@ -609,7 +821,8 @@ impl GodotMcpServer {
             resource_index,
             scene_index,
             script_index,
-            RuntimeOverlay::for_project(project_root),
+            RuntimeOverlay::for_project(project_root.clone()),
+            Some(project_root),
             Some(transaction_coordinator),
         )
     }
@@ -620,6 +833,7 @@ impl GodotMcpServer {
         scene_index: SceneIndexReader,
         script_index: ScriptIndexReader,
         runtime_overlay: RuntimeOverlay,
+        project_root: Option<PathBuf>,
         transaction_coordinator: Option<Arc<TransactionCoordinator>>,
     ) -> Self {
         let semantic_index = SemanticIndexReader::new(
@@ -636,11 +850,14 @@ impl GodotMcpServer {
             semantic_index,
             cursor_codec: CursorCodec::new(),
             runtime_overlay,
+            project_root,
             transaction_coordinator,
             validation_coordinator: Arc::new(tokio::sync::Mutex::new(
                 ValidationCoordinator::default(),
             )),
             confirmation_policy: ConfirmationPolicyStore::default(),
+            change_set_baselines: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
+            change_set_validation_tasks: Arc::new(tokio::sync::Mutex::new(BTreeSet::new())),
         }
     }
 
@@ -661,6 +878,762 @@ impl GodotMcpServer {
         match coordinator.status(transaction_id).await {
             Ok(result) => transaction_result(result),
             Err(error) => transaction_error(error),
+        }
+    }
+
+    async fn ensure_change_set_baseline(
+        &self,
+        client: &godot_codex_bridge_client::BridgeClient,
+        status: &Value,
+    ) -> Option<PreparedChangeSetBaseline> {
+        let change_set_id = status.get("change_set_id")?.as_str()?;
+        if let Some(baseline) = self
+            .change_set_baselines
+            .lock()
+            .await
+            .get(change_set_id)
+            .cloned()
+        {
+            return Some(baseline);
+        }
+        let coordinates = status.get("coordinates")?;
+        let preview = status.get("preview")?.clone();
+        let live = self.replicator.read().ok();
+        let scene_id = coordinates.get("scene_id")?.as_str()?.to_owned();
+        let semantic = live
+            .as_deref()
+            .and_then(|snapshot| self.compound_semantic_snapshot(&preview, snapshot, &scene_id));
+        let baseline = PreparedChangeSetBaseline {
+            project_id: client.project_id().to_owned(),
+            editor_session_id: client.editor_session_id().to_owned(),
+            scene_id,
+            preview_digest: status.get("preview_digest")?.as_str()?.to_owned(),
+            preview,
+            live,
+            semantic,
+            index: self.compound_index_baseline(),
+            completed_report: None,
+        };
+        self.change_set_baselines
+            .lock()
+            .await
+            .insert(change_set_id.to_owned(), baseline.clone());
+        Some(baseline)
+    }
+
+    async fn change_set_status(&self, change_set_id: &str) -> CallToolResult {
+        let Some(project_root) = &self.project_root else {
+            return structured_error(
+                "change_set_coordinator_unavailable",
+                "The project-scoped compound coordinator is unavailable.",
+                true,
+            );
+        };
+        let mut client = match godot_codex_bridge_client::BridgeClient::connect(project_root).await
+        {
+            Ok(client) => client,
+            Err(error) => return runtime_bridge_error(error),
+        };
+        match client.get_change_set_status(change_set_id).await {
+            Ok(status) => {
+                if status.get("state").and_then(Value::as_str) == Some("validating")
+                    && self
+                        .ensure_change_set_baseline(&client, &status)
+                        .await
+                        .is_some()
+                {
+                    self.spawn_change_set_validation(change_set_id.to_owned());
+                }
+                transaction_result(status)
+            }
+            Err(error) => runtime_bridge_error(error),
+        }
+    }
+
+    fn spawn_change_set_validation(&self, change_set_id: String) {
+        let server = self.clone();
+        tokio::spawn(async move {
+            {
+                let mut tasks = server.change_set_validation_tasks.lock().await;
+                if !tasks.insert(change_set_id.clone()) {
+                    return;
+                }
+            }
+            server.run_change_set_validation(&change_set_id).await;
+            server
+                .change_set_validation_tasks
+                .lock()
+                .await
+                .remove(&change_set_id);
+        });
+    }
+
+    async fn apply_compound_change_set(
+        &self,
+        input: ApplyTransactionInput,
+        context: RequestContext<RoleServer>,
+    ) -> CallToolResult {
+        let Some(project_root) = &self.project_root else {
+            return structured_error(
+                "change_set_coordinator_unavailable",
+                "The project-scoped compound coordinator is unavailable.",
+                true,
+            );
+        };
+        let mut client = match godot_codex_bridge_client::BridgeClient::connect(project_root).await
+        {
+            Ok(client) => client,
+            Err(error) => return runtime_bridge_error(error),
+        };
+        let status = match client.get_change_set_status(&input.transaction_id).await {
+            Ok(status) => status,
+            Err(error) => return runtime_bridge_error(error),
+        };
+        let Some(baseline) = self.ensure_change_set_baseline(&client, &status).await else {
+            return structured_error(
+                "change_set_baseline_unavailable",
+                "The immutable change-set baseline could not be recovered safely.",
+                false,
+            );
+        };
+        if baseline.project_id != client.project_id()
+            || baseline.editor_session_id != client.editor_session_id()
+            || baseline.preview_digest != input.preview_digest
+        {
+            return structured_error(
+                "approval_binding_mismatch",
+                "The apply request does not match the retained project, editor session, or preview.",
+                false,
+            );
+        }
+        let Some(coordinates) = status.get("coordinates") else {
+            return structured_error(
+                "change_set_baseline_unavailable",
+                "The Bridge did not return bound change-set coordinates.",
+                false,
+            );
+        };
+        if coordinates.get("scene_revision").and_then(Value::as_u64)
+            != Some(input.expected_scene_revision)
+            || coordinates.get("operation_seq").and_then(Value::as_u64)
+                != Some(input.expected_operation_seq)
+        {
+            return structured_error(
+                "stale_editor_state",
+                "The apply coordinates do not match the immutable change-set preview.",
+                true,
+            );
+        }
+        let risk_name = status
+            .get("risk")
+            .and_then(Value::as_str)
+            .unwrap_or("destructive");
+        let risk = match risk_name {
+            "low" => Risk::Low,
+            "destructive" => Risk::Destructive,
+            _ => {
+                return structured_error(
+                    "change_set_invalid",
+                    "The Bridge returned an unsupported risk classification.",
+                    false,
+                );
+            }
+        };
+        let save_scope_empty = baseline
+            .preview
+            .get("save_scope")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty);
+        let runtime_skipped = baseline
+            .preview
+            .pointer("/validation_policy/runtime")
+            .and_then(Value::as_str)
+            == Some("skip");
+        let grant_eligible = risk == Risk::Low && save_scope_empty && runtime_skipped;
+        let now_ms = unix_millis();
+        let grant_applies = grant_eligible
+            && self.confirmation_policy.allows_low_risk_memory_only(
+                client.project_id(),
+                client.editor_session_id(),
+                "change_set.atomic",
+                now_ms,
+            );
+        if !grant_applies {
+            let approval = McpApprovalProvider::new(context);
+            match approval
+                .request_change_set(
+                    &input.transaction_id,
+                    &input.preview_digest,
+                    risk_name,
+                    &baseline.preview,
+                    grant_eligible,
+                )
+                .await
+            {
+                ChangeSetApprovalDecision::Accept { grant_low_risk } => {
+                    if grant_low_risk
+                        && !self.confirmation_policy.grant_low_risk_for_session(
+                            client.project_id(),
+                            client.editor_session_id(),
+                            BTreeSet::from(["change_set.atomic".to_owned()]),
+                            unix_millis(),
+                            change_set_tools::CONFIRMATION_GRANT_MAX_MS,
+                        )
+                    {
+                        return structured_error(
+                            "confirmation_policy_scope_mismatch",
+                            "The requested session policy could not be installed safely.",
+                            false,
+                        );
+                    }
+                }
+                ChangeSetApprovalDecision::Decline => {
+                    return structured_error(
+                        "approval_declined",
+                        "The change-set approval was declined.",
+                        false,
+                    );
+                }
+                ChangeSetApprovalDecision::Cancel => {
+                    return structured_error(
+                        "approval_cancelled",
+                        "The change-set approval was cancelled.",
+                        true,
+                    );
+                }
+                ChangeSetApprovalDecision::Timeout => {
+                    return structured_error(
+                        "approval_timeout",
+                        "The change-set approval timed out.",
+                        true,
+                    );
+                }
+                ChangeSetApprovalDecision::Invalid => {
+                    return structured_error(
+                        "approval_invalid",
+                        "The approval response did not bind confirm=true exactly.",
+                        true,
+                    );
+                }
+                ChangeSetApprovalDecision::Unsupported => {
+                    return structured_error(
+                        "approval_host_unsupported",
+                        "The MCP host does not support standard form elicitation.",
+                        false,
+                    );
+                }
+            }
+        }
+
+        let last_status = match client.get_change_set_status(&input.transaction_id).await {
+            Ok(status) => status,
+            Err(error) => return runtime_bridge_error(error),
+        };
+        if last_status.get("preview_digest").and_then(Value::as_str)
+            != Some(input.preview_digest.as_str())
+        {
+            return structured_error(
+                "preview_mismatch",
+                "The immutable preview changed before apply.",
+                false,
+            );
+        }
+        let binding = ApprovalBinding {
+            project_id: client.project_id().to_owned(),
+            editor_session_id: client.editor_session_id().to_owned(),
+            scene_id: baseline.scene_id,
+            transaction_id: input.transaction_id.clone(),
+            preview_digest: input.preview_digest.clone(),
+            scope: ApprovalScope::ChangeSetAtomic,
+            risk,
+            scene_revision: input.expected_scene_revision,
+            operation_seq: input.expected_operation_seq,
+        };
+        let approval = match client.issue_transaction_approval(&binding, unix_millis()) {
+            Ok(approval) => approval,
+            Err(error) => return runtime_bridge_error(error),
+        };
+        let result = match client
+            .apply_change_set(
+                &input.transaction_id,
+                &input.preview_digest,
+                input.expected_scene_revision,
+                input.expected_operation_seq,
+                approval.receipt,
+            )
+            .await
+        {
+            Ok(result) => result,
+            Err(error) => match client.get_change_set_status(&input.transaction_id).await {
+                Ok(observed)
+                    if matches!(
+                        observed.get("state").and_then(Value::as_str),
+                        Some("validating" | "committed" | "rolled_back" | "failed" | "in_doubt")
+                    ) =>
+                {
+                    observed
+                }
+                _ => return runtime_bridge_error(error),
+            },
+        };
+        if result.get("state").and_then(Value::as_str) == Some("validating") {
+            self.spawn_change_set_validation(input.transaction_id);
+        }
+        transaction_result(result)
+    }
+
+    async fn run_change_set_validation(&self, change_set_id: &str) {
+        let Some(project_root) = &self.project_root else {
+            return;
+        };
+        let Some(baseline) = self
+            .change_set_baselines
+            .lock()
+            .await
+            .get(change_set_id)
+            .cloned()
+        else {
+            return;
+        };
+        let mut client = match godot_codex_bridge_client::BridgeClient::connect(project_root).await
+        {
+            Ok(client) => client,
+            Err(_) => return,
+        };
+        let status = match client.get_change_set_status(change_set_id).await {
+            Ok(status) => status,
+            Err(_) => return,
+        };
+        if status.get("state").and_then(Value::as_str) != Some("validating") {
+            return;
+        }
+        let Some(transaction_seq) = status.get("transaction_seq").and_then(Value::as_u64) else {
+            return;
+        };
+        let Some(postimage_digest) = status
+            .get("postimage_digest")
+            .and_then(Value::as_str)
+            .filter(|digest| digest.starts_with("sha256:") && digest.len() == 71)
+        else {
+            return;
+        };
+        if let Some((report_id, report_digest, outcome)) = &baseline.completed_report {
+            if client
+                .complete_change_set_validation(
+                    change_set_id,
+                    report_id,
+                    report_digest,
+                    outcome,
+                    transaction_seq,
+                    postimage_digest,
+                )
+                .await
+                .is_ok()
+            {
+                self.change_set_baselines.lock().await.remove(change_set_id);
+            }
+            return;
+        }
+        drop(client);
+        let policy_value = baseline
+            .preview
+            .get("validation_policy")
+            .cloned()
+            .unwrap_or_default();
+        let policy = ValidationPolicy {
+            rollback: policy_value
+                .get("rollback")
+                .and_then(Value::as_str)
+                .unwrap_or("on_required_failure")
+                .to_owned(),
+            warnings: policy_value
+                .get("warnings")
+                .and_then(Value::as_str)
+                .unwrap_or("allow")
+                .to_owned(),
+            runtime: policy_value
+                .get("runtime")
+                .and_then(Value::as_str)
+                .unwrap_or("skip")
+                .to_owned(),
+        };
+        let started_at_ms = unix_millis();
+        let deadline_ms = started_at_ms.saturating_add(if policy.runtime == "skip" {
+            30_000
+        } else {
+            60_000
+        });
+        let checks = [
+            (ValidationCheck::Intrinsic, CheckAuthority::Required),
+            (ValidationCheck::Persistence, CheckAuthority::Required),
+            (ValidationCheck::ReloadReparse, CheckAuthority::Required),
+            (ValidationCheck::IndexConvergence, CheckAuthority::Required),
+            (ValidationCheck::SemanticGraph, CheckAuthority::Required),
+            (ValidationCheck::Diagnostics, CheckAuthority::Required),
+            (ValidationCheck::Runtime, CheckAuthority::Optional),
+        ];
+        {
+            let mut validation = self.validation_coordinator.lock().await;
+            if validation
+                .begin(
+                    change_set_id,
+                    &baseline.preview_digest,
+                    policy.clone(),
+                    started_at_ms,
+                    deadline_ms,
+                    &checks,
+                )
+                .is_err()
+            {
+                return;
+            }
+        }
+
+        let (has_scene, has_resource, has_script) = change_set_operation_flags(&baseline.preview);
+        let scene_persisted = change_set_saves_scene(&baseline.preview);
+        let index_required = scene_persisted || has_resource || has_script;
+        let persistence_requested = baseline
+            .preview
+            .get("save_scope")
+            .and_then(Value::as_array)
+            .is_some_and(|scope| !scope.is_empty());
+        let mut post_live = self.replicator.read().ok();
+        let mut post_index = self.compound_index_baseline();
+        let convergence_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut live_converged = !has_scene;
+        let mut index_converged;
+        loop {
+            if let (Some(before), Some(after)) = (baseline.live.as_ref(), post_live.as_ref()) {
+                live_converged = !has_scene
+                    || (before.editor_session_id == after.editor_session_id
+                        && after.revisions.event_seq > before.revisions.event_seq);
+            }
+            index_converged = if !index_required {
+                true
+            } else {
+                match (&baseline.index, &post_index) {
+                    (Some(before), Some(after)) => {
+                        after.index_revision >= before.index_revision
+                            && (!scene_persisted
+                                || after.scene_graph_revision > before.scene_graph_revision)
+                            && (!has_resource || after.resource_revision > before.resource_revision)
+                            && (!has_script
+                                || after.script_graph_revision > before.script_graph_revision)
+                            && after.validation_digest != before.validation_digest
+                    }
+                    _ => false,
+                }
+            };
+            if live_converged && index_converged {
+                break;
+            }
+            if tokio::time::Instant::now() >= convergence_deadline {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            post_live = self.replicator.read().ok();
+            post_index = self.compound_index_baseline();
+        }
+
+        let intrinsic_passed = status
+            .get("postimage_digest")
+            .and_then(Value::as_str)
+            .is_some_and(|digest| digest.starts_with("sha256:"));
+        let post_semantic = post_live.as_deref().and_then(|live| {
+            self.compound_semantic_snapshot(&baseline.preview, live, &baseline.scene_id)
+        });
+        let semantic_comparison =
+            baseline
+                .semantic
+                .as_ref()
+                .zip(post_semantic.as_ref())
+                .map(|(before, after)| {
+                    let expected = semantic_delta_for_change_set(
+                        before,
+                        after,
+                        &baseline.preview,
+                        &baseline.scene_id,
+                    );
+                    SemanticComparison::compare(before, after, &expected)
+                });
+        let diagnostics = baseline
+            .live
+            .as_ref()
+            .zip(post_live.as_ref())
+            .filter(|(before, after)| live_diagnostics_delta_complete(before, after))
+            .map(|(before, after)| {
+                DiagnosticSummary::classify(
+                    &live_diagnostic_fingerprints(before),
+                    &live_diagnostic_fingerprints(after),
+                )
+            });
+
+        let mut runtime_outcome = CheckOutcome::Skipped;
+        let mut runtime_summary = "runtime validation was not requested".to_owned();
+        let mut runtime_session_id = None;
+        if policy.runtime != "skip" {
+            let target = if policy.runtime == "run_current_scene" {
+                RuntimeTarget::CurrentScene
+            } else {
+                RuntimeTarget::Project
+            };
+            let mut runtime_client =
+                match godot_codex_bridge_client::BridgeClient::connect(project_root).await {
+                    Ok(client) => client,
+                    Err(_) => return,
+                };
+            match runtime_client.run_runtime(target).await {
+                Ok(runtime) => {
+                    runtime_session_id = Some(runtime.runtime_session_id.clone());
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    match runtime_client
+                        .get_runtime_snapshot(
+                            &runtime.runtime_session_id,
+                            None,
+                            Some(vec![RuntimeDomain::RuntimeDiagnostics]),
+                        )
+                        .await
+                    {
+                        Ok(snapshot) => {
+                            let introduced_error = snapshot.entities.iter().any(|entity| {
+                                matches!(
+                                    entity,
+                                    RuntimeEntity::RuntimeDiagnostic(diagnostic)
+                                        if diagnostic.severity
+                                            == godot_codex_bridge_client::RuntimeDiagnosticSeverity::Error
+                                )
+                            });
+                            runtime_outcome = if introduced_error {
+                                CheckOutcome::Failed
+                            } else {
+                                CheckOutcome::Passed
+                            };
+                            runtime_summary = if introduced_error {
+                                "fresh runtime session reported an error".to_owned()
+                            } else {
+                                "fresh runtime session completed bounded diagnostic capture"
+                                    .to_owned()
+                            };
+                        }
+                        Err(_) => {
+                            runtime_outcome = CheckOutcome::Inconclusive;
+                            runtime_summary =
+                                "fresh runtime session could not provide diagnostics".to_owned();
+                        }
+                    }
+                    let _ = runtime_client
+                        .stop_runtime(&runtime.runtime_session_id, None)
+                        .await;
+                }
+                Err(_) => {
+                    runtime_outcome = CheckOutcome::Failed;
+                    runtime_summary = "fresh runtime session failed to start".to_owned();
+                }
+            }
+        }
+
+        let completed_at_ms = unix_millis();
+        let deadline_elapsed = completed_at_ms >= deadline_ms;
+        let bounded_outcome = |outcome| {
+            if deadline_elapsed && outcome != CheckOutcome::Skipped {
+                CheckOutcome::TimedOut
+            } else {
+                outcome
+            }
+        };
+        let reload_evidence = post_index.as_ref().map(|index| {
+            json!({
+                "generation_id": index.generation_id,
+                "index_revision": index.index_revision,
+            })
+        });
+        let report = {
+            let mut validation = self.validation_coordinator.lock().await;
+            let _ = validation.complete_check(
+                change_set_id,
+                ValidationCheck::Intrinsic,
+                bounded_outcome(if intrinsic_passed {
+                    CheckOutcome::Passed
+                } else {
+                    CheckOutcome::Failed
+                }),
+                if intrinsic_passed {
+                    "Bridge proved the compound postimage and native action"
+                } else {
+                    "Bridge did not prove the compound postimage"
+                },
+                status.get("postimage_digest"),
+                completed_at_ms,
+            );
+            let _ = validation.complete_check(
+                change_set_id,
+                ValidationCheck::Persistence,
+                bounded_outcome(if intrinsic_passed {
+                    CheckOutcome::Passed
+                } else {
+                    CheckOutcome::Failed
+                }),
+                if persistence_requested {
+                    "Bridge verified every explicit persisted postimage"
+                } else {
+                    "save_scope was empty and project-content bytes were not requested"
+                },
+                status.get("postimage_digest"),
+                completed_at_ms,
+            );
+            let _ = validation.complete_check(
+                change_set_id,
+                ValidationCheck::ReloadReparse,
+                bounded_outcome(if !has_resource && !has_script || index_converged {
+                    CheckOutcome::Passed
+                } else {
+                    CheckOutcome::Inconclusive
+                }),
+                if !has_resource && !has_script {
+                    "resource/script reload was not applicable"
+                } else if index_converged {
+                    "resource/script generation converged after reload"
+                } else {
+                    "resource/script generation did not converge within the proof budget"
+                },
+                reload_evidence.as_ref(),
+                completed_at_ms,
+            );
+            let convergence_evidence = json!({
+                "live_converged": live_converged,
+                "index_converged": index_converged,
+                "index_revision": post_index.as_ref().map(|index| index.index_revision),
+            });
+            let _ = validation.complete_check(
+                change_set_id,
+                ValidationCheck::IndexConvergence,
+                bounded_outcome(if live_converged && index_converged {
+                    CheckOutcome::Passed
+                } else {
+                    CheckOutcome::Inconclusive
+                }),
+                if live_converged && index_converged {
+                    "live overlay and semantic index reached newer bound generations"
+                } else {
+                    "live overlay or semantic index did not reach a provable generation"
+                },
+                Some(&convergence_evidence),
+                completed_at_ms,
+            );
+            if let Some(comparison) = semantic_comparison.clone() {
+                let matched = comparison.matched;
+                let _ = validation.set_semantic(change_set_id, comparison.clone());
+                let _ = validation.complete_check(
+                    change_set_id,
+                    ValidationCheck::SemanticGraph,
+                    bounded_outcome(if matched {
+                        CheckOutcome::Passed
+                    } else {
+                        CheckOutcome::Failed
+                    }),
+                    if matched {
+                        "affected semantic closure matched the bounded expected delta"
+                    } else {
+                        "semantic changes escaped the bounded affected closure"
+                    },
+                    serde_json::to_value(comparison).ok().as_ref(),
+                    completed_at_ms,
+                );
+            } else {
+                let _ = validation.complete_check(
+                    change_set_id,
+                    ValidationCheck::SemanticGraph,
+                    bounded_outcome(CheckOutcome::Inconclusive),
+                    "the bounded affected semantic closure could not be compared",
+                    None,
+                    completed_at_ms,
+                );
+            }
+            if let Some(summary) = diagnostics.clone() {
+                let failed = summary.introduced_errors > 0
+                    || (policy.warnings == "fail_on_introduced" && summary.introduced_warnings > 0);
+                let _ = validation.set_diagnostics(change_set_id, summary.clone());
+                let _ = validation.complete_check(
+                    change_set_id,
+                    ValidationCheck::Diagnostics,
+                    bounded_outcome(if failed {
+                        CheckOutcome::Failed
+                    } else {
+                        CheckOutcome::Passed
+                    }),
+                    if failed {
+                        "the change set introduced diagnostics rejected by policy"
+                    } else {
+                        "no policy-rejected editor diagnostics were introduced"
+                    },
+                    serde_json::to_value(summary).ok().as_ref(),
+                    completed_at_ms,
+                );
+            } else {
+                let _ = validation.complete_check(
+                    change_set_id,
+                    ValidationCheck::Diagnostics,
+                    bounded_outcome(CheckOutcome::Inconclusive),
+                    "editor diagnostics were stale or truncated beyond the proof budget",
+                    None,
+                    completed_at_ms,
+                );
+            }
+            if let Some(runtime_session_id) = &runtime_session_id {
+                let _ = validation.set_runtime_session(change_set_id, runtime_session_id);
+            }
+            let _ = validation.complete_check(
+                change_set_id,
+                ValidationCheck::Runtime,
+                bounded_outcome(runtime_outcome),
+                &runtime_summary,
+                runtime_session_id
+                    .as_ref()
+                    .map(|session| json!({"runtime_session_id": session}))
+                    .as_ref(),
+                completed_at_ms,
+            );
+            validation.finalize(change_set_id, completed_at_ms).ok()
+        };
+        let Some(report) = report else {
+            return;
+        };
+        let outcome = match report.outcome {
+            ValidationReportOutcome::Passed => "passed",
+            ValidationReportOutcome::Failed => "failed",
+            ValidationReportOutcome::Inconclusive => "inconclusive",
+            ValidationReportOutcome::TimedOut => "timed_out",
+        };
+        if let Some(retained) = self
+            .change_set_baselines
+            .lock()
+            .await
+            .get_mut(change_set_id)
+        {
+            retained.completed_report = Some((
+                report.report_id.clone(),
+                report.report_digest.clone(),
+                outcome.to_owned(),
+            ));
+        }
+        let mut finalizer =
+            match godot_codex_bridge_client::BridgeClient::connect(project_root).await {
+                Ok(client) => client,
+                Err(_) => return,
+            };
+        if finalizer
+            .complete_change_set_validation(
+                change_set_id,
+                &report.report_id,
+                &report.report_digest,
+                outcome,
+                transaction_seq,
+                postimage_digest,
+            )
+            .await
+            .is_ok()
+        {
+            self.change_set_baselines.lock().await.remove(change_set_id);
         }
     }
 
@@ -4437,6 +5410,217 @@ fn unix_millis() -> u64 {
         })
 }
 
+fn safe_digest(value: &Value) -> String {
+    let encoded = serde_json::to_vec(value).unwrap_or_default();
+    format!("sha256:{:x}", Sha256::digest(encoded))
+}
+
+fn change_set_operation_flags(preview: &Value) -> (bool, bool, bool) {
+    let mut scene = false;
+    let mut resource = false;
+    let mut script = false;
+    for operation in preview
+        .get("operations")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        match operation.get("kind").and_then(Value::as_str) {
+            Some("create_resource" | "update_resource") => resource = true,
+            Some("update_gdscript") => script = true,
+            Some(_) => scene = true,
+            None => {}
+        }
+    }
+    (scene, resource, script)
+}
+
+fn change_set_saves_scene(preview: &Value) -> bool {
+    preview
+        .get("save_scope")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .any(|path| path.ends_with(".tscn"))
+}
+
+fn live_scene_projection_complete(snapshot: &SemanticSnapshot, scene_id: &str) -> bool {
+    snapshot.scenes.get(scene_id).is_some_and(|scene| {
+        scene.get("coverage").and_then(Value::as_str) == Some("complete")
+            && scene.get("nodes_truncated").and_then(Value::as_bool) == Some(false)
+    })
+}
+
+fn live_diagnostics_complete(snapshot: &SemanticSnapshot) -> bool {
+    snapshot
+        .diagnostic_state
+        .as_ref()
+        .and_then(|state| state.get("omitted_count"))
+        .and_then(Value::as_u64)
+        == Some(0)
+        && snapshot.diagnostics.values().all(|diagnostic| {
+            diagnostic.get("message_truncated").and_then(Value::as_bool) == Some(false)
+        })
+}
+
+fn projected_u64(value: Option<&Value>) -> Option<u64> {
+    let value = value?;
+    if let Some(integer) = value.as_u64() {
+        return Some(integer);
+    }
+    let number = value.as_f64()?;
+    if number.is_finite() && number >= 0.0 && number.fract() == 0.0 && number <= u64::MAX as f64 {
+        Some(number as u64)
+    } else {
+        None
+    }
+}
+
+fn live_diagnostics_delta_complete(
+    baseline: &SemanticSnapshot,
+    postimage: &SemanticSnapshot,
+) -> bool {
+    let messages_complete = |snapshot: &SemanticSnapshot| {
+        snapshot.diagnostics.values().all(|diagnostic| {
+            diagnostic.get("message_truncated").and_then(Value::as_bool) == Some(false)
+        })
+    };
+    if !messages_complete(baseline) || !messages_complete(postimage) {
+        return false;
+    }
+    if live_diagnostics_complete(postimage) {
+        return true;
+    }
+    let Some(before) = baseline.diagnostic_state.as_ref() else {
+        return false;
+    };
+    let Some(after) = postimage.diagnostic_state.as_ref() else {
+        return false;
+    };
+    if after.get("omitted_before_first").and_then(Value::as_bool) != Some(true) {
+        return false;
+    }
+    let Some(before_last) = projected_u64(before.get("last_output_seq")) else {
+        return false;
+    };
+    let Some(after_first) = projected_u64(after.get("first_output_seq")) else {
+        return false;
+    };
+    let Some(after_last) = projected_u64(after.get("last_output_seq")) else {
+        return false;
+    };
+    after_last >= before_last && after_first <= before_last.saturating_add(1)
+}
+
+fn change_set_paths(preview: &Value) -> BTreeSet<String> {
+    preview
+        .get("operations")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|operation| operation.get("path").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect()
+}
+
+fn live_diagnostic_fingerprints(snapshot: &SemanticSnapshot) -> BTreeSet<DiagnosticFingerprint> {
+    snapshot
+        .diagnostics
+        .values()
+        .filter_map(|diagnostic| {
+            let severity = match diagnostic.get("severity").and_then(Value::as_str) {
+                Some("error") => DiagnosticSeverity::Error,
+                Some("warning") => DiagnosticSeverity::Warning,
+                _ => return None,
+            };
+            let id = diagnostic.get("entity_id")?.as_str()?.to_owned();
+            let source = diagnostic
+                .get("source")
+                .and_then(Value::as_str)
+                .unwrap_or("editor")
+                .to_owned();
+            Some(DiagnosticFingerprint {
+                id,
+                severity,
+                source,
+                entity_id: diagnostic
+                    .get("target_entity_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+                message_digest: safe_digest(diagnostic.get("message").unwrap_or(&Value::Null)),
+            })
+        })
+        .collect()
+}
+
+fn semantic_delta_for_change_set(
+    baseline: &ValidationSemanticSnapshot,
+    postimage: &ValidationSemanticSnapshot,
+    preview: &Value,
+    scene_id: &str,
+) -> ExpectedSemanticDelta {
+    let mut affected = BTreeSet::from([scene_id.to_owned()]);
+    let mut create_specs = Vec::new();
+    let paths = change_set_paths(preview);
+    for operation in preview
+        .get("operations")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        for key in [
+            "node_id",
+            "parent_node_id",
+            "new_parent_node_id",
+            "emitter_node_id",
+            "receiver_node_id",
+        ] {
+            if let Some(id) = operation.get(key).and_then(Value::as_str) {
+                affected.insert(id.to_owned());
+            }
+        }
+        if operation.get("kind").and_then(Value::as_str) == Some("create_node")
+            && let Some(name) = operation.get("name").and_then(Value::as_str)
+        {
+            create_specs.push(name.to_owned());
+        }
+    }
+    for (id, entity) in &postimage.entities {
+        let path_matches = entity
+            .get("display_path")
+            .or_else(|| entity.get("path"))
+            .and_then(Value::as_str)
+            .is_some_and(|path| paths.contains(path));
+        let created_node_matches = !baseline.entities.contains_key(id)
+            && entity.get("scene_id").and_then(Value::as_str) == Some(scene_id)
+            && entity
+                .get("name")
+                .and_then(Value::as_str)
+                .is_some_and(|name| create_specs.iter().any(|expected| expected == name));
+        if path_matches || created_node_matches {
+            affected.insert(id.clone());
+        }
+    }
+
+    let baseline_ids: BTreeSet<_> = baseline.entities.keys().cloned().collect();
+    let postimage_ids: BTreeSet<_> = postimage.entities.keys().cloned().collect();
+    let added = postimage_ids.difference(&baseline_ids).cloned();
+    let removed = baseline_ids.difference(&postimage_ids).cloned();
+    let changed = baseline_ids
+        .intersection(&postimage_ids)
+        .filter(|id| baseline.entities.get(*id) != postimage.entities.get(*id))
+        .cloned();
+    ExpectedSemanticDelta {
+        affected_closure: affected.clone(),
+        added_entities: added.filter(|id| affected.contains(id)).collect(),
+        removed_entities: removed.filter(|id| affected.contains(id)).collect(),
+        changed_entities: changed.filter(|id| affected.contains(id)).collect(),
+        added_relations: BTreeSet::new(),
+        removed_relations: BTreeSet::new(),
+    }
+}
+
 #[tool_router]
 impl GodotMcpServer {
     #[tool(
@@ -5086,12 +6270,38 @@ impl GodotMcpServer {
         if let Err(message) = input.validate() {
             return structured_error("change_set_invalid", message, false);
         }
-        let _bounded_bridge_params = input.bridge_params();
-        structured_error(
-            "change_set_coordinator_unavailable",
-            "The negotiated Bridge does not expose a ready compound executor.",
-            true,
-        )
+        let Some(project_root) = &self.project_root else {
+            return structured_error(
+                "change_set_coordinator_unavailable",
+                "The project-scoped compound coordinator is unavailable.",
+                true,
+            );
+        };
+        let mut client = match godot_codex_bridge_client::BridgeClient::connect(project_root).await
+        {
+            Ok(client) => client,
+            Err(error) => return runtime_bridge_error(error),
+        };
+        if client.project_id() != input.project_id
+            || client.editor_session_id() != input.coordinates.editor_session_id
+        {
+            return structured_error(
+                "stale_editor_state",
+                "The change-set binding does not match the active Bridge session.",
+                true,
+            );
+        }
+        let mut params = input.bridge_params();
+        if let Err((code, message)) = self.bind_change_set_resource_paths(&mut params) {
+            return structured_error(&code, &message, code == "resource_index_unavailable");
+        }
+        match client.prepare_change_set(params).await {
+            Ok(result) => {
+                self.retain_change_set_baseline(&input, &result).await;
+                transaction_result(result)
+            }
+            Err(error) => runtime_bridge_error(error),
+        }
     }
 
     #[tool(
@@ -5177,6 +6387,9 @@ impl GodotMcpServer {
         Parameters(input): Parameters<ApplyTransactionInput>,
         context: RequestContext<RoleServer>,
     ) -> CallToolResult {
+        if input.transaction_id.starts_with("change-set:") {
+            return self.apply_compound_change_set(input, context).await;
+        }
         let Some(coordinator) = &self.transaction_coordinator else {
             return coordinator_unavailable();
         };
@@ -5212,7 +6425,11 @@ impl GodotMcpServer {
         &self,
         Parameters(input): Parameters<TransactionStatusInput>,
     ) -> CallToolResult {
-        self.transaction_status(&input.transaction_id).await
+        if input.transaction_id.starts_with("change-set:") {
+            self.change_set_status(&input.transaction_id).await
+        } else {
+            self.transaction_status(&input.transaction_id).await
+        }
     }
 
     #[tool(
@@ -5229,6 +6446,27 @@ impl GodotMcpServer {
         &self,
         Parameters(input): Parameters<UndoTransactionInput>,
     ) -> CallToolResult {
+        if input.transaction_id.starts_with("change-set:") {
+            let Some(project_root) = &self.project_root else {
+                return structured_error(
+                    "change_set_coordinator_unavailable",
+                    "The project-scoped compound coordinator is unavailable.",
+                    true,
+                );
+            };
+            let mut client =
+                match godot_codex_bridge_client::BridgeClient::connect(project_root).await {
+                    Ok(client) => client,
+                    Err(error) => return runtime_bridge_error(error),
+                };
+            return match client
+                .undo_change_set(&input.transaction_id, input.expected_transaction_seq)
+                .await
+            {
+                Ok(result) => transaction_result(result),
+                Err(error) => runtime_bridge_error(error),
+            };
+        }
         let Some(coordinator) = &self.transaction_coordinator else {
             return coordinator_unavailable();
         };
@@ -5365,6 +6603,45 @@ mod tests {
         replicator.push_chunk(chunk).unwrap();
         replicator.end(end).unwrap();
         replicator
+    }
+
+    #[test]
+    fn validation_uses_domain_coverage_instead_of_unrelated_global_truncation() {
+        let replica = canonical_ready_replica();
+        let mut snapshot = (*replica.read().unwrap()).clone();
+        let scene_id = snapshot.scenes.keys().next().unwrap().clone();
+        let scene = snapshot.scenes.get_mut(&scene_id).unwrap();
+        scene["coverage"] = json!("complete");
+        scene["nodes_truncated"] = json!(false);
+        snapshot.diagnostic_state = Some(json!({"omitted_count": 0}));
+        snapshot.diagnostics.clear();
+        snapshot.truncated = true;
+
+        assert!(live_scene_projection_complete(&snapshot, &scene_id));
+        assert!(live_diagnostics_complete(&snapshot));
+
+        snapshot.scenes.get_mut(&scene_id).unwrap()["nodes_truncated"] = json!(true);
+        assert!(!live_scene_projection_complete(&snapshot, &scene_id));
+        snapshot.diagnostic_state = Some(json!({"omitted_count": 1}));
+        assert!(!live_diagnostics_complete(&snapshot));
+
+        let mut baseline = snapshot.clone();
+        baseline.diagnostic_state = Some(json!({
+            "omitted_count": 2,
+            "first_output_seq": 20,
+            "last_output_seq": 30,
+            "omitted_before_first": true
+        }));
+        let mut postimage = baseline.clone();
+        postimage.diagnostic_state = Some(json!({
+            "omitted_count": 3,
+            "first_output_seq": 28.0,
+            "last_output_seq": 33.0,
+            "omitted_before_first": true
+        }));
+        assert!(live_diagnostics_delta_complete(&baseline, &postimage));
+        postimage.diagnostic_state.as_mut().unwrap()["first_output_seq"] = json!(32);
+        assert!(!live_diagnostics_delta_complete(&baseline, &postimage));
     }
 
     fn indexed_resource_server() -> GodotMcpServer {
@@ -6093,6 +7370,50 @@ mod tests {
     }
 
     #[test]
+    fn change_set_resource_binding_is_index_owned_and_hash_exact() {
+        let server = indexed_resource_server();
+        let mut params = json!({
+            "operations": [{
+                "kind": "update_resource",
+                "resource": "entity-a",
+                "expected_hash": format!("sha256:{}", "a".repeat(64)),
+                "properties": [{"name": "offset", "value": {"type": "int", "value": 2}}]
+            }],
+            "save_scope": {"paths": ["res://a.tres"]}
+        });
+        server.bind_change_set_resource_paths(&mut params).unwrap();
+        assert_eq!(
+            params.pointer("/operations/0/resolved_path"),
+            Some(&json!("res://a.tres"))
+        );
+
+        params["operations"][0]["expected_hash"] = json!(format!("sha256:{}", "f".repeat(64)));
+        let error = server
+            .bind_change_set_resource_paths(&mut params)
+            .unwrap_err();
+        assert_eq!(error.0, "stale_resource_state");
+    }
+
+    #[test]
+    fn change_set_resource_binding_cannot_escape_explicit_save_scope() {
+        let server = indexed_resource_server();
+        let mut params = json!({
+            "operations": [{
+                "kind": "update_resource",
+                "resource": "entity-a",
+                "expected_hash": format!("sha256:{}", "a".repeat(64)),
+                "properties": [{"name": "offset", "value": {"type": "int", "value": 2}}]
+            }],
+            "save_scope": {"paths": ["res://b.tres"]}
+        });
+        let error = server
+            .bind_change_set_resource_paths(&mut params)
+            .unwrap_err();
+        assert_eq!(error.0, "save_scope_mismatch");
+        assert!(params.pointer("/operations/0/resolved_path").is_none());
+    }
+
+    #[test]
     fn live_reads_fail_closed_on_stale_revision_guards() {
         let server = GodotMcpServer::new(canonical_ready_replica());
         let current = server.replicator.read().unwrap();
@@ -6429,7 +7750,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             apply.input_schema["properties"]["transaction_id"]["pattern"],
-            "^transaction:[0-9a-f]{32}$"
+            "^(?:transaction|change-set):[0-9a-f]{32}$"
         );
         assert_eq!(
             apply.input_schema["properties"]["preview_digest"]["pattern"],

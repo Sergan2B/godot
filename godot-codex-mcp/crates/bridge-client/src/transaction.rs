@@ -82,12 +82,16 @@ pub enum OperationKind {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Risk {
+    Low,
     Write,
     Destructive,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub enum ApprovalScope {
+    #[serde(rename = "change_set.atomic")]
+    #[schemars(rename = "change_set.atomic")]
+    ChangeSetAtomic,
     #[serde(rename = "scene.node.create")]
     #[schemars(rename = "scene.node.create")]
     SceneNodeCreate,
@@ -117,6 +121,7 @@ pub enum ApprovalScope {
 impl ApprovalScope {
     fn as_str(self) -> &'static str {
         match self {
+            Self::ChangeSetAtomic => "change_set.atomic",
             Self::SceneNodeCreate => "scene.node.create",
             Self::SceneNodeDelete => "scene.node.delete",
             Self::SceneNodeReparent => "scene.node.reparent",
@@ -132,6 +137,7 @@ impl ApprovalScope {
 impl Risk {
     fn as_str(self) -> &'static str {
         match self {
+            Self::Low => "low",
             Self::Write => "write",
             Self::Destructive => "destructive",
         }
@@ -840,26 +846,38 @@ pub(crate) async fn undo(
 
 pub(crate) async fn next_event(session: &mut Session) -> Result<TransactionEvent, BridgeError> {
     ensure_available(session)?;
-    let mut value = session.receive_transaction_notification().await?;
-    normalize_wire_integers(&mut value);
-    let envelope: TransactionEventEnvelope = serde_json::from_value(value)?;
-    if !matches!(envelope.protocol_version.as_str(), "1.7" | "1.8")
-        || envelope.kind != "notification"
-        || envelope.method != "transaction.event"
-        || envelope.context.project_id != session.project_id()
-        || envelope.context.editor_session_id != session.editor_session_id()
-    {
-        return Err(BridgeError::Invalid(
-            "transaction event binding is invalid".to_owned(),
-        ));
+    loop {
+        let mut value = session.receive_transaction_notification().await?;
+        if value
+            .pointer("/params/change_set_id")
+            .and_then(Value::as_str)
+            .is_some()
+        {
+            // Compound events have their own RPC 1.8 projection. The Sprint 9
+            // coordinator must not deserialize or terminate on them; compound
+            // state is reconciled through its opaque status endpoint.
+            continue;
+        }
+        normalize_wire_integers(&mut value);
+        let envelope: TransactionEventEnvelope = serde_json::from_value(value)?;
+        if !matches!(envelope.protocol_version.as_str(), "1.7" | "1.8")
+            || envelope.kind != "notification"
+            || envelope.method != "transaction.event"
+            || envelope.context.project_id != session.project_id()
+            || envelope.context.editor_session_id != session.editor_session_id()
+        {
+            return Err(BridgeError::Invalid(
+                "transaction event binding is invalid".to_owned(),
+            ));
+        }
+        validate_coordinates(&envelope.params.coordinates)?;
+        if envelope.params.revisions.editor_session_id != session.editor_session_id() {
+            return Err(BridgeError::Invalid(
+                "transaction event revision binding is invalid".to_owned(),
+            ));
+        }
+        return Ok(envelope.params);
     }
-    validate_coordinates(&envelope.params.coordinates)?;
-    if envelope.params.revisions.editor_session_id != session.editor_session_id() {
-        return Err(BridgeError::Invalid(
-            "transaction event revision binding is invalid".to_owned(),
-        ));
-    }
-    Ok(envelope.params)
 }
 
 pub(crate) fn issue_approval(
@@ -871,7 +889,12 @@ pub(crate) fn issue_approval(
     if binding.project_id != session.project_id()
         || binding.editor_session_id != session.editor_session_id()
         || !valid_prefixed_hex(&binding.scene_id, "scene:")
-        || !valid_prefixed_hex(&binding.transaction_id, "transaction:")
+        || (!valid_prefixed_hex(&binding.transaction_id, "transaction:")
+            && !(session.protocol_version() == "1.8"
+                && session.capabilities().contains("transaction.change_set_v1")
+                && valid_prefixed_hex(&binding.transaction_id, "change-set:")
+                && binding.scope == ApprovalScope::ChangeSetAtomic
+                && matches!(binding.risk, Risk::Low | Risk::Destructive)))
         || !valid_digest(&binding.preview_digest)
         || binding.scene_revision > MAX_SAFE_INTEGER
         || binding.operation_seq > MAX_SAFE_INTEGER

@@ -1,3 +1,4 @@
+mod change_set;
 mod discovery;
 mod protocol;
 mod resource;
@@ -203,6 +204,83 @@ impl BridgeClient {
             expected_transaction_seq,
             expected_scene_revision,
             expected_operation_seq,
+        )
+        .await
+    }
+
+    pub async fn prepare_change_set(
+        &mut self,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value, BridgeError> {
+        change_set::prepare(&mut self.session, params).await
+    }
+
+    pub async fn apply_change_set(
+        &mut self,
+        change_set_id: &str,
+        preview_digest: &str,
+        expected_scene_revision: u64,
+        expected_operation_seq: u64,
+        approval: ApprovalReceipt,
+    ) -> Result<serde_json::Value, BridgeError> {
+        change_set::apply(
+            &mut self.session,
+            change_set_id,
+            preview_digest,
+            expected_scene_revision,
+            expected_operation_seq,
+            approval,
+        )
+        .await
+    }
+
+    pub async fn get_change_set_status(
+        &mut self,
+        change_set_id: &str,
+    ) -> Result<serde_json::Value, BridgeError> {
+        change_set::status(&mut self.session, change_set_id).await
+    }
+
+    pub async fn undo_change_set(
+        &mut self,
+        change_set_id: &str,
+        expected_transaction_seq: u64,
+    ) -> Result<serde_json::Value, BridgeError> {
+        change_set::undo(&mut self.session, change_set_id, expected_transaction_seq).await
+    }
+
+    pub async fn complete_change_set_validation(
+        &mut self,
+        change_set_id: &str,
+        report_id: &str,
+        report_digest: &str,
+        outcome: &str,
+        expected_transaction_seq: u64,
+        expected_postimage_digest: &str,
+    ) -> Result<serde_json::Value, BridgeError> {
+        change_set::validation_complete(
+            &mut self.session,
+            change_set_id,
+            report_id,
+            report_digest,
+            outcome,
+            expected_transaction_seq,
+            expected_postimage_digest,
+        )
+        .await
+    }
+
+    pub async fn rollback_change_set(
+        &mut self,
+        change_set_id: &str,
+        expected_transaction_seq: u64,
+        expected_postimage_digest: &str,
+    ) -> Result<serde_json::Value, BridgeError> {
+        change_set::rollback(
+            &mut self.session,
+            change_set_id,
+            expected_transaction_seq,
+            expected_postimage_digest,
         )
         .await
     }

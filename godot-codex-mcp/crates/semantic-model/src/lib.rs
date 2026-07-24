@@ -13,6 +13,12 @@ pub struct RevisionVector {
     pub project_revision: u64,
     pub operation_seq: u64,
     #[serde(default)]
+    pub resource_revision: u64,
+    #[serde(default)]
+    pub scene_graph_revision: u64,
+    #[serde(default)]
+    pub script_graph_revision: u64,
+    #[serde(default)]
     pub scene_revisions: BTreeMap<String, u64>,
 }
 
@@ -648,6 +654,9 @@ mod tests {
             event_seq: 7,
             project_revision: 3,
             operation_seq: 0,
+            resource_revision: 1,
+            scene_graph_revision: 1,
+            script_graph_revision: 1,
             scene_revisions: BTreeMap::new(),
         }
     }
@@ -664,6 +673,36 @@ mod tests {
             chunk_count: 1,
             limits_applied: json!({"variant_depth": 8, "container_items": 1000}),
         }
+    }
+
+    #[test]
+    fn revision_vector_accepts_rpc_18_domains_and_defaults_for_older_snapshots() {
+        let current: RevisionVector = serde_json::from_value(json!({
+            "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+            "event_seq": 8,
+            "project_revision": 4,
+            "operation_seq": 2,
+            "resource_revision": 11,
+            "scene_graph_revision": 12,
+            "script_graph_revision": 13,
+            "scene_revisions": {}
+        }))
+        .unwrap();
+        assert_eq!(current.resource_revision, 11);
+        assert_eq!(current.scene_graph_revision, 12);
+        assert_eq!(current.script_graph_revision, 13);
+
+        let legacy: RevisionVector = serde_json::from_value(json!({
+            "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+            "event_seq": 7,
+            "project_revision": 3,
+            "operation_seq": 1,
+            "scene_revisions": {}
+        }))
+        .unwrap();
+        assert_eq!(legacy.resource_revision, 0);
+        assert_eq!(legacy.scene_graph_revision, 0);
+        assert_eq!(legacy.script_graph_revision, 0);
     }
 
     #[test]
