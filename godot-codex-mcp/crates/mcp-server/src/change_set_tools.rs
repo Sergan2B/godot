@@ -309,15 +309,18 @@ impl PrepareChangeSetInput {
             .iter()
             .filter(|path| path.ends_with(".tscn"))
             .count();
-        if scene_paths > usize::from(has_scene)
-            || (!has_persistence
-                && !self.save_scope.paths.is_empty()
-                && !(has_scene && scene_paths == self.save_scope.paths.len()))
-            || (has_persistence && self.save_scope.paths.is_empty())
+        const SCOPE_ERROR: &str = "save_scope must contain only affected persistence targets and at most one saved open scene";
+        if scene_paths > usize::from(has_scene) {
+            return Err(SCOPE_ERROR);
+        }
+        if has_persistence && self.save_scope.paths.is_empty() {
+            return Err(SCOPE_ERROR);
+        }
+        if !has_persistence
+            && !self.save_scope.paths.is_empty()
+            && (!has_scene || scene_paths != self.save_scope.paths.len())
         {
-            return Err(
-                "save_scope must contain only affected persistence targets and at most one saved open scene",
-            );
+            return Err(SCOPE_ERROR);
         }
         Ok(())
     }

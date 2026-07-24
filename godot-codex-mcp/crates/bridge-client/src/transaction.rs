@@ -889,8 +889,8 @@ pub(crate) fn issue_approval(
     if binding.project_id != session.project_id()
         || binding.editor_session_id != session.editor_session_id()
         || !valid_prefixed_hex(&binding.scene_id, "scene:")
-        || (!valid_prefixed_hex(&binding.transaction_id, "transaction:")
-            && !(session.protocol_version() == "1.8"
+        || !(valid_prefixed_hex(&binding.transaction_id, "transaction:")
+            || (session.protocol_version() == "1.8"
                 && session.capabilities().contains("transaction.change_set_v1")
                 && valid_prefixed_hex(&binding.transaction_id, "change-set:")
                 && binding.scope == ApprovalScope::ChangeSetAtomic
