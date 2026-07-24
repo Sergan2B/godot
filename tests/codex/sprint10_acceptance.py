@@ -832,6 +832,7 @@ def build_report(timeout: float) -> dict[str, Any]:
                 str(SIDECAR),
                 "--timeout",
                 str(timeout),
+                "--additive-sprint10-registry",
                 "--report",
                 str(sprint9_path),
             ],

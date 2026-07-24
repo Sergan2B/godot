@@ -97,6 +97,16 @@ MUTATING_TOOLS = {
     "godot_stop_project",
     "godot_undo_transaction",
 }
+SPRINT10_TOOL_NAMES = {
+    "godot_get_confirmation_policy",
+    "godot_get_validation_report",
+    "godot_prepare_change_set",
+    "godot_reset_confirmation_policy",
+}
+SPRINT10_MUTATING_TOOLS = {
+    "godot_prepare_change_set",
+    "godot_reset_confirmation_policy",
+}
 PREPARE_TOOLS = {
     "attach_script": "godot_prepare_attach_script",
     "connect_signal": "godot_prepare_connect_signal",
@@ -2636,6 +2646,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--skip-approval-timeout", action="store_true")
     parser.add_argument("--skip-faults", action="store_true")
     parser.add_argument(
+        "--additive-sprint10-registry",
+        action="store_true",
+        help="accept the four additive Sprint 10 tools while exercising Sprint 9",
+    )
+    parser.add_argument(
         "--fault-scenarios",
         nargs="*",
         choices=FAULT_SCENARIOS,
@@ -2645,7 +2660,11 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def main() -> int:
+    global TOOL_NAMES, MUTATING_TOOLS
     arguments = parse_arguments()
+    if arguments.additive_sprint10_registry:
+        TOOL_NAMES = TOOL_NAMES | SPRINT10_TOOL_NAMES
+        MUTATING_TOOLS = MUTATING_TOOLS | SPRINT10_MUTATING_TOOLS
     require(sys.platform == "darwin", "S9 model-free gate requires macOS")
     require(
         platform.machine().lower() in {"arm64", "aarch64"},
@@ -2811,7 +2830,7 @@ def main() -> int:
         "status": "passed",
         "platform": "macos-arm64",
         "protocol": MCP_PROTOCOL,
-        "tool_registry": 36,
+        "tool_registry": len(TOOL_NAMES),
         "operations": operations,
         "operation_count": len(operations),
         "transaction_identity_unique": True,

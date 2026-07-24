@@ -180,7 +180,7 @@ def initialize_sidecar(
     require(isinstance(tools, list), "MCP tool registry omitted tools")
     tool_names = {tool.get("name") for tool in tools}
     require(
-        len(tools) == 36 and TOOL_NAMES <= tool_names,
+        len(tools) == len(tool_names) == 40 and TOOL_NAMES <= tool_names,
         "MCP registry does not preserve the 16-tool Sprint 7 surface",
     )
     sprint7_tools = [

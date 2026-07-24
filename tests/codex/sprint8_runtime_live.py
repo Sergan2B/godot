@@ -422,7 +422,7 @@ def initialize_sidecar(sidecar: Path, project: Path, timeout: float) -> tuple[Li
     require(isinstance(tools, list), "MCP tool list is absent")
     tool_names = {tool.get("name") for tool in tools}
     require(
-        len(tools) == 36 and TOOL_NAMES <= tool_names,
+        len(tools) == len(tool_names) == 40 and TOOL_NAMES <= tool_names,
         "MCP registry does not preserve the 25-tool Sprint 8 surface",
     )
     require(
