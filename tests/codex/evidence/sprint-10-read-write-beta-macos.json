@@ -1,0 +1,181 @@
+{
+  "artifacts": {
+    "godot_sha256": "sha256:a6790451f05cb04ad8d136e66bb56188a49eb4f3e9b8b4e670b8eeb13605edb3",
+    "model_free_report_sha256": "sha256:a908ab49b22f0e9af691357c93352f69f397db36bed758d5949681f354fbd506",
+    "model_free_runner_sha256": "sha256:5bf805b9e1b4b5d4d2a920a8c189f8c1ee94c798cf6676d2b3beccabac59ea4b",
+    "sidecar_sha256": "sha256:b490e1b97719a3c84230614f22e0c787fa1053e49dbe65bd0239b0a0c4e74f2a",
+    "validator_sha256": "sha256:bbcd927658ca002f00536abd7e7d10df658300c750627d691b247f01a5fae7e6"
+  },
+  "checks": {
+    "affected_graph_bounded": true,
+    "aliases_and_dependencies_closed": true,
+    "approval_binding_exact": true,
+    "automatic_validation_bound": true,
+    "bridge_non_blocking": true,
+    "change_set_atomic": true,
+    "confirmation_policy_host_owned": true,
+    "diagnostics_delta_bound": true,
+    "exact_compound_undo": true,
+    "fault_recovery_fail_closed": true,
+    "idempotent_prepare": true,
+    "operation_limit_1_16_17": true,
+    "persistent_scope_exact": true,
+    "prepare_read_only": true,
+    "report_pages_bounded": true,
+    "rollback_policy_closed": true,
+    "rpc_1_0_1_8_compatible": true,
+    "runtime_optional_and_bounded": true,
+    "source_and_native_ids_redacted": true,
+    "tool_registry_exact_40": true,
+    "validation_report_immutable": true,
+    "write_beta_workflow_complete": true
+  },
+  "cleanup": {
+    "editor_processes_stopped": true,
+    "game_processes_stopped": true,
+    "sidecar_processes_stopped": true,
+    "temporary_workspaces_removed": true
+  },
+  "external_gates": {
+    "linux": {
+      "reason": "local qualifying coordinate is macOS arm64",
+      "status": "not_run"
+    },
+    "remote_ci": {
+      "reason": "no remote CI coordinate was requested",
+      "status": "not_run"
+    },
+    "windows": {
+      "reason": "local qualifying coordinate is macOS arm64",
+      "status": "not_run"
+    }
+  },
+  "local_gates": {
+    "cpp_s10_profiles": {
+      "duration_ms": 5018.14,
+      "status": "passed"
+    },
+    "final_integrity": {
+      "duration_ms": 399.262,
+      "status": "passed"
+    },
+    "fixture_oracle": {
+      "duration_ms": 130.918,
+      "status": "passed"
+    },
+    "godot_editor_build": {
+      "duration_ms": 11819.764,
+      "status": "passed"
+    },
+    "model_free_mcp": {
+      "duration_ms": 9192.258,
+      "status": "passed"
+    },
+    "release_sidecar_build": {
+      "duration_ms": 348.449,
+      "status": "passed"
+    },
+    "rpc_conformance": {
+      "duration_ms": 2023.383,
+      "status": "passed"
+    },
+    "rust_clippy": {
+      "duration_ms": 165.575,
+      "status": "passed"
+    },
+    "rust_format": {
+      "duration_ms": 371.021,
+      "status": "passed"
+    },
+    "rust_workspace_tests": {
+      "duration_ms": 16282.916,
+      "status": "passed"
+    },
+    "sprint6_live_regression": {
+      "duration_ms": 9599.722,
+      "status": "passed"
+    },
+    "sprint7_live_regression": {
+      "duration_ms": 26463.441,
+      "status": "passed"
+    },
+    "sprint8_live_regression": {
+      "duration_ms": 32987.56,
+      "status": "passed"
+    },
+    "sprint9_live_regression": {
+      "duration_ms": 333636.085,
+      "status": "passed"
+    }
+  },
+  "performance": {
+    "apply": {
+      "budget_ms": 5000,
+      "max_ms": 35.777,
+      "p95_ms": 35.777
+    },
+    "prepare": {
+      "budget_ms": 750,
+      "max_ms": 18.911,
+      "p95_ms": 18.911
+    },
+    "report": {
+      "budget_ms": 300,
+      "max_ms": 2.25,
+      "p95_ms": 2.25
+    },
+    "status": {
+      "budget_ms": 200,
+      "max_ms": 30.766,
+      "p95_ms": 30.766
+    },
+    "undo": {
+      "budget_ms": 5000,
+      "max_ms": 1392.99,
+      "p95_ms": 1392.99
+    }
+  },
+  "platform": {
+    "architecture": "arm64",
+    "os": "macos"
+  },
+  "profile": "qualifying_local_macos_arm64",
+  "protocols": {
+    "bridge_rpc": "1.8",
+    "mcp": "2025-11-25",
+    "tools": 40
+  },
+  "redaction": {
+    "absolute_paths_absent": true,
+    "approval_material_absent": true,
+    "canaries_absent": true,
+    "native_ids_absent": true,
+    "source_and_preimages_absent": true
+  },
+  "schema_version": "s10-read-write-beta-evidence/1.0",
+  "source": {
+    "commit": "b7ca0ba97738d30d2180104b073471cf3e590bfd",
+    "file_count": 329,
+    "fixture_manifest_sha256": "sha256:1b74c89d9504727723221fc454cd00939bdc9ac5f95e82a1aef5e882189e07a0",
+    "golden_sha256": "sha256:e440a85c9d837c7d42bdf0c3977eede964cb2915d3fa967789e4c7ee0816c076",
+    "scope_manifest": "tests/codex/sprint10_source_scopes.txt",
+    "sha256": "sha256:b4bf352e6744a11a3abf2971cf14c7bfc112d6c47b960e920548a1bb46d82ef5"
+  },
+  "sprint": 10,
+  "status": "passed",
+  "summary": {
+    "fault_scenarios": 11,
+    "operation_kinds": 11,
+    "primary_change_sets": 1,
+    "validation_checks": 7
+  },
+  "toolchain": {
+    "cargo": "cargo 1.94.1 (29ea6fb6a 2026-03-24)",
+    "macos_sdk": "26.2",
+    "python": "3.14.6",
+    "rust_host": "aarch64-apple-darwin",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)",
+    "scons": "SCons by Steven Knight et al.:",
+    "xcode": "Xcode 26.3; Build version 17C529"
+  }
+}
