@@ -1,0 +1,11 @@
+{
+  "schema_version": "s11-human-consent-receipt/1.0",
+  "acquisition_kind": "template",
+  "qualification": false,
+  "status": "unacquired",
+  "payload": {
+    "template_id": "sprint11-human-consent-receipt-template-v1",
+    "intended_acquisition_kind": "real_human",
+    "notice": "UNACQUIRED TEMPLATE: no person has consented and this file is not qualification evidence."
+  }
+}

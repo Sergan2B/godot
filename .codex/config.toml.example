@@ -1,16 +1,40 @@
-# Copy this file into the .codex directory of the Godot project that the editor
-# opens. Put the release sidecar on PATH or replace command with its absolute
-# path. Project-scoped configuration is loaded only when that project is trusted.
+# Prefer `godot-codex setup`, which previews and owns its exact merge. This
+# manual example is the frozen read-only profile. Copy it to
+# `<project>/.codex/config.toml` only for the exact project Godot opens.
+# Project-scoped configuration is loaded only after that project is trusted.
+# Replace `<username>` only if you are not using setup. Codex GUI processes do
+# not inherit a shell PATH, so a basename is intentionally unsupported.
 
 [mcp_servers.godot_editor]
-command = "godot-codex-mcp"
+command = "/Users/<username>/Library/Application Support/GodotCodex/current/bin/godot-codex-mcp"
 args = ["--project-root", "."]
-cwd = "."
+cwd = ".."
 required = true
 startup_timeout_sec = 10
-tool_timeout_sec = 10
+tool_timeout_sec = 60
 enabled_tools = [
-  "godot_get_editor_state",
+  "godot_capture_viewport",
+  "godot_find_resource_owners",
+  "godot_find_usages",
+  "godot_get_confirmation_policy",
+  "godot_get_connection_status",
   "godot_get_current_scene",
+  "godot_get_diagnostics",
+  "godot_get_editor_history",
+  "godot_get_editor_state",
+  "godot_get_inspector_state",
+  "godot_get_open_scenes",
+  "godot_get_open_scripts",
+  "godot_get_resource_dependencies",
+  "godot_get_runtime_tree",
+  "godot_get_scene_graph",
   "godot_get_selected_nodes",
+  "godot_get_stack_trace",
+  "godot_get_transaction_status",
+  "godot_get_validation_report",
+  "godot_get_viewport_state",
+  "godot_inspect_node",
+  "godot_inspect_runtime_object",
+  "godot_inspect_symbol",
+  "godot_search_symbols",
 ]

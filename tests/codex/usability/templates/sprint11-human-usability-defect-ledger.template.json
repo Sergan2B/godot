@@ -1,0 +1,11 @@
+{
+  "schema_version": "s11-human-usability-defect-ledger/1.0",
+  "acquisition_kind": "template",
+  "qualification": false,
+  "status": "unacquired",
+  "payload": {
+    "template_id": "sprint11-human-usability-defect-ledger-template-v1",
+    "intended_acquisition_kind": "real_human_derived",
+    "notice": "UNACQUIRED TEMPLATE: this file contains no observed defect and is not qualification evidence."
+  }
+}

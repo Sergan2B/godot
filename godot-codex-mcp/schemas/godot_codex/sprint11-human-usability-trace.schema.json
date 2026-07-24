@@ -1,0 +1,1107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-human-usability-trace.schema.json",
+  "title": "Sprint 11 primary human-usability trace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "acquisition_kind",
+    "qualification",
+    "status",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s11-human-usability-trace/1.0"
+    },
+    "acquisition_kind": {
+      "enum": [
+        "template",
+        "synthetic_contract_fixture",
+        "real_human"
+      ]
+    },
+    "qualification": {
+      "type": "boolean"
+    },
+    "status": {
+      "enum": [
+        "unacquired",
+        "fixture_valid",
+        "passed",
+        "failed"
+      ]
+    },
+    "payload": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/template_payload"
+        },
+        {
+          "$ref": "#/$defs/run_trace"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "template"
+          }
+        },
+        "required": [
+          "acquisition_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualification": {
+            "const": false
+          },
+          "status": {
+            "const": "unacquired"
+          },
+          "payload": {
+            "$ref": "#/$defs/template_payload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "synthetic_contract_fixture"
+          }
+        },
+        "required": [
+          "acquisition_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualification": {
+            "const": false
+          },
+          "status": {
+            "const": "fixture_valid"
+          },
+          "payload": {
+            "$ref": "#/$defs/run_trace"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "real_human"
+          },
+          "status": {
+            "const": "passed"
+          }
+        },
+        "required": [
+          "acquisition_kind",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualification": {
+            "const": true
+          },
+          "payload": {
+            "$ref": "#/$defs/run_trace"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "real_human"
+          },
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": [
+          "acquisition_kind",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualification": {
+            "const": false
+          },
+          "payload": {
+            "$ref": "#/$defs/run_trace"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)[A-Za-z0-9._+/-]+$"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^s11u-run:[0-9a-f]{32}$"
+    },
+    "participant_id": {
+      "type": "string",
+      "pattern": "^participant:sha256:[0-9a-f]{64}$"
+    },
+    "operator_id": {
+      "type": "string",
+      "pattern": "^operator:sha256:[0-9a-f]{64}$"
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^event:[0-9]{4}$"
+    },
+    "goal_id": {
+      "enum": [
+        "install_and_connect",
+        "saved_semantic_context",
+        "offline_context",
+        "doctor_fault_matrix",
+        "runtime_diagnostics",
+        "compound_write_and_undo",
+        "project_isolation"
+      ]
+    },
+    "fault_id": {
+      "enum": [
+        "missing_binary",
+        "stale_discovery",
+        "version_mismatch",
+        "authentication_failure",
+        "invalid_project_config"
+      ]
+    },
+    "help_source": {
+      "enum": [
+        "package_beta_guide",
+        "package_skill",
+        "mcp_server_instructions",
+        "godot_codex_help",
+        "godot_codex_doctor_output",
+        "project_agents_guidance"
+      ]
+    },
+    "comprehension_id": {
+      "enum": [
+        "project_binding",
+        "offline_limits",
+        "sandbox_approval",
+        "action_only_form",
+        "validation",
+        "undo"
+      ]
+    },
+    "assertion_id": {
+      "enum": [
+        "approval.accept",
+        "approval.cancel",
+        "approval.decline",
+        "approval.timeout",
+        "connection.status",
+        "host.approval_layers",
+        "host.config_reload",
+        "host.launcher",
+        "host.offline_status",
+        "host.unsupported_form",
+        "multi_project.reject",
+        "offline.saved_query",
+        "runtime.error_stack",
+        "saved.current_scene",
+        "transaction.apply",
+        "transaction.preview",
+        "transaction.undo",
+        "validation.result"
+      ]
+    },
+    "template_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "template_id",
+        "intended_acquisition_kind",
+        "notice"
+      ],
+      "properties": {
+        "template_id": {
+          "const": "sprint11-human-usability-trace-template-v1"
+        },
+        "intended_acquisition_kind": {
+          "const": "real_human"
+        },
+        "notice": {
+          "const": "UNACQUIRED TEMPLATE: this file contains no participant observation and is not qualification evidence."
+        }
+      }
+    },
+    "artifact_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[A-Za-z0-9._/-]+$"
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "package_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_commit",
+        "manifest_sha256",
+        "archive_sha256",
+        "package_tree_sha256",
+        "operations_binary_sha256",
+        "mcp_binary_sha256",
+        "godot_prerequisite_sha256"
+      ],
+      "properties": {
+        "source_commit": {
+          "$ref": "#/$defs/commit"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "archive_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "package_tree_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "operations_binary_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "mcp_binary_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "godot_prerequisite_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "fixture_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixture_id",
+        "tree_sha256",
+        "project_file_sha256"
+      ],
+      "properties": {
+        "fixture_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "tree_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "project_file_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "surface_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface",
+        "host_coordinate_id",
+        "host_coordinate_sha256",
+        "host_artifact_sha256",
+        "host_tree_sha256",
+        "host_version",
+        "host_build",
+        "architecture"
+      ],
+      "properties": {
+        "surface": {
+          "enum": [
+            "app",
+            "cli",
+            "ide"
+          ]
+        },
+        "host_coordinate_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[A-Za-z0-9._/-]+$"
+        },
+        "host_coordinate_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_tree_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9._+-]+$"
+        },
+        "host_build": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[A-Za-z0-9._+-]+$"
+        },
+        "architecture": {
+          "const": "arm64"
+        }
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package",
+        "fixture",
+        "surface",
+        "prompt_pack",
+        "participant_script",
+        "operator_protocol",
+        "consent_document",
+        "trace_schema",
+        "rubric_schema",
+        "rubric_template"
+      ],
+      "properties": {
+        "package": {
+          "$ref": "#/$defs/package_binding"
+        },
+        "fixture": {
+          "$ref": "#/$defs/fixture_binding"
+        },
+        "surface": {
+          "$ref": "#/$defs/surface_binding"
+        },
+        "prompt_pack": {
+          "$ref": "#/$defs/artifact_binding"
+        },
+        "participant_script": {
+          "$ref": "#/$defs/artifact_binding"
+        },
+        "operator_protocol": {
+          "$ref": "#/$defs/artifact_binding"
+        },
+        "consent_document": {
+          "$ref": "#/$defs/artifact_binding"
+        },
+        "trace_schema": {
+          "$ref": "#/$defs/artifact_binding"
+        },
+        "rubric_schema": {
+          "$ref": "#/$defs/artifact_binding"
+        },
+        "rubric_template": {
+          "$ref": "#/$defs/artifact_binding"
+        }
+      }
+    },
+    "participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "participant_id",
+        "implementation_independent",
+        "consent_recorded",
+        "consent_receipt_sha256",
+        "pseudonym_algorithm",
+        "salt_custody"
+      ],
+      "properties": {
+        "participant_id": {
+          "$ref": "#/$defs/participant_id"
+        },
+        "implementation_independent": {
+          "type": "boolean"
+        },
+        "consent_recorded": {
+          "const": true
+        },
+        "consent_receipt_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "pseudonym_algorithm": {
+          "const": "salted-sha256-domain-separated-v1"
+        },
+        "salt_custody": {
+          "const": "private_consent_ledger_until_withdrawal_deadline"
+        }
+      }
+    },
+    "clean_start": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_path",
+        "receipt_sha256",
+        "disposable_fixture_copy",
+        "source_fixture_unchanged",
+        "no_preexisting_project_config",
+        "no_preexisting_bridge_metadata",
+        "no_preexisting_offline_cache",
+        "fresh_surface_task",
+        "frozen_archive_verified",
+        "package_manifest_verified"
+      ],
+      "properties": {
+        "receipt_path": {
+          "$ref": "#/$defs/path"
+        },
+        "receipt_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "disposable_fixture_copy": {
+          "const": true
+        },
+        "source_fixture_unchanged": {
+          "const": true
+        },
+        "no_preexisting_project_config": {
+          "const": true
+        },
+        "no_preexisting_bridge_metadata": {
+          "const": true
+        },
+        "no_preexisting_offline_cache": {
+          "const": true
+        },
+        "fresh_surface_task": {
+          "const": true
+        },
+        "frozen_archive_verified": {
+          "const": true
+        },
+        "package_manifest_verified": {
+          "const": true
+        }
+      }
+    },
+    "assistance_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_help_sources",
+        "developer_coaching",
+        "fixture_answers_disclosed",
+        "raw_prompts_recorded",
+        "operator_intervention_codes"
+      ],
+      "properties": {
+        "allowed_help_sources": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/help_source"
+          }
+        },
+        "developer_coaching": {
+          "const": false
+        },
+        "fixture_answers_disclosed": {
+          "const": false
+        },
+        "raw_prompts_recorded": {
+          "const": false
+        },
+        "operator_intervention_codes": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "enum": [
+              "consent",
+              "fault_inject",
+              "fault_reset",
+              "safety_stop"
+            ]
+          }
+        }
+      }
+    },
+    "fault_randomization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "seed_commitment",
+        "committed_before_first_fault",
+        "order"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "sha256-seeded-sort-v1"
+        },
+        "seed_commitment": {
+          "$ref": "#/$defs/digest"
+        },
+        "committed_before_first_fault": {
+          "const": true
+        },
+        "order": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/fault_id"
+          }
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "goal_id",
+        "status",
+        "duration_ms",
+        "wrong_turns",
+        "help_source_ids",
+        "remediation_succeeded",
+        "semantic_assertion_ids",
+        "started_event",
+        "completed_event"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7
+        },
+        "goal_id": {
+          "$ref": "#/$defs/goal_id"
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "blocked"
+          ]
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 14400000
+        },
+        "wrong_turns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "help_source_ids": {
+          "type": "array",
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/help_source"
+          }
+        },
+        "remediation_succeeded": {
+          "type": "boolean"
+        },
+        "semantic_assertion_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/assertion_id"
+          }
+        },
+        "started_event": {
+          "$ref": "#/$defs/event_id"
+        },
+        "completed_event": {
+          "$ref": "#/$defs/event_id"
+        }
+      }
+    },
+    "doctor_fault": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "scenario",
+        "expected_diagnostic_code",
+        "observed_diagnostic_code",
+        "expected_remediation_id",
+        "observed_remediation_id",
+        "status",
+        "remediation_succeeded",
+        "reset_verified",
+        "injected_event",
+        "diagnosed_event",
+        "reset_event"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "scenario": {
+          "$ref": "#/$defs/fault_id"
+        },
+        "expected_diagnostic_code": {
+          "enum": [
+            "binary_missing",
+            "bridge_discovery_stale",
+            "bridge_version_incompatible",
+            "bridge_authentication_failed",
+            "project_config_invalid"
+          ]
+        },
+        "observed_diagnostic_code": {
+          "enum": [
+            "binary_missing",
+            "bridge_discovery_stale",
+            "bridge_version_incompatible",
+            "bridge_authentication_failed",
+            "project_config_invalid"
+          ]
+        },
+        "expected_remediation_id": {
+          "enum": [
+            "upgrade_godot_codex",
+            "start_matching_editor",
+            "upgrade_godot_bridge",
+            "repair_project_config"
+          ]
+        },
+        "observed_remediation_id": {
+          "enum": [
+            "upgrade_godot_codex",
+            "start_matching_editor",
+            "upgrade_godot_bridge",
+            "repair_project_config"
+          ]
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "safety_stopped"
+          ]
+        },
+        "remediation_succeeded": {
+          "type": "boolean"
+        },
+        "reset_verified": {
+          "const": true
+        },
+        "injected_event": {
+          "$ref": "#/$defs/event_id"
+        },
+        "diagnosed_event": {
+          "$ref": "#/$defs/event_id"
+        },
+        "reset_event": {
+          "$ref": "#/$defs/event_id"
+        }
+      }
+    },
+    "timeline_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "event_id",
+        "elapsed_ms",
+        "actor",
+        "kind",
+        "subject_id",
+        "outcome",
+        "projection_sha256"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1024
+        },
+        "event_id": {
+          "$ref": "#/$defs/event_id"
+        },
+        "elapsed_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 14400000
+        },
+        "actor": {
+          "enum": [
+            "participant",
+            "operator",
+            "system"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "run_started",
+            "consent_recorded",
+            "clean_start_verified",
+            "task_started",
+            "status_observed",
+            "help_opened",
+            "wrong_turn",
+            "task_completed",
+            "fault_order_committed",
+            "fault_injected",
+            "fault_diagnosed",
+            "fault_reset",
+            "comprehension_asked",
+            "comprehension_scored",
+            "safety_stop",
+            "run_completed"
+          ]
+        },
+        "subject_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z0-9_.:-]+$"
+        },
+        "outcome": {
+          "enum": [
+            "observed",
+            "passed",
+            "failed",
+            "not_applicable"
+          ]
+        },
+        "projection_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "comprehension_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "comprehension_id",
+        "result",
+        "asked_event",
+        "scored_event"
+      ],
+      "properties": {
+        "comprehension_id": {
+          "$ref": "#/$defs/comprehension_id"
+        },
+        "result": {
+          "enum": [
+            "correct",
+            "partial",
+            "incorrect"
+          ]
+        },
+        "asked_event": {
+          "$ref": "#/$defs/event_id"
+        },
+        "scored_event": {
+          "$ref": "#/$defs/event_id"
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "first_useful_status_ms",
+        "connected_live_query_ms",
+        "secret_copy_count",
+        "manual_toml_steps",
+        "project_integrity_failures",
+        "project_isolation_failures",
+        "fault_recoveries"
+      ],
+      "properties": {
+        "first_useful_status_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 14400000
+        },
+        "connected_live_query_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 14400000
+        },
+        "secret_copy_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "manual_toml_steps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "project_integrity_failures": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "project_isolation_failures": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "fault_recoveries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scan_definition_sha256",
+        "scan_receipt_sha256",
+        "forbidden_field_occurrences",
+        "secret_canary_occurrences",
+        "private_absolute_path_occurrences",
+        "raw_prompt_occurrences",
+        "pii_occurrences",
+        "native_handle_occurrences",
+        "unrestricted_content_occurrences"
+      ],
+      "properties": {
+        "scan_definition_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "scan_receipt_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "forbidden_field_occurrences": {
+          "const": 0
+        },
+        "secret_canary_occurrences": {
+          "const": 0
+        },
+        "private_absolute_path_occurrences": {
+          "const": 0
+        },
+        "raw_prompt_occurrences": {
+          "const": 0
+        },
+        "pii_occurrences": {
+          "const": 0
+        },
+        "native_handle_occurrences": {
+          "const": 0
+        },
+        "unrestricted_content_occurrences": {
+          "const": 0
+        }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "all_faults_reset",
+        "disposable_fixture_removed",
+        "source_fixture_unchanged",
+        "package_unchanged",
+        "private_salt_not_in_artifacts",
+        "private_consent_ledger_outside_repository"
+      ],
+      "properties": {
+        "all_faults_reset": {
+          "const": true
+        },
+        "disposable_fixture_removed": {
+          "const": true
+        },
+        "source_fixture_unchanged": {
+          "const": true
+        },
+        "package_unchanged": {
+          "const": true
+        },
+        "private_salt_not_in_artifacts": {
+          "const": true
+        },
+        "private_consent_ledger_outside_repository": {
+          "const": true
+        }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operator_id",
+        "operator_attestation_sha256",
+        "participant_summary_confirmed",
+        "participant_confirmation_sha256",
+        "content_minimization_confirmed",
+        "no_developer_coaching_confirmed"
+      ],
+      "properties": {
+        "operator_id": {
+          "$ref": "#/$defs/operator_id"
+        },
+        "operator_attestation_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "participant_summary_confirmed": {
+          "const": true
+        },
+        "participant_confirmation_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "content_minimization_confirmed": {
+          "const": true
+        },
+        "no_developer_coaching_confirmed": {
+          "const": true
+        }
+      }
+    },
+    "run_trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "participant",
+        "bindings",
+        "clean_start",
+        "assistance_policy",
+        "fault_randomization",
+        "tasks",
+        "doctor_faults",
+        "timeline",
+        "comprehension",
+        "metrics",
+        "redaction",
+        "cleanup",
+        "attestation",
+        "unresolved_defect_ids"
+      ],
+      "properties": {
+        "run_id": {
+          "$ref": "#/$defs/run_id"
+        },
+        "participant": {
+          "$ref": "#/$defs/participant"
+        },
+        "bindings": {
+          "$ref": "#/$defs/bindings"
+        },
+        "clean_start": {
+          "$ref": "#/$defs/clean_start"
+        },
+        "assistance_policy": {
+          "$ref": "#/$defs/assistance_policy"
+        },
+        "fault_randomization": {
+          "$ref": "#/$defs/fault_randomization"
+        },
+        "tasks": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": {
+            "$ref": "#/$defs/task"
+          }
+        },
+        "doctor_faults": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/doctor_fault"
+          }
+        },
+        "timeline": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/timeline_event"
+          }
+        },
+        "comprehension": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/comprehension_result"
+          }
+        },
+        "metrics": {
+          "$ref": "#/$defs/metrics"
+        },
+        "redaction": {
+          "$ref": "#/$defs/redaction"
+        },
+        "cleanup": {
+          "$ref": "#/$defs/cleanup"
+        },
+        "attestation": {
+          "$ref": "#/$defs/attestation"
+        },
+        "unresolved_defect_ids": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^S11-UX-[0-9]{3}$"
+          }
+        }
+      }
+    }
+  }
+}

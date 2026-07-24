@@ -1,5 +1,7 @@
 mod support;
 
+use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -11,9 +13,21 @@ use godot_codex_bridge_client::{
     TransactionOutcome, TransactionPreview, TransactionState, TransactionStatus, UndoEligibility,
     UndoEligibilityReason,
 };
+use godot_codex_index_store::{
+    GenerationState, IndexGeneration, IngestionCheckpoint, LOGICAL_SCHEMA_V1,
+    SceneDomainGeneration, ScriptAdapterAvailability, ScriptAdapterProfile, ScriptAdapterStatus,
+    ScriptDomainGeneration, ScriptLanguage, SegmentStore,
+};
 use godot_codex_mcp_server::GodotMcpServer;
+use godot_codex_product::{
+    ConfigurationCondition, PackageCondition, ProductCompatibilityBasis, ProductStartupObservation,
+    embedded_compatibility_matrix,
+};
 use godot_codex_resource_indexer::{ResourceIndexReader, SceneIndexReader, ScriptIndexReader};
-use godot_codex_semantic_model::SnapshotReplicator;
+use godot_codex_semantic_model::{
+    NegotiatedBridgeMetadata, RevisionVector, SnapshotChunk, SnapshotEnd, SnapshotMetadata,
+    SnapshotReplicator,
+};
 use godot_codex_transactions::{
     ApplyCommand, BridgeApplyFailure, BridgeApplyOutcome, BridgeFuture, ObservedPrepare,
     ObservedStatus, PrepareCommand, TransactionBridge, TransactionClock, TransactionCoordinator,
@@ -26,7 +40,187 @@ use rmcp::model::{
 use rmcp::service::RequestContext;
 use rmcp::{ClientHandler, ErrorData as McpError, RoleClient, ServiceExt};
 use serde_json::{Value, json};
-use support::{APPROVAL_PROBE_TOOL, ApprovalProbeServer, approval_schema_json, approval_tool};
+use support::{
+    APPROVAL_PROBE_TOOL, ApprovalProbeServer, action_only_approval_schema_json,
+    approval_schema_json, approval_tool,
+};
+
+fn ready_product_startup() -> ProductStartupObservation {
+    let matrix = embedded_compatibility_matrix().unwrap();
+    ProductStartupObservation {
+        package_version: matrix.package.version.clone(),
+        package: PackageCondition::Ready,
+        configuration: ConfigurationCondition::Ready,
+        compatibility_basis: Some(ProductCompatibilityBasis {
+            package_version: matrix.package.version,
+            package_manifest_verified: true,
+            target: matrix.package.target,
+            godot_source_commit: matrix.godot.source_commit,
+            godot_build_id: matrix.godot.build_id,
+            godot_artifact_sha256: matrix.godot.artifact_sha256,
+            mcp_protocol: matrix.protocols.mcp_protocol,
+            index_schema: matrix.schemas.index,
+            transaction_journal_schema: matrix.schemas.transaction_journal,
+            validation_report_schema: matrix.schemas.validation_report,
+        }),
+    }
+}
+
+fn ready_project_services(
+    project_root: &Path,
+    project_id: &str,
+    editor_session_id: &str,
+) -> (
+    SnapshotReplicator,
+    ResourceIndexReader,
+    SceneIndexReader,
+    ScriptIndexReader,
+) {
+    use sha2::{Digest, Sha256};
+
+    let revisions = RevisionVector {
+        editor_session_id: editor_session_id.to_owned(),
+        event_seq: 9,
+        project_revision: 1,
+        operation_seq: 8,
+        resource_revision: 1,
+        scene_graph_revision: 1,
+        script_graph_revision: 1,
+        scene_revisions: BTreeMap::new(),
+    };
+    let snapshot_id = format!("snapshot:{}", "9".repeat(32));
+    let payload = json!({
+        "entities": [{
+            "kind": "editor_state",
+            "entity_id": editor_session_id,
+            "current_scene_id": "",
+        }]
+    });
+    let payload_json = serde_json::to_string(&payload).unwrap();
+    let chunk_checksum = format!("{:x}", Sha256::digest(payload_json.as_bytes()));
+    let replicator = SnapshotReplicator::new();
+    let matrix = embedded_compatibility_matrix().unwrap();
+    let profile = matrix
+        .bridge_profiles
+        .iter()
+        .find(|profile| profile.bridge_minor == matrix.protocols.bridge_current_minor)
+        .unwrap();
+    replicator.mark_bridge_negotiated(
+        NegotiatedBridgeMetadata::new(
+            format!(
+                "{}.{}",
+                matrix.protocols.bridge_major, matrix.protocols.bridge_current_minor
+            ),
+            profile.capabilities.iter().cloned(),
+        )
+        .unwrap(),
+    );
+    replicator
+        .begin(SnapshotMetadata {
+            snapshot_id: snapshot_id.clone(),
+            project_id: project_id.to_owned(),
+            editor_session_id: editor_session_id.to_owned(),
+            base_event_seq: revisions.event_seq,
+            revisions: revisions.clone(),
+            chunk_count: 1,
+            limits_applied: json!({"truncated": false}),
+        })
+        .unwrap();
+    replicator
+        .push_chunk(SnapshotChunk {
+            snapshot_id: snapshot_id.clone(),
+            chunk_index: 0,
+            payload,
+            payload_json,
+            checksum: chunk_checksum.clone(),
+        })
+        .unwrap();
+    replicator
+        .end(SnapshotEnd {
+            snapshot_id,
+            chunk_count: 1,
+            entity_count: 1,
+            checksum: format!("{:x}", Sha256::digest(chunk_checksum.as_bytes())),
+            revisions,
+        })
+        .unwrap();
+
+    let mut scene = SceneDomainGeneration {
+        editor_session_id: editor_session_id.to_owned(),
+        resource_revision: 1,
+        scene_graph_revision: 1,
+        source_complete: true,
+        snapshot_checksum: format!("sha256:{}", "a".repeat(64)),
+        ..SceneDomainGeneration::default()
+    };
+    scene.validation_digest = scene.compute_validation_digest();
+    let mut script = ScriptDomainGeneration {
+        editor_session_id: editor_session_id.to_owned(),
+        resource_revision: 1,
+        scene_graph_revision: 1,
+        script_graph_revision: 1,
+        source_complete: true,
+        snapshot_checksum: format!("sha256:{}", "b".repeat(64)),
+        semantic_digest: format!("sha256:{}", "c".repeat(64)),
+        adapter_statuses: vec![
+            ScriptAdapterStatus {
+                language: ScriptLanguage::Gdscript,
+                availability: ScriptAdapterAvailability::Available,
+                profile: Some(ScriptAdapterProfile::GdscriptParserAnalyzerV1),
+                version: Some("test".to_owned()),
+                diagnostic: None,
+            },
+            ScriptAdapterStatus {
+                language: ScriptLanguage::Csharp,
+                availability: ScriptAdapterAvailability::DiscoveryOnly,
+                profile: Some(ScriptAdapterProfile::CsharpDiscoveryOnlyV1),
+                version: Some("test".to_owned()),
+                diagnostic: None,
+            },
+        ],
+        ..ScriptDomainGeneration::default()
+    };
+    script.validation_digest = script.compute_validation_digest();
+    let mut generation = IndexGeneration {
+        generation_id: format!("generation:sha256:{}", "d".repeat(64)),
+        parent_generation_id: None,
+        schema_version: LOGICAL_SCHEMA_V1,
+        project_id: project_id.to_owned(),
+        index_revision: 1,
+        state: GenerationState::Active,
+        creation_reason: "approval_boundary_fixture".to_owned(),
+        checkpoint: IngestionCheckpoint {
+            editor_session_id: editor_session_id.to_owned(),
+            resource_revision: 1,
+            project_revision: 1,
+            index_revision: 1,
+            source_complete: true,
+            snapshot_checksum: format!("sha256:{}", "e".repeat(64)),
+            last_batch_id: None,
+            last_batch_checksum: None,
+        },
+        resources: Vec::new(),
+        source_documents: Vec::new(),
+        dependencies: Vec::new(),
+        diagnostics: Vec::new(),
+        tombstones: Vec::new(),
+        scene,
+        script,
+        validation_digest: String::new(),
+    };
+    generation.canonicalize();
+    generation.validation_digest = generation.compute_validation_digest();
+    generation.validate().unwrap();
+    let index_root = project_root.join(".approval-boundary-index");
+    let mut store = SegmentStore::open(&index_root, project_id).unwrap();
+    store.activate(&generation, None).unwrap();
+    let resource_index =
+        ResourceIndexReader::from_validated_store(&store, editor_session_id, 1).unwrap();
+    let scene_index = SceneIndexReader::from_validated_store(&store, editor_session_id, 1).unwrap();
+    let script_index =
+        ScriptIndexReader::from_validated_store(&store, editor_session_id, 1, 1, 1).unwrap();
+    (replicator, resource_index, scene_index, script_index)
+}
 
 struct FixedClock;
 
@@ -125,6 +319,9 @@ impl TransactionBridge for TransactionFakeBridge {
 #[derive(Clone, Copy, Debug)]
 enum MockResponse {
     AcceptTrue,
+    AcceptEmpty,
+    AcceptNull,
+    AcceptScalar,
     AcceptFalse,
     AcceptMissing,
     AcceptExtra,
@@ -176,54 +373,107 @@ impl ClientHandler for MockClient {
         assert_eq!(serialized["mode"], "form");
         let message = serialized["message"].as_str().unwrap();
         assert!(message.len() <= 8_192);
+        let action_only = serialized["requestedSchema"]["properties"]
+            .as_object()
+            .is_some_and(serde_json::Map::is_empty);
         if message.contains("Preview JSON:") {
             assert!(message.contains("\"operation_kind\":\"create_node\""));
         }
-        assert_eq!(
-            serialized["requestedSchema"]["required"],
-            json!(["confirm"])
-        );
-        assert_eq!(
-            serialized["requestedSchema"]["properties"]["confirm"]["type"],
-            "boolean"
-        );
-        assert_eq!(
-            serialized["requestedSchema"]["properties"]
-                .as_object()
-                .unwrap()
-                .len(),
-            1
-        );
-        assert!(
-            serialized["requestedSchema"]["properties"]["confirm"]
-                .get("default")
-                .is_none()
-        );
+        if action_only {
+            assert_eq!(serialized["requestedSchema"]["type"], "object");
+            assert!(serialized["requestedSchema"].get("required").is_none());
+            assert_eq!(serialized["requestedSchema"]["properties"], json!({}));
+            if message.starts_with("Approve this exact Godot editor transaction.") {
+                assert!(serialized.get("_meta").is_none());
+            }
+        } else {
+            assert_eq!(
+                serialized["requestedSchema"]["required"],
+                json!(["confirm"])
+            );
+            assert_eq!(
+                serialized["requestedSchema"]["properties"]["confirm"]["type"],
+                "boolean"
+            );
+            assert_eq!(
+                serialized["requestedSchema"]["properties"]
+                    .as_object()
+                    .unwrap()
+                    .len(),
+                1
+            );
+            assert!(
+                serialized["requestedSchema"]["properties"]["confirm"]
+                    .get("default")
+                    .is_none()
+            );
+        }
         match self.response {
+            MockResponse::AcceptTrue if action_only => {
+                Ok(ElicitResult::new(ElicitationAction::Accept))
+            }
             MockResponse::AcceptTrue => {
                 Ok(ElicitResult::new(ElicitationAction::Accept)
                     .with_content(json!({"confirm": true})))
             }
-            MockResponse::AcceptFalse => Ok(ElicitResult::new(ElicitationAction::Accept)
-                .with_content(json!({"confirm": false}))),
-            MockResponse::AcceptMissing => {
+            MockResponse::AcceptEmpty => {
                 Ok(ElicitResult::new(ElicitationAction::Accept).with_content(json!({})))
             }
+            MockResponse::AcceptNull => {
+                Ok(ElicitResult::new(ElicitationAction::Accept).with_content(Value::Null))
+            }
+            MockResponse::AcceptScalar => {
+                Ok(ElicitResult::new(ElicitationAction::Accept).with_content(json!("approve")))
+            }
+            MockResponse::AcceptFalse => Ok(ElicitResult::new(ElicitationAction::Accept)
+                .with_content(json!({"confirm": false}))),
+            MockResponse::AcceptMissing => Ok(ElicitResult::new(ElicitationAction::Accept)
+                .with_content(json!({"approved": true}))),
             MockResponse::AcceptExtra => Ok(ElicitResult::new(ElicitationAction::Accept)
                 .with_content(json!({"confirm": true, "approved": true}))),
             MockResponse::Decline => Ok(ElicitResult::new(ElicitationAction::Decline)),
             MockResponse::Cancel => Ok(ElicitResult::new(ElicitationAction::Cancel)),
             MockResponse::Timeout => {
                 tokio::time::sleep(Duration::from_millis(250)).await;
-                Ok(ElicitResult::new(ElicitationAction::Accept)
-                    .with_content(json!({"confirm": true})))
+                if action_only {
+                    Ok(ElicitResult::new(ElicitationAction::Accept))
+                } else {
+                    Ok(ElicitResult::new(ElicitationAction::Accept)
+                        .with_content(json!({"confirm": true})))
+                }
             }
             MockResponse::LongTimeout => {
                 tokio::time::sleep(Duration::from_secs(121)).await;
-                Ok(ElicitResult::new(ElicitationAction::Accept)
-                    .with_content(json!({"confirm": true})))
+                if action_only {
+                    Ok(ElicitResult::new(ElicitationAction::Accept))
+                } else {
+                    Ok(ElicitResult::new(ElicitationAction::Accept)
+                        .with_content(json!({"confirm": true})))
+                }
             }
         }
+    }
+}
+
+fn assert_no_opaque_approval_material(value: &Value) {
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                assert_no_opaque_approval_material(value);
+            }
+        }
+        Value::Object(object) => {
+            for forbidden in ["grant", "mac", "nonce", "receipt", "receipt_hash"] {
+                assert!(
+                    !object.contains_key(forbidden),
+                    "approval material leaked through key {forbidden}"
+                );
+            }
+            for value in object.values() {
+                assert_no_opaque_approval_material(value);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -251,6 +501,36 @@ async fn call_probe(client_handler: MockClient, timeout: Duration) -> (Value, bo
     let value = result.structured_content.expect("structured result");
     client.cancel().await.expect("cancel client");
     server_task.await.expect("join probe");
+    (value, is_error, calls.load(Ordering::SeqCst))
+}
+
+async fn call_action_only_probe(
+    client_handler: MockClient,
+    timeout: Duration,
+) -> (Value, bool, usize) {
+    let calls = client_handler.calls.clone();
+    let (server_transport, client_transport) = tokio::io::duplex(65_536);
+    let server_task = tokio::spawn(async move {
+        ApprovalProbeServer::new_action_only(timeout, None)
+            .serve(server_transport)
+            .await
+            .expect("serve action-only probe")
+            .waiting()
+            .await
+            .expect("wait action-only probe");
+    });
+    let client = client_handler
+        .serve(client_transport)
+        .await
+        .expect("serve client");
+    let result = client
+        .call_tool(CallToolRequestParams::new(APPROVAL_PROBE_TOOL))
+        .await
+        .expect("call action-only probe");
+    let is_error = result.is_error == Some(true);
+    let value = result.structured_content.expect("structured result");
+    client.cancel().await.expect("cancel client");
+    server_task.await.expect("join action-only probe");
     (value, is_error, calls.load(Ordering::SeqCst))
 }
 
@@ -366,14 +646,17 @@ async fn call_transaction_apply(client_handler: MockClient) -> (Value, bool, usi
         Arc::new(FixedClock),
     )
     .unwrap();
+    let (replicator, resource_index, scene_index, script_index) =
+        ready_project_services(project.path(), &project_id, &editor_session_id);
     let server = GodotMcpServer::with_all_indexes_and_project_services(
-        SnapshotReplicator::new(),
-        ResourceIndexReader::new(),
-        SceneIndexReader::new(),
-        ScriptIndexReader::new(),
+        replicator,
+        resource_index,
+        scene_index,
+        script_index,
         project.path().to_path_buf(),
         coordinator,
-    );
+    )
+    .with_product_startup_observation(ready_product_startup());
     let (server_transport, client_transport) = tokio::io::duplex(65_536);
     let server_task = tokio::spawn(async move {
         server
@@ -499,6 +782,27 @@ fn approval_boundary_schema_and_annotations_are_closed() {
     assert_eq!(annotations.destructive_hint, Some(true));
     assert_eq!(annotations.idempotent_hint, Some(false));
     assert_eq!(annotations.open_world_hint, Some(false));
+    let action_only = action_only_approval_schema_json();
+    assert_eq!(action_only["mode"], "form");
+    assert_eq!(action_only["requestedSchema"]["type"], "object");
+    assert_eq!(action_only["requestedSchema"]["properties"], json!({}));
+    assert!(action_only["requestedSchema"].get("required").is_none());
+}
+
+#[tokio::test]
+async fn approval_action_only_probe_distinguishes_accept_decline_and_cancel() {
+    for (response, code, is_error) in [
+        (MockResponse::AcceptTrue, "approval_accepted", false),
+        (MockResponse::AcceptEmpty, "approval_accepted", false),
+        (MockResponse::Decline, "approval_declined", true),
+        (MockResponse::Cancel, "approval_cancelled", true),
+    ] {
+        let (value, observed_error, calls) =
+            call_action_only_probe(MockClient::new(true, response), Duration::from_secs(1)).await;
+        assert_eq!(observed_error, is_error);
+        assert_eq!(value["code"], code);
+        assert_eq!(calls, 1);
+    }
 }
 
 #[tokio::test]
@@ -584,7 +888,7 @@ async fn production_apply_is_unavailable_without_form_binding() {
 }
 
 #[tokio::test]
-async fn production_apply_accepts_exact_form_and_dispatches_once() {
+async fn production_apply_accepts_exact_host_action_and_dispatches_once() {
     let (value, is_error, elicitation_calls, apply_calls) =
         call_transaction_apply(MockClient::new(true, MockResponse::AcceptTrue)).await;
     assert!(!is_error);
@@ -593,16 +897,26 @@ async fn production_apply_accepts_exact_form_and_dispatches_once() {
     assert_eq!(apply_calls, 1);
     let serialized = value.to_string();
     assert!(!serialized.contains("history:"));
-    assert!(value.get("receipt").is_none());
-    assert!(value.get("receipt_hash").is_none());
-    assert!(value.get("nonce").is_none());
-    assert!(value.get("mac").is_none());
+    assert_no_opaque_approval_material(&value);
 }
 
 #[tokio::test]
-async fn production_apply_rejects_non_exact_or_negative_approval_without_dispatch() {
+async fn production_apply_accepts_exact_empty_object_and_dispatches_once() {
+    let (value, is_error, elicitation_calls, apply_calls) =
+        call_transaction_apply(MockClient::new(true, MockResponse::AcceptEmpty)).await;
+    assert!(!is_error);
+    assert_eq!(value["state"], "committed");
+    assert_eq!(elicitation_calls, 1);
+    assert_eq!(apply_calls, 1);
+    assert_no_opaque_approval_material(&value);
+}
+
+#[tokio::test]
+async fn production_apply_rejects_nonempty_or_negative_approval_without_dispatch() {
     for (response, code) in [
         (MockResponse::AcceptFalse, "approval_invalid"),
+        (MockResponse::AcceptNull, "approval_invalid"),
+        (MockResponse::AcceptScalar, "approval_invalid"),
         (MockResponse::AcceptMissing, "approval_invalid"),
         (MockResponse::AcceptExtra, "approval_invalid"),
         (MockResponse::Decline, "approval_declined"),
@@ -610,8 +924,11 @@ async fn production_apply_rejects_non_exact_or_negative_approval_without_dispatc
     ] {
         let (value, is_error, elicitation_calls, apply_calls) =
             call_transaction_apply(MockClient::new(true, response)).await;
-        assert!(is_error);
-        assert_eq!(value["error"]["code"], code);
+        assert!(
+            is_error,
+            "response {response:?} unexpectedly succeeded: {value}"
+        );
+        assert_eq!(value["error"]["code"], code, "response {response:?}");
         assert_eq!(elicitation_calls, 1);
         assert_eq!(apply_calls, 0);
     }

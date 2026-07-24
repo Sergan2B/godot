@@ -291,7 +291,11 @@ Editor-only C++-модуль внутри форка Godot. Он являетс�
 - код реализует согласованный scope;
 - новые публичные контракты документированы;
 - добавлены unit/contract/integration tests по риску изменения;
-- тесты проходят локально и в CI;
+- тесты проходят локально и в CI; узкое исключение допустимо только для
+  явно утверждённого platform/host gate, который технически не исполняется на
+  текущем remote runner, и требует зафиксированного waiver, clean checkout,
+  воспроизводимой сборки и source-bound evidence; такой waiver не закрывает
+  формальный multi-platform release gate;
 - нет необработанных секретов или персональных данных в логах;
 - main thread Godot не выполняет неограниченную тяжёлую работу;
 - ошибки возвращаются структурированно и пригодны для UI;
@@ -1444,4 +1448,15 @@ S8 и S9 могут идти параллельно после S7, но S10 пр
 
 [ADR-001](ADR-001-component-boundaries-and-sidecar-language.md), [PROTOCOL-001](PROTOCOL-001-bridge-rpc-v1.md) и канонический bundle `schemas/codex_bridge/v1` закрывают первый foundation-этап Sprint 1. Editor-only `modules/codex_bridge`, build guards, service/worker lifecycle и bounded main-thread dispatcher закрывают второй этап по локальному evidence [SPRINT-1-STAGE-2](SPRINT-1-STAGE-2.md). Private discovery, project-local lock, atomic runtime publication, права `0700`/`0600`, rotating token, macOS UDS framing и mutual HMAC handshake закрывают третий этап по локальному evidence [SPRINT-1-STAGE-3](SPRINT-1-STAGE-3.md). Authenticated request/response/cancel envelopes, lifecycle methods, deadlines, cancellation, exactly-once terminal arbitration и backpressure закрывают четвёртый этап по локальному evidence [SPRINT-1-STAGE-4](SPRINT-1-STAGE-4.md). Locked Rust conformance client, прямое использование канонических schemas/fixtures, cross-language discovery/handshake/lifecycle и negative transport suite, а также воспроизводимый redacted trace закрывают пятый этап по локальному evidence [SPRINT-1-STAGE-5](SPRINT-1-STAGE-5.md).
 
-Локальная реализация и проверка Sprint 1 и Sprint 2 завершены. Sprint 3 принят: ResourceUID, прямой/обратный граф зависимостей, Bridge RPC 1.2, persistent segment index и два resource MCP tool прошли полный macOS/Windows evidence по [SPRINT-3-EVIDENCE](SPRINT-3-EVIDENCE.md); канонический D-05 выбирает segment store. Sprint 4 также принят: structural `PackedScene`/`SceneState` index, Bridge RPC 1.3, `segment-v2` и два scene MCP tool прошли единый macOS/Windows freeze по [SPRINT-4-EVIDENCE](SPRINT-4-EVIDENCE.md). Sprint 5 закрыт с явным waiver: `S5-01`–`S5-08` реализованы, macOS live/accuracy/SLO gate проходит, а Windows и двуххостовый `S5-AC-12` остаются unverified по [SPRINT-5-EVIDENCE](SPRINT-5-EVIDENCE.md). Sprint 6 принят на согласованной macOS-only координате: единый `godot_find_usages`, evidence aggregation, bounded context resources и live rename-проверки проходят по [SPRINT-6-EVIDENCE](SPRINT-6-EVIDENCE.md), поэтому Semantic Alpha / M1 достигнут. Sprint 7 принят на той же локальной macOS-only координате: Bridge RPC 1.5, live editor overlay, open scenes/scripts, multi-selection, Inspector, native history, diagnostics, viewport metadata и revision-conflict gates проходят по [SPRINT-7-EVIDENCE](SPRINT-7-EVIDENCE.md), поэтому Live Editor Alpha достигнут. Следующее действие — Sprint 8: Runtime и EditorDebugger. Публикация и remote CI выполняются только по отдельной авторизации.
+Локальная реализация и проверка Sprint 1 и Sprint 2 завершены. Sprint 3 принят: ResourceUID, прямой/обратный граф зависимостей, Bridge RPC 1.2, persistent segment index и два resource MCP tool прошли полный macOS/Windows evidence по [SPRINT-3-EVIDENCE](SPRINT-3-EVIDENCE.md); канонический D-05 выбирает segment store. Sprint 4 также принят: structural `PackedScene`/`SceneState` index, Bridge RPC 1.3, `segment-v2` и два scene MCP tool прошли единый macOS/Windows freeze по [SPRINT-4-EVIDENCE](SPRINT-4-EVIDENCE.md). Sprint 5 закрыт с явным waiver: `S5-01`–`S5-08` реализованы, macOS live/accuracy/SLO gate проходит, а Windows и двуххостовый `S5-AC-12` остаются unverified по [SPRINT-5-EVIDENCE](SPRINT-5-EVIDENCE.md). Sprint 6 принят на согласованной macOS-only координате: единый `godot_find_usages`, evidence aggregation, bounded context resources и live rename-проверки проходят по [SPRINT-6-EVIDENCE](SPRINT-6-EVIDENCE.md), поэтому Semantic Alpha / M1 достигнут. Sprint 7 принят на той же локальной macOS-only координате: Bridge RPC 1.5, live editor overlay, open scenes/scripts, multi-selection, Inspector, native history, diagnostics, viewport metadata и revision-conflict gates проходят по [SPRINT-7-EVIDENCE](SPRINT-7-EVIDENCE.md), поэтому Live Editor Alpha достигнут.
+
+Sprint 8 закрыт локально: Bridge RPC 1.6, EditorDebugger lifecycle, runtime
+tree/properties, diagnostics, run control, screenshots и crash/timeout
+recovery прошли macOS arm64 gate. Sprint 9 закрыл Bridge RPC 1.7 и
+host-confirmed editor-native single-operation transactions с targeted Undo.
+Sprint 10 закрыл Bridge RPC 1.8, atomic compound changes, explicit
+persistence, automatic validation/rollback и M3 на source-bound macOS arm64
+coordinate. Текущая работа — [Sprint 11](SPRINT-11-PLAN.md): installable,
+diagnosable external Codex beta для App, CLI и официального VS Code
+extension. Публикация remote CI, notarization и расширение платформ требуют
+отдельных release gates.

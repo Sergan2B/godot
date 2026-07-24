@@ -162,15 +162,19 @@ mod unix {
         let record: DiscoveryRecord = serde_json::from_slice(&raw_record)?;
         if record.discovery_schema != 1
             || record.transport != "uds"
-            || !record
-                .protocol_versions
-                .iter()
-                .any(|version| matches!(version.as_str(), "1.0" | "1.1" | "1.2" | "1.3"))
             || !valid_editor_session_id(&record.editor_session_id)
         {
             return Err(BridgeError::Invalid(
-                "discovery record has no supported Bridge RPC major-one version".to_owned(),
+                "discovery record is invalid".to_owned(),
             ));
+        }
+        if !record.protocol_versions.iter().any(|version| {
+            matches!(
+                version.as_str(),
+                "1.0" | "1.1" | "1.2" | "1.3" | "1.4" | "1.5" | "1.6" | "1.7" | "1.8"
+            )
+        }) {
+            return Err(BridgeError::ProtocolVersionMismatch);
         }
 
         let root = canonical_root
@@ -178,9 +182,7 @@ mod unix {
             .ok_or_else(|| BridgeError::Invalid("project root is not UTF-8".to_owned()))?;
         let expected_project_id = project_id_for_root(root.as_bytes());
         if record.project_id != expected_project_id {
-            return Err(BridgeError::Invalid(
-                "discovery project binding mismatch".to_owned(),
-            ));
+            return Err(BridgeError::ProjectBindingMismatch);
         }
 
         let token_relative = safe_relative(&record.token_file, Path::new(".godot/codex"))?;
@@ -332,21 +334,23 @@ mod windows {
         let record: DiscoveryRecord = serde_json::from_slice(&raw_record)?;
         if record.discovery_schema != 1
             || record.transport != "tcp_loopback"
-            || !record
-                .protocol_versions
-                .iter()
-                .any(|version| matches!(version.as_str(), "1.0" | "1.1" | "1.2" | "1.3"))
             || !valid_editor_session_id(&record.editor_session_id)
         {
             return Err(BridgeError::Invalid(
-                "discovery record has no supported Bridge RPC major-one version".to_owned(),
+                "discovery record is invalid".to_owned(),
             ));
+        }
+        if !record.protocol_versions.iter().any(|version| {
+            matches!(
+                version.as_str(),
+                "1.0" | "1.1" | "1.2" | "1.3" | "1.4" | "1.5" | "1.6" | "1.7" | "1.8"
+            )
+        }) {
+            return Err(BridgeError::ProtocolVersionMismatch);
         }
 
         if record.project_id != project_id_for_path(&canonical_root)? {
-            return Err(BridgeError::Invalid(
-                "discovery project binding mismatch".to_owned(),
-            ));
+            return Err(BridgeError::ProjectBindingMismatch);
         }
 
         let token_relative = safe_relative(&record.token_file, Path::new(".godot/codex"))?;

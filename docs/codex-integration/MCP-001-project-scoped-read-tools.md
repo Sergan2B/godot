@@ -1,10 +1,11 @@
 # MCP-001 — Project-scoped Godot read tools
 
-**Status:** Sprint 2/3/4 tools live-verified on macOS arm64 and Windows x86_64;
-the Sprint 5 symbol tools, Sprint 6 find-usages/context surfaces, Sprint 7
-sixteen-tool live-editor surface, Sprint 8 twenty-five-tool runtime surface,
-and Sprint 9 thirty-six-tool guarded transaction surface pass their local
-gates; the Sprint 10 forty-tool compound surface is proposed
+**Status:** Version 1.0 freeze in progress for Sprint 11 External Codex Beta;
+the existing forty-tool Sprint 10 surface is source-bound locally on macOS
+arm64 and the additive connection-status surface is the only planned Sprint 11
+registry change
+
+**Contract version:** `1.0`
 
 **MCP protocol:** `2025-11-25`
 
@@ -24,7 +25,9 @@ process controls without adding project-content write tools and is governed by
 implements guarded editor transactions through
 [WRITE-001](WRITE-001-editor-transactions-and-undo.md). Sprint 10 adds bounded
 change sets and automatic validation through
-[VALIDATION-001](VALIDATION-001-automatic-validation-and-rollback.md).
+[VALIDATION-001](VALIDATION-001-automatic-validation-and-rollback.md). Sprint
+11 finalizes this public contract and adds only
+`godot_get_connection_status` plus `godot://connection/status`.
 
 ## Lifecycle and project binding
 
@@ -39,10 +42,25 @@ only from `<project-root>/.godot/codex`, performs the Bridge RPC mutual
 authentication flow, verifies the exact `project_id`, and activates a live
 snapshot only after all chunks and checksums validate.
 
-MCP initialization succeeds while Godot is offline so clients can inspect the
-server status. Tool calls then return a structured retryable
-`editor_state_unavailable` execution error with the replica status; they never
-return an empty success or an unproven stale snapshot.
+MCP initialization succeeds while Godot is offline.
+`godot_get_connection_status` and `godot://connection/status` remain
+available. The exact offline tool allowlist is
+`godot_find_resource_owners`, `godot_find_usages`,
+`godot_get_connection_status`, `godot_get_resource_dependencies`,
+`godot_get_scene_graph`, `godot_inspect_node`, `godot_inspect_symbol`, and
+`godot_search_symbols`. The first seven saved-index queries may return honest
+`offline_cached` results only from a complete, source-hash-verified authority.
+Project and scene summary resources follow the same static authority;
+connection status remains available independently.
+
+All other thirty-three tools are rejected by one central availability guard
+before input deserialization. Live editor, runtime, transaction, validation,
+policy, and Undo calls therefore fail closed even when their input is empty or
+malformed. Offline states use `editor_offline` or `runtime_unavailable`;
+authentication, compatibility, synchronization, discovery, and configuration
+failures preserve their more precise status and diagnostic code. Missing,
+corrupt, incompatible, or source-stale static authority never activates cached
+facts. No surface returns an empty success or an unproved stale snapshot.
 
 ## Common result envelope
 
@@ -62,8 +80,19 @@ resource/scene revisions, `freshness`, `status`, diagnostics, checkpoint, pagina
 and evidence. They never combine records from different generations.
 
 The same object is returned as MCP `structuredContent` and as canonical JSON in
-a text content block. When an output schema is advertised, the structured
-content must validate against it.
+exactly one text content block. Non-text content such as a validated viewport
+image is preserved separately. All forty-one wire tools advertise an
+`outputSchema`; successful and structured-error variants are closed,
+mutually exclusive, and bounded. Fixed DTO objects reject unknown fields
+recursively. Project-defined semantic dictionaries use only explicitly marked
+dynamic-map definitions with finite nesting, key, collection, string, and
+value bounds. An implementation result that does not match its advertised
+contract is replaced with a bounded `invalid_tool_result` error instead of
+leaking the original payload.
+
+Every structured availability error contains a stable `code`, safe `message`,
+`retryable`, public connection `status`, `diagnostic_code`, compatibility
+state, and a bounded remediation identifier where applicable.
 
 ## Tools
 
@@ -125,7 +154,10 @@ Accepts exactly one canonical entity/resource/scene/node/script-symbol/signal
 target plus optional source-kind, confidence, and project/scene/script scope
 filters. It returns deterministic reverse facts from one pinned generation,
 with complete evidence, conflicts, partial-domain reasons, bounded pagination,
-and signed cursors that bind every selector and filter.
+and signed cursors that bind every selector and filter. Its successful result
+also carries the persistent envelope fields `schema_version`, `status`,
+`diagnostics`, `validated_checkpoint`, and `evidence`; these are additive to
+the frozen query, pagination, match, conflict, and partial-reason fields.
 
 ### Sprint 7 live editor tools
 
@@ -178,7 +210,9 @@ destructive. All eleven tools have `openWorldHint: false`.
 `godot_apply_transaction` accepts transaction ID, preview digest, and expected
 revision coordinates only. Inside the call, the sidecar requires client
 `elicitation.form`, displays the immutable bounded preview/risk/scope, and
-accepts only MCP action `accept` with required `confirm: true`. The sidecar
+accepts only the host-owned MCP action `accept` on an empty, action-only form
+with absent or exactly empty content. Codex renders the protocol actions as
+Allow/Deny/Cancel, preserving distinct decline and cancel results. The sidecar
 then sends an internal one-time receipt to Bridge. Receipt, nonce, MAC,
 `approved`, free-form consent, and account identity are forbidden MCP fields.
 
@@ -194,19 +228,18 @@ cancel or timeout may prompt again before plan expiry. Session/persistent
 approval policies are deferred. The test-only `godot_s9_approval_probe` lives
 in a separate example binary and is never part of this registry.
 
-### Sprint 10 compound tools — proposed
+### Sprint 10 compound tools
 
-Sprint 10 adds four closed tools after the compound executor, persistence,
-validation, rollback, and confirmation-policy gates:
+Sprint 10 adds four closed tools:
 
 - `godot_prepare_change_set`;
 - `godot_get_validation_report`;
 - `godot_get_confirmation_policy`;
 - `godot_reset_confirmation_policy`.
 
-The registry becomes exactly forty tools only at S10-12. Existing apply,
-status, Undo, and all thirty-six Sprint 9 tools retain their current schemas
-and semantics.
+The Sprint 10 registry contains exactly forty tools. Existing apply, status,
+Undo, and all thirty-six Sprint 9 tools retain their current schemas and
+semantics.
 
 Change-set preparation accepts the closed operation union, exact coordinates,
 save/validation/rollback policies, and a required idempotency key. It allocates
@@ -218,27 +251,50 @@ Validation report and confirmation-policy reads are read-only. Policy reset is
 non-read-only and non-destructive; it can only remove a host-issued grant.
 Apply confirmation remains nested form elicitation. The default is
 `always_ask`; the only grant is a 15-minute project/editor-session-bound
-`allow_low_risk_for_session` for memory-only low-risk sets. Persistence,
-delete, source/resource content, runtime launch, elevated risk, or changed
-scope always prompts again.
+`allow_low_risk_for_session` for memory-only low-risk sets. The action-only
+request advertises only session persistence, and the grant requires the
+host-owned accepted response metadata `persist: "session"`; request metadata
+or model input alone has no authority. Persistence, delete, source/resource
+content, runtime launch, elevated risk, or changed scope always prompts again.
+
+### Sprint 11 connection status
+
+`godot_get_connection_status` accepts a closed empty object and is read-only,
+non-destructive, idempotent, and closed-world. It projects
+sidecar-authoritative project, package, compatibility, Bridge/editor/runtime
+availability, verified static-cache state, safe recovery condition, and one
+stable remediation.
+
+Its top-level state is exactly one of `ready`, `connecting`, `syncing`,
+`offline_cached`, `offline_empty`, `incompatible`, `auth_failed`,
+`misconfigured`, or `overloaded`. It is callable before discovery or Bridge is
+available. It never returns a session token, endpoint, PID, absolute root,
+native handle, approval grant, source text, property value, or stale
+live/runtime payload.
+
+At the S11-02 gate the production v1 registry contains exactly forty-one
+tools. All existing names and successful-result meanings are frozen. Later
+changes are additive or explicitly versioned.
 
 ## Resources
 
 `godot://project/summary` is the fixed 4096-byte conservative context resource.
 `godot://editor/summary` is the fixed 4096-byte live editor context resource.
 `godot://runtime/summary` is the fixed 4096-byte runtime lifecycle and
-diagnostic summary resource. `godot://scene/{scene_id}/summary` is the
-2048-byte scene template. All four return
+diagnostic summary resource. `godot://connection/status` is the fixed bounded
+connection/remediation summary. `godot://scene/{scene_id}/summary` is the
+2048-byte scene template. The v1 target therefore has four fixed resources and
+one resource template, counted as separate MCP surfaces. All five return
 canonical JSON with revision coordinates, truncation, and omitted counts. They
 are read-only snapshots; subscriptions and list-change notifications remain
 disabled.
 
 ## Security and limits
 
-The implemented registry contains exactly thirty-six tools: Sprint 6 has ten,
-Sprint 7 adds six, Sprint 8 adds nine, and Sprint 9 adds eleven guarded
-transaction tools after the Bridge executor and approval path. Observation and
-capture tools are annotated
+The v1 target contains exactly forty-one tools: Sprint 6 has ten, Sprint 7
+adds six, Sprint 8 adds nine, Sprint 9 adds eleven guarded transaction tools,
+Sprint 10 adds four compound/validation/policy tools, and Sprint 11 adds one
+connection-status tool. Observation and capture tools are annotated
 read-only and non-destructive. Run, pause, and continue are non-read-only and
 non-destructive. Stop is non-read-only and destructive. All tools reject
 additional input properties.

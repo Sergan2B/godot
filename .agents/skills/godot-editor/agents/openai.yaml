@@ -1,0 +1,4 @@
+interface:
+  display_name: "Godot Editor Workflow"
+  short_description: "Safely inspect and operate a bound Godot editor"
+  default_prompt: "Use $godot-editor to inspect this Godot project, diagnose its current state, and make only explicitly approved editor changes."

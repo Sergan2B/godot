@@ -22,7 +22,8 @@ use tokio::sync::watch;
 
 use crate::{
     IndexerError, ResourceNormalizer, ResourceSnapshotSpool, SceneNormalizer, ScriptNormalizer,
-    ScriptSnapshotSpool, normalize_resource_path,
+    ScriptSnapshotSpool, load_verified_offline_authority, normalize_resource_path,
+    persist_offline_authority,
 };
 
 const DELTA_POLL_INTERVAL: Duration = Duration::from_millis(20);
@@ -48,6 +49,14 @@ pub enum ResourceIndexStatus {
     Current {
         project_id: String,
         editor_session_id: String,
+        generation_id: String,
+        index_revision: u64,
+        resource_revision: u64,
+        project_revision: u64,
+    },
+    /// A complete persisted generation independently matched every saved source.
+    OfflineCurrent {
+        project_id: String,
         generation_id: String,
         index_revision: u64,
         resource_revision: u64,
@@ -96,6 +105,14 @@ pub enum SceneIndexStatus {
         resource_revision: u64,
         scene_graph_revision: u64,
     },
+    /// A saved scene domain covered by verified offline authority.
+    OfflineCurrent {
+        project_id: String,
+        generation_id: String,
+        index_revision: u64,
+        resource_revision: u64,
+        scene_graph_revision: u64,
+    },
     NotCurrent {
         reason: SceneIndexStaleReason,
     },
@@ -136,6 +153,15 @@ pub enum ScriptIndexStatus {
     Current {
         project_id: String,
         editor_session_id: String,
+        generation_id: String,
+        index_revision: u64,
+        resource_revision: u64,
+        scene_graph_revision: u64,
+        script_graph_revision: u64,
+    },
+    /// A saved script domain covered by verified offline authority.
+    OfflineCurrent {
+        project_id: String,
         generation_id: String,
         index_revision: u64,
         resource_revision: u64,
@@ -245,6 +271,14 @@ pub struct SemanticIndexSnapshot {
     snapshot: IndexReadSnapshot,
     query_index: Arc<SemanticQueryIndex>,
     partial_reasons: Vec<SemanticPartialReason>,
+    freshness: SemanticIndexFreshness,
+}
+
+/// Authority attached to one semantic response.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SemanticIndexFreshness {
+    OnlineCurrent,
+    OfflineCached,
 }
 
 impl SemanticIndexSnapshot {
@@ -261,6 +295,11 @@ impl SemanticIndexSnapshot {
     #[must_use]
     pub fn partial_reasons(&self) -> &[SemanticPartialReason] {
         &self.partial_reasons
+    }
+
+    #[must_use]
+    pub fn freshness(&self) -> SemanticIndexFreshness {
+        self.freshness
     }
 }
 
@@ -282,6 +321,27 @@ impl SemanticIndexReader {
     /// that independently validate against the exact same generation.
     pub fn pin_current(&self) -> Result<SemanticIndexSnapshot, SemanticIndexReadError> {
         let snapshot = self.resource.pin_current().map_err(map_resource_error)?;
+        let freshness = match self.resource.status() {
+            ResourceIndexStatus::OfflineCurrent {
+                generation_id,
+                index_revision,
+                ..
+            } if generation_id == snapshot.generation().generation_id
+                && index_revision == snapshot.generation().index_revision =>
+            {
+                SemanticIndexFreshness::OfflineCached
+            }
+            ResourceIndexStatus::Current {
+                generation_id,
+                index_revision,
+                ..
+            } if generation_id == snapshot.generation().generation_id
+                && index_revision == snapshot.generation().index_revision =>
+            {
+                SemanticIndexFreshness::OnlineCurrent
+            }
+            _ => return Err(SemanticIndexReadError::NotCurrent),
+        };
         let mut partial_reasons = Vec::new();
         let scene_current = match self.scene.pin_current() {
             Ok(scene) => {
@@ -322,6 +382,7 @@ impl SemanticIndexReader {
             snapshot,
             query_index,
             partial_reasons,
+            freshness,
         })
     }
 }
@@ -446,6 +507,12 @@ impl ScriptIndexReader {
                 index_revision,
                 script_graph_revision,
                 ..
+            }
+            | ScriptIndexStatus::OfflineCurrent {
+                generation_id,
+                index_revision,
+                script_graph_revision,
+                ..
             } => (generation_id, *index_revision, *script_graph_revision),
         };
         let snapshot = state
@@ -493,6 +560,24 @@ impl ScriptIndexReader {
         self.set_status(ScriptIndexStatus::Current {
             project_id: generation.project_id.clone(),
             editor_session_id: generation.script.editor_session_id.clone(),
+            generation_id: generation.generation_id,
+            index_revision: generation.index_revision,
+            resource_revision: generation.script.resource_revision,
+            scene_graph_revision: generation.script.scene_graph_revision,
+            script_graph_revision: generation.script.script_graph_revision,
+        });
+        Ok(())
+    }
+
+    fn publish_offline_current(&self, store: &SegmentStore) -> Result<(), StoreError> {
+        let generation = store.active_generation()?;
+        if generation.script.is_empty() || !generation.script.source_complete {
+            return Err(StoreError::ValidationFailed(
+                "offline script generation is incomplete".to_owned(),
+            ));
+        }
+        self.set_status(ScriptIndexStatus::OfflineCurrent {
+            project_id: generation.project_id.clone(),
             generation_id: generation.generation_id,
             index_revision: generation.index_revision,
             resource_revision: generation.script.resource_revision,
@@ -569,6 +654,12 @@ impl SceneIndexReader {
                 index_revision,
                 scene_graph_revision,
                 ..
+            }
+            | SceneIndexStatus::OfflineCurrent {
+                generation_id,
+                index_revision,
+                scene_graph_revision,
+                ..
             } => (generation_id, *index_revision, *scene_graph_revision),
         };
         let snapshot = state
@@ -616,6 +707,23 @@ impl SceneIndexReader {
         self.set_status(SceneIndexStatus::Current {
             project_id: generation.project_id.clone(),
             editor_session_id: generation.scene.editor_session_id.clone(),
+            generation_id: generation.generation_id,
+            index_revision: generation.index_revision,
+            resource_revision: generation.scene.resource_revision,
+            scene_graph_revision: generation.scene.scene_graph_revision,
+        });
+        Ok(())
+    }
+
+    fn publish_offline_current(&self, store: &SegmentStore) -> Result<(), StoreError> {
+        let generation = store.active_generation()?;
+        if generation.scene.is_empty() || !generation.scene.source_complete {
+            return Err(StoreError::ValidationFailed(
+                "offline scene generation is incomplete".to_owned(),
+            ));
+        }
+        self.set_status(SceneIndexStatus::OfflineCurrent {
+            project_id: generation.project_id.clone(),
             generation_id: generation.generation_id,
             index_revision: generation.index_revision,
             resource_revision: generation.scene.resource_revision,
@@ -695,6 +803,11 @@ impl ResourceIndexReader {
                 generation_id,
                 index_revision,
                 ..
+            }
+            | ResourceIndexStatus::OfflineCurrent {
+                generation_id,
+                index_revision,
+                ..
             } => (generation_id, *index_revision),
         };
         let snapshot = state
@@ -742,6 +855,23 @@ impl ResourceIndexReader {
         });
         Ok(())
     }
+
+    fn publish_offline_current(&self, store: &SegmentStore) -> Result<(), StoreError> {
+        let generation = store.active_generation()?;
+        if !generation.checkpoint.source_complete {
+            return Err(StoreError::ValidationFailed(
+                "offline resource generation is incomplete".to_owned(),
+            ));
+        }
+        self.set_status(ResourceIndexStatus::OfflineCurrent {
+            project_id: generation.project_id.clone(),
+            generation_id: generation.generation_id,
+            index_revision: generation.index_revision,
+            resource_revision: generation.checkpoint.resource_revision,
+            project_revision: generation.checkpoint.project_revision,
+        });
+        Ok(())
+    }
 }
 
 /// Internal coordinator failure. Its display text is never forwarded to MCP.
@@ -760,13 +890,7 @@ pub enum CoordinatorError {
 impl CoordinatorError {
     fn safe_code(&self) -> &str {
         match self {
-            Self::Bridge(BridgeError::Rpc { code, .. }) => code,
-            Self::Bridge(BridgeError::Invalid(message))
-                if !message.contains(['/', '\\']) && message.len() <= 128 =>
-            {
-                message
-            }
-            Self::Bridge(error) => error.safe_summary(),
+            Self::Bridge(error) => error.failure_class().as_str(),
             Self::Indexer(IndexerError::InvalidPath(code))
             | Self::Indexer(IndexerError::ObservationConflict(code))
             | Self::Indexer(IndexerError::HashUnavailable(code))
@@ -782,9 +906,17 @@ impl CoordinatorError {
     }
 }
 
+fn coordinator_sync_failure_line(error: &CoordinatorError) -> String {
+    format!("[godot-codex-index] sync failed: {}", error.safe_code())
+}
+
 /// Owns the single writer lease and reconciles Bridge state into generations.
 pub struct ResourceIndexCoordinator {
     project_root: PathBuf,
+    expected_project_id: String,
+    store: Option<SegmentStore>,
+    offline_authority_generation: Option<String>,
+    online_activation_pending: bool,
     normalizer: ResourceNormalizer,
     scene_normalizer: SceneNormalizer,
     reader: ResourceIndexReader,
@@ -825,9 +957,57 @@ impl ResourceIndexCoordinator {
         let reader = ResourceIndexReader::new();
         let scene_reader = SceneIndexReader::new();
         let script_reader = ScriptIndexReader::new();
+        let expected_project_id = godot_codex_bridge_client::project_id_for_path(&project_root)
+            .map_err(|_| IndexerError::UnsafeResourcePath)?;
+        let mut store = None;
+        let mut offline_authority_generation = None;
+        match SegmentStore::open(&project_root, &expected_project_id) {
+            Ok(opened) => {
+                let has_generation = opened.active_generation().is_ok();
+                let has_scene_generation = opened
+                    .active_generation()
+                    .is_ok_and(|generation| !generation.scene.is_empty());
+                let has_script_generation = opened
+                    .active_generation()
+                    .is_ok_and(|generation| !generation.script.is_empty());
+                reader.install_reader(opened.reader(), has_generation);
+                scene_reader.install_reader(opened.reader(), has_scene_generation);
+                script_reader.install_reader(opened.reader(), has_script_generation);
+                if let Ok(generation) = opened.active_generation()
+                    && load_verified_offline_authority(
+                        &project_root,
+                        &expected_project_id,
+                        &generation,
+                    )
+                    .is_ok()
+                    && reader.publish_offline_current(&opened).is_ok()
+                    && scene_reader.publish_offline_current(&opened).is_ok()
+                    && script_reader.publish_offline_current(&opened).is_ok()
+                {
+                    offline_authority_generation = Some(generation.generation_id);
+                }
+                store = Some(opened);
+            }
+            Err(StoreError::NotReady) => {}
+            Err(_) => {
+                reader.set_status(ResourceIndexStatus::NotCurrent {
+                    reason: ResourceIndexStaleReason::StoreUnavailable,
+                });
+                scene_reader.set_status(SceneIndexStatus::NotCurrent {
+                    reason: SceneIndexStaleReason::StoreUnavailable,
+                });
+                script_reader.set_status(ScriptIndexStatus::NotCurrent {
+                    reason: ScriptIndexStaleReason::StoreUnavailable,
+                });
+            }
+        }
         Ok((
             Self {
                 project_root,
+                expected_project_id,
+                store,
+                offline_authority_generation,
+                online_activation_pending: false,
                 normalizer,
                 scene_normalizer: SceneNormalizer,
                 reader: reader.clone(),
@@ -846,10 +1026,9 @@ impl ResourceIndexCoordinator {
         ))
     }
 
-    /// Runs until shutdown. Disconnects never make persisted data readable as current.
+    /// Runs until shutdown. Only an independently verified source manifest can
+    /// retain a persisted generation as offline-current.
     pub async fn run(mut self, mut shutdown: watch::Receiver<bool>) {
-        let mut store = None;
-        let mut project_id = None;
         let mut retry = RETRY_MIN;
         while !*shutdown.borrow() {
             let connect = BridgeClient::connect(&self.project_root);
@@ -858,7 +1037,7 @@ impl ResourceIndexCoordinator {
                     Ok(client) => client,
                     Err(error) => {
                         eprintln!("[godot-codex-index] connect failed: {}", error.safe_summary());
-                        self.mark_disconnected(&store);
+                        self.mark_disconnected();
                         if wait_or_shutdown(retry, &mut shutdown).await { break; }
                         retry = (retry * 2).min(RETRY_MAX);
                         continue;
@@ -887,10 +1066,7 @@ impl ResourceIndexCoordinator {
                 self.script_reader
                     .set_status(ScriptIndexStatus::CapabilityUnavailable);
             }
-            if project_id
-                .as_deref()
-                .is_some_and(|known| known != client.project_id())
-            {
+            if client.project_id() != self.expected_project_id {
                 self.reader.set_status(ResourceIndexStatus::ProjectNotBound);
                 self.scene_reader
                     .set_status(SceneIndexStatus::ProjectNotBound);
@@ -898,10 +1074,9 @@ impl ResourceIndexCoordinator {
                     .set_status(ScriptIndexStatus::ProjectNotBound);
                 break;
             }
-            project_id.get_or_insert_with(|| client.project_id().to_owned());
-            if store.is_none() {
+            if self.store.is_none() {
                 match self.open_store(client.project_id()) {
-                    Ok(opened) => store = Some(opened),
+                    Ok(opened) => self.store = Some(opened),
                     Err(error) => {
                         eprintln!("[godot-codex-index] open failed: {}", error.safe_code());
                         self.reader.set_status(ResourceIndexStatus::NotReady);
@@ -916,24 +1091,25 @@ impl ResourceIndexCoordinator {
                 }
             }
             let mut client = client;
+            let mut store = self.store.take().expect("store opened");
             let result = tokio::select! {
-                result = self.sync_connected(&mut client, store.as_mut().expect("store opened")) => result,
-                _ = shutdown.changed() => break,
+                result = self.sync_connected(&mut client, &mut store) => result,
+                _ = shutdown.changed() => {
+                    self.store = Some(store);
+                    break;
+                },
             };
+            self.store = Some(store);
             if let Err(error) = result {
-                if std::env::var_os("GODOT_CODEX_DEBUG_ERRORS").is_some() {
-                    eprintln!("[godot-codex-index] sync failed: {error:?}");
-                } else {
-                    eprintln!("[godot-codex-index] sync failed: {}", error.safe_code());
-                }
-                self.mark_disconnected(&store);
+                eprintln!("{}", coordinator_sync_failure_line(&error));
+                self.mark_disconnected();
                 if wait_or_shutdown(retry, &mut shutdown).await {
                     break;
                 }
                 retry = (retry * 2).min(RETRY_MAX);
             }
         }
-        self.mark_disconnected(&store);
+        self.mark_disconnected();
     }
 
     fn open_store(&self, project_id: &str) -> Result<SegmentStore, CoordinatorError> {
@@ -976,22 +1152,22 @@ impl ResourceIndexCoordinator {
     ) -> Result<(), CoordinatorError> {
         let scene_available = client.negotiated_profile().scene_graph_available;
         let script_available = client.negotiated_profile().script_graph_available;
-        let active = match store.active_generation() {
-            Ok(generation) => Some(generation),
-            Err(StoreError::NotReady) => None,
-            Err(error) => return Err(error.into()),
-        };
-        match active {
-            None => self.full_snapshot(client, store).await?,
-            Some(generation)
-                if generation.checkpoint.editor_session_id != client.editor_session_id() =>
-            {
-                self.validate_reopened_editor(client, store, &generation)
-                    .await?;
-            }
-            Some(_) => {}
-        }
-        self.reader.publish_current(store)?;
+        // Offline authority proves saved files, not continuity with a newly
+        // authenticated editor. Every connection therefore starts from a full
+        // three-domain observation before any online-current status is exposed.
+        self.offline_authority_generation = None;
+        self.online_activation_pending = true;
+        self.reader.set_status(ResourceIndexStatus::NotCurrent {
+            reason: ResourceIndexStaleReason::StartupValidation,
+        });
+        self.scene_reader.set_status(SceneIndexStatus::NotCurrent {
+            reason: SceneIndexStaleReason::StartupValidation,
+        });
+        self.script_reader
+            .set_status(ScriptIndexStatus::NotCurrent {
+                reason: ScriptIndexStaleReason::StartupValidation,
+            });
+        self.full_snapshot(client, store).await?;
         if scene_available {
             self.full_scene_snapshot(client, store).await?;
         } else {
@@ -1004,6 +1180,15 @@ impl ResourceIndexCoordinator {
             self.script_reader
                 .set_status(ScriptIndexStatus::CapabilityUnavailable);
         }
+        self.online_activation_pending = false;
+        self.reader.publish_current(store)?;
+        if scene_available {
+            self.scene_reader.publish_current(store)?;
+        }
+        if script_available {
+            self.script_reader.publish_current(store)?;
+        }
+        self.refresh_offline_authority(store);
 
         loop {
             let mut changed = false;
@@ -1212,6 +1397,7 @@ impl ResourceIndexCoordinator {
                     }
                 }
             }
+            self.refresh_offline_authority(store);
             if !changed {
                 tokio::time::sleep(DELTA_POLL_INTERVAL).await;
             }
@@ -1261,31 +1447,6 @@ impl ResourceIndexCoordinator {
             .capture_full_snapshot(client, next_index_revision)
             .await?;
         store.activate(&generation, None)?;
-        Ok(())
-    }
-
-    async fn validate_reopened_editor(
-        &mut self,
-        client: &mut BridgeClient,
-        store: &mut SegmentStore,
-        active: &godot_codex_index_store::IndexGeneration,
-    ) -> Result<(), CoordinatorError> {
-        let next_index_revision = active
-            .index_revision
-            .checked_add(1)
-            .ok_or(IndexerError::ObservationConflict("index_revision_overflow"))?;
-        self.reader.set_status(ResourceIndexStatus::NotCurrent {
-            reason: ResourceIndexStaleReason::StartupValidation,
-        });
-        let observed = self
-            .capture_full_snapshot(client, next_index_revision)
-            .await?;
-        if !store.reuse_compatible_generation(&observed)? {
-            self.reader.set_status(ResourceIndexStatus::NotCurrent {
-                reason: ResourceIndexStaleReason::Rebuilding,
-            });
-            store.activate(&observed, None)?;
-        }
         Ok(())
     }
 
@@ -1351,7 +1512,9 @@ impl ResourceIndexCoordinator {
             // adapter emits any scene delta. Rebase the resource domain first,
             // then capture one scene snapshot against that exact checkpoint.
             self.full_snapshot(client, store).await?;
-            self.reader.publish_current(store)?;
+            if !self.online_activation_pending {
+                self.reader.publish_current(store)?;
+            }
             snapshot = loop {
                 match client.get_scene_snapshot().await {
                     Ok(snapshot) => break snapshot,
@@ -1481,9 +1644,11 @@ impl ResourceIndexCoordinator {
         next.validation_digest = next.compute_validation_digest();
         next.validate()?;
         store.activate(&next, None)?;
-        self.reader.publish_current(store)?;
-        self.scene_reader.publish_current(store)?;
-        if script_recomposed {
+        if !self.online_activation_pending {
+            self.reader.publish_current(store)?;
+            self.scene_reader.publish_current(store)?;
+        }
+        if script_recomposed && !self.online_activation_pending {
             self.script_reader.publish_current(store)?;
         } else if script_composition_failed {
             self.script_reader
@@ -1637,17 +1802,89 @@ impl ResourceIndexCoordinator {
         next.validation_digest = next.compute_validation_digest();
         next.validate()?;
         store.activate(&next, None)?;
-        self.reader.publish_current(store)?;
-        if scene_was_current {
-            self.scene_reader.publish_current(store)?;
+        if !self.online_activation_pending {
+            self.reader.publish_current(store)?;
+            if scene_was_current {
+                self.scene_reader.publish_current(store)?;
+            }
+            self.script_reader.publish_current(store)?;
         }
-        self.script_reader.publish_current(store)?;
         Ok(())
     }
 
-    fn mark_disconnected(&self, store: &Option<SegmentStore>) {
+    fn refresh_offline_authority(&mut self, store: &SegmentStore) {
+        let Ok(generation) = store.active_generation() else {
+            return;
+        };
+        if self
+            .offline_authority_generation
+            .as_deref()
+            .is_some_and(|current| current == generation.generation_id)
+        {
+            return;
+        }
+        let all_current = matches!(
+            self.reader.status(),
+            ResourceIndexStatus::Current {
+                ref generation_id,
+                ..
+            } if generation_id == &generation.generation_id
+        ) && matches!(
+            self.scene_reader.status(),
+            SceneIndexStatus::Current {
+                ref generation_id,
+                ..
+            } if generation_id == &generation.generation_id
+        ) && matches!(
+            self.script_reader.status(),
+            ScriptIndexStatus::Current {
+                ref generation_id,
+                ..
+            } if generation_id == &generation.generation_id
+        );
+        if !all_current {
+            return;
+        }
+        match persist_offline_authority(&self.project_root, &generation) {
+            Ok(manifest) => {
+                self.offline_authority_generation = Some(manifest.generation_id);
+            }
+            Err(error) => {
+                eprintln!(
+                    "[godot-codex-index] offline authority unavailable: {}",
+                    error
+                );
+                self.offline_authority_generation = None;
+            }
+        }
+    }
+
+    fn mark_disconnected(&mut self) {
+        let verified_offline = self.store.as_ref().is_some_and(|store| {
+            store.active_generation().is_ok_and(|generation| {
+                load_verified_offline_authority(
+                    &self.project_root,
+                    &self.expected_project_id,
+                    &generation,
+                )
+                .is_ok()
+                    && self.reader.publish_offline_current(store).is_ok()
+                    && self.scene_reader.publish_offline_current(store).is_ok()
+                    && self.script_reader.publish_offline_current(store).is_ok()
+            })
+        });
+        if verified_offline {
+            self.offline_authority_generation = self
+                .store
+                .as_ref()
+                .and_then(|store| store.active_generation().ok())
+                .map(|generation| generation.generation_id);
+            return;
+        }
+        self.offline_authority_generation = None;
         self.reader.set_status(
-            if store
+            if self
+                .store
                 .as_ref()
                 .is_some_and(|store| store.active_generation().is_ok())
             {
@@ -1659,7 +1896,7 @@ impl ResourceIndexCoordinator {
             },
         );
         self.scene_reader.set_status(
-            if store.as_ref().is_some_and(|store| {
+            if self.store.as_ref().is_some_and(|store| {
                 store
                     .active_generation()
                     .is_ok_and(|generation| !generation.scene.is_empty())
@@ -1672,7 +1909,7 @@ impl ResourceIndexCoordinator {
             },
         );
         self.script_reader.set_status(
-            if store.as_ref().is_some_and(|store| {
+            if self.store.as_ref().is_some_and(|store| {
                 store
                     .active_generation()
                     .is_ok_and(|generation| !generation.script.is_empty())
@@ -2092,7 +2329,329 @@ async fn wait_or_shutdown(duration: Duration, shutdown: &mut watch::Receiver<boo
 
 #[cfg(test)]
 mod tests {
+    use godot_codex_index_store::{
+        GenerationState, IdentityStrength, IndexGeneration, IngestionCheckpoint, LOGICAL_SCHEMA_V1,
+        RecordValidity, ResourceEntity, SceneDomainGeneration, ScriptAdapterAvailability,
+        ScriptAdapterProfile, ScriptAdapterStatus, ScriptDomainGeneration, ScriptLanguage,
+        SourceDocument,
+    };
+    use tempfile::TempDir;
+
     use super::*;
+
+    fn offline_project() -> TempDir {
+        let project = tempfile::tempdir().unwrap();
+        fs::write(project.path().join("project.godot"), b"[application]\n").unwrap();
+        fs::write(project.path().join("main.gd"), b"extends Node\n").unwrap();
+        project
+    }
+
+    #[test]
+    fn coordinator_debug_code_never_exposes_bridge_details() {
+        let errors = [
+            CoordinatorError::Bridge(BridgeError::Io(std::io::Error::other(
+                "/Users/alice/private/.godot/codex/bridge.sock?token=top-secret",
+            ))),
+            CoordinatorError::Bridge(BridgeError::Invalid(
+                "server path /Users/alice/private token=top-secret".to_owned(),
+            )),
+            CoordinatorError::Bridge(BridgeError::Rpc {
+                code: "unknown_private_failure".to_owned(),
+                message: "server path /Users/alice/private token=top-secret".to_owned(),
+                retryable: false,
+                data: serde_json::json!({"native_handle": 42}),
+            }),
+        ];
+        for error in errors {
+            assert_eq!(error.safe_code(), "transport_unavailable");
+            let line = coordinator_sync_failure_line(&error);
+            assert_eq!(
+                line,
+                "[godot-codex-index] sync failed: transport_unavailable"
+            );
+            assert!(!line.contains("/Users/"));
+            assert!(!line.contains("top-secret"));
+            assert!(!line.contains("unknown_private_failure"));
+            assert!(!line.contains("native_handle"));
+        }
+    }
+
+    fn complete_generation(project_id: &str) -> IndexGeneration {
+        let source = b"extends Node\n";
+        let content_generation = format!("sha256:{:x}", Sha256::digest(source));
+        let resource = ResourceEntity {
+            entity_id: "godot:resource:v1:main-script".to_owned(),
+            identity_input: "uid://offline-main".to_owned(),
+            uid: Some("uid://offline-main".to_owned()),
+            display_path: "res://main.gd".to_owned(),
+            comparison_path: "res://main.gd".to_owned(),
+            identity_strength: IdentityStrength::ResourceUid,
+            resource_type: "GDScript".to_owned(),
+            source_kind: "source".to_owned(),
+            import_state: "not_imported".to_owned(),
+            authority: "editor_file_system".to_owned(),
+            content_generation: Some(content_generation.clone()),
+            mtime_ns: 1,
+            byte_size: source.len() as u64,
+            validity: RecordValidity::Valid,
+            resource_revision: 2,
+        };
+        let mut generation = IndexGeneration {
+            generation_id: format!("generation:sha256:{}", "1".repeat(64)),
+            parent_generation_id: None,
+            schema_version: LOGICAL_SCHEMA_V1,
+            project_id: project_id.to_owned(),
+            index_revision: 3,
+            state: GenerationState::Active,
+            creation_reason: "full_snapshot".to_owned(),
+            checkpoint: IngestionCheckpoint {
+                editor_session_id: "historical-editor-session".to_owned(),
+                resource_revision: 2,
+                project_revision: 2,
+                index_revision: 3,
+                source_complete: true,
+                snapshot_checksum: format!("sha256:{}", "2".repeat(64)),
+                last_batch_id: None,
+                last_batch_checksum: None,
+            },
+            resources: vec![resource.clone()],
+            source_documents: vec![SourceDocument {
+                entity_id: resource.entity_id,
+                comparison_path: resource.comparison_path,
+                size_before: source.len() as u64,
+                size_after: source.len() as u64,
+                mtime_before_ns: 1,
+                mtime_after_ns: 1,
+                content_generation: Some(content_generation),
+                ingest_state: "ready".to_owned(),
+            }],
+            dependencies: Vec::new(),
+            diagnostics: Vec::new(),
+            tombstones: Vec::new(),
+            scene: SceneDomainGeneration {
+                editor_session_id: "historical-editor-session".to_owned(),
+                resource_revision: 2,
+                scene_graph_revision: 2,
+                source_complete: true,
+                snapshot_checksum: format!("sha256:{}", "3".repeat(64)),
+                ..SceneDomainGeneration::default()
+            },
+            script: ScriptDomainGeneration {
+                editor_session_id: "historical-editor-session".to_owned(),
+                resource_revision: 2,
+                scene_graph_revision: 2,
+                script_graph_revision: 2,
+                source_complete: true,
+                snapshot_checksum: format!("sha256:{}", "4".repeat(64)),
+                semantic_digest: format!("sha256:{}", "5".repeat(64)),
+                adapter_statuses: vec![
+                    ScriptAdapterStatus {
+                        language: ScriptLanguage::Gdscript,
+                        availability: ScriptAdapterAvailability::Available,
+                        profile: Some(ScriptAdapterProfile::GdscriptParserAnalyzerV1),
+                        version: Some("1".to_owned()),
+                        diagnostic: None,
+                    },
+                    ScriptAdapterStatus {
+                        language: ScriptLanguage::Csharp,
+                        availability: ScriptAdapterAvailability::DiscoveryOnly,
+                        profile: Some(ScriptAdapterProfile::CsharpDiscoveryOnlyV1),
+                        version: Some("1".to_owned()),
+                        diagnostic: None,
+                    },
+                ],
+                ..ScriptDomainGeneration::default()
+            },
+            validation_digest: String::new(),
+        };
+        generation.scene.validation_digest = generation.scene.compute_validation_digest();
+        generation.script.validation_digest = generation.script.compute_validation_digest();
+        generation.validation_digest = generation.compute_validation_digest();
+        generation.validate().unwrap();
+        generation
+    }
+
+    fn install_complete_store(project: &TempDir) -> (String, IndexGeneration) {
+        let project_id = godot_codex_bridge_client::project_id_for_path(project.path()).unwrap();
+        let generation = complete_generation(&project_id);
+        {
+            let mut store = SegmentStore::open(project.path(), &project_id).unwrap();
+            store.activate(&generation, None).unwrap();
+        }
+        (project_id, generation)
+    }
+
+    #[test]
+    fn clean_offline_start_pins_exact_generation_without_editor_identity() {
+        let project = offline_project();
+        let (project_id, generation) = install_complete_store(&project);
+        persist_offline_authority(project.path(), &generation).unwrap();
+
+        let (_coordinator, resource, scene, script) =
+            ResourceIndexCoordinator::new_semantic(project.path()).unwrap();
+        assert!(matches!(
+            resource.status(),
+            ResourceIndexStatus::OfflineCurrent {
+                project_id: current_project,
+                generation_id: current_generation,
+                ..
+            } if current_project == project_id && current_generation == generation.generation_id
+        ));
+        assert!(matches!(
+            scene.status(),
+            SceneIndexStatus::OfflineCurrent { .. }
+        ));
+        assert!(matches!(
+            script.status(),
+            ScriptIndexStatus::OfflineCurrent { .. }
+        ));
+        let semantic = SemanticIndexReader::new(resource, scene, script)
+            .pin_current()
+            .unwrap();
+        assert_eq!(semantic.freshness(), SemanticIndexFreshness::OfflineCached);
+        assert_eq!(
+            semantic.generation().generation_id,
+            generation.generation_id
+        );
+    }
+
+    #[test]
+    fn missing_or_corrupt_authority_and_store_never_become_current() {
+        let missing = offline_project();
+        let (_, _) = install_complete_store(&missing);
+        let (_coordinator, resource, scene, script) =
+            ResourceIndexCoordinator::new_semantic(missing.path()).unwrap();
+        assert!(!matches!(
+            resource.status(),
+            ResourceIndexStatus::Current { .. } | ResourceIndexStatus::OfflineCurrent { .. }
+        ));
+        assert!(!matches!(
+            scene.status(),
+            SceneIndexStatus::Current { .. } | SceneIndexStatus::OfflineCurrent { .. }
+        ));
+        assert!(!matches!(
+            script.status(),
+            ScriptIndexStatus::Current { .. } | ScriptIndexStatus::OfflineCurrent { .. }
+        ));
+
+        let corrupt_authority = offline_project();
+        let (_, generation) = install_complete_store(&corrupt_authority);
+        persist_offline_authority(corrupt_authority.path(), &generation).unwrap();
+        fs::write(
+            corrupt_authority
+                .path()
+                .join(".godot/codex/offline-authority-v1.json"),
+            b"{",
+        )
+        .unwrap();
+        let (_coordinator, resource, _, _) =
+            ResourceIndexCoordinator::new_semantic(corrupt_authority.path()).unwrap();
+        assert!(!matches!(
+            resource.status(),
+            ResourceIndexStatus::Current { .. } | ResourceIndexStatus::OfflineCurrent { .. }
+        ));
+
+        let corrupt_store = offline_project();
+        let (_, generation) = install_complete_store(&corrupt_store);
+        persist_offline_authority(corrupt_store.path(), &generation).unwrap();
+        let commit = fs::read_dir(corrupt_store.path().join(".godot/codex/index/commits"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .max_by_key(fs::DirEntry::file_name)
+            .unwrap()
+            .path();
+        fs::write(commit, b"{").unwrap();
+        let (_coordinator, resource, _, _) =
+            ResourceIndexCoordinator::new_semantic(corrupt_store.path()).unwrap();
+        assert!(matches!(
+            resource.status(),
+            ResourceIndexStatus::NotCurrent {
+                reason: ResourceIndexStaleReason::StoreUnavailable
+            }
+        ));
+    }
+
+    #[test]
+    fn disconnect_rechecks_disk_and_simulated_reconnect_publishes_new_authority() {
+        let project = offline_project();
+        let (_, generation) = install_complete_store(&project);
+        persist_offline_authority(project.path(), &generation).unwrap();
+        let (mut coordinator, resource, scene, script) =
+            ResourceIndexCoordinator::new_semantic(project.path()).unwrap();
+
+        fs::write(project.path().join("main.gd"), b"extends Node2D\n").unwrap();
+        coordinator.mark_disconnected();
+        assert!(matches!(
+            resource.status(),
+            ResourceIndexStatus::NotCurrent {
+                reason: ResourceIndexStaleReason::BridgeDisconnected
+            }
+        ));
+
+        let mut store = coordinator.store.take().unwrap();
+        let mut next = store.active_generation().unwrap();
+        next.parent_generation_id = Some(next.generation_id.clone());
+        next.generation_id = format!("generation:sha256:{}", "6".repeat(64));
+        next.index_revision += 1;
+        next.checkpoint.index_revision = next.index_revision;
+        let changed_source = b"extends Node2D\n";
+        let changed_hash = format!("sha256:{:x}", Sha256::digest(changed_source));
+        next.resources[0].content_generation = Some(changed_hash.clone());
+        next.resources[0].byte_size = changed_source.len() as u64;
+        next.source_documents[0].content_generation = Some(changed_hash);
+        next.source_documents[0].size_before = changed_source.len() as u64;
+        next.source_documents[0].size_after = changed_source.len() as u64;
+        next.canonicalize();
+        next.validation_digest.clear();
+        next.validation_digest = next.compute_validation_digest();
+        next.validate().unwrap();
+        store.activate(&next, None).unwrap();
+        resource.publish_current(&store).unwrap();
+        scene.publish_current(&store).unwrap();
+        script.publish_current(&store).unwrap();
+        coordinator.refresh_offline_authority(&store);
+        coordinator.store = Some(store);
+        coordinator.mark_disconnected();
+        assert!(matches!(
+            resource.status(),
+            ResourceIndexStatus::OfflineCurrent { .. }
+        ));
+        assert!(matches!(
+            scene.status(),
+            SceneIndexStatus::OfflineCurrent { .. }
+        ));
+        assert!(matches!(
+            script.status(),
+            ScriptIndexStatus::OfflineCurrent { .. }
+        ));
+    }
+
+    #[test]
+    fn canonical_roots_are_exactly_isolated() {
+        let first = offline_project();
+        let second = offline_project();
+        let first_id = godot_codex_bridge_client::project_id_for_path(first.path()).unwrap();
+        let second_id = godot_codex_bridge_client::project_id_for_path(second.path()).unwrap();
+        assert_ne!(first_id, second_id);
+        let first_generation = complete_generation(&first_id);
+        {
+            let mut store = SegmentStore::open(first.path(), &first_id).unwrap();
+            store.activate(&first_generation, None).unwrap();
+        }
+        persist_offline_authority(first.path(), &first_generation).unwrap();
+        let (_coordinator, first_reader, _, _) =
+            ResourceIndexCoordinator::new_semantic(first.path()).unwrap();
+        let (_coordinator, second_reader, _, _) =
+            ResourceIndexCoordinator::new_semantic(second.path()).unwrap();
+        assert!(matches!(
+            first_reader.status(),
+            ResourceIndexStatus::OfflineCurrent { .. }
+        ));
+        assert!(!matches!(
+            second_reader.status(),
+            ResourceIndexStatus::OfflineCurrent { .. }
+        ));
+    }
 
     #[test]
     fn reader_never_serves_non_current_states() {

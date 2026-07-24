@@ -1,0 +1,339 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-host-provenance.schema.json",
+  "title": "Sprint 11 measured local host provenance receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capture_kind",
+    "status",
+    "architecture",
+    "host_coordinate_profile_sha256",
+    "surfaces",
+    "redaction"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s11-host-provenance/1.0"
+    },
+    "capture_kind": {
+      "const": "measured_local_host_provenance"
+    },
+    "status": {
+      "const": "passed"
+    },
+    "architecture": {
+      "const": "arm64"
+    },
+    "host_coordinate_profile_sha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "surfaces": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/app_surface"
+        },
+        {
+          "$ref": "#/$defs/cli_surface"
+        },
+        {
+          "$ref": "#/$defs/ide_surface"
+        }
+      ],
+      "items": false
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "absolute_paths_absent",
+        "account_identity_absent",
+        "artifact_content_absent",
+        "environment_secrets_absent"
+      ],
+      "properties": {
+        "absolute_paths_absent": {
+          "const": true
+        },
+        "account_identity_absent": {
+          "const": true
+        },
+        "artifact_content_absent": {
+          "const": true
+        },
+        "environment_secrets_absent": {
+          "const": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}$"
+    },
+    "cdhash": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verified",
+        "mode",
+        "identifier",
+        "team_id",
+        "cdhash"
+      ],
+      "properties": {
+        "verified": {
+          "const": true
+        },
+        "mode": {
+          "enum": [
+            "strict",
+            "deep_strict"
+          ]
+        },
+        "identifier": {
+          "$ref": "#/$defs/token"
+        },
+        "team_id": {
+          "$ref": "#/$defs/token"
+        },
+        "cdhash": {
+          "$ref": "#/$defs/cdhash"
+        }
+      }
+    },
+    "regular_measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "bytes",
+        "files",
+        "directories"
+      ],
+      "properties": {
+        "kind": {
+          "const": "regular_file"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 536870912
+        },
+        "files": {
+          "const": 1
+        },
+        "directories": {
+          "const": 0
+        }
+      }
+    },
+    "tree_measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "bytes",
+        "files",
+        "directories"
+      ],
+      "properties": {
+        "kind": {
+          "const": "directory_tree"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "files": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16384
+        },
+        "directories": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16384
+        }
+      }
+    },
+    "app_surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface",
+        "host_artifact_sha256",
+        "host_metadata_sha256",
+        "client_artifact_sha256",
+        "ide_shell_artifact_sha256",
+        "host_code_signature",
+        "client_code_signature",
+        "ide_shell_code_signature",
+        "artifact_measurement",
+        "client_bytes"
+      ],
+      "properties": {
+        "surface": {
+          "const": "app"
+        },
+        "host_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_metadata_sha256": {
+          "type": "null"
+        },
+        "client_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "ide_shell_artifact_sha256": {
+          "type": "null"
+        },
+        "host_code_signature": {
+          "$ref": "#/$defs/signature"
+        },
+        "client_code_signature": {
+          "$ref": "#/$defs/signature"
+        },
+        "ide_shell_code_signature": {
+          "type": "null"
+        },
+        "artifact_measurement": {
+          "$ref": "#/$defs/regular_measurement"
+        },
+        "client_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 536870912
+        }
+      }
+    },
+    "cli_surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface",
+        "host_artifact_sha256",
+        "host_metadata_sha256",
+        "client_artifact_sha256",
+        "ide_shell_artifact_sha256",
+        "host_code_signature",
+        "client_code_signature",
+        "ide_shell_code_signature",
+        "artifact_measurement",
+        "client_bytes"
+      ],
+      "properties": {
+        "surface": {
+          "const": "cli"
+        },
+        "host_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_metadata_sha256": {
+          "type": "null"
+        },
+        "client_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "ide_shell_artifact_sha256": {
+          "type": "null"
+        },
+        "host_code_signature": {
+          "$ref": "#/$defs/signature"
+        },
+        "client_code_signature": {
+          "$ref": "#/$defs/signature"
+        },
+        "ide_shell_code_signature": {
+          "type": "null"
+        },
+        "artifact_measurement": {
+          "$ref": "#/$defs/regular_measurement"
+        },
+        "client_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 536870912
+        }
+      }
+    },
+    "ide_surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface",
+        "host_artifact_sha256",
+        "host_metadata_sha256",
+        "client_artifact_sha256",
+        "ide_shell_artifact_sha256",
+        "host_code_signature",
+        "client_code_signature",
+        "ide_shell_code_signature",
+        "artifact_measurement",
+        "client_bytes",
+        "metadata_bytes",
+        "ide_shell_bytes"
+      ],
+      "properties": {
+        "surface": {
+          "const": "ide"
+        },
+        "host_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_metadata_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "client_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "ide_shell_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_code_signature": {
+          "type": "null"
+        },
+        "client_code_signature": {
+          "$ref": "#/$defs/signature"
+        },
+        "ide_shell_code_signature": {
+          "$ref": "#/$defs/signature"
+        },
+        "artifact_measurement": {
+          "$ref": "#/$defs/tree_measurement"
+        },
+        "client_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 536870912
+        },
+        "metadata_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 536870912
+        },
+        "ide_shell_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 536870912
+        }
+      }
+    }
+  }
+}

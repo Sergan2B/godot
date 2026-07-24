@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
@@ -440,6 +440,94 @@ pub enum ReplicaStatus {
     Stale,
 }
 
+/// Closed, detail-free reason why a live Bridge replica disconnected.
+///
+/// The enum deliberately carries no parser text, endpoint, path, token, or
+/// server-provided message. Product health can therefore retain severe
+/// authentication, binding, and compatibility failures without parsing
+/// user-facing prose.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReplicaFailure {
+    TransportDisconnected,
+    AuthenticationFailed,
+    ProjectBindingMismatch,
+    ProtocolVersionIncompatible,
+}
+
+impl ReplicaFailure {
+    /// Stable summary safe for replica read errors and debug-free surfaces.
+    #[must_use]
+    pub const fn safe_summary(self) -> &'static str {
+        match self {
+            Self::TransportDisconnected => "Godot bridge is unavailable",
+            Self::AuthenticationFailed => "Godot bridge authentication failed",
+            Self::ProjectBindingMismatch => "Godot bridge project binding mismatch",
+            Self::ProtocolVersionIncompatible => "Godot bridge protocol version is incompatible",
+        }
+    }
+
+    /// Whether this failure proves a specific authenticated negotiation
+    /// boundary. Generic transport loss must never replace one of these
+    /// failures before a later authenticated negotiation succeeds.
+    #[must_use]
+    pub const fn is_proven_negotiation_fault(self) -> bool {
+        matches!(
+            self,
+            Self::AuthenticationFailed
+                | Self::ProjectBindingMismatch
+                | Self::ProtocolVersionIncompatible
+        )
+    }
+}
+
+const MAX_NEGOTIATED_BRIDGE_CAPABILITIES: usize = 64;
+const MAX_NEGOTIATED_BRIDGE_COORDINATE_BYTES: usize = 96;
+
+/// Safe authenticated Bridge negotiation retained alongside replica
+/// lifecycle state. It contains no endpoint, token, proof, or editor-native
+/// handle.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NegotiatedBridgeMetadata {
+    pub protocol_version: String,
+    pub capabilities: BTreeSet<String>,
+}
+
+impl NegotiatedBridgeMetadata {
+    /// Creates a bounded metadata projection. Invalid or oversized
+    /// negotiations are rejected rather than truncated into a false profile.
+    #[must_use]
+    pub fn new(
+        protocol_version: impl Into<String>,
+        capabilities: impl IntoIterator<Item = String>,
+    ) -> Option<Self> {
+        let protocol_version = protocol_version.into();
+        if !safe_bridge_coordinate(&protocol_version) {
+            return None;
+        }
+        let capabilities = capabilities.into_iter().collect::<BTreeSet<_>>();
+        if capabilities.len() > MAX_NEGOTIATED_BRIDGE_CAPABILITIES
+            || capabilities
+                .iter()
+                .any(|value| !safe_bridge_coordinate(value))
+        {
+            return None;
+        }
+        Some(Self {
+            protocol_version,
+            capabilities,
+        })
+    }
+}
+
+/// Atomic safe snapshot of replica lifecycle and authenticated negotiation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReplicaObservation {
+    pub status: ReplicaStatus,
+    pub last_error: Option<String>,
+    pub failure: Option<ReplicaFailure>,
+    pub negotiated_bridge: Option<NegotiatedBridgeMetadata>,
+}
+
 #[derive(Debug)]
 struct StagingSnapshot {
     metadata: SnapshotMetadata,
@@ -453,6 +541,8 @@ struct ReplicaState {
     current: Option<Arc<SemanticSnapshot>>,
     staging: Option<StagingSnapshot>,
     last_error: Option<String>,
+    failure: Option<ReplicaFailure>,
+    negotiated_bridge: Option<NegotiatedBridgeMetadata>,
 }
 
 #[derive(Clone, Debug)]
@@ -474,34 +564,93 @@ impl SnapshotReplicator {
                 current: None,
                 staging: None,
                 last_error: None,
+                failure: None,
+                negotiated_bridge: None,
             })),
         }
     }
 
+    /// Returns status, safe error class, and negotiated Bridge metadata from
+    /// one replica lock acquisition.
+    #[must_use]
+    pub fn observation(&self) -> ReplicaObservation {
+        let state = self.inner.read().expect("replica lock poisoned");
+        ReplicaObservation {
+            status: state.status,
+            last_error: state.last_error.clone(),
+            failure: state.failure,
+            negotiated_bridge: state.negotiated_bridge.clone(),
+        }
+    }
+
     pub fn status(&self) -> ReplicaStatus {
-        self.inner.read().expect("replica lock poisoned").status
+        self.observation().status
     }
 
     pub fn last_error(&self) -> Option<String> {
-        self.inner
-            .read()
-            .expect("replica lock poisoned")
-            .last_error
-            .clone()
+        self.observation().last_error
     }
 
-    pub fn mark_disconnected(&self, error: impl Into<String>) {
+    /// Publishes one authenticated, bounded Bridge negotiation before its
+    /// first semantic snapshot begins.
+    pub fn mark_bridge_negotiated(&self, metadata: NegotiatedBridgeMetadata) {
+        let mut state = self.inner.write().expect("replica lock poisoned");
+        state.status = ReplicaStatus::Syncing;
+        state.last_error = None;
+        state.failure = None;
+        state.negotiated_bridge = Some(metadata);
+    }
+
+    /// Starts a new connection attempt.
+    ///
+    /// A retry is not evidence that a proven authentication, project-binding,
+    /// or protocol fault was repaired. Such a fault remains observable until
+    /// `mark_bridge_negotiated` publishes a later authenticated negotiation.
+    pub fn mark_connecting(&self) {
         let mut state = self.inner.write().expect("replica lock poisoned");
         state.status = ReplicaStatus::Disconnected;
         state.staging = None;
-        state.last_error = Some(error.into());
+        state.negotiated_bridge = None;
+        if !state
+            .failure
+            .is_some_and(ReplicaFailure::is_proven_negotiation_fault)
+        {
+            state.last_error = None;
+            state.failure = None;
+        }
+    }
+
+    /// Records a closed Bridge failure without retaining its source details.
+    pub fn mark_disconnected(&self, failure: ReplicaFailure) {
+        let mut state = self.inner.write().expect("replica lock poisoned");
+        state.status = ReplicaStatus::Disconnected;
+        state.staging = None;
+        state.negotiated_bridge = None;
+        if failure.is_proven_negotiation_fault()
+            || !state
+                .failure
+                .is_some_and(ReplicaFailure::is_proven_negotiation_fault)
+        {
+            state.last_error = Some(failure.safe_summary().to_owned());
+            state.failure = Some(failure);
+        }
     }
 
     pub fn invalidate(&self, reason: impl Into<String>) {
         let mut state = self.inner.write().expect("replica lock poisoned");
+        if state
+            .failure
+            .is_some_and(ReplicaFailure::is_proven_negotiation_fault)
+        {
+            state.status = ReplicaStatus::Disconnected;
+            state.staging = None;
+            state.negotiated_bridge = None;
+            return;
+        }
         state.status = ReplicaStatus::Stale;
         state.staging = None;
         state.last_error = Some(reason.into());
+        state.failure = None;
     }
 
     pub fn begin(&self, metadata: SnapshotMetadata) -> Result<(), ReplicaError> {
@@ -514,8 +663,15 @@ impl SnapshotReplicator {
             return Err(ReplicaError::RevisionMismatch);
         }
         let mut state = self.inner.write().expect("replica lock poisoned");
+        if state
+            .failure
+            .is_some_and(ReplicaFailure::is_proven_negotiation_fault)
+        {
+            return Err(ReplicaError::AuthenticatedNegotiationRequired);
+        }
         state.status = ReplicaStatus::Syncing;
         state.last_error = None;
+        state.failure = None;
         state.staging = Some(StagingSnapshot {
             metadata,
             chunks: Vec::new(),
@@ -592,6 +748,7 @@ impl SnapshotReplicator {
         state.current = Some(snapshot.clone());
         state.status = ReplicaStatus::Ready;
         state.last_error = None;
+        state.failure = None;
         Ok(snapshot)
     }
 
@@ -613,6 +770,14 @@ impl SnapshotReplicator {
     }
 }
 
+fn safe_bridge_coordinate(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_NEGOTIATED_BRIDGE_COORDINATE_BYTES
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b'+' | b':' | b'/')
+        })
+}
+
 #[derive(Clone, Debug, Error)]
 #[error("semantic replica is {status:?}: {message}")]
 pub struct ReplicaReadError {
@@ -622,6 +787,8 @@ pub struct ReplicaReadError {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ReplicaError {
+    #[error("an authenticated Bridge negotiation is required")]
+    AuthenticatedNegotiationRequired,
     #[error("no snapshot is in progress")]
     NoSnapshotInProgress,
     #[error("snapshot identifier mismatch")]
@@ -742,6 +909,132 @@ mod tests {
             .unwrap();
         assert_eq!(replicator.status(), ReplicaStatus::Ready);
         assert!(replicator.read().is_ok());
+    }
+
+    #[test]
+    fn negotiated_bridge_metadata_is_bounded_atomic_and_retired_on_disconnect() {
+        assert!(NegotiatedBridgeMetadata::new("", Vec::<String>::new()).is_none());
+        assert!(
+            NegotiatedBridgeMetadata::new(
+                "1.8",
+                (0..=MAX_NEGOTIATED_BRIDGE_CAPABILITIES).map(|index| format!("capability.{index}"))
+            )
+            .is_none()
+        );
+        assert!(NegotiatedBridgeMetadata::new("1.8", ["unsafe capability".to_owned()]).is_none());
+
+        let metadata = NegotiatedBridgeMetadata::new(
+            "1.8",
+            [
+                "bridge.lifecycle".to_owned(),
+                "sync.full_snapshot_v1".to_owned(),
+            ],
+        )
+        .unwrap();
+        let replicator = SnapshotReplicator::new();
+        replicator.mark_bridge_negotiated(metadata.clone());
+        assert_eq!(
+            replicator.observation(),
+            ReplicaObservation {
+                status: ReplicaStatus::Syncing,
+                last_error: None,
+                failure: None,
+                negotiated_bridge: Some(metadata.clone()),
+            }
+        );
+
+        replicator.invalidate("event_gap");
+        assert_eq!(replicator.observation().negotiated_bridge, Some(metadata));
+        replicator.mark_disconnected(ReplicaFailure::TransportDisconnected);
+        let observation = replicator.observation();
+        assert_eq!(observation.status, ReplicaStatus::Disconnected);
+        assert_eq!(
+            observation.last_error.as_deref(),
+            Some("Godot bridge is unavailable")
+        );
+        assert_eq!(
+            observation.failure,
+            Some(ReplicaFailure::TransportDisconnected)
+        );
+        assert!(observation.negotiated_bridge.is_none());
+    }
+
+    #[test]
+    fn proven_failures_survive_retries_until_authenticated_negotiation() {
+        let replicator = SnapshotReplicator::new();
+        replicator.mark_disconnected(ReplicaFailure::TransportDisconnected);
+        replicator.mark_connecting();
+        assert_eq!(
+            replicator.observation(),
+            ReplicaObservation {
+                status: ReplicaStatus::Disconnected,
+                last_error: None,
+                failure: None,
+                negotiated_bridge: None,
+            }
+        );
+
+        let negotiated = NegotiatedBridgeMetadata::new(
+            "1.8",
+            [
+                "bridge.lifecycle".to_owned(),
+                "sync.full_snapshot_v1".to_owned(),
+            ],
+        )
+        .unwrap();
+        for failure in [
+            ReplicaFailure::AuthenticationFailed,
+            ReplicaFailure::ProjectBindingMismatch,
+            ReplicaFailure::ProtocolVersionIncompatible,
+        ] {
+            replicator.mark_disconnected(failure);
+            let observation = replicator.observation();
+            assert_eq!(observation.failure, Some(failure));
+            assert_eq!(
+                observation.last_error.as_deref(),
+                Some(failure.safe_summary())
+            );
+            assert!(!failure.safe_summary().contains("/Users/private"));
+
+            for _ in 0..3 {
+                replicator.mark_connecting();
+                replicator.mark_disconnected(ReplicaFailure::TransportDisconnected);
+                assert_eq!(
+                    replicator.observation(),
+                    ReplicaObservation {
+                        status: ReplicaStatus::Disconnected,
+                        last_error: Some(failure.safe_summary().to_owned()),
+                        failure: Some(failure),
+                        negotiated_bridge: None,
+                    }
+                );
+            }
+            replicator.invalidate("generic reconnect invalidation");
+            assert_eq!(replicator.observation().failure, Some(failure));
+            assert_eq!(
+                replicator.begin(metadata()),
+                Err(ReplicaError::AuthenticatedNegotiationRequired)
+            );
+
+            let replacement = match failure {
+                ReplicaFailure::AuthenticationFailed => ReplicaFailure::ProjectBindingMismatch,
+                ReplicaFailure::ProjectBindingMismatch
+                | ReplicaFailure::ProtocolVersionIncompatible
+                | ReplicaFailure::TransportDisconnected => ReplicaFailure::AuthenticationFailed,
+            };
+            replicator.mark_disconnected(replacement);
+            assert_eq!(replicator.observation().failure, Some(replacement));
+            replicator.mark_bridge_negotiated(negotiated.clone());
+            assert_eq!(
+                replicator.observation(),
+                ReplicaObservation {
+                    status: ReplicaStatus::Syncing,
+                    last_error: None,
+                    failure: None,
+                    negotiated_bridge: Some(negotiated.clone()),
+                }
+            );
+        }
     }
 
     #[test]

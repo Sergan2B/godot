@@ -21,11 +21,30 @@ pub const APPROVAL_PROBE_TOOL: &str = "godot_s9_approval_probe";
 pub struct ApprovalProbeServer {
     output: Option<PathBuf>,
     timeout: Duration,
+    mode: ApprovalProbeMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ApprovalProbeMode {
+    ExplicitBoolean,
+    ActionOnly,
 }
 
 impl ApprovalProbeServer {
     pub fn new(timeout: Duration, output: Option<PathBuf>) -> Self {
-        Self { output, timeout }
+        Self {
+            output,
+            timeout,
+            mode: ApprovalProbeMode::ExplicitBoolean,
+        }
+    }
+
+    pub fn new_action_only(timeout: Duration, output: Option<PathBuf>) -> Self {
+        Self {
+            output,
+            timeout,
+            mode: ApprovalProbeMode::ActionOnly,
+        }
     }
 
     fn tool() -> Tool {
@@ -52,16 +71,21 @@ impl ApprovalProbeServer {
         )
     }
 
-    fn elicitation() -> ElicitRequestParams {
-        let schema = ElicitationSchema::builder()
-            .required_property(
-                "confirm",
-                PrimitiveSchemaDefinition::Boolean(BooleanSchema::new().description(
-                    "Confirm this test-only approval probe. No Godot project data will be changed.",
-                )),
-            )
-            .build()
-            .expect("fixed approval schema");
+    fn elicitation(mode: ApprovalProbeMode) -> ElicitRequestParams {
+        let schema = match mode {
+            ApprovalProbeMode::ExplicitBoolean => ElicitationSchema::builder()
+                .required_property(
+                    "confirm",
+                    PrimitiveSchemaDefinition::Boolean(BooleanSchema::new().description(
+                        "Confirm this test-only approval probe. No Godot project data will be changed.",
+                    )),
+                )
+                .build()
+                .expect("fixed approval schema"),
+            ApprovalProbeMode::ActionOnly => ElicitationSchema::builder()
+                .build()
+                .expect("fixed action-only approval schema"),
+        };
         ElicitRequestParams::FormElicitationParams {
             meta: None,
             message: "Approve the test-only Godot Sprint 9 transaction boundary probe. Scope: scene.node.create. Risk: destructive-tool simulation. This probe does not apply a transaction or modify project content.".to_owned(),
@@ -192,7 +216,7 @@ impl ServerHandler for ApprovalProbeServer {
 
         let response = context
             .peer
-            .create_elicitation_with_timeout(Self::elicitation(), Some(self.timeout))
+            .create_elicitation_with_timeout(Self::elicitation(self.mode), Some(self.timeout))
             .await;
         let outcome = match response {
             Ok(result) => {
@@ -206,17 +230,26 @@ impl ServerHandler for ApprovalProbeServer {
                             && object.get("confirm").and_then(Value::as_bool) == Some(true)
                     })
                 });
-                match result.action {
-                    ElicitationAction::Accept if exact_confirmation => {
+                let exact_action_only = content
+                    .is_none_or(|value| value.as_object().is_some_and(serde_json::Map::is_empty));
+                match (self.mode, result.action) {
+                    (ApprovalProbeMode::ExplicitBoolean, ElicitationAction::Accept)
+                        if exact_confirmation =>
+                    {
                         self.outcome(&context, "accept", confirmed, "approval_accepted")
                     }
-                    ElicitationAction::Accept => {
+                    (ApprovalProbeMode::ActionOnly, ElicitationAction::Accept)
+                        if exact_action_only =>
+                    {
+                        self.outcome(&context, "accept", Some(true), "approval_accepted")
+                    }
+                    (_, ElicitationAction::Accept) => {
                         self.outcome(&context, "accept", confirmed, "approval_invalid")
                     }
-                    ElicitationAction::Decline => {
+                    (_, ElicitationAction::Decline) => {
                         self.outcome(&context, "decline", None, "approval_declined")
                     }
-                    ElicitationAction::Cancel => {
+                    (_, ElicitationAction::Cancel) => {
                         self.outcome(&context, "cancel", None, "approval_cancelled")
                     }
                     _ => self.outcome(&context, "unknown", None, "approval_invalid"),
@@ -232,7 +265,17 @@ impl ServerHandler for ApprovalProbeServer {
 }
 
 pub fn approval_schema_json() -> Value {
-    serde_json::to_value(ApprovalProbeServer::elicitation()).expect("serialize fixed schema")
+    serde_json::to_value(ApprovalProbeServer::elicitation(
+        ApprovalProbeMode::ExplicitBoolean,
+    ))
+    .expect("serialize fixed schema")
+}
+
+pub fn action_only_approval_schema_json() -> Value {
+    serde_json::to_value(ApprovalProbeServer::elicitation(
+        ApprovalProbeMode::ActionOnly,
+    ))
+    .expect("serialize fixed action-only schema")
 }
 
 pub fn approval_tool() -> Tool {

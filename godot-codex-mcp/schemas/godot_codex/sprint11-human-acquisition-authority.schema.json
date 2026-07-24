@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-human-acquisition-authority.schema.json",
+  "title": "Sprint 11 source-bound external human acquisition authority",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "authority_kind",
+    "authority_schema",
+    "trust_boundary",
+    "operator_id",
+    "run_id",
+    "participant_id",
+    "artifact_directory",
+    "observations",
+    "artifact_sha256",
+    "attestation_projection_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s11-human-acquisition-authority/1.0"
+    },
+    "authority_kind": {
+      "const": "external_operator_attestation"
+    },
+    "authority_schema": {
+      "$ref": "#/$defs/authority_schema_binding"
+    },
+    "trust_boundary": {
+      "const": "git_binds_exact_bytes_external_operator_attests_human_facts_without_cryptographic_identity_proof"
+    },
+    "operator_id": {
+      "type": "string",
+      "pattern": "^operator:sha256:[0-9a-f]{64}$"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^s11u-run:[0-9a-f]{32}$"
+    },
+    "participant_id": {
+      "type": "string",
+      "pattern": "^participant:sha256:[0-9a-f]{64}$"
+    },
+    "artifact_directory": {
+      "type": "string",
+      "pattern": "^tests/codex/acquisition/sprint11/human/s11u-run-[0-9a-f]{32}$"
+    },
+    "observations": {
+      "$ref": "#/$defs/observations"
+    },
+    "artifact_sha256": {
+      "$ref": "#/$defs/artifact_digests"
+    },
+    "attestation_projection_sha256": {
+      "$ref": "#/$defs/digest"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "authority_schema_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "const": "s11-human-acquisition-authority-schema-v1"
+        },
+        "path": {
+          "const": "godot-codex-mcp/schemas/godot_codex/sprint11-human-acquisition-authority.schema.json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "observations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "real_person_observed",
+        "consent_observed_before_tasks",
+        "implementation_independence",
+        "developer_coaching_absent",
+        "fixture_answers_absent"
+      ],
+      "properties": {
+        "real_person_observed": {
+          "const": true
+        },
+        "consent_observed_before_tasks": {
+          "const": true
+        },
+        "implementation_independence": {
+          "enum": [
+            "independent",
+            "not_independent"
+          ]
+        },
+        "developer_coaching_absent": {
+          "const": true
+        },
+        "fixture_answers_absent": {
+          "const": true
+        }
+      }
+    },
+    "artifact_digests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "trace",
+        "rubric",
+        "consent",
+        "defect_ledger"
+      ],
+      "properties": {
+        "trace": {
+          "$ref": "#/$defs/digest"
+        },
+        "rubric": {
+          "$ref": "#/$defs/digest"
+        },
+        "consent": {
+          "$ref": "#/$defs/digest"
+        },
+        "defect_ledger": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    }
+  }
+}

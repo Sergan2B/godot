@@ -7,10 +7,7 @@ use godot_codex_transactions::{
     ApprovalDecision, ApprovalPrompt, ApprovalProvider, BridgeFuture, PrepareCommand,
     TransactionError,
 };
-use rmcp::model::{
-    BooleanSchema, ElicitRequestParams, ElicitationAction, ElicitationSchema,
-    PrimitiveSchemaDefinition,
-};
+use rmcp::model::{ElicitRequestParams, ElicitationAction, ElicitationSchema, Meta};
 use rmcp::service::{ElicitationMode, RequestContext, ServiceError};
 use rmcp::{RoleServer, model::CallToolResult};
 use serde_json::{Value, json};
@@ -274,22 +271,18 @@ pub(crate) enum ChangeSetApprovalDecision {
 fn change_set_approval_decision(
     action: ElicitationAction,
     content: Option<&Value>,
-    grant_eligible: bool,
+    meta: Option<&Meta>,
+    session_persist_advertised: bool,
 ) -> ChangeSetApprovalDecision {
-    let content = content.and_then(Value::as_object);
-    let exact = content.is_some_and(|object| {
-        object.get("confirm").and_then(Value::as_bool) == Some(true)
-            && object.keys().all(|key| {
-                key == "confirm" || (grant_eligible && key == "allow_low_risk_for_session")
-            })
-            && object.len() <= if grant_eligible { 2 } else { 1 }
-    });
-    let grant_low_risk = content
-        .and_then(|object| object.get("allow_low_risk_for_session"))
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
+    let exact = exact_action_only_content(content);
+    let session_persist_accepted = meta
+        .and_then(|meta| meta.0.get("persist"))
+        .and_then(Value::as_str)
+        == Some("session");
     match action {
-        ElicitationAction::Accept if exact => ChangeSetApprovalDecision::Accept { grant_low_risk },
+        ElicitationAction::Accept if exact => ChangeSetApprovalDecision::Accept {
+            grant_low_risk: session_persist_advertised && session_persist_accepted,
+        },
         ElicitationAction::Accept => ChangeSetApprovalDecision::Invalid,
         ElicitationAction::Decline => ChangeSetApprovalDecision::Decline,
         ElicitationAction::Cancel => ChangeSetApprovalDecision::Cancel,
@@ -297,22 +290,35 @@ fn change_set_approval_decision(
     }
 }
 
+fn exact_action_only_content(content: Option<&Value>) -> bool {
+    content.is_none_or(|value| value.as_object().is_some_and(serde_json::Map::is_empty))
+}
+
+fn action_only_schema() -> ElicitationSchema {
+    ElicitationSchema::builder()
+        .build()
+        .expect("fixed action-only transaction approval schema")
+}
+
+fn session_persist_request_meta() -> Meta {
+    let mut meta = Meta::new();
+    meta.0.insert("persist".to_owned(), json!(["session"]));
+    meta
+}
+
 impl McpApprovalProvider {
     pub(crate) fn new(context: RequestContext<RoleServer>) -> Self {
         Self { context }
     }
 
+    pub(crate) fn supports_form(&self) -> bool {
+        self.context
+            .peer
+            .supported_elicitation_modes()
+            .contains(&ElicitationMode::Form)
+    }
+
     fn elicitation(prompt: &ApprovalPrompt) -> ElicitRequestParams {
-        let schema = ElicitationSchema::builder()
-            .required_property(
-                "confirm",
-                PrimitiveSchemaDefinition::Boolean(
-                    BooleanSchema::new()
-                        .description("Confirm this exact Godot editor transaction preview."),
-                ),
-            )
-            .build()
-            .expect("fixed transaction approval schema");
         let scope = serde_json::to_value(prompt.scope)
             .ok()
             .and_then(|value| value.as_str().map(str::to_owned))
@@ -337,44 +343,17 @@ impl McpApprovalProvider {
         ElicitRequestParams::FormElicitationParams {
             meta: None,
             message: format!("{fixed}{preview}"),
-            requested_schema: schema,
+            requested_schema: action_only_schema(),
         }
     }
 
-    pub(crate) async fn request_change_set(
-        &self,
+    fn change_set_elicitation(
         change_set_id: &str,
         preview_digest: &str,
         risk: &str,
         preview: &Value,
-        grant_eligible: bool,
-    ) -> ChangeSetApprovalDecision {
-        if !self
-            .context
-            .peer
-            .supported_elicitation_modes()
-            .contains(&ElicitationMode::Form)
-        {
-            return ChangeSetApprovalDecision::Unsupported;
-        }
-        let mut schema = ElicitationSchema::builder().required_property(
-            "confirm",
-            PrimitiveSchemaDefinition::Boolean(
-                BooleanSchema::new()
-                    .description("Confirm this exact atomic Godot change-set preview."),
-            ),
-        );
-        if grant_eligible {
-            schema = schema.property(
-                "allow_low_risk_for_session",
-                PrimitiveSchemaDefinition::Boolean(BooleanSchema::new().description(
-                    "Also allow matching low-risk memory-only change sets for up to 15 minutes in this editor session.",
-                )),
-            );
-        }
-        let Ok(schema) = schema.build() else {
-            return ChangeSetApprovalDecision::Invalid;
-        };
+        session_persist_advertised: bool,
+    ) -> ElicitRequestParams {
         let fixed = format!(
             "Approve this exact atomic Godot change set.\nChange set: {change_set_id}\nDigest: {preview_digest}\nScope: change_set.atomic\nRisk: {risk}\nPreview JSON: "
         );
@@ -389,20 +368,43 @@ impl McpApprovalProvider {
                 truncate_utf8(&preview, remaining.saturating_sub(SUFFIX.len()))
             )
         };
-        let params = ElicitRequestParams::FormElicitationParams {
-            meta: None,
+        ElicitRequestParams::FormElicitationParams {
+            meta: session_persist_advertised.then(session_persist_request_meta),
             message: format!("{fixed}{preview}"),
-            requested_schema: schema,
-        };
+            requested_schema: action_only_schema(),
+        }
+    }
+
+    pub(crate) async fn request_change_set(
+        &self,
+        change_set_id: &str,
+        preview_digest: &str,
+        risk: &str,
+        preview: &Value,
+        grant_eligible: bool,
+    ) -> ChangeSetApprovalDecision {
+        if !self.supports_form() {
+            return ChangeSetApprovalDecision::Unsupported;
+        }
+        let params = Self::change_set_elicitation(
+            change_set_id,
+            preview_digest,
+            risk,
+            preview,
+            grant_eligible,
+        );
         match self
             .context
             .peer
             .create_elicitation_with_timeout(params, Some(Duration::from_secs(120)))
             .await
         {
-            Ok(result) => {
-                change_set_approval_decision(result.action, result.content.as_ref(), grant_eligible)
-            }
+            Ok(result) => change_set_approval_decision(
+                result.action,
+                result.content.as_ref(),
+                result.meta.as_ref(),
+                grant_eligible,
+            ),
             Err(ServiceError::Timeout { .. }) => ChangeSetApprovalDecision::Timeout,
             Err(_) => ChangeSetApprovalDecision::Unsupported,
         }
@@ -429,21 +431,17 @@ impl ApprovalProvider for McpApprovalProvider {
                 )
                 .await
             {
-                Ok(result) => {
-                    let exact_confirmation = result.content.as_ref().is_some_and(|value| {
-                        value.as_object().is_some_and(|object| {
-                            object.len() == 1
-                                && object.get("confirm").and_then(Value::as_bool) == Some(true)
-                        })
-                    });
-                    match result.action {
-                        ElicitationAction::Accept if exact_confirmation => ApprovalDecision::Accept,
-                        ElicitationAction::Accept => ApprovalDecision::Invalid,
-                        ElicitationAction::Decline => ApprovalDecision::Decline,
-                        ElicitationAction::Cancel => ApprovalDecision::Cancel,
-                        _ => ApprovalDecision::Invalid,
+                Ok(result) => match result.action {
+                    ElicitationAction::Accept
+                        if exact_action_only_content(result.content.as_ref()) =>
+                    {
+                        ApprovalDecision::Accept
                     }
-                }
+                    ElicitationAction::Accept => ApprovalDecision::Invalid,
+                    ElicitationAction::Decline => ApprovalDecision::Decline,
+                    ElicitationAction::Cancel => ApprovalDecision::Cancel,
+                    _ => ApprovalDecision::Invalid,
+                },
                 Err(ServiceError::Timeout { .. }) => ApprovalDecision::Timeout,
                 Err(_) => ApprovalDecision::Unsupported,
             }
@@ -540,43 +538,120 @@ mod tests {
         let request = McpApprovalProvider::elicitation(&prompt);
         let serialized = serde_json::to_value(request).unwrap();
         assert!(serialized["message"].as_str().unwrap().len() <= 8_192);
+        assert_eq!(serialized["mode"], "form");
+        assert_eq!(serialized["requestedSchema"]["type"], "object");
+        assert_eq!(serialized["requestedSchema"]["properties"], json!({}));
+        assert!(serialized["requestedSchema"].get("required").is_none());
+        assert!(serialized.get("_meta").is_none());
     }
 
     #[test]
-    fn compound_approval_accepts_only_exact_host_form_content() {
+    fn compound_approval_accepts_only_exact_host_action() {
         assert_eq!(
-            change_set_approval_decision(
-                ElicitationAction::Accept,
-                Some(&json!({"confirm": true})),
-                false,
-            ),
+            change_set_approval_decision(ElicitationAction::Accept, None, None, false,),
             ChangeSetApprovalDecision::Accept {
                 grant_low_risk: false
             }
         );
+        let mut session_response_meta = Meta::new();
+        session_response_meta
+            .0
+            .insert("persist".to_owned(), json!("session"));
         assert_eq!(
             change_set_approval_decision(
                 ElicitationAction::Accept,
-                Some(&json!({
-                    "confirm": true,
-                    "allow_low_risk_for_session": true
-                })),
+                Some(&json!({})),
+                Some(&session_response_meta),
                 true,
             ),
             ChangeSetApprovalDecision::Accept {
                 grant_low_risk: true
             }
         );
+        assert_eq!(
+            change_set_approval_decision(
+                ElicitationAction::Accept,
+                None,
+                Some(&session_response_meta),
+                false,
+            ),
+            ChangeSetApprovalDecision::Accept {
+                grant_low_risk: false
+            }
+        );
         for content in [
-            json!({"confirm": false}),
-            json!({}),
-            json!({"confirm": true, "receipt": "model-controlled"}),
-            json!({"confirm": true, "allow_low_risk_for_session": true}),
+            Value::Null,
+            json!([]),
+            json!({"confirm": true}),
+            json!({"receipt": "model-controlled"}),
+            json!({"allow_low_risk_for_session": true}),
         ] {
             assert_eq!(
-                change_set_approval_decision(ElicitationAction::Accept, Some(&content), false,),
+                change_set_approval_decision(
+                    ElicitationAction::Accept,
+                    Some(&content),
+                    None,
+                    false,
+                ),
                 ChangeSetApprovalDecision::Invalid
             );
         }
+        let mut invalid_persist = Meta::new();
+        invalid_persist
+            .0
+            .insert("persist".to_owned(), json!("always"));
+        assert_eq!(
+            change_set_approval_decision(
+                ElicitationAction::Accept,
+                None,
+                Some(&invalid_persist),
+                true,
+            ),
+            ChangeSetApprovalDecision::Accept {
+                grant_low_risk: false
+            }
+        );
+        assert_eq!(
+            change_set_approval_decision(ElicitationAction::Decline, None, None, true),
+            ChangeSetApprovalDecision::Decline
+        );
+        assert_eq!(
+            change_set_approval_decision(ElicitationAction::Cancel, None, None, true),
+            ChangeSetApprovalDecision::Cancel
+        );
+    }
+
+    #[test]
+    fn compound_approval_advertises_session_persistence_only_when_eligible() {
+        let preview = json!({
+            "schema_version": "canonical-change-set-preview/1.0",
+            "operations": [{"kind": "create_node"}],
+            "save_scope": [],
+            "validation_policy": {"runtime": "skip"},
+            "risk": "low",
+        });
+        let eligible = serde_json::to_value(McpApprovalProvider::change_set_elicitation(
+            &format!("change-set:{}", "1".repeat(32)),
+            &format!("sha256:{}", "2".repeat(64)),
+            "low",
+            &preview,
+            true,
+        ))
+        .unwrap();
+        assert_eq!(eligible["mode"], "form");
+        assert_eq!(eligible["_meta"]["persist"], json!(["session"]));
+        assert_eq!(eligible["requestedSchema"]["type"], "object");
+        assert_eq!(eligible["requestedSchema"]["properties"], json!({}));
+        assert!(eligible["requestedSchema"].get("required").is_none());
+
+        let ineligible = serde_json::to_value(McpApprovalProvider::change_set_elicitation(
+            &format!("change-set:{}", "3".repeat(32)),
+            &format!("sha256:{}", "4".repeat(64)),
+            "destructive",
+            &preview,
+            false,
+        ))
+        .unwrap();
+        assert!(ineligible.get("_meta").is_none());
     }
 }

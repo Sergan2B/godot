@@ -47,6 +47,13 @@ TOOL_NAMES = {
     "godot_search_symbols",
 }
 PROJECT_SUMMARY_URI = "godot://project/summary"
+BASE_RESOURCE_URIS = (
+    PROJECT_SUMMARY_URI,
+    "godot://editor/summary",
+    "godot://runtime/summary",
+)
+SPRINT11_RESOURCE_URI = "godot://connection/status"
+SPRINT11_TOOL_NAME = "godot_get_connection_status"
 LIVE_DRIVER = SCRIPT_DIR / "resource_graph_live_driver.gd"
 
 
@@ -118,7 +125,13 @@ def start_sprint6_editor(
     return process, log
 
 
-def initialize_sidecar(sidecar: Path, project: Path, timeout: float) -> tuple[LineProcess, McpClient]:
+def initialize_sidecar(
+    sidecar: Path,
+    project: Path,
+    timeout: float,
+    *,
+    additive_sprint11_registry: bool = False,
+) -> tuple[LineProcess, McpClient]:
     process = LineProcess([str(sidecar), "--project-root", str(project)], cwd=project, env=os.environ.copy())
     client = McpClient(process, timeout=min(timeout, 20.0))
     initialized = client.request(
@@ -141,8 +154,14 @@ def initialize_sidecar(sidecar: Path, project: Path, timeout: float) -> tuple[Li
     tools = listed.get("result", {}).get("tools")
     require(isinstance(tools, list), "MCP registry omitted tools")
     tool_names = {tool.get("name") for tool in tools}
+    expected_tool_count = 41 if additive_sprint11_registry else 40
     require(
-        TOOL_NAMES.issubset(tool_names) and len(tools) == len(tool_names) == 40,
+        TOOL_NAMES.issubset(tool_names)
+        and len(tools) == len(tool_names) == expected_tool_count
+        and (
+            (SPRINT11_TOOL_NAME in tool_names)
+            is additive_sprint11_registry
+        ),
         "MCP additive registry does not preserve the exact Sprint 6 subset",
     )
     for tool in (item for item in tools if item.get("name") in TOOL_NAMES):
@@ -452,7 +471,13 @@ def validate_truth(results: dict[str, dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def run(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
+def run(
+    godot: Path,
+    sidecar: Path,
+    timeout: float,
+    *,
+    additive_sprint11_registry: bool = False,
+) -> dict[str, Any]:
     platform_tag = target_platform()
     require(godot.is_file() and sidecar.is_file(), "Godot and release sidecar must be built")
     run_root = Path(tempfile.mkdtemp(prefix="s6.", dir="/tmp"))
@@ -472,7 +497,12 @@ def run(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
             timeout,
             "Sprint 6 Bridge discovery",
         )
-        sidecar_process, client = initialize_sidecar(sidecar, project, timeout)
+        sidecar_process, client = initialize_sidecar(
+            sidecar,
+            project,
+            timeout,
+            additive_sprint11_registry=additive_sprint11_registry,
+        )
         try:
             current = wait_semantic_current(client, project, timeout)
         except Sprint6LiveError as error:
@@ -487,13 +517,11 @@ def run(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
             resource.get("uri")
             for resource in listed.get("result", {}).get("resources", [])
         ]
+        expected_resource_uris = list(BASE_RESOURCE_URIS)
+        if additive_sprint11_registry:
+            expected_resource_uris.append(SPRINT11_RESOURCE_URI)
         require(
-            listed_uris
-            == [
-                PROJECT_SUMMARY_URI,
-                "godot://editor/summary",
-                "godot://runtime/summary",
-            ],
+            listed_uris == expected_resource_uris,
             "additive MCP resources do not preserve the Sprint 6 project summary",
         )
         require(
@@ -719,9 +747,19 @@ def main() -> int:
     parser.add_argument("--sidecar", type=Path, default=default_sidecar())
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--additive-sprint11-registry",
+        action="store_true",
+        help="require the exact additive Sprint 11 41-tool/four-resource profile",
+    )
     arguments = parser.parse_args()
     try:
-        report = run(arguments.godot.resolve(), arguments.sidecar.resolve(), arguments.timeout)
+        report = run(
+            arguments.godot.resolve(),
+            arguments.sidecar.resolve(),
+            arguments.timeout,
+            additive_sprint11_registry=arguments.additive_sprint11_registry,
+        )
         text = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
         if arguments.output is not None:
             arguments.output.write_text(text, encoding="utf-8")

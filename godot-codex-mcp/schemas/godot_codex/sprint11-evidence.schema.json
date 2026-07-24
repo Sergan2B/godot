@@ -1,0 +1,687 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-evidence.schema.json",
+  "title": "Godot Codex Sprint 11 External Codex Beta evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "sprint",
+    "profile",
+    "status",
+    "baseline",
+    "source",
+    "protocols",
+    "package",
+    "registry",
+    "compatibility",
+    "prompt_pack",
+    "regressions",
+    "acquisitions",
+    "surfaces",
+    "usability",
+    "gates",
+    "release_projection",
+    "redaction",
+    "cleanup",
+    "deferred"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s11-external-codex-beta-evidence/1.0"
+    },
+    "sprint": {
+      "const": 11
+    },
+    "profile": {
+      "const": "external_codex_beta_macos_arm64"
+    },
+    "status": {
+      "const": "passed"
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sprint10_source_commit",
+        "sprint10_evidence_commit",
+        "sprint10_evidence_sha256",
+        "sprint10_source_sha256"
+      ],
+      "properties": {
+        "sprint10_source_commit": {
+          "const": "b225f77acf48648ef6f59a76ff5a7dbb824da7bb"
+        },
+        "sprint10_evidence_commit": {
+          "const": "815bccedddcd7c64a387dc8e9d5de2e941003fea"
+        },
+        "sprint10_evidence_sha256": {
+          "const": "sha256:9785a50e1be25f511acd6bd67f6642998821f700aea31a0bb4a7c1670f5b1611"
+        },
+        "sprint10_source_sha256": {
+          "const": "sha256:c5fe1303e005d5866b28be6c8162bb8bebe4507975fd37eb55f690d72d4dc978"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "sha256",
+        "file_count",
+        "scope_manifest"
+      ],
+      "properties": {
+        "commit": {
+          "$ref": "#/$defs/commit"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "file_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scope_manifest": {
+          "const": "tests/codex/sprint11_source_scopes.txt"
+        }
+      }
+    },
+    "protocols": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bridge_rpc",
+        "mcp",
+        "approval_floor",
+        "tools",
+        "fixed_resources",
+        "resource_templates"
+      ],
+      "properties": {
+        "bridge_rpc": {
+          "const": "1.8"
+        },
+        "mcp": {
+          "const": "2025-11-25"
+        },
+        "approval_floor": {
+          "const": "2025-06-18"
+        },
+        "tools": {
+          "const": 41
+        },
+        "fixed_resources": {
+          "const": 4
+        },
+        "resource_templates": {
+          "const": 1
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_commit",
+        "manifest_path",
+        "manifest_sha256",
+        "archive_sha256",
+        "godot_prerequisite_sha256"
+      ],
+      "properties": {
+        "source_commit": {
+          "$ref": "#/$defs/commit"
+        },
+        "manifest_path": {
+          "$ref": "#/$defs/artifact_path"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "archive_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "godot_prerequisite_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "tools",
+        "fixed_resources",
+        "resource_templates"
+      ],
+      "properties": {
+        "path": {
+          "const": "godot-codex-mcp/product/registry-profile.v1.json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "tools": {
+          "const": 41
+        },
+        "fixed_resources": {
+          "const": 4
+        },
+        "resource_templates": {
+          "const": 1
+        }
+      }
+    },
+    "prompt_pack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "const": "sprint11-external-beta-v1"
+        },
+        "path": {
+          "const": "tests/codex/prompts/sprint11-external-beta-v1.json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "matrix_path",
+        "matrix_sha256",
+        "host_profile_path",
+        "host_profile_sha256",
+        "server_instructions_path",
+        "server_instructions_file_sha256",
+        "server_instructions_wire_sha256"
+      ],
+      "properties": {
+        "matrix_path": {
+          "const": "godot-codex-mcp/product/compatibility-matrix.v1.json"
+        },
+        "matrix_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_profile_path": {
+          "const": "godot-codex-mcp/product/host-coordinate-profile.v1.json"
+        },
+        "host_profile_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "server_instructions_path": {
+          "const": "godot-codex-mcp/product/server-instructions.v1.txt"
+        },
+        "server_instructions_file_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "server_instructions_wire_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "regressions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_path",
+        "receipt_sha256",
+        "package_manifest_sha256",
+        "package_sidecar_sha256",
+        "godot_artifact_sha256"
+      ],
+      "properties": {
+        "receipt_path": {
+          "$ref": "#/$defs/artifact_path"
+        },
+        "receipt_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "package_manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "package_sidecar_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "godot_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "acquisitions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host_provenance",
+        "multi_project",
+        "reproducibility"
+      ],
+      "properties": {
+        "host_provenance": {
+          "$ref": "#/$defs/host_provenance_acquisition"
+        },
+        "multi_project": {
+          "$ref": "#/$defs/acquisition_receipt"
+        },
+        "reproducibility": {
+          "$ref": "#/$defs/acquisition_receipt"
+        }
+      }
+    },
+    "surfaces": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "app",
+        "cli",
+        "ide"
+      ],
+      "properties": {
+        "app": {
+          "$ref": "#/$defs/surface"
+        },
+        "cli": {
+          "$ref": "#/$defs/surface"
+        },
+        "ide": {
+          "$ref": "#/$defs/surface"
+        }
+      }
+    },
+    "usability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "report_path",
+        "report_sha256",
+        "participants",
+        "externally_attested_independent_participant",
+        "status"
+      ],
+      "properties": {
+        "report_path": {
+          "$ref": "#/$defs/artifact_path"
+        },
+        "report_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "participants": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 32
+        },
+        "externally_attested_independent_participant": {
+          "const": true
+        },
+        "status": {
+          "const": "passed"
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approval_and_trust",
+        "compatibility_matrix",
+        "connection_offline_reconnect",
+        "doctor_fault_matrix",
+        "final_integrity",
+        "guidance_security",
+        "mcp_profile",
+        "multi_project_isolation",
+        "package_reproducibility",
+        "previous_sprint_contracts",
+        "previous_sprint_regressions",
+        "rust_quality",
+        "setup_ownership",
+        "surface_parity",
+        "surface_real_workflows",
+        "trace_contract",
+        "usability_report"
+      ],
+      "properties": {
+        "approval_and_trust": {
+          "$ref": "#/$defs/gate"
+        },
+        "compatibility_matrix": {
+          "$ref": "#/$defs/gate"
+        },
+        "connection_offline_reconnect": {
+          "$ref": "#/$defs/gate"
+        },
+        "doctor_fault_matrix": {
+          "$ref": "#/$defs/gate"
+        },
+        "final_integrity": {
+          "$ref": "#/$defs/gate"
+        },
+        "guidance_security": {
+          "$ref": "#/$defs/gate"
+        },
+        "mcp_profile": {
+          "$ref": "#/$defs/gate"
+        },
+        "multi_project_isolation": {
+          "$ref": "#/$defs/gate"
+        },
+        "package_reproducibility": {
+          "$ref": "#/$defs/gate"
+        },
+        "previous_sprint_contracts": {
+          "$ref": "#/$defs/gate"
+        },
+        "previous_sprint_regressions": {
+          "$ref": "#/$defs/gate"
+        },
+        "rust_quality": {
+          "$ref": "#/$defs/gate"
+        },
+        "setup_ownership": {
+          "$ref": "#/$defs/gate"
+        },
+        "surface_parity": {
+          "$ref": "#/$defs/gate"
+        },
+        "surface_real_workflows": {
+          "$ref": "#/$defs/gate"
+        },
+        "trace_contract": {
+          "$ref": "#/$defs/gate"
+        },
+        "usability_report": {
+          "$ref": "#/$defs/gate"
+        }
+      }
+    },
+    "release_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "external_codex_beta_macos",
+        "r1_08",
+        "r1_10",
+        "beta_gate"
+      ],
+      "properties": {
+        "external_codex_beta_macos": {
+          "const": "passed"
+        },
+        "r1_08": {
+          "const": "partial"
+        },
+        "r1_10": {
+          "const": "partial"
+        },
+        "beta_gate": {
+          "const": "not_reached"
+        }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "absolute_paths_absent",
+        "accounts_absent",
+        "approval_content_absent",
+        "native_ids_absent",
+        "participant_prompts_absent",
+        "secrets_absent",
+        "source_content_absent"
+      ],
+      "properties": {
+        "absolute_paths_absent": {
+          "const": true
+        },
+        "accounts_absent": {
+          "const": true
+        },
+        "approval_content_absent": {
+          "const": true
+        },
+        "native_ids_absent": {
+          "const": true
+        },
+        "participant_prompts_absent": {
+          "const": true
+        },
+        "secrets_absent": {
+          "const": true
+        },
+        "source_content_absent": {
+          "const": true
+        }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "editor_processes_stopped",
+        "game_processes_stopped",
+        "sidecar_processes_stopped",
+        "temporary_workspaces_removed",
+        "unexpected_listeners_absent"
+      ],
+      "properties": {
+        "editor_processes_stopped": {
+          "const": true
+        },
+        "game_processes_stopped": {
+          "const": true
+        },
+        "sidecar_processes_stopped": {
+          "const": true
+        },
+        "temporary_workspaces_removed": {
+          "const": true
+        },
+        "unexpected_listeners_absent": {
+          "const": true
+        }
+      }
+    },
+    "deferred": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cursor",
+        "dock",
+        "linux",
+        "notarization",
+        "remote_ci",
+        "windows"
+      ],
+      "properties": {
+        "cursor": {
+          "$ref": "#/$defs/not_run"
+        },
+        "dock": {
+          "$ref": "#/$defs/not_run"
+        },
+        "linux": {
+          "$ref": "#/$defs/not_run"
+        },
+        "notarization": {
+          "$ref": "#/$defs/not_run"
+        },
+        "remote_ci": {
+          "$ref": "#/$defs/not_run"
+        },
+        "windows": {
+          "$ref": "#/$defs/not_run"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "artifact_path": {
+      "type": "string",
+      "maxLength": 240,
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9._-]*(/[A-Za-z0-9_][A-Za-z0-9._-]*)*$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "acquisition_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_path",
+        "receipt_sha256"
+      ],
+      "properties": {
+        "receipt_path": {
+          "$ref": "#/$defs/artifact_path"
+        },
+        "receipt_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "host_provenance_acquisition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_path",
+        "receipt_sha256",
+        "measurement_path",
+        "measurement_sha256",
+        "source_commit"
+      ],
+      "properties": {
+        "receipt_path": {
+          "type": "string",
+          "pattern": "^tests/codex/acquisition/sprint11/[A-Za-z0-9._+-]+/receipt\\.json$"
+        },
+        "receipt_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "measurement_path": {
+          "type": "string",
+          "pattern": "^tests/codex/acquisition/sprint11/[A-Za-z0-9._+-]+/measurement\\.json$"
+        },
+        "measurement_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "source_commit": {
+          "$ref": "#/$defs/commit"
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runner",
+        "definition_sha256"
+      ],
+      "properties": {
+        "runner": {
+          "const": "sprint11_acceptance/1.0"
+        },
+        "definition_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "not_run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason"
+      ],
+      "properties": {
+        "status": {
+          "const": "not_run"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "host_name",
+        "host_version",
+        "host_build",
+        "host_artifact_sha256",
+        "tool_artifact_sha256",
+        "trace_path",
+        "trace_sha256",
+        "recorder_journal_path",
+        "recorder_journal_sha256",
+        "authority_path",
+        "authority_sha256"
+      ],
+      "properties": {
+        "status": {
+          "const": "passed"
+        },
+        "host_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "host_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "host_build": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "host_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "tool_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "trace_path": {
+          "$ref": "#/$defs/artifact_path"
+        },
+        "trace_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "recorder_journal_path": {
+          "$ref": "#/$defs/artifact_path"
+        },
+        "recorder_journal_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "authority_path": {
+          "$ref": "#/$defs/artifact_path"
+        },
+        "authority_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    }
+  }
+}

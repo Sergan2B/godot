@@ -1,11 +1,11 @@
 # PROTOCOL-001 — Bridge RPC 1.x
 
-**Status:** Bridge RPC 1.0 accepted; compatible 1.1–1.7 extensions implemented
-and qualified; additive 1.8 compound validation profile proposed
+**Status:** Bridge RPC 1.0–1.8 implemented and source-bound locally on macOS
+arm64; lower-minor compatibility remains additive and fail-closed
 
 **Date:** 2026-07-21
 
-**Protocol versions:** `1.0` baseline; `1.1`–`1.7` fallback; `1.8` proposed
+**Protocol versions:** `1.0` baseline; `1.1`–`1.7` fallback; `1.8` current
 
 **Decision owner:** `Sergan2B` (interim Sidecar/Protocol and Security owner)
 
@@ -855,7 +855,7 @@ lease. The Bridge validates the binding before finalizing or accepting a
 rollback request. The complete report remains sidecar-owned and MCP-paginated.
 
 Sessions negotiated at 1.0–1.7 omit all 1.8 capabilities, methods, states,
-limits, fields, errors, and notifications. Before S10 executor readiness,
-1.8 capabilities may be advertised only with `readiness: unavailable`;
-validated calls fail with `capability_unavailable` and create no editor,
+limits, fields, errors, and notifications. A build without the complete S10
+executor may advertise 1.8 capabilities only with `readiness: unavailable`;
+validated calls then fail with `capability_unavailable` and create no editor,
 project-file, index, diagnostic, runtime, or history mutation.

@@ -1,0 +1,634 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-human-usability-defect-ledger.schema.json",
+  "title": "Sprint 11 human-usability defect and retest ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "acquisition_kind",
+    "qualification",
+    "status",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s11-human-usability-defect-ledger/1.0"
+    },
+    "acquisition_kind": {
+      "enum": [
+        "template",
+        "synthetic_contract_fixture",
+        "real_human_derived"
+      ]
+    },
+    "qualification": {
+      "type": "boolean"
+    },
+    "status": {
+      "enum": [
+        "unacquired",
+        "fixture_valid",
+        "qualifying",
+        "incomplete"
+      ]
+    },
+    "payload": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/template_payload"
+        },
+        {
+          "$ref": "#/$defs/ledger"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "template"
+          }
+        },
+        "required": [
+          "acquisition_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualification": {
+            "const": false
+          },
+          "status": {
+            "const": "unacquired"
+          },
+          "payload": {
+            "$ref": "#/$defs/template_payload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "synthetic_contract_fixture"
+          }
+        },
+        "required": [
+          "acquisition_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualification": {
+            "const": false
+          },
+          "status": {
+            "const": "fixture_valid"
+          },
+          "payload": {
+            "$ref": "#/$defs/ledger"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "real_human_derived"
+          },
+          "status": {
+            "const": "qualifying"
+          }
+        },
+        "required": [
+          "acquisition_kind",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualification": {
+            "const": true
+          },
+          "payload": {
+            "$ref": "#/$defs/ledger"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "real_human_derived"
+          },
+          "status": {
+            "const": "incomplete"
+          }
+        },
+        "required": [
+          "acquisition_kind",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualification": {
+            "const": false
+          },
+          "payload": {
+            "$ref": "#/$defs/ledger"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "human_run_id": {
+      "type": "string",
+      "pattern": "^s11u-run:[0-9a-f]{32}$"
+    },
+    "source_run_id": {
+      "type": "string",
+      "pattern": "^s11u-source:[0-9a-f]{32}$"
+    },
+    "package_run_id": {
+      "type": "string",
+      "pattern": "^s11u-package:[0-9a-f]{32}$"
+    },
+    "goal_id": {
+      "enum": [
+        "install_and_connect",
+        "saved_semantic_context",
+        "offline_context",
+        "doctor_fault_matrix",
+        "runtime_diagnostics",
+        "compound_write_and_undo",
+        "project_isolation"
+      ]
+    },
+    "template_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "template_id",
+        "intended_acquisition_kind",
+        "notice"
+      ],
+      "properties": {
+        "template_id": {
+          "const": "sprint11-human-usability-defect-ledger-template-v1"
+        },
+        "intended_acquisition_kind": {
+          "const": "real_human_derived"
+        },
+        "notice": {
+          "const": "UNACQUIRED TEMPLATE: this file contains no observed defect and is not qualification evidence."
+        }
+      }
+    },
+    "source_coordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commit",
+        "reproduction_run_ids"
+      ],
+      "properties": {
+        "commit": {
+          "$ref": "#/$defs/commit"
+        },
+        "reproduction_run_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/source_run_id"
+          }
+        }
+      }
+    },
+    "package_coordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest_sha256",
+        "reproduction_run_ids"
+      ],
+      "properties": {
+        "manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "reproduction_run_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/package_run_id"
+          }
+        }
+      }
+    },
+    "found_on": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "package",
+        "human_run_ids"
+      ],
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/source_coordinate"
+        },
+        "package": {
+          "$ref": "#/$defs/package_coordinate"
+        },
+        "human_run_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/human_run_id"
+          }
+        }
+      }
+    },
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixed_by_commit",
+        "fixed_package_manifest_sha256",
+        "source_retest_run_ids",
+        "package_retest_run_ids",
+        "human_retest_run_ids",
+        "source_retest_passed",
+        "package_retest_passed",
+        "human_retest_passed"
+      ],
+      "properties": {
+        "fixed_by_commit": {
+          "$ref": "#/$defs/commit"
+        },
+        "fixed_package_manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "source_retest_run_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/source_run_id"
+          }
+        },
+        "package_retest_run_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/package_run_id"
+          }
+        },
+        "human_retest_run_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/human_run_id"
+          }
+        },
+        "source_retest_passed": {
+          "const": true
+        },
+        "package_retest_passed": {
+          "const": true
+        },
+        "human_retest_passed": {
+          "const": true
+        }
+      }
+    },
+    "defect_common": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defect_id",
+        "severity",
+        "category",
+        "goal_id",
+        "symptom_code",
+        "private_issue_projection_sha256",
+        "found_on",
+        "status"
+      ],
+      "properties": {
+        "defect_id": {
+          "type": "string",
+          "pattern": "^S11-UX-[0-9]{3}$"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "category": {
+          "enum": [
+            "installation",
+            "connection",
+            "documentation",
+            "diagnostics",
+            "offline_model",
+            "runtime",
+            "approval",
+            "validation",
+            "undo",
+            "project_isolation",
+            "privacy",
+            "reliability"
+          ]
+        },
+        "goal_id": {
+          "$ref": "#/$defs/goal_id"
+        },
+        "symptom_code": {
+          "enum": [
+            "blocked_workflow",
+            "wrong_diagnosis",
+            "missing_remediation",
+            "ambiguous_instruction",
+            "approval_misunderstood",
+            "unexpected_mutation",
+            "failed_recovery",
+            "incorrect_status",
+            "timeout",
+            "integrity_failure",
+            "isolation_failure",
+            "secret_exposure"
+          ]
+        },
+        "private_issue_projection_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "found_on": {
+          "$ref": "#/$defs/found_on"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "resolved"
+          ]
+        }
+      }
+    },
+    "open_defect": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/defect_common"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "defect_id",
+            "severity",
+            "category",
+            "goal_id",
+            "symptom_code",
+            "private_issue_projection_sha256",
+            "found_on",
+            "status"
+          ],
+          "properties": {
+            "defect_id": {
+              "type": "string",
+              "pattern": "^S11-UX-[0-9]{3}$"
+            },
+            "severity": {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "critical"
+              ]
+            },
+            "category": {
+              "enum": [
+                "installation",
+                "connection",
+                "documentation",
+                "diagnostics",
+                "offline_model",
+                "runtime",
+                "approval",
+                "validation",
+                "undo",
+                "project_isolation",
+                "privacy",
+                "reliability"
+              ]
+            },
+            "goal_id": {
+              "$ref": "#/$defs/goal_id"
+            },
+            "symptom_code": {
+              "enum": [
+                "blocked_workflow",
+                "wrong_diagnosis",
+                "missing_remediation",
+                "ambiguous_instruction",
+                "approval_misunderstood",
+                "unexpected_mutation",
+                "failed_recovery",
+                "incorrect_status",
+                "timeout",
+                "integrity_failure",
+                "isolation_failure",
+                "secret_exposure"
+              ]
+            },
+            "private_issue_projection_sha256": {
+              "$ref": "#/$defs/digest"
+            },
+            "found_on": {
+              "$ref": "#/$defs/found_on"
+            },
+            "status": {
+              "const": "open"
+            }
+          }
+        }
+      ]
+    },
+    "resolved_defect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "defect_id",
+        "severity",
+        "category",
+        "goal_id",
+        "symptom_code",
+        "private_issue_projection_sha256",
+        "found_on",
+        "status",
+        "resolution"
+      ],
+      "properties": {
+        "defect_id": {
+          "type": "string",
+          "pattern": "^S11-UX-[0-9]{3}$"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "category": {
+          "enum": [
+            "installation",
+            "connection",
+            "documentation",
+            "diagnostics",
+            "offline_model",
+            "runtime",
+            "approval",
+            "validation",
+            "undo",
+            "project_isolation",
+            "privacy",
+            "reliability"
+          ]
+        },
+        "goal_id": {
+          "$ref": "#/$defs/goal_id"
+        },
+        "symptom_code": {
+          "enum": [
+            "blocked_workflow",
+            "wrong_diagnosis",
+            "missing_remediation",
+            "ambiguous_instruction",
+            "approval_misunderstood",
+            "unexpected_mutation",
+            "failed_recovery",
+            "incorrect_status",
+            "timeout",
+            "integrity_failure",
+            "isolation_failure",
+            "secret_exposure"
+          ]
+        },
+        "private_issue_projection_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "found_on": {
+          "$ref": "#/$defs/found_on"
+        },
+        "status": {
+          "const": "resolved"
+        },
+        "resolution": {
+          "$ref": "#/$defs/resolution"
+        }
+      }
+    },
+    "defect": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/open_defect"
+        },
+        {
+          "$ref": "#/$defs/resolved_defect"
+        }
+      ]
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scan_receipt_sha256",
+        "freeform_issue_text_embedded",
+        "participant_data_embedded",
+        "secret_occurrences",
+        "private_path_occurrences"
+      ],
+      "properties": {
+        "scan_receipt_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "freeform_issue_text_embedded": {
+          "const": false
+        },
+        "participant_data_embedded": {
+          "const": false
+        },
+        "secret_occurrences": {
+          "const": 0
+        },
+        "private_path_occurrences": {
+          "const": 0
+        }
+      }
+    },
+    "ledger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ledger_id",
+        "bound_human_run_ids",
+        "defects",
+        "redaction"
+      ],
+      "properties": {
+        "ledger_id": {
+          "const": "sprint11-human-usability-defect-ledger-v1"
+        },
+        "bound_human_run_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/human_run_id"
+          }
+        },
+        "defects": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/defect"
+          }
+        },
+        "redaction": {
+          "$ref": "#/$defs/redaction"
+        }
+      }
+    }
+  }
+}

@@ -1,6 +1,7 @@
 # VALIDATION-001 — Compound validation, persistence, and guarded rollback
 
-**Status:** Proposed Sprint 10 contract; frozen by S10-01 before implementation
+**Status:** Accepted and source-bound locally on macOS arm64 through the
+Sprint 10 M3 evidence
 
 **Contract version:** `1.0`
 

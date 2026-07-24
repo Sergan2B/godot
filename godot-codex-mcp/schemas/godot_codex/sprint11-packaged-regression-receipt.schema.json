@@ -1,0 +1,339 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-packaged-regression-receipt.schema.json",
+  "title": "Godot Codex Sprint 11 packaged live regression receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capture_kind",
+    "status",
+    "bindings",
+    "fixtures",
+    "commands",
+    "coverage",
+    "cleanup",
+    "redaction"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s11-packaged-regression-receipt/1.0"
+    },
+    "capture_kind": {
+      "const": "real_package_live"
+    },
+    "status": {
+      "const": "passed"
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package_source_commit",
+        "package_manifest_sha256",
+        "package_build_provenance_sha256",
+        "package_archive_sha256",
+        "package_sidecar_path",
+        "package_sidecar_sha256",
+        "godot_version",
+        "godot_commit",
+        "godot_artifact_sha256",
+        "registry_sha256"
+      ],
+      "properties": {
+        "package_source_commit": {
+          "$ref": "#/$defs/commit"
+        },
+        "package_manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "package_build_provenance_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "package_archive_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "package_sidecar_path": {
+          "const": "bin/godot-codex-mcp"
+        },
+        "package_sidecar_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "godot_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "godot_commit": {
+          "$ref": "#/$defs/commit"
+        },
+        "godot_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "registry_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "fixtures": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/fixture"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {
+        "$ref": "#/$defs/command"
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sprints",
+        "sprint9_operations",
+        "sprint9_negative_scenarios",
+        "sprint9_fault_scenarios",
+        "sprint10_validation"
+      ],
+      "properties": {
+        "sprints": {
+          "const": [
+            6,
+            7,
+            8,
+            9,
+            10
+          ]
+        },
+        "sprint9_operations": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "attach_script",
+              "connect_signal",
+              "create_node",
+              "delete_node",
+              "detach_script",
+              "disconnect_signal",
+              "reparent_node",
+              "set_property"
+            ]
+          }
+        },
+        "sprint9_negative_scenarios": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "cancel",
+              "committed_replay",
+              "confirm_false",
+              "decline",
+              "expired_preview",
+              "idempotency",
+              "timeout",
+              "unsupported"
+            ]
+          }
+        },
+        "sprint9_fault_scenarios": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "sidecar_disconnect_prepared",
+              "bridge_response_loss_after_commit",
+              "disconnect_before_commit",
+              "editor_crash_before_commit",
+              "editor_restart_after_commit",
+              "corrupt_journal",
+              "restart_after_bridge_response_before_journal_ack"
+            ]
+          }
+        },
+        "sprint10_validation": {
+          "const": true
+        }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "editor_processes_stopped",
+        "game_processes_stopped",
+        "sidecar_processes_stopped",
+        "temporary_workspaces_removed",
+        "package_unchanged"
+      ],
+      "properties": {
+        "editor_processes_stopped": {
+          "const": true
+        },
+        "game_processes_stopped": {
+          "const": true
+        },
+        "sidecar_processes_stopped": {
+          "const": true
+        },
+        "temporary_workspaces_removed": {
+          "const": true
+        },
+        "package_unchanged": {
+          "const": true
+        }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "absolute_paths_absent",
+        "native_ids_absent",
+        "secrets_absent",
+        "source_content_absent"
+      ],
+      "properties": {
+        "absolute_paths_absent": {
+          "const": true
+        },
+        "native_ids_absent": {
+          "const": true
+        },
+        "secrets_absent": {
+          "const": true
+        },
+        "source_content_absent": {
+          "const": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9_{}.-]+(?:/[A-Za-z0-9_{}.-]+)*$"
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "cwd",
+        "argv_template",
+        "command_sha256",
+        "runner_path",
+        "runner_sha256",
+        "report_path",
+        "report_sha256",
+        "stdout_sha256",
+        "stderr_sha256",
+        "exit_code",
+        "duration_ms"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "s6_semantic",
+            "s7_editor",
+            "s8_runtime",
+            "s9_operations_a",
+            "s9_operations_b",
+            "s9_negatives",
+            "s9_faults_a",
+            "s9_faults_b",
+            "s10_compound"
+          ]
+        },
+        "cwd": {
+          "const": "."
+        },
+        "argv_template": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 40,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          }
+        },
+        "command_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "runner_path": {
+          "$ref": "#/$defs/path"
+        },
+        "runner_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "report_path": {
+          "$ref": "#/$defs/path"
+        },
+        "report_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "stdout_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "stderr_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "exit_code": {
+          "const": 0
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 180000
+        }
+      }
+    }
+  }
+}

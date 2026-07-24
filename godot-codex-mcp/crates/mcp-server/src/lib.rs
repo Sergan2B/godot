@@ -1,23 +1,31 @@
 mod change_set_tools;
+mod connection_status;
 mod cursor;
 mod live_overlay;
+mod output_schema;
 mod runtime_overlay;
 mod transaction_tools;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
 use change_set_tools::{
-    ConfirmationPolicyInput, ConfirmationPolicyStore, PrepareChangeSetInput, ValidationReportInput,
-    report_page_value, validation_report_error,
+    ConfirmationPolicyInput, ConfirmationPolicyStore, LOW_RISK_MEMORY_ONLY_SCOPE,
+    PrepareChangeSetInput, ValidationReportInput, report_page_value, session_grant_eligible,
+    validation_report_error,
+};
+use connection_status::{
+    CONNECTION_STATUS_URI, ConnectionStatusInput, IndexCoordinates, IndexObservation,
+    ReplicaObservation, ServerConnectionObservation, connection_health,
 };
 use cursor::{CursorBinding, CursorCodec, CursorTool};
 use godot_codex_bridge_client::{
-    ApprovalBinding, ApprovalScope, BridgeError, Risk, RuntimeDomain, RuntimeEntity, RuntimeNode,
-    RuntimeTarget, RuntimeViewportCapture,
+    ApprovalBinding, ApprovalScope, BridgeError, BridgeFailureClass, Risk, RuntimeDomain,
+    RuntimeEntity, RuntimeNode, RuntimeTarget, RuntimeViewportCapture,
 };
 use godot_codex_index_store::{
     ContextSummaryError, DependencyEdge, FIND_USAGES_DEFAULT_LIMIT, FindUsagesQuery,
@@ -30,12 +38,20 @@ use godot_codex_index_store::{
     SemanticConfidence, SemanticEntityKind, SemanticQueryIndex, StoreError, build_project_summary,
     build_scene_summary, signal_entity_id,
 };
-use godot_codex_resource_indexer::{
-    ResourceIndexReadError, ResourceIndexReader, SceneIndexReadError, SceneIndexReader,
-    ScriptIndexReadError, ScriptIndexReader, SemanticIndexReadError, SemanticIndexReader,
-    SemanticPartialCode, SemanticPartialDomain, SemanticPartialReason, normalize_resource_path,
+use godot_codex_product::{
+    CONNECTION_STATUS_MAX_BYTES, ComponentCondition, ConnectionHealth, ConnectionStatus,
+    ProductStartupObservation,
 };
-use godot_codex_semantic_model::{SemanticSnapshot, SnapshotReplicator};
+use godot_codex_resource_indexer::{
+    ResourceIndexReadError, ResourceIndexReader, ResourceIndexStaleReason, ResourceIndexStatus,
+    SceneIndexReadError, SceneIndexReader, SceneIndexStaleReason, SceneIndexStatus,
+    ScriptIndexReadError, ScriptIndexReader, ScriptIndexStaleReason, ScriptIndexStatus,
+    SemanticIndexFreshness, SemanticIndexReadError, SemanticIndexReader, SemanticPartialCode,
+    SemanticPartialDomain, SemanticPartialReason, normalize_resource_path,
+};
+use godot_codex_semantic_model::{
+    ReplicaFailure, ReplicaStatus, SemanticSnapshot, SnapshotReplicator,
+};
 use godot_codex_transactions::{
     ApplyCommand, CheckAuthority, CheckOutcome, DiagnosticFingerprint, DiagnosticSeverity,
     DiagnosticSummary, ExpectedSemanticDelta, PrepareCommand, SemanticComparison,
@@ -43,6 +59,7 @@ use godot_codex_transactions::{
     ValidationCheck, ValidationCoordinator, ValidationPolicy, ValidationReportOutcome,
 };
 use live_overlay::{LiveOverlay, overlay_metadata};
+use output_schema::AvailabilityDomain;
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -541,6 +558,7 @@ pub struct GodotMcpServer {
     cursor_codec: CursorCodec,
     runtime_overlay: RuntimeOverlay,
     project_root: Option<PathBuf>,
+    product_startup: ProductStartupObservation,
     transaction_coordinator: Option<Arc<TransactionCoordinator>>,
     validation_coordinator: Arc<tokio::sync::Mutex<ValidationCoordinator>>,
     confirmation_policy: ConfirmationPolicyStore,
@@ -565,7 +583,89 @@ impl std::fmt::Debug for GodotMcpServer {
     }
 }
 
+impl output_schema::ToolAvailabilityGuard for GodotMcpServer {
+    fn unavailable_tool_result(&self, tool_name: &str) -> Option<CallToolResult> {
+        output_schema::availability_domain(tool_name)
+            .and_then(|domain| self.unavailable_error(domain))
+    }
+}
+
 impl GodotMcpServer {
+    fn offline_cache_active(&self) -> bool {
+        matches!(
+            (
+                self.resource_index.status(),
+                self.scene_index.status(),
+                self.script_index.status(),
+            ),
+            (
+                ResourceIndexStatus::OfflineCurrent {
+                    project_id: resource_project,
+                    generation_id: resource_generation,
+                    ..
+                },
+                SceneIndexStatus::OfflineCurrent {
+                    project_id: scene_project,
+                    generation_id: scene_generation,
+                    ..
+                },
+                ScriptIndexStatus::OfflineCurrent {
+                    project_id: script_project,
+                    generation_id: script_generation,
+                    ..
+                },
+            ) if resource_project == scene_project
+                && resource_project == script_project
+                && resource_generation == scene_generation
+                && resource_generation == script_generation
+        )
+    }
+
+    /// Produces a structured fail-closed result unless the canonical health
+    /// reducer proves a current editor binding. Cache presence never grants
+    /// live, runtime, policy, validation, or mutation authority.
+    fn unavailable_error(
+        &self,
+        domain: output_schema::AvailabilityDomain,
+    ) -> Option<CallToolResult> {
+        let health = self.connection_status();
+        if health.status == ConnectionStatus::Ready
+            && health.components.editor == ComponentCondition::Ready
+        {
+            return None;
+        }
+        let offline = matches!(
+            health.status,
+            ConnectionStatus::OfflineCached | ConnectionStatus::OfflineEmpty
+        );
+        let code = if offline {
+            match domain {
+                output_schema::AvailabilityDomain::Editor => "editor_offline",
+                output_schema::AvailabilityDomain::Runtime => "runtime_unavailable",
+            }
+        } else {
+            health.diagnostic.code.as_str()
+        };
+        let message = match domain {
+            output_schema::AvailabilityDomain::Editor => health.diagnostic.summary,
+            output_schema::AvailabilityDomain::Runtime => {
+                "The Godot runtime is unavailable until the exact editor binding is ready."
+                    .to_owned()
+            }
+        };
+        Some(CallToolResult::structured_error(json!({
+            "error": {
+                "code": code,
+                "message": message,
+                "retryable": health.diagnostic.retryable,
+                "status": health.status,
+                "diagnostic_code": health.diagnostic.code,
+                "compatibility": health.compatibility.status,
+                "remediation_id": health.remediation_id,
+            }
+        })))
+    }
+
     fn compound_index_baseline(&self) -> Option<CompoundIndexBaseline> {
         let snapshot = self.semantic_index.pin_current().ok()?;
         let generation = snapshot.generation();
@@ -842,7 +942,7 @@ impl GodotMcpServer {
             script_index.clone(),
         );
         Self {
-            tool_router: Self::tool_router(),
+            tool_router: output_schema::install_output_contracts(Self::tool_router()),
             replicator,
             resource_index,
             scene_index,
@@ -851,6 +951,7 @@ impl GodotMcpServer {
             cursor_codec: CursorCodec::new(),
             runtime_overlay,
             project_root,
+            product_startup: ProductStartupObservation::unverified(env!("CARGO_PKG_VERSION")),
             transaction_coordinator,
             validation_coordinator: Arc::new(tokio::sync::Mutex::new(
                 ValidationCoordinator::default(),
@@ -861,7 +962,82 @@ impl GodotMcpServer {
         }
     }
 
+    /// Installs the bounded package/config observation produced by the shared
+    /// operations startup adapter.
+    #[must_use]
+    pub fn with_product_startup_observation(
+        mut self,
+        observation: ProductStartupObservation,
+    ) -> Self {
+        self.product_startup = observation;
+        self
+    }
+
+    fn connection_status(&self) -> ConnectionHealth {
+        let replica_state = self.replicator.observation();
+        let replica_status = replica_state.status;
+        let replica = match replica_status {
+            ReplicaStatus::Ready => {
+                self.replicator
+                    .read()
+                    .map_or(ReplicaObservation::Stale, |snapshot| {
+                        ReplicaObservation::Ready {
+                            project_id: snapshot.project_id.clone(),
+                        }
+                    })
+            }
+            ReplicaStatus::Syncing => ReplicaObservation::Syncing,
+            ReplicaStatus::Stale => ReplicaObservation::Stale,
+            ReplicaStatus::Disconnected => match replica_state.failure {
+                None => ReplicaObservation::Connecting,
+                Some(ReplicaFailure::TransportDisconnected) => {
+                    ReplicaObservation::TransportDisconnected
+                }
+                Some(ReplicaFailure::AuthenticationFailed) => {
+                    ReplicaObservation::AuthenticationFailed
+                }
+                Some(ReplicaFailure::ProjectBindingMismatch) => {
+                    ReplicaObservation::ProjectBindingMismatch
+                }
+                Some(ReplicaFailure::ProtocolVersionIncompatible) => {
+                    ReplicaObservation::ProtocolIncompatible
+                }
+            },
+        };
+        let runtime = runtime_observation(&self.runtime_overlay.summary(), replica_status);
+        let resource_status = self.resource_index.status();
+        let scene_status = self.scene_index.status();
+        let script_status = self.script_index.status();
+        let static_cache_verified = self.offline_cache_active();
+        let cache_age_seconds = cache_age_seconds(
+            self.project_root.as_deref(),
+            static_cache_verified,
+            &resource_status,
+            &scene_status,
+            &script_status,
+        );
+        connection_health(ServerConnectionObservation {
+            product: self.product_startup.clone(),
+            replica,
+            negotiated_bridge: replica_state.negotiated_bridge,
+            resource_index: resource_index_observation(resource_status),
+            scene_index: scene_index_observation(scene_status),
+            script_index: script_index_observation(script_status),
+            static_cache_verified,
+            runtime,
+            transactions_available: self.transaction_coordinator.is_some(),
+            transaction_recovery_degraded: self
+                .transaction_coordinator
+                .as_ref()
+                .is_some_and(|coordinator| coordinator.journal_recovered_corruption()),
+            cache_age_seconds,
+        })
+    }
+
     async fn prepare_transaction(&self, command: PrepareCommand) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
+            return error;
+        }
         let Some(coordinator) = &self.transaction_coordinator else {
             return coordinator_unavailable();
         };
@@ -872,6 +1048,9 @@ impl GodotMcpServer {
     }
 
     async fn transaction_status(&self, transaction_id: &str) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
+            return error;
+        }
         let Some(coordinator) = &self.transaction_coordinator else {
             return coordinator_unavailable();
         };
@@ -922,6 +1101,9 @@ impl GodotMcpServer {
     }
 
     async fn change_set_status(&self, change_set_id: &str) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
+            return error;
+        }
         let Some(project_root) = &self.project_root else {
             return structured_error(
                 "change_set_coordinator_unavailable",
@@ -1039,27 +1221,31 @@ impl GodotMcpServer {
                 );
             }
         };
-        let save_scope_empty = baseline
-            .preview
-            .get("save_scope")
-            .and_then(Value::as_array)
-            .is_some_and(Vec::is_empty);
-        let runtime_skipped = baseline
-            .preview
-            .pointer("/validation_policy/runtime")
-            .and_then(Value::as_str)
-            == Some("skip");
-        let grant_eligible = risk == Risk::Low && save_scope_empty && runtime_skipped;
+        if baseline.preview.get("risk").and_then(Value::as_str) != Some(risk_name) {
+            return structured_error(
+                "approval_binding_mismatch",
+                "The immutable preview and current status disagree on transaction risk.",
+                false,
+            );
+        }
+        let approval = McpApprovalProvider::new(context);
+        if !approval.supports_form() {
+            return structured_error(
+                "approval_host_unsupported",
+                "The MCP host does not support standard form elicitation.",
+                false,
+            );
+        }
+        let grant_eligible = session_grant_eligible(&baseline.preview, risk);
         let now_ms = unix_millis();
         let grant_applies = grant_eligible
             && self.confirmation_policy.allows_low_risk_memory_only(
                 client.project_id(),
                 client.editor_session_id(),
-                "change_set.atomic",
+                LOW_RISK_MEMORY_ONLY_SCOPE,
                 now_ms,
             );
         if !grant_applies {
-            let approval = McpApprovalProvider::new(context);
             match approval
                 .request_change_set(
                     &input.transaction_id,
@@ -1075,7 +1261,6 @@ impl GodotMcpServer {
                         && !self.confirmation_policy.grant_low_risk_for_session(
                             client.project_id(),
                             client.editor_session_id(),
-                            BTreeSet::from(["change_set.atomic".to_owned()]),
                             unix_millis(),
                             change_set_tools::CONFIRMATION_GRANT_MAX_MS,
                         )
@@ -1111,7 +1296,7 @@ impl GodotMcpServer {
                 ChangeSetApprovalDecision::Invalid => {
                     return structured_error(
                         "approval_invalid",
-                        "The approval response did not bind confirm=true exactly.",
+                        "The approval response did not contain one exact host accept action.",
                         true,
                     );
                 }
@@ -1641,6 +1826,9 @@ impl GodotMcpServer {
         &self,
         guard: &LiveGuardInput,
     ) -> Result<Arc<SemanticSnapshot>, CallToolResult> {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
+            return Err(error);
+        }
         let snapshot = self.replicator.read().map_err(|error| {
             CallToolResult::structured_error(json!({
                 "error": {
@@ -1705,6 +1893,9 @@ impl GodotMcpServer {
         expected_runtime_event_seq: Option<u64>,
         domains: Vec<RuntimeDomain>,
     ) -> Result<Arc<CachedRuntimeSnapshot>, CallToolResult> {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Runtime) {
+            return Err(error);
+        }
         let mut client = self
             .runtime_overlay
             .connect()
@@ -1726,6 +1917,9 @@ impl GodotMcpServer {
     }
 
     async fn runtime_tree_query(&self, input: RuntimeTreeInput) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Runtime) {
+            return error;
+        }
         if !(1..=MAX_RESOURCE_LIMIT).contains(&input.limit) {
             return structured_error("invalid_limit", "limit must be between 1 and 200", false);
         }
@@ -1910,6 +2104,9 @@ impl GodotMcpServer {
     }
 
     async fn runtime_diagnostics_query(&self, input: DiagnosticInput) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Runtime) {
+            return error;
+        }
         if !(1..=MAX_RESOURCE_LIMIT).contains(&input.limit) {
             return structured_error("invalid_limit", "limit must be between 1 and 200", false);
         }
@@ -2060,6 +2257,9 @@ impl GodotMcpServer {
         operation: RuntimeControl,
         guard: Option<&RuntimeGuardInput>,
     ) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Runtime) {
+            return error;
+        }
         let mut client = match self.runtime_overlay.connect().await {
             Ok(client) => client,
             Err(error) => return runtime_bridge_error(error),
@@ -2279,6 +2479,10 @@ impl GodotMcpServer {
             Err(error) => return resource_index_error(error),
         };
         let generation = snapshot.generation();
+        let offline_cached = resource_generation_is_offline(
+            &self.resource_index.status(),
+            &generation.generation_id,
+        );
         let binding = CursorBinding {
             project_id: &generation.project_id,
             tool,
@@ -2373,10 +2577,13 @@ impl GodotMcpServer {
             &snapshot,
             tool,
             &display_selector,
-            input.limit,
-            offset,
             result,
-            next_cursor,
+            StaticPage {
+                limit: input.limit,
+                offset,
+                next_cursor,
+                offline_cached,
+            },
         )
     }
 
@@ -2389,14 +2596,19 @@ impl GodotMcpServer {
             Err(error) => return scene_index_error(error),
         };
         let generation = snapshot.generation();
+        let offline_cached =
+            scene_generation_is_offline(&self.scene_index.status(), &generation.generation_id);
         let (scene, canonical_selector) =
             match resolve_scene(&generation.scene.scenes, &input.scene) {
                 Ok(scene) => scene,
                 Err((code, message)) => return structured_error(code, message, false),
             };
-        let live_snapshot = match self.live_snapshot_for_project(&generation.project_id) {
-            Ok(snapshot) => snapshot,
-            Err(error) => return error,
+        let live_snapshot = match offline_cached {
+            true => None,
+            false => match self.live_snapshot_for_project(&generation.project_id) {
+                Ok(snapshot) => snapshot,
+                Err(error) => return error,
+            },
         };
         let live_scene_revision = live_snapshot.as_ref().and_then(|snapshot| {
             let composer = LiveOverlay::bind(snapshot, &generation.project_id).ok()?;
@@ -2521,9 +2733,14 @@ impl GodotMcpServer {
                 next_cursor,
             },
             LiveComposition {
-                overlay: live_overlay,
+                overlay: if offline_cached {
+                    json!({"status": "unavailable", "reason": "editor_offline"})
+                } else {
+                    live_overlay
+                },
                 conflicts: live_conflicts,
             },
+            offline_cached,
         )
     }
 
@@ -2548,6 +2765,8 @@ impl GodotMcpServer {
             Err(error) => return scene_index_error(error),
         };
         let generation = snapshot.generation();
+        let offline_cached =
+            scene_generation_is_offline(&self.scene_index.status(), &generation.generation_id);
         let selected = match resolve_node_selection(
             generation,
             input.node_id.as_deref(),
@@ -2557,9 +2776,12 @@ impl GodotMcpServer {
             Ok(selected) => selected,
             Err((code, message)) => return structured_error(code, message, false),
         };
-        let live_snapshot = match self.live_snapshot_for_project(&generation.project_id) {
-            Ok(snapshot) => snapshot,
-            Err(error) => return error,
+        let live_snapshot = match offline_cached {
+            true => None,
+            false => match self.live_snapshot_for_project(&generation.project_id) {
+                Ok(snapshot) => snapshot,
+                Err(error) => return error,
+            },
         };
         let live_scene_revision = live_snapshot.as_ref().and_then(|snapshot| {
             let composer = LiveOverlay::bind(snapshot, &generation.project_id).ok()?;
@@ -2701,9 +2923,14 @@ impl GodotMcpServer {
                 next_cursor,
             },
             LiveComposition {
-                overlay: live_overlay,
+                overlay: if offline_cached {
+                    json!({"status": "unavailable", "reason": "editor_offline"})
+                } else {
+                    live_overlay
+                },
                 conflicts: live_conflicts,
             },
+            offline_cached,
         )
     }
 
@@ -2723,6 +2950,8 @@ impl GodotMcpServer {
             Err(error) => return script_index_error(error),
         };
         let generation = snapshot.generation();
+        let offline_cached =
+            script_generation_is_offline(&self.script_index.status(), &generation.generation_id);
         let script_filter = match input.script.as_deref() {
             Some(selector) => match resolve_script(generation, selector) {
                 Ok((document, canonical)) => Some((
@@ -2745,9 +2974,12 @@ impl GodotMcpServer {
             "script": script_filter.as_ref().map(|(_, canonical, _)| canonical),
         })
         .to_string();
-        let live_snapshot = match self.live_snapshot_for_project(&generation.project_id) {
-            Ok(snapshot) => snapshot,
-            Err(error) => return error,
+        let live_snapshot = match offline_cached {
+            true => None,
+            false => match self.live_snapshot_for_project(&generation.project_id) {
+                Ok(snapshot) => snapshot,
+                Err(error) => return error,
+            },
         };
         let binding = CursorBinding {
             project_id: &generation.project_id,
@@ -2813,10 +3045,14 @@ impl GodotMcpServer {
             generation,
             &input,
             script_filter.as_ref(),
-            offset,
             result,
-            next_cursor,
             dirty_scripts,
+            StaticPage {
+                limit: input.limit,
+                offset,
+                next_cursor,
+                offline_cached,
+            },
         )
     }
 
@@ -2845,6 +3081,8 @@ impl GodotMcpServer {
             Err(error) => return script_index_error(error),
         };
         let generation = snapshot.generation();
+        let offline_cached =
+            script_generation_is_offline(&self.script_index.status(), &generation.generation_id);
         let (selector, selector_binding) = match (
             input.symbol_id.as_deref(),
             input.script.as_deref(),
@@ -2871,9 +3109,12 @@ impl GodotMcpServer {
             }
             _ => unreachable!("selector shape was validated"),
         };
-        let live_snapshot = match self.live_snapshot_for_project(&generation.project_id) {
-            Ok(snapshot) => snapshot,
-            Err(error) => return error,
+        let live_snapshot = match offline_cached {
+            true => None,
+            false => match self.live_snapshot_for_project(&generation.project_id) {
+                Ok(snapshot) => snapshot,
+                Err(error) => return error,
+            },
         };
         let binding = CursorBinding {
             project_id: &generation.project_id,
@@ -2934,11 +3175,14 @@ impl GodotMcpServer {
         inspect_symbol_success(
             generation,
             &selector_binding,
-            input.limit,
-            offset,
             result,
-            next_cursor,
             dirty_scripts,
+            StaticPage {
+                limit: input.limit,
+                offset,
+                next_cursor,
+                offline_cached,
+            },
         )
     }
 
@@ -2956,6 +3200,7 @@ impl GodotMcpServer {
         };
         let generation = snapshot.generation();
         let query_index = snapshot.query_index();
+        let offline_cached = snapshot.freshness() == SemanticIndexFreshness::OfflineCached;
         let (target_entity_id, target_binding) =
             match resolve_find_usages_target(generation, query_index, &input.target) {
                 Ok(target) => target,
@@ -2986,9 +3231,12 @@ impl GodotMcpServer {
         })
         .to_string();
         let revisions = query_index.revisions();
-        let live_snapshot = match self.live_snapshot_for_project(&generation.project_id) {
-            Ok(snapshot) => snapshot,
-            Err(error) => return error,
+        let live_snapshot = match offline_cached {
+            true => None,
+            false => match self.live_snapshot_for_project(&generation.project_id) {
+                Ok(snapshot) => snapshot,
+                Err(error) => return error,
+            },
         };
         let binding = CursorBinding {
             project_id: &generation.project_id,
@@ -3042,32 +3290,67 @@ impl GodotMcpServer {
             None => None,
         };
         let dirty_scripts = Self::dirty_scripts_from(live_snapshot.as_ref());
-        CallToolResult::structured(json!({
-            "project_id": generation.project_id,
-            "generation_id": query_index.generation_id(),
-            "index_revision": revisions.index_revision,
-            "resource_revision": revisions.resource_revision,
-            "scene_graph_revision": revisions.scene_graph_revision,
-            "script_graph_revision": revisions.script_graph_revision,
-            "target": {
-                "entity_id": result.target_entity_id,
-                "kind": result.target_kind,
-                "selector": input.target,
-            },
-            "scope": input.scope,
-            "source_kinds": input.source_kinds,
-            "confidence": input.confidence,
-            "limit": input.limit,
-            "offset": offset,
-            "total_matches": result.total_matches,
-            "truncated": result.truncated,
-            "usages": result.usages,
-            "conflicts": result.conflicts,
-            "partial_reasons": snapshot.partial_reasons().iter().map(partial_reason_view).collect::<Vec<_>>(),
-            "may_be_stale_for_editor": !dirty_scripts.is_empty(),
-            "dirty_open_scripts": dirty_scripts,
-            "next_cursor": next_cursor,
-        }))
+        let partial_reasons = snapshot
+            .partial_reasons()
+            .iter()
+            .map(partial_reason_view)
+            .collect::<Vec<_>>();
+        let status = if partial_reasons.is_empty() && result.conflicts.is_empty() {
+            "exact"
+        } else {
+            "partial"
+        };
+        let mut validated_checkpoint = resource_checkpoint(generation, offline_cached);
+        if let Some(checkpoint) = validated_checkpoint.as_object_mut() {
+            checkpoint.insert(
+                "scene_graph_revision".to_owned(),
+                json!(revisions.scene_graph_revision),
+            );
+            checkpoint.insert(
+                "script_graph_revision".to_owned(),
+                json!(revisions.script_graph_revision),
+            );
+        }
+        static_success(
+            json!({
+                "project_id": generation.project_id,
+                "schema_version": generation.schema_version,
+                "generation_id": query_index.generation_id(),
+                "index_revision": revisions.index_revision,
+                "resource_revision": revisions.resource_revision,
+                "scene_graph_revision": revisions.scene_graph_revision,
+                "script_graph_revision": revisions.script_graph_revision,
+                "freshness": if offline_cached { "offline_cached" } else { "current" },
+                "offline_cached": offline_cached,
+                "status": status,
+                "target": {
+                    "entity_id": result.target_entity_id,
+                    "kind": result.target_kind,
+                    "selector": input.target,
+                },
+                "scope": input.scope,
+                "source_kinds": input.source_kinds,
+                "confidence": input.confidence,
+                "limit": input.limit,
+                "offset": offset,
+                "total_matches": result.total_matches,
+                "truncated": result.truncated,
+                "usages": result.usages,
+                "conflicts": result.conflicts,
+                "diagnostics": [],
+                "partial_reasons": partial_reasons,
+                "may_be_stale_for_editor": !dirty_scripts.is_empty(),
+                "dirty_open_scripts": dirty_scripts,
+                "next_cursor": next_cursor,
+                "validated_checkpoint": validated_checkpoint,
+                "evidence": {
+                    "source": "persistent_semantic_index",
+                    "source_complete": snapshot.partial_reasons().is_empty(),
+                    "authorities": ["resource_graph", "scene_state", "script_semantics"],
+                },
+            }),
+            offline_cached,
+        )
     }
 
     fn summary_resources() -> Vec<Resource> {
@@ -3090,6 +3373,12 @@ impl GodotMcpServer {
                     "Bounded memory-only lifecycle and diagnostic summary for the local game",
                 )
                 .with_mime_type("application/json"),
+            Resource::new(CONNECTION_STATUS_URI, "godot_connection_status")
+                .with_title("Godot connection status")
+                .with_description(
+                    "Bounded sidecar-authoritative connection, compatibility, cache, and remediation status",
+                )
+                .with_mime_type("application/json"),
         ]
     }
 
@@ -3105,7 +3394,45 @@ impl GodotMcpServer {
     }
 
     fn read_summary_resource(&self, uri: &str) -> Result<ReadResourceResult, McpError> {
+        if uri == CONNECTION_STATUS_URI {
+            let text = serde_json::to_string(&self.connection_status()).map_err(|_| {
+                McpError::internal_error(
+                    "connection status could not be serialized",
+                    Some(json!({"code": "status_unavailable"})),
+                )
+            })?;
+            if text.len() > CONNECTION_STATUS_MAX_BYTES {
+                return Err(McpError::internal_error(
+                    "connection status exceeded its byte budget",
+                    Some(json!({"code": "status_unavailable"})),
+                ));
+            }
+            return Ok(ReadResourceResult::new(vec![
+                ResourceContents::text(text, uri).with_mime_type("application/json"),
+            ]));
+        }
         if uri == RUNTIME_SUMMARY_URI {
+            if let Some(error) = self.unavailable_error(AvailabilityDomain::Runtime) {
+                let error = error
+                    .structured_content
+                    .and_then(|value| value.get("error").cloned())
+                    .unwrap_or_else(|| {
+                        json!({
+                            "code": "runtime_unavailable",
+                            "message": "The Godot runtime is unavailable.",
+                            "retryable": true,
+                        })
+                    });
+                let text = json!({
+                    "status": "unavailable",
+                    "freshness": "offline",
+                    "error": error,
+                })
+                .to_string();
+                return Ok(ReadResourceResult::new(vec![
+                    ResourceContents::text(text, uri).with_mime_type("application/json"),
+                ]));
+            }
             let text = serde_json::to_string(&self.runtime_overlay.summary()).map_err(|_| {
                 McpError::internal_error(
                     "runtime summary could not be serialized",
@@ -3123,6 +3450,21 @@ impl GodotMcpServer {
             ]));
         }
         if uri == EDITOR_SUMMARY_URI {
+            if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
+                let data = error
+                    .structured_content
+                    .and_then(|value| value.get("error").cloned())
+                    .unwrap_or_else(|| {
+                        json!({
+                            "code": "editor_state_unavailable",
+                            "retryable": true,
+                        })
+                    });
+                return Err(McpError::resource_not_found(
+                    "live editor summary is unavailable until the exact editor binding is ready",
+                    Some(data),
+                ));
+            }
             let snapshot = self.replicator.read().map_err(|error| {
                 McpError::resource_not_found(
                     "live editor summary is not currently available",
@@ -3142,6 +3484,7 @@ impl GodotMcpServer {
             .semantic_index
             .pin_current()
             .map_err(summary_index_error)?;
+        let offline_cached = snapshot.freshness() == SemanticIndexFreshness::OfflineCached;
         let text = if uri == PROJECT_SUMMARY_URI {
             build_project_summary(snapshot.generation(), snapshot.query_index())
                 .map_err(summary_build_error)?
@@ -3150,9 +3493,347 @@ impl GodotMcpServer {
             build_scene_summary(snapshot.generation(), snapshot.query_index(), &scene_id)
                 .map_err(summary_build_error)?
         };
+        let text = mark_summary_freshness(&text, offline_cached)?;
         Ok(ReadResourceResult::new(vec![
             ResourceContents::text(text, uri).with_mime_type("application/json"),
         ]))
+    }
+}
+
+fn mark_summary_freshness(text: &str, offline_cached: bool) -> Result<String, McpError> {
+    if !offline_cached {
+        return Ok(text.to_owned());
+    }
+    let mut summary: Value = serde_json::from_str(text).map_err(|_| {
+        McpError::internal_error(
+            "semantic summary could not be decoded",
+            Some(json!({"code": "summary_unavailable"})),
+        )
+    })?;
+    let object = summary.as_object_mut().ok_or_else(|| {
+        McpError::internal_error(
+            "semantic summary has an invalid shape",
+            Some(json!({"code": "summary_unavailable"})),
+        )
+    })?;
+    object.insert(
+        "freshness".to_owned(),
+        json!(static_freshness_label(offline_cached)),
+    );
+    object.insert("offline_cached".to_owned(), json!(offline_cached));
+    let byte_limit = match summary.get("kind").and_then(Value::as_str) {
+        Some("godot_project_summary") => 4_096,
+        Some("godot_scene_summary") => 2_048,
+        _ => 2_048,
+    };
+    let reduction_order = [
+        "evidence_ids",
+        "high_degree_relations",
+        "diagnostics",
+        "important_scripts",
+        "important_resources",
+        "important_scenes",
+        "nodes",
+        "connections",
+        "groups",
+        "facts",
+    ];
+    loop {
+        let encoded = serde_json::to_string(&summary).map_err(|_| {
+            McpError::internal_error(
+                "semantic summary could not be serialized",
+                Some(json!({"code": "summary_unavailable"})),
+            )
+        })?;
+        if encoded.len() <= byte_limit {
+            return Ok(encoded);
+        }
+        let mut reduced = false;
+        for key in reduction_order {
+            if let Some(values) = summary.get_mut(key).and_then(Value::as_array_mut)
+                && !values.is_empty()
+            {
+                values.pop();
+                reduced = true;
+                break;
+            }
+        }
+        if !reduced {
+            return Err(McpError::internal_error(
+                "semantic summary could not be bounded",
+                Some(json!({"code": "summary_unavailable"})),
+            ));
+        }
+    }
+}
+
+fn resource_index_observation(status: ResourceIndexStatus) -> IndexObservation {
+    match status {
+        ResourceIndexStatus::ProjectNotBound => IndexObservation::Offline,
+        ResourceIndexStatus::NotReady => IndexObservation::Syncing,
+        ResourceIndexStatus::Current {
+            project_id,
+            generation_id,
+            index_revision,
+            resource_revision,
+            ..
+        }
+        | ResourceIndexStatus::OfflineCurrent {
+            project_id,
+            generation_id,
+            index_revision,
+            resource_revision,
+            ..
+        } => IndexObservation::Current(IndexCoordinates {
+            project_id,
+            generation_id,
+            index_revision,
+            resource_revision,
+            scene_graph_revision: 0,
+            script_graph_revision: 0,
+        }),
+        ResourceIndexStatus::NotCurrent { reason } => match reason {
+            ResourceIndexStaleReason::BridgeDisconnected => IndexObservation::Disconnected,
+            ResourceIndexStaleReason::StartupValidation
+            | ResourceIndexStaleReason::JournalGap
+            | ResourceIndexStaleReason::Rebuilding
+            | ResourceIndexStaleReason::StoreUnavailable => IndexObservation::Stale,
+        },
+        ResourceIndexStatus::CapabilityUnavailable => IndexObservation::Degraded,
+    }
+}
+
+fn resource_generation_is_offline(status: &ResourceIndexStatus, generation_id: &str) -> bool {
+    matches!(
+        status,
+        ResourceIndexStatus::OfflineCurrent {
+            generation_id: current,
+            ..
+        } if current == generation_id
+    )
+}
+
+fn scene_generation_is_offline(status: &SceneIndexStatus, generation_id: &str) -> bool {
+    matches!(
+        status,
+        SceneIndexStatus::OfflineCurrent {
+            generation_id: current,
+            ..
+        } if current == generation_id
+    )
+}
+
+fn script_generation_is_offline(status: &ScriptIndexStatus, generation_id: &str) -> bool {
+    matches!(
+        status,
+        ScriptIndexStatus::OfflineCurrent {
+            generation_id: current,
+            ..
+        } if current == generation_id
+    )
+}
+
+fn static_freshness_label(offline_cached: bool) -> &'static str {
+    if offline_cached {
+        "offline_cached"
+    } else {
+        "current"
+    }
+}
+
+fn resource_checkpoint(
+    generation: &godot_codex_index_store::IndexGeneration,
+    offline_cached: bool,
+) -> Value {
+    let mut checkpoint = serde_json::to_value(&generation.checkpoint)
+        .expect("validated index checkpoint is serializable");
+    if offline_cached {
+        checkpoint
+            .as_object_mut()
+            .expect("checkpoint is an object")
+            .remove("editor_session_id");
+    }
+    checkpoint
+}
+
+fn scene_index_observation(status: SceneIndexStatus) -> IndexObservation {
+    match status {
+        SceneIndexStatus::ProjectNotBound => IndexObservation::Offline,
+        SceneIndexStatus::NotReady => IndexObservation::Syncing,
+        SceneIndexStatus::Current {
+            project_id,
+            generation_id,
+            index_revision,
+            resource_revision,
+            scene_graph_revision,
+            ..
+        }
+        | SceneIndexStatus::OfflineCurrent {
+            project_id,
+            generation_id,
+            index_revision,
+            resource_revision,
+            scene_graph_revision,
+            ..
+        } => IndexObservation::Current(IndexCoordinates {
+            project_id,
+            generation_id,
+            index_revision,
+            resource_revision,
+            scene_graph_revision,
+            script_graph_revision: 0,
+        }),
+        SceneIndexStatus::NotCurrent { reason } => match reason {
+            SceneIndexStaleReason::BridgeDisconnected => IndexObservation::Disconnected,
+            SceneIndexStaleReason::StartupValidation
+            | SceneIndexStaleReason::JournalGap
+            | SceneIndexStaleReason::ResourceChanged
+            | SceneIndexStaleReason::Rebuilding
+            | SceneIndexStaleReason::StoreUnavailable => IndexObservation::Stale,
+        },
+        SceneIndexStatus::CapabilityUnavailable => IndexObservation::Degraded,
+    }
+}
+
+fn script_index_observation(status: ScriptIndexStatus) -> IndexObservation {
+    match status {
+        ScriptIndexStatus::ProjectNotBound => IndexObservation::Offline,
+        ScriptIndexStatus::NotReady => IndexObservation::Syncing,
+        ScriptIndexStatus::Current {
+            project_id,
+            generation_id,
+            index_revision,
+            resource_revision,
+            scene_graph_revision,
+            script_graph_revision,
+            ..
+        }
+        | ScriptIndexStatus::OfflineCurrent {
+            project_id,
+            generation_id,
+            index_revision,
+            resource_revision,
+            scene_graph_revision,
+            script_graph_revision,
+            ..
+        } => IndexObservation::Current(IndexCoordinates {
+            project_id,
+            generation_id,
+            index_revision,
+            resource_revision,
+            scene_graph_revision,
+            script_graph_revision,
+        }),
+        ScriptIndexStatus::NotCurrent { reason } => match reason {
+            ScriptIndexStaleReason::BridgeDisconnected => IndexObservation::Disconnected,
+            ScriptIndexStaleReason::StartupValidation
+            | ScriptIndexStaleReason::JournalGap
+            | ScriptIndexStaleReason::ResourceChanged
+            | ScriptIndexStaleReason::SceneChanged
+            | ScriptIndexStaleReason::Rebuilding
+            | ScriptIndexStaleReason::CompositionFailed
+            | ScriptIndexStaleReason::StoreUnavailable => IndexObservation::Stale,
+        },
+        ScriptIndexStatus::CapabilityUnavailable => IndexObservation::Degraded,
+    }
+}
+
+fn cache_age_seconds(
+    project_root: Option<&std::path::Path>,
+    offline_verified: bool,
+    resource: &ResourceIndexStatus,
+    scene: &SceneIndexStatus,
+    script: &ScriptIndexStatus,
+) -> Option<u64> {
+    let project_root = project_root?;
+    let resource_current = matches!(
+        resource,
+        ResourceIndexStatus::Current { .. } | ResourceIndexStatus::OfflineCurrent { .. }
+    );
+    let scene_current = matches!(
+        scene,
+        SceneIndexStatus::Current { .. } | SceneIndexStatus::OfflineCurrent { .. }
+    );
+    let script_current = matches!(
+        script,
+        ScriptIndexStatus::Current { .. } | ScriptIndexStatus::OfflineCurrent { .. }
+    );
+    if !(resource_current && scene_current && script_current) {
+        return None;
+    }
+    let modified = if offline_verified {
+        safe_file_modified(
+            &project_root
+                .join(".godot")
+                .join("codex")
+                .join("offline-authority-v1.json"),
+        )?
+    } else {
+        latest_commit_modified(
+            &project_root
+                .join(".godot")
+                .join("codex")
+                .join("index")
+                .join("commits"),
+        )?
+    };
+    Some(
+        SystemTime::now()
+            .duration_since(modified)
+            .unwrap_or(Duration::ZERO)
+            .as_secs(),
+    )
+}
+
+fn latest_commit_modified(directory: &std::path::Path) -> Option<SystemTime> {
+    let metadata = fs::symlink_metadata(directory).ok()?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return None;
+    }
+    let mut latest = None;
+    let mut count = 0_usize;
+    for entry in fs::read_dir(directory).ok()? {
+        count = count.checked_add(1)?;
+        if count > 16 {
+            return None;
+        }
+        let entry = entry.ok()?;
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let modified = safe_file_modified(&path)?;
+        latest = Some(latest.map_or(modified, |current: SystemTime| current.max(modified)));
+    }
+    latest
+}
+
+fn safe_file_modified(path: &std::path::Path) -> Option<SystemTime> {
+    let metadata = fs::symlink_metadata(path).ok()?;
+    (!metadata.file_type().is_symlink() && metadata.is_file())
+        .then(|| metadata.modified().ok())
+        .flatten()
+}
+
+fn runtime_observation(summary: &Value, replica_status: ReplicaStatus) -> ComponentCondition {
+    if replica_status == ReplicaStatus::Disconnected {
+        return ComponentCondition::Offline;
+    }
+    if summary.get("freshness").and_then(Value::as_str) == Some("stale")
+        || summary.get("status").and_then(Value::as_str) == Some("invalidated")
+    {
+        return ComponentCondition::Stale;
+    }
+    if summary.get("state").and_then(Value::as_str) == Some("disconnected") {
+        return ComponentCondition::Disconnected;
+    }
+    match (
+        summary.get("status").and_then(Value::as_str),
+        summary.get("freshness").and_then(Value::as_str),
+    ) {
+        (Some("ready"), Some("current")) => ComponentCondition::Ready,
+        (Some("unavailable"), _) => ComponentCondition::Unavailable,
+        _ => ComponentCondition::Degraded,
     }
 }
 
@@ -4115,14 +4796,20 @@ fn property_view(property: &SceneProperty) -> Value {
     })
 }
 
+struct StaticPage {
+    limit: usize,
+    offset: usize,
+    next_cursor: Option<String>,
+    offline_cached: bool,
+}
+
 fn search_symbols_success(
     generation: &godot_codex_index_store::IndexGeneration,
     input: &SearchSymbolsInput,
     script_filter: Option<&(String, String, String)>,
-    offset: usize,
     result: ScriptSymbolQueryResult,
-    next_cursor: Option<String>,
     dirty_scripts: Vec<Value>,
+    page: StaticPage,
 ) -> CallToolResult {
     let script_ids: BTreeSet<_> = script_filter
         .map(|(script_id, _, _)| std::iter::once(script_id.as_str()).collect())
@@ -4168,50 +4855,52 @@ fn search_symbols_success(
         .iter()
         .map(|symbol| script_symbol_view(generation, symbol))
         .collect::<Vec<_>>();
-    CallToolResult::structured(json!({
-        "project_id": generation.project_id,
-        "schema_version": generation.schema_version,
-        "generation_id": generation.generation_id,
-        "index_revision": generation.index_revision,
-        "resource_revision": generation.script.resource_revision,
-        "scene_graph_revision": generation.script.scene_graph_revision,
-        "script_graph_revision": generation.script.script_graph_revision,
-        "freshness": "current",
-        "status": if partial_reasons.is_empty() { "exact" } else { "partial" },
-        "query": {
-            "query": input.query,
-            "match": input.match_mode,
-            "language": input.language,
-            "kind": input.kind,
-            "script": script_filter.map(|(_, _, path)| path),
-            "limit": input.limit,
-            "offset": offset,
-        },
-        "symbols": symbols,
-        "total_matches": result.total_matches,
-        "diagnostics": diagnostics,
-        "partial_reasons": partial_reasons,
-        "truncated": result.has_more,
-        "next_cursor": next_cursor,
-        "may_be_stale_for_editor": !dirty_scripts.is_empty(),
-        "dirty_open_scripts": dirty_scripts,
-        "validated_checkpoint": script_checkpoint(generation),
-        "evidence": {
-            "source": "persistent_segment_index",
-            "source_complete": generation.script.source_complete,
-            "authorities": ["gdscript_parser_analyzer", "resource_graph", "scene_state"],
-        },
-    }))
+    static_success(
+        json!({
+            "project_id": generation.project_id,
+            "schema_version": generation.schema_version,
+            "generation_id": generation.generation_id,
+            "index_revision": generation.index_revision,
+            "resource_revision": generation.script.resource_revision,
+            "scene_graph_revision": generation.script.scene_graph_revision,
+            "script_graph_revision": generation.script.script_graph_revision,
+            "freshness": static_freshness_label(page.offline_cached),
+            "offline_cached": page.offline_cached,
+            "status": if partial_reasons.is_empty() { "exact" } else { "partial" },
+            "query": {
+                "query": input.query,
+                "match": input.match_mode,
+                "language": input.language,
+                "kind": input.kind,
+                "script": script_filter.map(|(_, _, path)| path),
+                "limit": page.limit,
+                "offset": page.offset,
+            },
+            "symbols": symbols,
+            "total_matches": result.total_matches,
+            "diagnostics": diagnostics,
+            "partial_reasons": partial_reasons,
+            "truncated": result.has_more,
+            "next_cursor": page.next_cursor,
+            "may_be_stale_for_editor": !dirty_scripts.is_empty(),
+            "dirty_open_scripts": dirty_scripts,
+            "validated_checkpoint": script_checkpoint(generation, page.offline_cached),
+            "evidence": {
+                "source": "persistent_segment_index",
+                "source_complete": generation.script.source_complete,
+                "authorities": ["gdscript_parser_analyzer", "resource_graph", "scene_state"],
+            },
+        }),
+        page.offline_cached,
+    )
 }
 
 fn inspect_symbol_success(
     generation: &godot_codex_index_store::IndexGeneration,
     selector: &str,
-    limit: usize,
-    offset: usize,
     result: ScriptSymbolInspectionResult,
-    next_cursor: Option<String>,
     dirty_scripts: Vec<Value>,
+    page: StaticPage,
 ) -> CallToolResult {
     let script_ids = BTreeSet::from([result.document.script_resource_id.as_str()]);
     let mut diagnostics = result
@@ -4257,36 +4946,40 @@ fn inspect_symbol_success(
         .into_iter()
         .map(|relation| script_relation_view(generation, relation))
         .collect::<Vec<_>>();
-    CallToolResult::structured(json!({
-        "project_id": generation.project_id,
-        "schema_version": generation.schema_version,
-        "generation_id": generation.generation_id,
-        "index_revision": generation.index_revision,
-        "resource_revision": generation.script.resource_revision,
-        "scene_graph_revision": generation.script.scene_graph_revision,
-        "script_graph_revision": generation.script.script_graph_revision,
-        "freshness": "current",
-        "status": if partial_reasons.is_empty() { "exact" } else { "partial" },
-        "query": {"selector": selector, "limit": limit, "offset": offset},
-        "document": script_document_view(&result.document),
-        "declaration": script_symbol_view(generation, &result.symbol),
-        "owner": result.owner.as_ref().map(|owner| script_symbol_view(generation, owner)),
-        "outgoing_relations": outgoing_relations,
-        "scene_attachments": scene_attachments,
-        "total_relations": result.total_relations,
-        "diagnostics": diagnostics,
-        "partial_reasons": partial_reasons,
-        "truncated": result.has_more,
-        "next_cursor": next_cursor,
-        "may_be_stale_for_editor": !dirty_scripts.is_empty(),
-        "dirty_open_scripts": dirty_scripts,
-        "validated_checkpoint": script_checkpoint(generation),
-        "evidence": {
-            "source": "persistent_segment_index",
-            "source_complete": generation.script.source_complete,
-            "authorities": ["gdscript_parser_analyzer", "resource_graph", "scene_state"],
-        },
-    }))
+    static_success(
+        json!({
+            "project_id": generation.project_id,
+            "schema_version": generation.schema_version,
+            "generation_id": generation.generation_id,
+            "index_revision": generation.index_revision,
+            "resource_revision": generation.script.resource_revision,
+            "scene_graph_revision": generation.script.scene_graph_revision,
+            "script_graph_revision": generation.script.script_graph_revision,
+            "freshness": static_freshness_label(page.offline_cached),
+            "offline_cached": page.offline_cached,
+            "status": if partial_reasons.is_empty() { "exact" } else { "partial" },
+            "query": {"selector": selector, "limit": page.limit, "offset": page.offset},
+            "document": script_document_view(&result.document),
+            "declaration": script_symbol_view(generation, &result.symbol),
+            "owner": result.owner.as_ref().map(|owner| script_symbol_view(generation, owner)),
+            "outgoing_relations": outgoing_relations,
+            "scene_attachments": scene_attachments,
+            "total_relations": result.total_relations,
+            "diagnostics": diagnostics,
+            "partial_reasons": partial_reasons,
+            "truncated": result.has_more,
+            "next_cursor": page.next_cursor,
+            "may_be_stale_for_editor": !dirty_scripts.is_empty(),
+            "dirty_open_scripts": dirty_scripts,
+            "validated_checkpoint": script_checkpoint(generation, page.offline_cached),
+            "evidence": {
+                "source": "persistent_segment_index",
+                "source_complete": generation.script.source_complete,
+                "authorities": ["gdscript_parser_analyzer", "resource_graph", "scene_state"],
+            },
+        }),
+        page.offline_cached,
+    )
 }
 
 fn script_symbol_view(
@@ -4515,8 +5208,11 @@ fn script_language_label(language: ScriptLanguage) -> &'static str {
     }
 }
 
-fn script_checkpoint(generation: &godot_codex_index_store::IndexGeneration) -> Value {
-    json!({
+fn script_checkpoint(
+    generation: &godot_codex_index_store::IndexGeneration,
+    offline_cached: bool,
+) -> Value {
+    let mut checkpoint = json!({
         "editor_session_id": generation.script.editor_session_id,
         "resource_revision": generation.script.resource_revision,
         "scene_graph_revision": generation.script.scene_graph_revision,
@@ -4524,7 +5220,14 @@ fn script_checkpoint(generation: &godot_codex_index_store::IndexGeneration) -> V
         "source_complete": generation.script.source_complete,
         "snapshot_checksum": generation.script.snapshot_checksum,
         "semantic_digest": generation.script.semantic_digest,
-    })
+    });
+    if offline_cached {
+        checkpoint
+            .as_object_mut()
+            .expect("checkpoint is an object")
+            .remove("editor_session_id");
+    }
+    checkpoint
 }
 
 struct ValuePage {
@@ -4545,6 +5248,7 @@ fn scene_graph_success(
     scene: &SceneEntity,
     page: ValuePage,
     live: LiveComposition,
+    offline_cached: bool,
 ) -> CallToolResult {
     let subjects: BTreeSet<_> = page
         .items
@@ -4578,33 +5282,37 @@ fn scene_graph_success(
             })
         })
         .collect();
-    CallToolResult::structured(json!({
-        "project_id": generation.project_id,
-        "schema_version": generation.schema_version,
-        "generation_id": generation.generation_id,
-        "index_revision": generation.index_revision,
-        "resource_revision": generation.scene.resource_revision,
-        "scene_graph_revision": generation.scene.scene_graph_revision,
-        "freshness": "current",
-        "status": if partial_reasons.is_empty() { "exact" } else { "partial" },
-        "scene": scene_view(scene),
-        "query": {"scene": scene.comparison_path, "limit": page.limit, "offset": page.offset},
-        "nodes": page.items,
-        "project_context": project_context,
-        "project_context_truncated": project_context_truncated,
-        "diagnostics": diagnostics,
-        "partial_reasons": partial_reasons,
-        "truncated": page.has_more,
-        "next_cursor": page.next_cursor,
-        "live_overlay": live.overlay,
-        "conflicts": live.conflicts,
-        "validated_checkpoint": scene_checkpoint(generation),
-        "evidence": {
-            "source": "persistent_segment_index",
-            "source_complete": generation.scene.source_complete,
-            "authorities": ["packed_scene_state", "scene_composer"],
-        },
-    }))
+    static_success(
+        json!({
+            "project_id": generation.project_id,
+            "schema_version": generation.schema_version,
+            "generation_id": generation.generation_id,
+            "index_revision": generation.index_revision,
+            "resource_revision": generation.scene.resource_revision,
+            "scene_graph_revision": generation.scene.scene_graph_revision,
+            "freshness": static_freshness_label(offline_cached),
+            "offline_cached": offline_cached,
+            "status": if partial_reasons.is_empty() { "exact" } else { "partial" },
+            "scene": scene_view(scene),
+            "query": {"scene": scene.comparison_path, "limit": page.limit, "offset": page.offset},
+            "nodes": page.items,
+            "project_context": project_context,
+            "project_context_truncated": project_context_truncated,
+            "diagnostics": diagnostics,
+            "partial_reasons": partial_reasons,
+            "truncated": page.has_more,
+            "next_cursor": page.next_cursor,
+            "live_overlay": live.overlay,
+            "conflicts": live.conflicts,
+            "validated_checkpoint": scene_checkpoint(generation, offline_cached),
+            "evidence": {
+                "source": "persistent_segment_index",
+                "source_complete": generation.scene.source_complete,
+                "authorities": ["packed_scene_state", "scene_composer"],
+            },
+        }),
+        offline_cached,
+    )
 }
 
 fn inspect_node_success(
@@ -4612,6 +5320,7 @@ fn inspect_node_success(
     selected: &NodeSelection<'_>,
     page: ValuePage,
     live: LiveComposition,
+    offline_cached: bool,
 ) -> CallToolResult {
     let occurrences: Vec<_> = generation
         .scene
@@ -4716,37 +5425,41 @@ fn inspect_node_success(
     }) {
         partial_reasons.insert("projected_value_truncated".to_owned());
     }
-    CallToolResult::structured(json!({
-        "project_id": generation.project_id,
-        "schema_version": generation.schema_version,
-        "generation_id": generation.generation_id,
-        "index_revision": generation.index_revision,
-        "resource_revision": generation.scene.resource_revision,
-        "scene_graph_revision": generation.scene.scene_graph_revision,
-        "freshness": "current",
-        "status": if partial_reasons.is_empty() { "exact" } else { "partial" },
-        "scene": scene_view(selected.scene),
-        "node": node,
-        "query": {"selector": selected.canonical_selector, "limit": page.limit, "offset": page.offset},
-        "properties": page.items,
-        "attached_script_resource_id": selected.definition.attached_script_entity_id,
-        "resources": relations,
-        "groups": groups,
-        "connections": connections,
-        "animation_references": animations,
-        "diagnostics": diagnostics,
-        "partial_reasons": partial_reasons,
-        "truncated": page.has_more,
-        "next_cursor": page.next_cursor,
-        "live_overlay": live.overlay,
-        "conflicts": live.conflicts,
-        "validated_checkpoint": scene_checkpoint(generation),
-        "evidence": {
-            "source": "persistent_segment_index",
-            "source_complete": generation.scene.source_complete,
-            "authorities": ["packed_scene_state", "scene_composer"],
-        },
-    }))
+    static_success(
+        json!({
+            "project_id": generation.project_id,
+            "schema_version": generation.schema_version,
+            "generation_id": generation.generation_id,
+            "index_revision": generation.index_revision,
+            "resource_revision": generation.scene.resource_revision,
+            "scene_graph_revision": generation.scene.scene_graph_revision,
+            "freshness": static_freshness_label(offline_cached),
+            "offline_cached": offline_cached,
+            "status": if partial_reasons.is_empty() { "exact" } else { "partial" },
+            "scene": scene_view(selected.scene),
+            "node": node,
+            "query": {"selector": selected.canonical_selector, "limit": page.limit, "offset": page.offset},
+            "properties": page.items,
+            "attached_script_resource_id": selected.definition.attached_script_entity_id,
+            "resources": relations,
+            "groups": groups,
+            "connections": connections,
+            "animation_references": animations,
+            "diagnostics": diagnostics,
+            "partial_reasons": partial_reasons,
+            "truncated": page.has_more,
+            "next_cursor": page.next_cursor,
+            "live_overlay": live.overlay,
+            "conflicts": live.conflicts,
+            "validated_checkpoint": scene_checkpoint(generation, offline_cached),
+            "evidence": {
+                "source": "persistent_segment_index",
+                "source_complete": generation.scene.source_complete,
+                "authorities": ["packed_scene_state", "scene_composer"],
+            },
+        }),
+        offline_cached,
+    )
 }
 
 fn scene_view(scene: &SceneEntity) -> Value {
@@ -4762,14 +5475,24 @@ fn scene_view(scene: &SceneEntity) -> Value {
     })
 }
 
-fn scene_checkpoint(generation: &godot_codex_index_store::IndexGeneration) -> Value {
-    json!({
+fn scene_checkpoint(
+    generation: &godot_codex_index_store::IndexGeneration,
+    offline_cached: bool,
+) -> Value {
+    let mut checkpoint = json!({
         "editor_session_id": generation.scene.editor_session_id,
         "resource_revision": generation.scene.resource_revision,
         "scene_graph_revision": generation.scene.scene_graph_revision,
         "source_complete": generation.scene.source_complete,
         "snapshot_checksum": generation.scene.snapshot_checksum,
-    })
+    });
+    if offline_cached {
+        checkpoint
+            .as_object_mut()
+            .expect("checkpoint is an object")
+            .remove("editor_session_id");
+    }
+    checkpoint
 }
 
 fn scene_diagnostics(
@@ -4811,10 +5534,8 @@ fn resource_success(
     snapshot: &IndexReadSnapshot,
     tool: CursorTool,
     selector: &str,
-    limit: usize,
-    offset: usize,
     result: godot_codex_index_store::ResourceQueryResult,
-    next_cursor: Option<String>,
+    page: StaticPage,
 ) -> CallToolResult {
     let generation = snapshot.generation();
     let subjects: BTreeSet<_> = std::iter::once(result.resource.entity_id.as_str())
@@ -4865,18 +5586,19 @@ fn resource_success(
         },
         "generation_id": result.generation_id,
         "index_revision": result.index_revision,
-        "validated_checkpoint": generation.checkpoint,
+        "validated_checkpoint": resource_checkpoint(generation, page.offline_cached),
         "query": {
             "resource": selector,
-            "limit": limit,
-            "offset": offset,
+            "limit": page.limit,
+            "offset": page.offset,
         },
         "resource": resource_view(&result.resource),
         "status": if result.exact { "exact" } else { "partial" },
-        "freshness": "current",
+        "freshness": static_freshness_label(page.offline_cached),
+        "offline_cached": page.offline_cached,
         "diagnostics": diagnostics,
         "truncated": result.has_more,
-        "next_cursor": next_cursor,
+        "next_cursor": page.next_cursor,
         "evidence": {
             "source": "persistent_segment_index",
             "source_complete": generation.checkpoint.source_complete,
@@ -4897,7 +5619,7 @@ fn resource_success(
         | CursorTool::Diagnostics
         | CursorTool::RuntimeTree => unreachable!("resource tool"),
     }] = Value::Array(related);
-    CallToolResult::structured(response)
+    static_success(response, page.offline_cached)
 }
 
 fn resource_view(resource: &ResourceEntity) -> Value {
@@ -5079,7 +5801,42 @@ fn structured_error(code: &str, message: &str, retryable: bool) -> CallToolResul
     }))
 }
 
+fn static_success(mut value: Value, offline_cached: bool) -> CallToolResult {
+    if offline_cached {
+        sanitize_offline_static_value(&mut value);
+    }
+    CallToolResult::structured(value)
+}
+
+fn sanitize_offline_static_value(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            for key in [
+                "editor_session_id",
+                "runtime_session_id",
+                "snapshot_id",
+                "native_handle",
+            ] {
+                object.remove(key);
+            }
+            if object.get("freshness").and_then(Value::as_str) == Some("current") {
+                object.insert("freshness".to_owned(), json!("offline_cached"));
+            }
+            for child in object.values_mut() {
+                sanitize_offline_static_value(child);
+            }
+        }
+        Value::Array(values) => {
+            for child in values {
+                sanitize_offline_static_value(child);
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
 fn runtime_bridge_error(error: BridgeError) -> CallToolResult {
+    let failure = error.failure_class();
     let validation_stage = match &error {
         BridgeError::Invalid(message) if message == "runtime capture result is invalid" => {
             "capture_result"
@@ -5093,10 +5850,31 @@ fn runtime_bridge_error(error: BridgeError) -> CallToolResult {
         BridgeError::Invalid(_) => "bridge_payload",
         _ => "request",
     };
-    eprintln!(
-        "[godot-codex-runtime] {} ({validation_stage})",
-        error.safe_summary()
-    );
+    eprintln!("{}", runtime_bridge_debug_line(&error, validation_stage));
+    if matches!(
+        failure,
+        BridgeFailureClass::AuthenticationFailed
+            | BridgeFailureClass::ProjectBindingMismatch
+            | BridgeFailureClass::ProtocolVersionIncompatible
+    ) {
+        let (code, retryable) = match failure {
+            BridgeFailureClass::AuthenticationFailed => ("bridge_authentication_failed", true),
+            BridgeFailureClass::ProjectBindingMismatch => ("project_binding_mismatch", false),
+            BridgeFailureClass::ProtocolVersionIncompatible => {
+                ("bridge_version_incompatible", false)
+            }
+            BridgeFailureClass::TransportUnavailable | BridgeFailureClass::TimedOut => {
+                unreachable!("guarded by the proven-failure match")
+            }
+        };
+        return CallToolResult::structured_error(json!({
+            "error": {
+                "code": code,
+                "message": failure.safe_summary(),
+                "retryable": retryable,
+            }
+        }));
+    }
     match error {
         BridgeError::Rpc {
             code,
@@ -5104,33 +5882,64 @@ fn runtime_bridge_error(error: BridgeError) -> CallToolResult {
             data,
             ..
         } => {
-            let code = if code.len() <= 64
-                && !code.is_empty()
-                && code
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
-            {
-                code
-            } else {
-                "runtime_unavailable".to_owned()
-            };
+            let known_runtime_code = known_runtime_rpc_code(&code);
+            let (code, retryable, current) = known_runtime_code.map_or_else(
+                || ("runtime_unavailable", true, json!({})),
+                |code| (code, retryable, safe_runtime_error_coordinates(&data)),
+            );
             CallToolResult::structured_error(json!({
                 "error": {
                     "code": code,
                     "message": "Godot runtime request failed",
                     "retryable": retryable,
-                    "current": safe_runtime_error_coordinates(&data),
+                    "current": current,
                 }
             }))
         }
         error => CallToolResult::structured_error(json!({
             "error": {
                 "code": "runtime_unavailable",
-                "message": error.safe_summary(),
+                "message": error.failure_class().safe_summary(),
                 "retryable": true,
             }
         })),
     }
+}
+
+fn runtime_bridge_debug_line(error: &BridgeError, validation_stage: &str) -> String {
+    let failure = error.failure_class();
+    format!(
+        "[godot-codex-runtime] class={} summary={} ({validation_stage})",
+        failure.as_str(),
+        failure.safe_summary()
+    )
+}
+
+fn known_runtime_rpc_code(code: &str) -> Option<&str> {
+    matches!(
+        code,
+        "runtime_inactive"
+            | "runtime_already_active"
+            | "runtime_ambiguous"
+            | "runtime_unsaved_changes"
+            | "runtime_start_failed"
+            | "runtime_start_timeout"
+            | "stale_runtime_session"
+            | "stale_runtime_state"
+            | "runtime_not_running"
+            | "runtime_not_paused"
+            | "runtime_disconnected"
+            | "runtime_crashed"
+            | "runtime_request_timeout"
+            | "runtime_control_timeout"
+            | "runtime_object_not_found"
+            | "runtime_object_stale"
+            | "runtime_data_retired"
+            | "runtime_capture_unavailable"
+            | "runtime_capture_rate_limited"
+            | "runtime_capture_too_large"
+    )
+    .then_some(code)
 }
 
 fn safe_runtime_error_coordinates(data: &Value) -> Value {
@@ -5624,6 +6433,27 @@ fn semantic_delta_for_change_set(
 #[tool_router]
 impl GodotMcpServer {
     #[tool(
+        description = "Report bounded project-scoped Godot connection, compatibility, cache, and remediation state even when the editor is offline",
+        output_schema = rmcp::handler::server::tool::schema_for_type::<ConnectionHealth>(),
+        annotations(
+            title = "Godot connection status",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn godot_get_connection_status(
+        &self,
+        Parameters(_input): Parameters<ConnectionStatusInput>,
+    ) -> CallToolResult {
+        CallToolResult::structured(
+            serde_json::to_value(self.connection_status())
+                .expect("connection status contains only serializable bounded fields"),
+        )
+    }
+
+    #[tool(
         description = "Return the live Godot editor state for this exact project, including revision and freshness metadata",
         annotations(
             title = "Godot editor state",
@@ -5917,6 +6747,9 @@ impl GodotMcpServer {
         &self,
         Parameters(input): Parameters<RuntimeObjectInput>,
     ) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Runtime) {
+            return error;
+        }
         let mut client = match self.runtime_overlay.connect().await {
             Ok(client) => client,
             Err(error) => return runtime_bridge_error(error),
@@ -5948,6 +6781,9 @@ impl GodotMcpServer {
         &self,
         Parameters(input): Parameters<RuntimeStackInput>,
     ) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Runtime) {
+            return error;
+        }
         let mut client = match self.runtime_overlay.connect().await {
             Ok(client) => client,
             Err(error) => return runtime_bridge_error(error),
@@ -5979,6 +6815,9 @@ impl GodotMcpServer {
         &self,
         Parameters(input): Parameters<RuntimeCaptureInput>,
     ) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Runtime) {
+            return error;
+        }
         let mut client = match self.runtime_overlay.connect().await {
             Ok(client) => client,
             Err(error) => return runtime_bridge_error(error),
@@ -6267,6 +7106,9 @@ impl GodotMcpServer {
         &self,
         Parameters(input): Parameters<PrepareChangeSetInput>,
     ) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
+            return error;
+        }
         if let Err(message) = input.validate() {
             return structured_error("change_set_invalid", message, false);
         }
@@ -6318,6 +7160,9 @@ impl GodotMcpServer {
         &self,
         Parameters(input): Parameters<ValidationReportInput>,
     ) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
+            return error;
+        }
         let coordinator = self.validation_coordinator.lock().await;
         match coordinator.page(&input.report_id, input.page) {
             Ok(page) => CallToolResult::structured(report_page_value(page)),
@@ -6339,6 +7184,9 @@ impl GodotMcpServer {
         &self,
         Parameters(_input): Parameters<ConfirmationPolicyInput>,
     ) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
+            return error;
+        }
         let snapshot = self.replicator.read().ok();
         CallToolResult::structured(
             self.confirmation_policy.snapshot(
@@ -6365,6 +7213,9 @@ impl GodotMcpServer {
         &self,
         Parameters(_input): Parameters<ConfirmationPolicyInput>,
     ) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
+            return error;
+        }
         CallToolResult::structured(json!({
             "mode": "always_ask",
             "revoked": self.confirmation_policy.reset(),
@@ -6387,6 +7238,9 @@ impl GodotMcpServer {
         Parameters(input): Parameters<ApplyTransactionInput>,
         context: RequestContext<RoleServer>,
     ) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
+            return error;
+        }
         if input.transaction_id.starts_with("change-set:") {
             return self.apply_compound_change_set(input, context).await;
         }
@@ -6425,6 +7279,9 @@ impl GodotMcpServer {
         &self,
         Parameters(input): Parameters<TransactionStatusInput>,
     ) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
+            return error;
+        }
         if input.transaction_id.starts_with("change-set:") {
             self.change_set_status(&input.transaction_id).await
         } else {
@@ -6446,6 +7303,9 @@ impl GodotMcpServer {
         &self,
         Parameters(input): Parameters<UndoTransactionInput>,
     ) -> CallToolResult {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
+            return error;
+        }
         if input.transaction_id.starts_with("change-set:") {
             let Some(project_root) = &self.project_root else {
                 return structured_error(
@@ -6485,7 +7345,7 @@ impl GodotMcpServer {
     }
 }
 
-#[tool_handler]
+#[tool_handler(router = self.tool_router)]
 impl ServerHandler for GodotMcpServer {
     async fn list_resources(
         &self,
@@ -6522,10 +7382,10 @@ impl ServerHandler for GodotMcpServer {
                 .enable_resources()
                 .build(),
         )
-            .with_protocol_version(ProtocolVersion::V_2025_11_25)
-            .with_instructions(
-                "Project-scoped Godot diagnostics and guarded editor transactions. Read godot://project/summary for saved-project questions, godot://editor/summary for current editor questions, godot://runtime/summary for the local game lifecycle, and a godot://scene/{scene_id}/summary resource for indexed scene questions. Runtime controls affect only the ephemeral local game and never write scenes or scripts; always pass the returned runtime_session_id and expected sequence to guarded operations. Editor writes must use one godot_prepare_* tool, present its immutable preview through MCP form elicitation in godot_apply_transaction, and may use godot_undo_transaction only while the exact native history action remains eligible. Never infer approval or replay apply after an uncertain response. Use the focused editor/runtime tools, cite evidence IDs, and distinguish disk, editor, and runtime state. Snapshot-backed results and transaction projections are verified and bounded.",
-            )
+        .with_protocol_version(ProtocolVersion::V_2025_11_25)
+        .with_instructions(
+            include_str!("../../../product/server-instructions.v1.txt").trim_end_matches('\n'),
+        )
     }
 }
 
@@ -6535,6 +7395,8 @@ pub fn structured_content(result: &CallToolResult) -> Option<&Value> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
     use godot_codex_index_store::{
         DependencyEdge, DependencyResolution, Diagnostic, GenerationState, IdentityStrength,
@@ -6545,10 +7407,109 @@ mod tests {
         ScriptDomainGeneration, ScriptIdentityScope, ScriptModifier, ScriptReference,
         ScriptRelationAuthority, ScriptTypeState, ScriptVisibility, SegmentStore, SourceDocument,
     };
-    use godot_codex_resource_indexer::{ResourceIndexReader, SceneIndexReader, ScriptIndexReader};
-    use godot_codex_semantic_model::{SnapshotChunk, SnapshotEnd, SnapshotMetadata};
+    use godot_codex_operations::BridgeProbeObservation;
+    use godot_codex_product::{
+        ConfigurationCondition, Diagnostic as ProductDiagnostic, DiagnosticCode,
+        FIXED_RESOURCE_URIS, FULL_BETA_TOOLS, PackageCondition, ProductCompatibilityBasis,
+        ProductStartupObservation, RESOURCE_TEMPLATE_URIS, embedded_compatibility_matrix,
+    };
+    use godot_codex_resource_indexer::{
+        ResourceIndexCoordinator, ResourceIndexReader, SceneIndexReader, ScriptIndexReader,
+        persist_offline_authority,
+    };
+    use godot_codex_semantic_model::{
+        NegotiatedBridgeMetadata, SnapshotChunk, SnapshotEnd, SnapshotMetadata,
+    };
+    use rmcp::{ServiceExt, model::CallToolRequestParams};
     use sha2::{Digest, Sha256};
     use tempfile::TempDir;
+
+    fn assert_closed_schema_objects(value: &Value) {
+        if value.get("type").and_then(Value::as_str) == Some("object") {
+            assert_eq!(
+                value.get("additionalProperties").and_then(Value::as_bool),
+                Some(false),
+                "object schema is not closed: {value}"
+            );
+        }
+        match value {
+            Value::Array(values) => {
+                for value in values {
+                    assert_closed_schema_objects(value);
+                }
+            }
+            Value::Object(values) => {
+                for value in values.values() {
+                    assert_closed_schema_objects(value);
+                }
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
+    }
+
+    fn assert_tool_result_contract(tool_name: &str, result: CallToolResult) {
+        assert!(
+            output_schema::matches_top_level_contract(tool_name, &result),
+            "{tool_name} returned a value outside its advertised top-level output contract: {:?}",
+            result.structured_content
+        );
+        let structured = result
+            .structured_content
+            .as_ref()
+            .expect("advertised output schema requires structuredContent");
+        let ContentBlock::Text(text) = &result.content[0] else {
+            panic!("{tool_name} must return equivalent JSON as its first text block");
+        };
+        assert_eq!(
+            serde_json::from_str::<Value>(&text.text).expect("tool text block must be JSON"),
+            *structured,
+            "{tool_name} text and structuredContent diverged"
+        );
+    }
+
+    fn ready_product_startup() -> ProductStartupObservation {
+        let matrix = embedded_compatibility_matrix().unwrap();
+        ProductStartupObservation {
+            package_version: matrix.package.version.clone(),
+            package: PackageCondition::Ready,
+            configuration: ConfigurationCondition::Ready,
+            compatibility_basis: Some(ProductCompatibilityBasis {
+                package_version: matrix.package.version.clone(),
+                package_manifest_verified: true,
+                target: matrix.package.target,
+                godot_source_commit: matrix.godot.source_commit.clone(),
+                godot_build_id: matrix.godot.build_id.clone(),
+                godot_artifact_sha256: matrix.godot.artifact_sha256.clone(),
+                mcp_protocol: matrix.protocols.mcp_protocol.clone(),
+                index_schema: matrix.schemas.index.clone(),
+                transaction_journal_schema: matrix.schemas.transaction_journal.clone(),
+                validation_report_schema: matrix.schemas.validation_report.clone(),
+            }),
+        }
+    }
+
+    fn config_missing_product_startup() -> ProductStartupObservation {
+        let mut observation = ready_product_startup();
+        observation.configuration = ConfigurationCondition::Missing;
+        observation
+    }
+
+    fn current_negotiated_bridge() -> NegotiatedBridgeMetadata {
+        let matrix = embedded_compatibility_matrix().unwrap();
+        let profile = matrix
+            .bridge_profiles
+            .iter()
+            .find(|profile| profile.bridge_minor == matrix.protocols.bridge_current_minor)
+            .unwrap();
+        NegotiatedBridgeMetadata::new(
+            format!(
+                "{}.{}",
+                matrix.protocols.bridge_major, matrix.protocols.bridge_current_minor
+            ),
+            profile.capabilities.iter().cloned(),
+        )
+        .unwrap()
+    }
 
     fn canonical_ready_replica() -> SnapshotReplicator {
         let response: Value = serde_json::from_str(include_str!(
@@ -6599,6 +7560,7 @@ mod tests {
             revisions: serde_json::from_value(end_message["params"]["revisions"].clone()).unwrap(),
         };
         let replicator = SnapshotReplicator::new();
+        replicator.mark_bridge_negotiated(current_negotiated_bridge());
         replicator.begin(metadata).unwrap();
         replicator.push_chunk(chunk).unwrap();
         replicator.end(end).unwrap();
@@ -6645,19 +7607,23 @@ mod tests {
     }
 
     fn indexed_resource_server() -> GodotMcpServer {
-        indexed_server_fixture(false, false, false)
+        indexed_server_fixture(false, false, false, false)
     }
 
     fn indexed_resource_server_fixture(include_missing: bool) -> GodotMcpServer {
-        indexed_server_fixture(include_missing, false, false)
+        indexed_server_fixture(include_missing, false, false, false)
     }
 
     fn indexed_semantic_server() -> GodotMcpServer {
-        indexed_server_fixture(false, true, false)
+        indexed_server_fixture(false, true, false, false)
     }
 
     fn indexed_script_server() -> GodotMcpServer {
-        indexed_server_fixture(false, true, true)
+        indexed_server_fixture(false, true, true, false)
+    }
+
+    fn canonical_ready_server() -> GodotMcpServer {
+        indexed_server_fixture(false, true, true, true)
     }
 
     fn scene_domain_fixture() -> SceneDomainGeneration {
@@ -7188,6 +8154,7 @@ mod tests {
         include_missing: bool,
         include_scene: bool,
         include_script: bool,
+        live_ready: bool,
     ) -> GodotMcpServer {
         let resource = |suffix: &str| ResourceEntity {
             entity_id: format!("entity-{suffix}"),
@@ -7284,7 +8251,9 @@ mod tests {
             generation_id: "generation:test".to_owned(),
             parent_generation_id: None,
             schema_version: LOGICAL_SCHEMA_V1,
-            project_id: "project:test".to_owned(),
+            project_id:
+                "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd"
+                    .to_owned(),
             index_revision: 1,
             state: GenerationState::Active,
             creation_reason: "full_snapshot".to_owned(),
@@ -7318,7 +8287,11 @@ mod tests {
         generation.canonicalize();
         generation.validation_digest = generation.compute_validation_digest();
         let temp = TempDir::new().unwrap();
-        let mut store = SegmentStore::open(temp.path(), "project:test").unwrap();
+        let mut store = SegmentStore::open(
+            temp.path(),
+            "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd",
+        )
+        .unwrap();
         store.activate(&generation, None).unwrap();
         let reader = ResourceIndexReader::from_validated_store(
             &store,
@@ -7348,24 +8321,533 @@ mod tests {
         } else {
             ScriptIndexReader::new()
         };
-        GodotMcpServer::with_all_indexes(
-            SnapshotReplicator::new(),
-            reader,
-            scene_reader,
-            script_reader,
+        if live_ready {
+            GodotMcpServer::with_all_indexes_and_project_root(
+                canonical_ready_replica(),
+                reader,
+                scene_reader,
+                script_reader,
+                PathBuf::from("fixture-project"),
+            )
+            .with_product_startup_observation(ready_product_startup())
+        } else {
+            GodotMcpServer::with_all_indexes(
+                SnapshotReplicator::new(),
+                reader,
+                scene_reader,
+                script_reader,
+            )
+        }
+    }
+
+    fn sha256_bytes(bytes: &[u8]) -> String {
+        format!("sha256:{:x}", Sha256::digest(bytes))
+    }
+
+    fn offline_indexed_server_fixture() -> (GodotMcpServer, TempDir) {
+        offline_indexed_server_with_fault(OfflineAuthorityFault::None)
+    }
+
+    #[derive(Clone, Copy)]
+    enum OfflineAuthorityFault {
+        None,
+        Missing,
+        Corrupt,
+        StaleSource,
+    }
+
+    fn offline_indexed_server_with_fault(
+        fault: OfflineAuthorityFault,
+    ) -> (GodotMcpServer, TempDir) {
+        let temp = TempDir::new().unwrap();
+        let project_bytes = b"[application]\nconfig/name=\"Offline Fixture\"\n";
+        let a_bytes = b"[gd_resource]\nresource_name = \"a\"\n";
+        let b_bytes = b"[gd_resource]\nresource_name = \"b\"\n";
+        let c_bytes = b"[gd_resource]\nresource_name = \"c\"\n";
+        let scene_bytes = b"[gd_scene]\n[node name=\"Main\" type=\"Node\"]\n";
+        let script_bytes = b"extends Node\nclass_name Player\nfunc attack():\n    pass\n";
+        fs::write(temp.path().join("project.godot"), project_bytes).unwrap();
+        fs::write(temp.path().join("a.tres"), a_bytes).unwrap();
+        fs::write(temp.path().join("b.tres"), b_bytes).unwrap();
+        fs::write(temp.path().join("c.tres"), c_bytes).unwrap();
+        fs::write(temp.path().join("main.tscn"), scene_bytes).unwrap();
+        fs::create_dir_all(temp.path().join("scripts")).unwrap();
+        fs::write(temp.path().join("scripts/player.gd"), script_bytes).unwrap();
+        let project_id = godot_codex_bridge_client::project_id_for_path(temp.path()).unwrap();
+
+        let resource =
+            |id: &str, uid: &str, path: &str, resource_type: &str, bytes: &[u8]| ResourceEntity {
+                entity_id: id.to_owned(),
+                identity_input: uid.to_owned(),
+                uid: Some(uid.to_owned()),
+                display_path: path.to_owned(),
+                comparison_path: path.to_owned(),
+                identity_strength: IdentityStrength::ResourceUid,
+                resource_type: resource_type.to_owned(),
+                source_kind: "source".to_owned(),
+                import_state: "not_imported".to_owned(),
+                authority: "editor_file_system".to_owned(),
+                content_generation: Some(sha256_bytes(bytes)),
+                mtime_ns: 1,
+                byte_size: bytes.len() as u64,
+                validity: RecordValidity::Valid,
+                resource_revision: 1,
+            };
+        let resources = vec![
+            resource("entity-a", "uid://a", "res://a.tres", "Resource", a_bytes),
+            resource("entity-b", "uid://b", "res://b.tres", "Resource", b_bytes),
+            resource("entity-c", "uid://c", "res://c.tres", "Resource", c_bytes),
+            resource(
+                "entity-scene",
+                "uid://scene",
+                "res://main.tscn",
+                "PackedScene",
+                scene_bytes,
+            ),
+            resource(
+                &script_resource_id(),
+                "uid://player-script",
+                "res://scripts/player.gd",
+                "GDScript",
+                script_bytes,
+            ),
+        ];
+        let source_documents = resources
+            .iter()
+            .map(|resource| SourceDocument {
+                entity_id: resource.entity_id.clone(),
+                comparison_path: resource.comparison_path.clone(),
+                size_before: resource.byte_size,
+                size_after: resource.byte_size,
+                mtime_before_ns: 1,
+                mtime_after_ns: 1,
+                content_generation: resource.content_generation.clone(),
+                ingest_state: "ready".to_owned(),
+            })
+            .collect();
+        let dependencies = vec![DependencyEdge {
+            edge_id: "edge-a-b".to_owned(),
+            source_entity_id: "entity-a".to_owned(),
+            target_uid: Some("uid://b".to_owned()),
+            target_comparison_path: Some("res://b.tres".to_owned()),
+            target_display_path: Some("res://b.tres".to_owned()),
+            target_entity_id: Some("entity-b".to_owned()),
+            resolved_target_path: Some("res://b.tres".to_owned()),
+            relation: "references".to_owned(),
+            declared_type: Some("Resource".to_owned()),
+            authority: "godot_resource_loader".to_owned(),
+            resolution: DependencyResolution::Resolved,
+            resource_revision: 1,
+        }];
+        let mut scene = scene_domain_fixture();
+        scene.scenes[0].content_generation = sha256_bytes(scene_bytes);
+        scene.validation_digest.clear();
+        scene.validation_digest = scene.compute_validation_digest();
+        let mut script = script_domain_fixture();
+        script.documents[0].content_sha256 = sha256_bytes(script_bytes);
+        for symbol in &mut script.symbols {
+            symbol.declaration_range.content_sha256 = sha256_bytes(script_bytes);
+        }
+        for relation in &mut script.relations {
+            if let Some(range) = &mut relation.evidence_range {
+                range.content_sha256 = sha256_bytes(script_bytes);
+            }
+        }
+        for diagnostic in &mut script.diagnostics {
+            diagnostic.content_sha256 = sha256_bytes(script_bytes);
+            if let Some(range) = &mut diagnostic.range {
+                range.content_sha256 = sha256_bytes(script_bytes);
+            }
+        }
+        script.validation_digest.clear();
+        script.validation_digest = script.compute_validation_digest();
+        let mut generation = IndexGeneration {
+            generation_id: format!("generation:sha256:{}", "8".repeat(64)),
+            parent_generation_id: None,
+            schema_version: LOGICAL_SCHEMA_V1,
+            project_id: project_id.clone(),
+            index_revision: 1,
+            state: GenerationState::Active,
+            creation_reason: "full_snapshot".to_owned(),
+            checkpoint: IngestionCheckpoint {
+                editor_session_id: "editor:0123456789abcdef0123456789abcdef".to_owned(),
+                resource_revision: 1,
+                project_revision: 1,
+                index_revision: 1,
+                source_complete: true,
+                snapshot_checksum: format!("sha256:{}", "d".repeat(64)),
+                last_batch_id: None,
+                last_batch_checksum: None,
+            },
+            resources,
+            source_documents,
+            dependencies,
+            diagnostics: Vec::new(),
+            tombstones: Vec::new(),
+            scene,
+            script,
+            validation_digest: String::new(),
+        };
+        generation.canonicalize();
+        generation.validation_digest = generation.compute_validation_digest();
+        generation.validate().unwrap();
+        {
+            let mut store = SegmentStore::open(temp.path(), &project_id).unwrap();
+            store.activate(&generation, None).unwrap();
+        }
+        persist_offline_authority(temp.path(), &generation).unwrap();
+        let authority_path = temp.path().join(".godot/codex/offline-authority-v1.json");
+        match fault {
+            OfflineAuthorityFault::None => {}
+            OfflineAuthorityFault::Missing => fs::remove_file(authority_path).unwrap(),
+            OfflineAuthorityFault::Corrupt => fs::write(authority_path, b"{").unwrap(),
+            OfflineAuthorityFault::StaleSource => {
+                fs::write(
+                    temp.path().join("a.tres"),
+                    b"[gd_resource]\nresource_name = \"changed\"\n",
+                )
+                .unwrap();
+            }
+        }
+        let (coordinator, resource, scene, script) =
+            ResourceIndexCoordinator::new_semantic(temp.path()).unwrap();
+        assert_eq!(
+            resource_generation_is_offline(&resource.status(), &generation.generation_id),
+            matches!(fault, OfflineAuthorityFault::None)
+        );
+        drop(coordinator);
+        let replicator = SnapshotReplicator::new();
+        replicator.mark_disconnected(ReplicaFailure::TransportDisconnected);
+        (
+            GodotMcpServer::with_all_indexes_and_project_root(
+                replicator,
+                resource,
+                scene,
+                script,
+                temp.path().to_owned(),
+            )
+            .with_product_startup_observation(ready_product_startup()),
+            temp,
         )
     }
 
     #[test]
-    fn unavailable_replica_is_a_retryable_tool_error() {
-        let server = GodotMcpServer::new(SnapshotReplicator::new());
+    fn unconfigured_server_fails_with_the_canonical_diagnostic() {
+        let server = GodotMcpServer::new(SnapshotReplicator::new())
+            .with_product_startup_observation(config_missing_product_startup());
         let result = server.godot_get_editor_state(Parameters(LiveGuardInput::default()));
         assert_eq!(result.is_error, Some(true));
         assert_eq!(
             structured_content(&result)
                 .and_then(|value| value.pointer("/error/code"))
                 .and_then(Value::as_str),
-            Some("editor_state_unavailable")
+            Some("project_config_missing")
+        );
+        assert_eq!(
+            structured_content(&result)
+                .and_then(|value| value.pointer("/error/retryable"))
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+    }
+
+    #[tokio::test]
+    async fn verified_offline_cache_serves_only_static_facts_and_redacts_editor_identity() {
+        let (server, _project) = offline_indexed_server_fixture();
+        assert!(server.offline_cache_active());
+
+        let status =
+            server.godot_get_connection_status(Parameters(ConnectionStatusInput::default()));
+        let status = structured_content(&status).unwrap();
+        assert_eq!(status["status"], "offline_cached");
+        assert_eq!(
+            status.pointer("/static_cache/source_hashes_verified"),
+            Some(&json!(true))
+        );
+
+        let dependencies = server.godot_get_resource_dependencies(Parameters(ResourceInput {
+            resource: "res://a.tres".to_owned(),
+            limit: 50,
+            cursor: None,
+        }));
+        let dependencies = structured_content(&dependencies).unwrap();
+        assert_eq!(dependencies["freshness"], "offline_cached");
+        assert_eq!(dependencies["offline_cached"], true);
+        assert_eq!(dependencies["dependencies"].as_array().unwrap().len(), 1);
+        assert!(
+            dependencies
+                .pointer("/validated_checkpoint/editor_session_id")
+                .is_none()
+        );
+        let owners = server.godot_find_resource_owners(Parameters(ResourceInput {
+            resource: "res://b.tres".to_owned(),
+            limit: 50,
+            cursor: None,
+        }));
+        let owners = structured_content(&owners).unwrap();
+        assert_eq!(owners["freshness"], "offline_cached");
+        assert_eq!(owners["owners"].as_array().unwrap().len(), 1);
+
+        let scene = server.godot_get_scene_graph(Parameters(SceneGraphInput {
+            scene: "res://main.tscn".to_owned(),
+            limit: 50,
+            cursor: None,
+        }));
+        let scene = structured_content(&scene).unwrap();
+        assert_eq!(scene["freshness"], "offline_cached");
+        assert_eq!(scene["offline_cached"], true);
+        assert_eq!(
+            scene.pointer("/live_overlay/reason"),
+            Some(&json!("editor_offline"))
+        );
+        assert!(
+            scene
+                .pointer("/validated_checkpoint/editor_session_id")
+                .is_none()
+        );
+        let node_id = scene["nodes"][0]["node_id"].as_str().unwrap().to_owned();
+        let scene_id = scene["scene"]["scene_id"].as_str().unwrap().to_owned();
+        let node = server.godot_inspect_node(Parameters(InspectNodeInput {
+            node_id: Some(node_id),
+            scene: None,
+            node_path: None,
+            limit: 50,
+            cursor: None,
+        }));
+        let node = structured_content(&node).unwrap();
+        assert_eq!(node["freshness"], "offline_cached");
+        assert!(
+            !serde_json::to_string(node)
+                .unwrap()
+                .contains("editor_session_id")
+        );
+
+        let symbols = server.godot_search_symbols(Parameters(SearchSymbolsInput {
+            query: "attack".to_owned(),
+            match_mode: SymbolMatchInput::Prefix,
+            language: Some(ScriptLanguageInput::Gdscript),
+            kind: None,
+            script: None,
+            limit: 50,
+            cursor: None,
+        }));
+        let symbols = structured_content(&symbols).unwrap();
+        assert_eq!(symbols["freshness"], "offline_cached");
+        assert_eq!(symbols["offline_cached"], true);
+        assert!(
+            symbols
+                .pointer("/validated_checkpoint/editor_session_id")
+                .is_none()
+        );
+        let symbol_id = symbols["symbols"][0]["symbol_id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let symbol = server.godot_inspect_symbol(Parameters(InspectSymbolInput {
+            symbol_id: Some(symbol_id),
+            script: None,
+            qualified_name: None,
+            limit: 50,
+            cursor: None,
+        }));
+        let symbol = structured_content(&symbol).unwrap();
+        assert_eq!(symbol["freshness"], "offline_cached");
+        assert!(
+            !serde_json::to_string(symbol)
+                .unwrap()
+                .contains("editor_session_id")
+        );
+
+        let usages = server.godot_find_usages(Parameters(FindUsagesInput {
+            target: FindUsagesTargetInput::Resource {
+                selector: "uid://b".to_owned(),
+            },
+            source_kinds: Vec::new(),
+            confidence: vec![SemanticConfidenceInput::Exact],
+            scope: FindUsagesScopeInput::Project,
+            limit: 50,
+            cursor: None,
+        }));
+        let usages = structured_content(&usages).unwrap();
+        assert_eq!(usages["freshness"], "offline_cached");
+        assert_eq!(usages["offline_cached"], true);
+        let usages_text = serde_json::to_string(usages).unwrap();
+        assert!(!usages_text.contains("editor_session_id"));
+        assert!(!usages_text.contains("\"freshness\":\"current\""));
+
+        let project = server
+            .read_summary_resource(PROJECT_SUMMARY_URI)
+            .expect("offline project summary");
+        let ResourceContents::TextResourceContents { text, .. } = &project.contents[0] else {
+            panic!("project summary must be text");
+        };
+        let summary: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(summary["freshness"], "offline_cached");
+        assert_eq!(summary["offline_cached"], true);
+        assert!(!text.contains("editor_session_id"));
+        let scene_summary_uri = format!("godot://scene/{}/summary", scene_id.replace(':', "%3A"));
+        let scene_summary = server
+            .read_summary_resource(&scene_summary_uri)
+            .expect("offline scene summary");
+        let ResourceContents::TextResourceContents { text, .. } = &scene_summary.contents[0] else {
+            panic!("scene summary must be text");
+        };
+        let scene_summary: Value = serde_json::from_str(text).unwrap();
+        assert_eq!(scene_summary["freshness"], "offline_cached");
+        assert_eq!(scene_summary["offline_cached"], true);
+        assert!(!text.contains("editor_session_id"));
+
+        let live = server.godot_get_editor_state(Parameters(LiveGuardInput::default()));
+        assert_eq!(
+            structured_content(&live).unwrap().pointer("/error/code"),
+            Some(&json!("editor_offline"))
+        );
+        let runtime = server
+            .godot_get_runtime_tree(Parameters(RuntimeTreeInput {
+                runtime_session_id: format!("runtime:{}", "1".repeat(32)),
+                expected_runtime_event_seq: None,
+                limit: 50,
+                cursor: None,
+            }))
+            .await;
+        assert_eq!(
+            structured_content(&runtime).unwrap().pointer("/error/code"),
+            Some(&json!("runtime_unavailable"))
+        );
+        let run = server
+            .godot_run_project(Parameters(RuntimeRunInput::default()))
+            .await;
+        assert_eq!(
+            structured_content(&run).unwrap().pointer("/error/code"),
+            Some(&json!("runtime_unavailable"))
+        );
+        let runtime_object = server
+            .godot_inspect_runtime_object(Parameters(RuntimeObjectInput {
+                runtime_session_id: format!("runtime:{}", "1".repeat(32)),
+                runtime_object_id: format!("runtime-object:{}", "a".repeat(43)),
+                expected_runtime_event_seq: None,
+            }))
+            .await;
+        assert_eq!(
+            structured_content(&runtime_object)
+                .unwrap()
+                .pointer("/error/code"),
+            Some(&json!("runtime_unavailable"))
+        );
+        let runtime_stack = server
+            .godot_get_stack_trace(Parameters(RuntimeStackInput {
+                runtime_session_id: format!("runtime:{}", "1".repeat(32)),
+                runtime_stack_id: format!("runtime-stack:{}", "b".repeat(43)),
+                expected_runtime_event_seq: None,
+            }))
+            .await;
+        assert_eq!(
+            structured_content(&runtime_stack)
+                .unwrap()
+                .pointer("/error/code"),
+            Some(&json!("runtime_unavailable"))
+        );
+        let capture = server
+            .godot_capture_viewport(Parameters(RuntimeCaptureInput {
+                runtime_session_id: format!("runtime:{}", "1".repeat(32)),
+                expected_runtime_event_seq: None,
+                max_width: 320,
+                max_height: 180,
+            }))
+            .await;
+        assert_eq!(
+            structured_content(&capture).unwrap().pointer("/error/code"),
+            Some(&json!("runtime_unavailable"))
+        );
+        let prepare = server
+            .godot_prepare_create_node(Parameters(PrepareCreateNodeInput {
+                project_id: format!("project:sha256:{}", "1".repeat(64)),
+                editor_session_id: format!("editor:{}", "2".repeat(32)),
+                scene_id: format!("scene:{}", "3".repeat(32)),
+                history_id: format!("history:{}", "4".repeat(32)),
+                scene_revision: 1,
+                operation_seq: 1,
+                idempotency_key: format!("idempotency:{}", "5".repeat(32)),
+                parent_node_id: format!("node:{}", "6".repeat(32)),
+                godot_type: "Node".to_owned(),
+                name: "Child".to_owned(),
+                insertion_index: None,
+            }))
+            .await;
+        assert_eq!(
+            structured_content(&prepare).unwrap().pointer("/error/code"),
+            Some(&json!("editor_offline"))
+        );
+        let status = server
+            .godot_get_transaction_status(Parameters(TransactionStatusInput {
+                transaction_id: format!("transaction:{}", "2".repeat(32)),
+            }))
+            .await;
+        assert_eq!(
+            structured_content(&status).unwrap().pointer("/error/code"),
+            Some(&json!("editor_offline"))
+        );
+        let policy =
+            server.godot_get_confirmation_policy(Parameters(ConfirmationPolicyInput::default()));
+        assert_eq!(
+            structured_content(&policy).unwrap().pointer("/error/code"),
+            Some(&json!("editor_offline"))
+        );
+        let reset =
+            server.godot_reset_confirmation_policy(Parameters(ConfirmationPolicyInput::default()));
+        assert_eq!(
+            structured_content(&reset).unwrap().pointer("/error/code"),
+            Some(&json!("editor_offline"))
+        );
+        let undo = server
+            .godot_undo_transaction(Parameters(UndoTransactionInput {
+                transaction_id: format!("transaction:{}", "2".repeat(32)),
+                expected_transaction_seq: 1,
+                expected_scene_revision: 1,
+                expected_operation_seq: 1,
+            }))
+            .await;
+        assert_eq!(
+            structured_content(&undo).unwrap().pointer("/error/code"),
+            Some(&json!("editor_offline"))
+        );
+        let validation = server
+            .godot_get_validation_report(Parameters(ValidationReportInput {
+                report_id: format!("validation-report:{}", "3".repeat(32)),
+                page: 0,
+            }))
+            .await;
+        assert_eq!(
+            structured_content(&validation)
+                .unwrap()
+                .pointer("/error/code"),
+            Some(&json!("editor_offline"))
+        );
+    }
+
+    #[test]
+    fn connection_status_preserves_safe_authentication_failure() {
+        let replicator = SnapshotReplicator::new();
+        replicator.mark_disconnected(ReplicaFailure::AuthenticationFailed);
+        let server = GodotMcpServer::with_all_indexes_and_project_root(
+            replicator,
+            ResourceIndexReader::new(),
+            SceneIndexReader::new(),
+            ScriptIndexReader::new(),
+            PathBuf::from("fixture-project"),
+        )
+        .with_product_startup_observation(ready_product_startup());
+        let result =
+            server.godot_get_connection_status(Parameters(ConnectionStatusInput::default()));
+        let status = structured_content(&result).expect("connection status");
+        assert_eq!(status["status"], "auth_failed");
+        assert_eq!(
+            status.pointer("/diagnostic/code"),
+            Some(&json!("bridge_authentication_failed"))
+        );
+        assert_eq!(
+            status.pointer("/bridge/condition"),
+            Some(&json!("authentication_failed"))
         );
     }
 
@@ -7415,7 +8897,7 @@ mod tests {
 
     #[test]
     fn live_reads_fail_closed_on_stale_revision_guards() {
-        let server = GodotMcpServer::new(canonical_ready_replica());
+        let server = canonical_ready_server();
         let current = server.replicator.read().unwrap();
         let stale = server.godot_get_open_scenes(Parameters(LiveListInput {
             limit: 50,
@@ -7485,77 +8967,132 @@ mod tests {
     #[test]
     fn server_pins_the_2025_11_25_protocol() {
         let server = GodotMcpServer::new(SnapshotReplicator::new());
-        assert_eq!(
-            server.get_info().protocol_version,
-            ProtocolVersion::V_2025_11_25
-        );
+        let info = server.get_info();
+        assert_eq!(info.protocol_version, ProtocolVersion::V_2025_11_25);
+        let instructions = info.instructions.expect("server instructions");
+        assert!(instructions.len() <= 4_096);
+        let first_window = &instructions[..instructions.len().min(512)];
+        assert!(first_window.contains("bound to the trusted project"));
+        assert!(first_window.contains("godot_get_connection_status"));
+        assert!(first_window.contains("godot://connection/status"));
+        assert!(first_window.contains("Offline data is saved-project cache only"));
+        assert!(first_window.contains("never claim live editor/runtime state"));
+        assert!(first_window.contains("writes are unavailable"));
+        assert!(first_window.contains("immutable preview"));
+        assert!(first_window.contains("Codex sandbox approval"));
+        assert!(first_window.contains("MCP action-only form approval"));
+        assert!(first_window.contains("independent and both required"));
+        assert!(first_window.contains("neither substitutes for the other"));
     }
 
     #[test]
-    fn exactly_forty_tools_have_closed_schemas_and_transaction_annotations() {
+    fn exactly_forty_one_tools_have_closed_schemas_and_transaction_annotations() {
         let server = GodotMcpServer::new(SnapshotReplicator::new());
         let tools = server.tool_router.list_all();
-        assert_eq!(tools.len(), 40);
+        assert_eq!(tools.len(), 41);
         let names: BTreeSet<_> = tools.iter().map(|tool| tool.name.as_ref()).collect();
-        let expected: BTreeSet<_> = [
-            "godot_get_editor_state",
-            "godot_get_current_scene",
-            "godot_get_selected_nodes",
-            "godot_get_open_scenes",
-            "godot_get_inspector_state",
-            "godot_get_open_scripts",
-            "godot_get_editor_history",
-            "godot_get_diagnostics",
-            "godot_get_viewport_state",
-            "godot_run_project",
-            "godot_run_current_scene",
-            "godot_stop_project",
-            "godot_pause_project",
-            "godot_continue_project",
-            "godot_get_runtime_tree",
-            "godot_inspect_runtime_object",
-            "godot_get_stack_trace",
-            "godot_capture_viewport",
-            "godot_get_resource_dependencies",
-            "godot_find_resource_owners",
-            "godot_get_scene_graph",
-            "godot_inspect_node",
-            "godot_search_symbols",
-            "godot_inspect_symbol",
-            "godot_find_usages",
-            "godot_prepare_create_node",
-            "godot_prepare_delete_node",
-            "godot_prepare_reparent_node",
-            "godot_prepare_set_property",
-            "godot_prepare_attach_script",
-            "godot_prepare_detach_script",
-            "godot_prepare_connect_signal",
-            "godot_prepare_disconnect_signal",
-            "godot_prepare_change_set",
-            "godot_apply_transaction",
-            "godot_get_transaction_status",
-            "godot_undo_transaction",
-            "godot_get_validation_report",
-            "godot_get_confirmation_policy",
-            "godot_reset_confirmation_policy",
-        ]
-        .into_iter()
-        .collect();
+        let expected = FULL_BETA_TOOLS.iter().copied().collect::<BTreeSet<_>>();
+        assert_eq!(names.len(), tools.len(), "tool names must be unique");
         assert_eq!(names, expected);
         for tool in &tools {
+            let title = tool
+                .title
+                .as_deref()
+                .unwrap_or_else(|| panic!("{} has no stable title", tool.name));
+            assert!(!title.trim().is_empty(), "{} has an empty title", tool.name);
+            assert!(
+                title.chars().count() <= 128,
+                "{} title exceeds the product budget",
+                tool.name
+            );
+            let description = tool
+                .description
+                .as_deref()
+                .unwrap_or_else(|| panic!("{} has no description", tool.name));
+            assert!(
+                !description.trim().is_empty() && description.chars().count() <= 1_024,
+                "{} description is empty or exceeds the product budget",
+                tool.name
+            );
             let annotations = tool.annotations.as_ref().expect("annotations");
             assert_eq!(annotations.open_world_hint, Some(false));
+            let input_schema = Value::Object(tool.input_schema.as_ref().clone());
             assert_eq!(
-                tool.input_schema.get("type").and_then(Value::as_str),
+                input_schema.get("type").and_then(Value::as_str),
                 Some("object")
             );
             assert_eq!(
-                tool.input_schema
+                input_schema
                     .get("additionalProperties")
                     .and_then(Value::as_bool),
                 Some(false)
             );
+            assert!(
+                jsonschema::draft202012::meta::is_valid(&input_schema),
+                "{} publishes an invalid Draft 2020-12 input schema",
+                tool.name
+            );
+            jsonschema::draft202012::options()
+                .build(&input_schema)
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "{} input schema does not compile as Draft 2020-12: {error}",
+                        tool.name
+                    )
+                });
+            let output_schema = Value::Object(
+                tool.output_schema
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("{} has no output schema", tool.name))
+                    .as_ref()
+                    .clone(),
+            );
+            assert_eq!(
+                output_schema.get("type").and_then(Value::as_str),
+                Some("object"),
+                "{} output root must be an object",
+                tool.name
+            );
+            assert_eq!(
+                output_schema
+                    .get("additionalProperties")
+                    .and_then(Value::as_bool),
+                Some(false),
+                "{} output root must be closed",
+                tool.name
+            );
+            assert_closed_schema_objects(&output_schema);
+            assert!(
+                jsonschema::draft202012::meta::is_valid(&output_schema),
+                "{} publishes an invalid Draft 2020-12 output schema",
+                tool.name
+            );
+            let output_validator = jsonschema::draft202012::options()
+                .build(&output_schema)
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "{} output schema does not compile as Draft 2020-12: {error}",
+                        tool.name
+                    )
+                });
+            for invalid in [Value::Null, json!({"unknown": true}), json!({"error": {}})] {
+                assert!(
+                    !output_validator.is_valid(&invalid),
+                    "{} output schema accepts a malformed wire result: {invalid}",
+                    tool.name
+                );
+            }
         }
+        let connection_status = tools
+            .iter()
+            .find(|tool| tool.name.as_ref() == "godot_get_connection_status")
+            .expect("connection status tool");
+        assert!(
+            connection_status
+                .description
+                .as_deref()
+                .is_some_and(|description| description.len() <= 200)
+        );
         for name in [
             "godot_run_project",
             "godot_run_current_scene",
@@ -7820,8 +9357,588 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn wire_tools_list_uses_the_installed_output_contract_router() {
+        let (server_transport, client_transport) = tokio::io::duplex(1_048_576);
+        let server_task = tokio::spawn(async move {
+            GodotMcpServer::new(SnapshotReplicator::new())
+                .with_product_startup_observation(config_missing_product_startup())
+                .serve(server_transport)
+                .await
+                .expect("serve MCP contract fixture")
+                .waiting()
+                .await
+                .expect("wait for MCP contract fixture");
+        });
+        let client = ().serve(client_transport).await.expect("serve MCP client");
+        let tools = client.list_all_tools().await.expect("list tools over MCP");
+        assert_eq!(tools.len(), FULL_BETA_TOOLS.len());
+        for tool in &tools {
+            let schema = tool
+                .output_schema
+                .as_ref()
+                .unwrap_or_else(|| panic!("{} omitted outputSchema on the wire", tool.name));
+            assert_eq!(schema.get("type").and_then(Value::as_str), Some("object"));
+            assert_eq!(
+                schema.get("additionalProperties").and_then(Value::as_bool),
+                Some(false)
+            );
+        }
+
+        let result = client
+            .call_tool(CallToolRequestParams::new("godot_get_editor_state"))
+            .await
+            .expect("call guarded tool over MCP");
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(
+            result
+                .structured_content
+                .as_ref()
+                .and_then(|value| value.pointer("/error/code")),
+            Some(&json!("project_config_missing"))
+        );
+        let ContentBlock::Text(text) = &result.content[0] else {
+            panic!("wire result must start with canonical JSON text");
+        };
+        assert_eq!(
+            serde_json::from_str::<Value>(&text.text).unwrap(),
+            result.structured_content.unwrap()
+        );
+
+        client.cancel().await.expect("cancel MCP client");
+        server_task.await.expect("join MCP contract fixture");
+    }
+
+    fn unavailable_server(failure: Option<ReplicaFailure>) -> GodotMcpServer {
+        let replicator = SnapshotReplicator::new();
+        if let Some(failure) = failure {
+            replicator.mark_disconnected(failure);
+        }
+        GodotMcpServer::with_all_indexes_and_project_root(
+            replicator,
+            ResourceIndexReader::new(),
+            SceneIndexReader::new(),
+            ScriptIndexReader::new(),
+            PathBuf::from("fixture-project"),
+        )
+        .with_product_startup_observation(ready_product_startup())
+    }
+
+    async fn assert_wire_forbidden_matrix(
+        server: GodotMcpServer,
+        expected_status: &str,
+        expected_diagnostic: &str,
+    ) {
+        let (server_transport, client_transport) = tokio::io::duplex(1_048_576);
+        let server_task = tokio::spawn(async move {
+            server
+                .serve(server_transport)
+                .await
+                .expect("serve unavailable MCP fixture")
+                .waiting()
+                .await
+                .expect("wait for unavailable MCP fixture");
+        });
+        let client = ().serve(client_transport).await.expect("serve MCP client");
+        let status = client
+            .call_tool(CallToolRequestParams::new("godot_get_connection_status"))
+            .await
+            .expect("read connection status");
+        let status_value = status.structured_content.expect("structured status");
+        assert_eq!(status_value["status"], expected_status);
+        assert_eq!(
+            status_value.pointer("/diagnostic/code"),
+            Some(&json!(expected_diagnostic))
+        );
+
+        for tool_name in FULL_BETA_TOOLS {
+            let Some(domain) = output_schema::availability_domain(tool_name) else {
+                continue;
+            };
+            // The router-level guard executes before input deserialization.
+            // Empty arguments therefore exercise every prohibited route
+            // without maintaining a second copy of 33 input fixtures.
+            let result = client
+                .call_tool(CallToolRequestParams::new(*tool_name))
+                .await
+                .unwrap_or_else(|error| panic!("{tool_name} escaped availability guard: {error}"));
+            assert_eq!(result.is_error, Some(true), "{tool_name}");
+            let value = result
+                .structured_content
+                .as_ref()
+                .unwrap_or_else(|| panic!("{tool_name} returned no structured error"));
+            let expected_code = if matches!(expected_status, "offline_cached" | "offline_empty") {
+                match domain {
+                    AvailabilityDomain::Editor => "editor_offline",
+                    AvailabilityDomain::Runtime => "runtime_unavailable",
+                }
+            } else {
+                expected_diagnostic
+            };
+            assert_eq!(
+                value.pointer("/error/code"),
+                Some(&json!(expected_code)),
+                "{tool_name}"
+            );
+            assert_eq!(
+                value.pointer("/error/status"),
+                Some(&json!(expected_status)),
+                "{tool_name}"
+            );
+            assert_eq!(
+                value.pointer("/error/diagnostic_code"),
+                Some(&json!(expected_diagnostic)),
+                "{tool_name}"
+            );
+            let ContentBlock::Text(text) = &result.content[0] else {
+                panic!("{tool_name} did not return canonical JSON text");
+            };
+            assert_eq!(
+                serde_json::from_str::<Value>(&text.text).unwrap(),
+                *value,
+                "{tool_name}"
+            );
+        }
+
+        client.cancel().await.expect("cancel MCP client");
+        server_task.await.expect("join unavailable MCP fixture");
+    }
+
+    #[tokio::test]
+    async fn every_forbidden_wire_tool_fails_closed_in_each_connection_failure_class() {
+        let (offline_cached, offline_project) = offline_indexed_server_fixture();
+        assert_wire_forbidden_matrix(offline_cached, "offline_cached", "editor_offline").await;
+        drop(offline_project);
+
+        for (failure, expected_status, expected_diagnostic) in [
+            (
+                ReplicaFailure::AuthenticationFailed,
+                "auth_failed",
+                "bridge_authentication_failed",
+            ),
+            (
+                ReplicaFailure::ProjectBindingMismatch,
+                "auth_failed",
+                "project_binding_mismatch",
+            ),
+            (
+                ReplicaFailure::ProtocolVersionIncompatible,
+                "incompatible",
+                "bridge_version_incompatible",
+            ),
+        ] {
+            let (server, project) = offline_indexed_server_fixture();
+            server.replicator.mark_disconnected(failure);
+            assert_wire_forbidden_matrix(server, expected_status, expected_diagnostic).await;
+            drop(project);
+        }
+
+        assert_wire_forbidden_matrix(
+            unavailable_server(Some(ReplicaFailure::TransportDisconnected)),
+            "offline_empty",
+            "static_cache_unavailable",
+        )
+        .await;
+        for fault in [
+            OfflineAuthorityFault::Missing,
+            OfflineAuthorityFault::Corrupt,
+            OfflineAuthorityFault::StaleSource,
+        ] {
+            let (server, project) = offline_indexed_server_with_fault(fault);
+            assert_wire_forbidden_matrix(server, "offline_empty", "static_cache_stale").await;
+            drop(project);
+        }
+        assert_wire_forbidden_matrix(
+            unavailable_server(Some(ReplicaFailure::AuthenticationFailed)),
+            "auth_failed",
+            "bridge_authentication_failed",
+        )
+        .await;
+        assert_wire_forbidden_matrix(
+            unavailable_server(Some(ReplicaFailure::ProjectBindingMismatch)),
+            "auth_failed",
+            "project_binding_mismatch",
+        )
+        .await;
+        assert_wire_forbidden_matrix(
+            unavailable_server(Some(ReplicaFailure::ProtocolVersionIncompatible)),
+            "incompatible",
+            "bridge_version_incompatible",
+        )
+        .await;
+        assert_wire_forbidden_matrix(unavailable_server(None), "connecting", "bridge_connecting")
+            .await;
+
+        let syncing = canonical_ready_replica();
+        syncing.invalidate("Godot bridge discovery became stale");
+        assert_wire_forbidden_matrix(
+            GodotMcpServer::with_all_indexes_and_project_root(
+                syncing,
+                ResourceIndexReader::new(),
+                SceneIndexReader::new(),
+                ScriptIndexReader::new(),
+                PathBuf::from("fixture-project"),
+            )
+            .with_product_startup_observation(ready_product_startup()),
+            "syncing",
+            "bridge_discovery_stale",
+        )
+        .await;
+
+        assert_wire_forbidden_matrix(
+            GodotMcpServer::new(SnapshotReplicator::new())
+                .with_product_startup_observation(config_missing_product_startup()),
+            "misconfigured",
+            "project_config_missing",
+        )
+        .await;
+    }
+
+    #[test]
+    fn doctor_and_mcp_share_exact_failure_diagnostics_and_remediation() {
+        let cases = [
+            (
+                BridgeError::Authentication,
+                DiagnosticCode::BridgeAuthenticationFailed,
+            ),
+            (
+                BridgeError::Rpc {
+                    code: "unauthenticated".to_owned(),
+                    message: "/Users/alice/private token=top-secret".to_owned(),
+                    retryable: false,
+                    data: json!({"native_handle": 42}),
+                },
+                DiagnosticCode::BridgeAuthenticationFailed,
+            ),
+            (
+                BridgeError::ProjectBindingMismatch,
+                DiagnosticCode::ProjectBindingMismatch,
+            ),
+            (
+                BridgeError::Rpc {
+                    code: "project_not_bound".to_owned(),
+                    message: "/Users/alice/private token=top-secret".to_owned(),
+                    retryable: false,
+                    data: json!({"native_handle": 42}),
+                },
+                DiagnosticCode::ProjectBindingMismatch,
+            ),
+            (
+                BridgeError::ProtocolVersionMismatch,
+                DiagnosticCode::BridgeVersionIncompatible,
+            ),
+            (
+                BridgeError::Rpc {
+                    code: "protocol_mismatch".to_owned(),
+                    message: "/Users/alice/private token=top-secret".to_owned(),
+                    retryable: false,
+                    data: json!({"native_handle": 42}),
+                },
+                DiagnosticCode::BridgeVersionIncompatible,
+            ),
+        ];
+
+        for (error, expected_code) in cases {
+            let doctor_observation = BridgeProbeObservation::failed(&error);
+            let doctor_code = doctor_observation
+                .status
+                .diagnostic_code()
+                .expect("failure must have a doctor diagnostic");
+            assert_eq!(doctor_code, expected_code);
+            let doctor_diagnostic = ProductDiagnostic::new(doctor_code, None, None);
+
+            let server = unavailable_server(Some(error.failure_class().replica_failure()));
+            let mcp_health = server.connection_status();
+            assert_eq!(mcp_health.diagnostic.code, doctor_code);
+            assert_eq!(
+                mcp_health.diagnostic.remediation_id,
+                doctor_diagnostic.remediation_id
+            );
+            assert_eq!(mcp_health.diagnostic.retryable, doctor_diagnostic.retryable);
+
+            let serialized = serde_json::to_string(&mcp_health).unwrap();
+            assert!(!serialized.contains("/Users/"));
+            assert!(!serialized.contains("top-secret"));
+            assert!(!serialized.contains("native_handle"));
+        }
+    }
+
+    #[tokio::test]
+    async fn proven_failure_survives_retries_on_wire_until_authenticated_negotiation() {
+        let replicator = SnapshotReplicator::new();
+        replicator.mark_disconnected(ReplicaFailure::ProjectBindingMismatch);
+        let reconnect_control = replicator.clone();
+        let server = GodotMcpServer::with_all_indexes_and_project_root(
+            replicator,
+            ResourceIndexReader::new(),
+            SceneIndexReader::new(),
+            ScriptIndexReader::new(),
+            PathBuf::from("fixture-project"),
+        )
+        .with_product_startup_observation(ready_product_startup());
+        let (server_transport, client_transport) = tokio::io::duplex(1_048_576);
+        let server_task = tokio::spawn(async move {
+            server
+                .serve(server_transport)
+                .await
+                .expect("serve reconnect MCP fixture")
+                .waiting()
+                .await
+                .expect("wait for reconnect MCP fixture");
+        });
+        let client = ().serve(client_transport).await.expect("serve MCP client");
+
+        let failed = client
+            .call_tool(CallToolRequestParams::new("godot_get_connection_status"))
+            .await
+            .expect("read failed connection status")
+            .structured_content
+            .expect("structured failed status");
+        assert_eq!(failed["status"], "auth_failed");
+        assert_eq!(
+            failed.pointer("/diagnostic/code"),
+            Some(&json!("project_binding_mismatch"))
+        );
+
+        for _ in 0..3 {
+            reconnect_control.mark_connecting();
+            reconnect_control.mark_disconnected(ReplicaFailure::TransportDisconnected);
+            let reconnecting = client
+                .call_tool(CallToolRequestParams::new("godot_get_connection_status"))
+                .await
+                .expect("read reconnecting status")
+                .structured_content
+                .expect("structured reconnecting status");
+            assert_eq!(reconnecting["status"], "auth_failed");
+            assert_eq!(
+                reconnecting.pointer("/diagnostic/code"),
+                Some(&json!("project_binding_mismatch"))
+            );
+            assert_eq!(
+                reconnecting.pointer("/bridge/condition"),
+                Some(&json!("project_binding_mismatch"))
+            );
+        }
+
+        reconnect_control.mark_disconnected(ReplicaFailure::AuthenticationFailed);
+        let replaced = client
+            .call_tool(CallToolRequestParams::new("godot_get_connection_status"))
+            .await
+            .expect("read replacement fault")
+            .structured_content
+            .expect("structured replacement status");
+        assert_eq!(
+            replaced.pointer("/diagnostic/code"),
+            Some(&json!("bridge_authentication_failed"))
+        );
+
+        reconnect_control.mark_bridge_negotiated(current_negotiated_bridge());
+        let negotiated = client
+            .call_tool(CallToolRequestParams::new("godot_get_connection_status"))
+            .await
+            .expect("read authenticated reconnect")
+            .structured_content
+            .expect("structured negotiated status");
+        assert_eq!(negotiated["status"], "syncing");
+        assert_eq!(
+            negotiated.pointer("/diagnostic/code"),
+            Some(&json!("bridge_syncing"))
+        );
+        assert_eq!(
+            negotiated.pointer("/bridge/condition"),
+            Some(&json!("syncing"))
+        );
+
+        client.cancel().await.expect("cancel MCP client");
+        server_task.await.expect("join reconnect MCP fixture");
+    }
+
+    #[tokio::test]
+    async fn representative_success_results_match_closed_schemas_and_equivalent_text() {
+        let live = canonical_ready_server();
+        let live_list_input = || LiveListInput {
+            limit: 50,
+            cursor: None,
+            expected_editor_session_id: None,
+            expected_event_seq: None,
+            expected_scene_revision: None,
+        };
+        assert_tool_result_contract(
+            "godot_get_connection_status",
+            live.godot_get_connection_status(Parameters(ConnectionStatusInput::default())),
+        );
+        assert_tool_result_contract(
+            "godot_get_editor_state",
+            live.godot_get_editor_state(Parameters(LiveGuardInput::default())),
+        );
+        assert_tool_result_contract(
+            "godot_get_current_scene",
+            live.godot_get_current_scene(Parameters(LiveGuardInput::default())),
+        );
+        assert_tool_result_contract(
+            "godot_get_selected_nodes",
+            live.godot_get_selected_nodes(Parameters(LiveGuardInput::default())),
+        );
+        assert_tool_result_contract(
+            "godot_get_open_scenes",
+            live.godot_get_open_scenes(Parameters(live_list_input())),
+        );
+        assert_tool_result_contract(
+            "godot_get_inspector_state",
+            live.godot_get_inspector_state(Parameters(LiveGuardInput::default())),
+        );
+        assert_tool_result_contract(
+            "godot_get_open_scripts",
+            live.godot_get_open_scripts(Parameters(live_list_input())),
+        );
+        assert_tool_result_contract(
+            "godot_get_editor_history",
+            live.godot_get_editor_history(Parameters(live_list_input())),
+        );
+        assert_tool_result_contract(
+            "godot_get_diagnostics",
+            live.godot_get_diagnostics(Parameters(DiagnosticInput {
+                scope: DiagnosticScopeInput::Editor,
+                limit: 50,
+                cursor: None,
+                expected_editor_session_id: None,
+                expected_event_seq: None,
+                expected_scene_revision: None,
+                runtime_session_id: None,
+                expected_runtime_event_seq: None,
+            }))
+            .await,
+        );
+        assert_tool_result_contract(
+            "godot_get_viewport_state",
+            live.godot_get_viewport_state(Parameters(LiveGuardInput::default())),
+        );
+        assert_tool_result_contract(
+            "godot_get_confirmation_policy",
+            live.godot_get_confirmation_policy(Parameters(ConfirmationPolicyInput::default())),
+        );
+        assert_tool_result_contract(
+            "godot_reset_confirmation_policy",
+            live.godot_reset_confirmation_policy(Parameters(ConfirmationPolicyInput::default())),
+        );
+
+        let resources = indexed_resource_server();
+        assert_tool_result_contract(
+            "godot_get_resource_dependencies",
+            resources.godot_get_resource_dependencies(Parameters(ResourceInput {
+                resource: "uid://a".to_owned(),
+                limit: 50,
+                cursor: None,
+            })),
+        );
+        assert_tool_result_contract(
+            "godot_find_resource_owners",
+            resources.godot_find_resource_owners(Parameters(ResourceInput {
+                resource: "res://b.tres".to_owned(),
+                limit: 50,
+                cursor: None,
+            })),
+        );
+
+        let scenes = indexed_semantic_server();
+        assert_tool_result_contract(
+            "godot_get_scene_graph",
+            scenes.godot_get_scene_graph(Parameters(SceneGraphInput {
+                scene: "res://main.tscn".to_owned(),
+                limit: 50,
+                cursor: None,
+            })),
+        );
+        assert_tool_result_contract(
+            "godot_inspect_node",
+            scenes.godot_inspect_node(Parameters(InspectNodeInput {
+                node_id: Some("godot:node-occurrence:v1:player".to_owned()),
+                scene: None,
+                node_path: None,
+                limit: 50,
+                cursor: None,
+            })),
+        );
+
+        let scripts = indexed_script_server();
+        assert_tool_result_contract(
+            "godot_search_symbols",
+            scripts.godot_search_symbols(Parameters(SearchSymbolsInput {
+                query: "attack".to_owned(),
+                match_mode: SymbolMatchInput::Prefix,
+                language: Some(ScriptLanguageInput::Gdscript),
+                kind: None,
+                script: None,
+                limit: 50,
+                cursor: None,
+            })),
+        );
+        assert_tool_result_contract(
+            "godot_inspect_symbol",
+            scripts.godot_inspect_symbol(Parameters(InspectSymbolInput {
+                symbol_id: Some(attack_symbol_id()),
+                script: None,
+                qualified_name: None,
+                limit: 50,
+                cursor: None,
+            })),
+        );
+        assert_tool_result_contract(
+            "godot_find_usages",
+            scripts.godot_find_usages(Parameters(FindUsagesInput {
+                target: FindUsagesTargetInput::Resource {
+                    selector: "uid://b".to_owned(),
+                },
+                source_kinds: Vec::new(),
+                confidence: vec![SemanticConfidenceInput::Exact],
+                scope: FindUsagesScopeInput::Project,
+                limit: 50,
+                cursor: None,
+            })),
+        );
+
+        for (tool_name, response) in [
+            (
+                "godot_run_project",
+                serde_json::from_str::<Value>(include_str!(
+                    "../../../../schemas/codex_bridge/v1/fixtures/valid/runtime-run-response.json"
+                ))
+                .unwrap(),
+            ),
+            (
+                "godot_inspect_runtime_object",
+                serde_json::from_str::<Value>(include_str!(
+                    "../../../../schemas/codex_bridge/v1/fixtures/valid/runtime-object-inspect-response.json"
+                ))
+                .unwrap(),
+            ),
+            (
+                "godot_get_stack_trace",
+                serde_json::from_str::<Value>(include_str!(
+                    "../../../../schemas/codex_bridge/v1/fixtures/valid/runtime-stack-response.json"
+                ))
+                .unwrap(),
+            ),
+        ] {
+            assert_tool_result_contract(
+                tool_name,
+                CallToolResult::structured(response["result"].clone()),
+            );
+        }
+        let capture: Value = serde_json::from_str(include_str!(
+            "../../../../schemas/codex_bridge/v1/fixtures/valid/runtime-viewport-capture-response.json"
+        ))
+        .unwrap();
+        let capture: RuntimeViewportCapture =
+            serde_json::from_value(capture["result"].clone()).unwrap();
+        assert_tool_result_contract(
+            "godot_capture_viewport",
+            runtime_capture_result(capture).unwrap(),
+        );
+    }
+
+    #[tokio::test]
     async fn transaction_tools_remain_registered_but_fail_stably_without_a_coordinator() {
-        let server = GodotMcpServer::new(SnapshotReplicator::new());
+        let server = canonical_ready_server();
         let result = server
             .prepare_transaction(PrepareCommand {
                 project_id: format!("project:sha256:{}", "1".repeat(64)),
@@ -7892,6 +10009,69 @@ mod tests {
         let error = &structured_content(&malformed).unwrap()["error"];
         assert_eq!(error["code"], "runtime_unavailable");
         assert_eq!(error["current"], json!({}));
+
+        let malformed_json =
+            serde_json::from_str::<Value>("{").expect_err("fixture must be malformed");
+        for transport_error in [
+            BridgeError::Json(malformed_json),
+            BridgeError::Invalid("server path /Users/private/project token=top-secret".to_owned()),
+            BridgeError::Replica(godot_codex_semantic_model::ReplicaError::InvalidSnapshot(
+                "malformed fixture",
+            )),
+            BridgeError::Rpc {
+                code: "unknown_private_failure".to_owned(),
+                message: "server path /Users/private/project token=top-secret".to_owned(),
+                retryable: false,
+                data: json!({
+                    "runtime_session_id": format!("runtime:{}", "a".repeat(32)),
+                    "runtime_event_seq": 99,
+                    "native_handle": 42,
+                }),
+            },
+            BridgeError::Rpc {
+                code: "session_mismatch".to_owned(),
+                message: "stale /Users/private/project token=top-secret".to_owned(),
+                retryable: false,
+                data: json!({"native_handle": 42}),
+            },
+        ] {
+            let debug_line = runtime_bridge_debug_line(&transport_error, "request");
+            assert!(!debug_line.contains("/Users/"));
+            assert!(!debug_line.contains("top-secret"));
+            assert!(!debug_line.contains("native_handle"));
+            assert!(!debug_line.contains("unknown_private_failure"));
+            assert!(!debug_line.contains("session_mismatch"));
+            let projected = runtime_bridge_error(transport_error);
+            let error = &structured_content(&projected).unwrap()["error"];
+            assert_eq!(error["code"], "runtime_unavailable");
+            assert_eq!(error["retryable"], true);
+            let serialized = serde_json::to_string(error).unwrap();
+            assert!(!serialized.contains("/Users/"));
+            assert!(!serialized.contains("top-secret"));
+            assert!(!serialized.contains("native_handle"));
+            assert!(!serialized.contains("unknown_private_failure"));
+            assert!(!serialized.contains("session_mismatch"));
+        }
+
+        for (rpc_code, public_code, retryable) in [
+            ("unauthenticated", "bridge_authentication_failed", true),
+            ("project_not_bound", "project_binding_mismatch", false),
+            ("protocol_mismatch", "bridge_version_incompatible", false),
+        ] {
+            let projected = runtime_bridge_error(BridgeError::Rpc {
+                code: rpc_code.to_owned(),
+                message: "/Users/private/project token=top-secret".to_owned(),
+                retryable: false,
+                data: json!({"native_handle": 42}),
+            });
+            let error = &structured_content(&projected).unwrap()["error"];
+            assert_eq!(error["code"], public_code);
+            assert_eq!(error["retryable"], retryable);
+            let serialized = serde_json::to_string(error).unwrap();
+            assert!(!serialized.contains("/Users/"));
+            assert!(!serialized.contains("top-secret"));
+            assert!(!serialized.contains("native_handle"));
+        }
     }
 
     #[test]
@@ -8059,23 +10239,34 @@ mod tests {
         let resources = info.capabilities.resources.expect("resources capability");
         assert_eq!(resources.subscribe, None);
         assert_eq!(resources.list_changed, None);
-        assert_eq!(GodotMcpServer::summary_resources().len(), 3);
+        let fixed_resources = GodotMcpServer::summary_resources();
+        assert_eq!(fixed_resources.len(), 4);
+        let resource_uris: BTreeSet<_> = fixed_resources
+            .iter()
+            .map(|resource| resource.uri.as_str())
+            .collect();
+        let resource_names: BTreeSet<_> = fixed_resources
+            .iter()
+            .map(|resource| resource.name.as_str())
+            .collect();
+        assert_eq!(resource_uris.len(), fixed_resources.len());
+        assert_eq!(resource_names.len(), fixed_resources.len());
         assert_eq!(
-            GodotMcpServer::summary_resources()[0].uri,
-            PROJECT_SUMMARY_URI
+            resource_uris,
+            FIXED_RESOURCE_URIS.iter().copied().collect::<BTreeSet<_>>()
         );
-        assert_eq!(
-            GodotMcpServer::summary_resources()[1].uri,
-            EDITOR_SUMMARY_URI
-        );
-        assert_eq!(
-            GodotMcpServer::summary_resources()[2].uri,
-            RUNTIME_SUMMARY_URI
-        );
+        assert_eq!(fixed_resources[0].uri, PROJECT_SUMMARY_URI);
+        assert_eq!(fixed_resources[1].uri, EDITOR_SUMMARY_URI);
+        assert_eq!(fixed_resources[2].uri, RUNTIME_SUMMARY_URI);
+        assert_eq!(fixed_resources[3].uri, CONNECTION_STATUS_URI);
         assert_eq!(GodotMcpServer::summary_resource_templates().len(), 1);
         assert_eq!(
             GodotMcpServer::summary_resource_templates()[0].uri_template,
             "godot://scene/{scene_id}/summary"
+        );
+        assert_eq!(
+            GodotMcpServer::summary_resource_templates()[0].uri_template,
+            RESOURCE_TEMPLATE_URIS[0]
         );
 
         let project = server
@@ -8094,7 +10285,7 @@ mod tests {
         assert_eq!(value["budget"]["method"], "utf8_byte_upper_bound_v1");
         assert!(value["evidence_ids"].is_array());
 
-        let live_server = GodotMcpServer::new(canonical_ready_replica());
+        let live_server = canonical_ready_server();
         let editor = live_server
             .read_summary_resource(EDITOR_SUMMARY_URI)
             .expect("editor summary");
@@ -8115,6 +10306,35 @@ mod tests {
         assert!(text.len() <= EDITOR_SUMMARY_MAX_BYTES);
         let value: Value = serde_json::from_str(text).expect("runtime summary JSON");
         assert_eq!(value["schema_version"], "runtime-summary/1.0");
+
+        let connection = live_server
+            .read_summary_resource(CONNECTION_STATUS_URI)
+            .expect("connection status");
+        let ResourceContents::TextResourceContents { text, .. } = &connection.contents[0] else {
+            panic!("connection status must be text");
+        };
+        assert!(text.len() <= CONNECTION_STATUS_MAX_BYTES);
+        let resource_value: Value =
+            serde_json::from_str(text).expect("connection status resource JSON");
+        let tool =
+            live_server.godot_get_connection_status(Parameters(ConnectionStatusInput::default()));
+        let tool_value = structured_content(&tool).expect("structured connection status");
+        assert_eq!(&resource_value, tool_value);
+        assert_eq!(
+            resource_value["schema_version"],
+            "godot-connection-status/1.0"
+        );
+        assert_eq!(resource_value["status"], "ready");
+        assert_eq!(
+            resource_value.pointer("/diagnostic/code"),
+            Some(&json!("ready"))
+        );
+        let ContentBlock::Text(text_content) = &tool.content[0] else {
+            panic!("connection status tool must include equivalent JSON text");
+        };
+        let tool_text_value: Value =
+            serde_json::from_str(&text_content.text).expect("connection status tool text JSON");
+        assert_eq!(tool_text_value, *tool_value);
 
         let scene_id = "godot:scene:uid:v1:testscene";
         let uri = format!(
@@ -8757,7 +10977,7 @@ mod tests {
 
     #[test]
     fn canonical_snapshot_reaches_the_selected_nodes_tool_without_a_model() {
-        let server = GodotMcpServer::new(canonical_ready_replica());
+        let server = canonical_ready_server();
         let result = server.godot_get_selected_nodes(Parameters(LiveGuardInput::default()));
         assert_ne!(result.is_error, Some(true));
         let content = structured_content(&result).expect("structured tool result");
@@ -8793,4 +11013,7 @@ mod tests {
             Some("live_editor_property")
         );
     }
+
+    #[path = "success_contract_tests.rs"]
+    mod success_contract_tests;
 }

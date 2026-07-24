@@ -1,6 +1,7 @@
 //! Normalization boundary between Bridge RPC resource facts and the persistent index.
 
 mod coordinator;
+mod offline;
 mod scene;
 mod script;
 mod script_spool;
@@ -36,8 +37,14 @@ pub use coordinator::{
     CoordinatorError, ResourceIndexCoordinator, ResourceIndexReadError, ResourceIndexReader,
     ResourceIndexStaleReason, ResourceIndexStatus, SceneIndexReadError, SceneIndexReader,
     SceneIndexStaleReason, SceneIndexStatus, ScriptIndexReadError, ScriptIndexReader,
-    ScriptIndexStaleReason, ScriptIndexStatus, SemanticIndexReadError, SemanticIndexReader,
-    SemanticIndexSnapshot, SemanticPartialCode, SemanticPartialDomain, SemanticPartialReason,
+    ScriptIndexStaleReason, ScriptIndexStatus, SemanticIndexFreshness, SemanticIndexReadError,
+    SemanticIndexReader, SemanticIndexSnapshot, SemanticPartialCode, SemanticPartialDomain,
+    SemanticPartialReason,
+};
+pub use offline::{
+    OfflineAuthorityError, OfflineAuthorityManifest, OfflineAuthorityVerification,
+    SourceInventoryEntry, capture_source_inventory, load_verified_offline_authority,
+    persist_offline_authority,
 };
 pub use scene::SceneNormalizer;
 pub use script::ScriptNormalizer;

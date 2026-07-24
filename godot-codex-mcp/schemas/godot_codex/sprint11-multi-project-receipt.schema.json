@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-multi-project-receipt.schema.json",
+  "title": "Sprint 11 real package multi-project acquisition receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capture_kind",
+    "status",
+    "bindings",
+    "fixtures",
+    "command",
+    "assertions",
+    "cleanup",
+    "redaction"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s11-multi-project-receipt/1.0"
+    },
+    "capture_kind": {
+      "const": "real_package_multi_project"
+    },
+    "status": {
+      "const": "passed"
+    },
+    "bindings": {
+      "$ref": "#/$defs/bindings"
+    },
+    "fixtures": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/file_binding"
+      }
+    },
+    "command": {
+      "$ref": "#/$defs/command"
+    },
+    "assertions": {
+      "$ref": "#/$defs/assertions"
+    },
+    "cleanup": {
+      "$ref": "#/$defs/cleanup"
+    },
+    "redaction": {
+      "$ref": "#/$defs/redaction"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)[A-Za-z0-9._+/-]+$"
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package_source_commit",
+        "package_version",
+        "package_manifest_sha256",
+        "package_build_provenance_sha256",
+        "package_archive_sha256",
+        "package_sidecar_path",
+        "package_sidecar_sha256",
+        "godot_version",
+        "godot_commit",
+        "godot_artifact_sha256",
+        "registry_sha256"
+      ],
+      "properties": {
+        "package_source_commit": {
+          "$ref": "#/$defs/commit"
+        },
+        "package_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z.+-]{0,127}$"
+        },
+        "package_manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "package_build_provenance_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "package_archive_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "package_sidecar_path": {
+          "const": "bin/godot-codex-mcp"
+        },
+        "package_sidecar_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "godot_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "godot_commit": {
+          "$ref": "#/$defs/commit"
+        },
+        "godot_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "registry_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "file_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "cwd",
+        "argv_template",
+        "command_sha256",
+        "runner_path",
+        "runner_sha256",
+        "report_path",
+        "report_sha256",
+        "stdout_sha256",
+        "stderr_sha256",
+        "exit_code",
+        "duration_ms"
+      ],
+      "properties": {
+        "id": {
+          "const": "multi_project_live"
+        },
+        "cwd": {
+          "const": "."
+        },
+        "argv_template": {
+          "type": "array",
+          "minItems": 10,
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "command_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "runner_path": {
+          "const": "tests/codex/sprint11_multi_project.py"
+        },
+        "runner_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "report_path": {
+          "$ref": "#/$defs/path"
+        },
+        "report_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "stdout_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "stderr_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "exit_code": {
+          "const": 0
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 180000
+        }
+      }
+    },
+    "assertions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "two_real_editors",
+        "two_package_sidecars",
+        "separate_action_only_approvals",
+        "validation_reports_isolated",
+        "readback_and_targeted_undo",
+        "foreign_ids_rejected",
+        "target_fault_isolated",
+        "isolation_matrix_complete",
+        "copied_and_swapped_discovery_token_rejected",
+        "config_root_cwd_swaps_rejected",
+        "editor_restart_isolated",
+        "cache_rebuild_isolated",
+        "package_version_mismatch_rejected",
+        "no_cross_project_leakage",
+        "source_unchanged"
+      ],
+      "properties": {
+        "two_real_editors": {
+          "const": true
+        },
+        "two_package_sidecars": {
+          "const": true
+        },
+        "separate_action_only_approvals": {
+          "const": true
+        },
+        "validation_reports_isolated": {
+          "const": true
+        },
+        "readback_and_targeted_undo": {
+          "const": true
+        },
+        "foreign_ids_rejected": {
+          "const": true
+        },
+        "target_fault_isolated": {
+          "const": true
+        },
+        "isolation_matrix_complete": {
+          "const": true
+        },
+        "copied_and_swapped_discovery_token_rejected": {
+          "const": true
+        },
+        "config_root_cwd_swaps_rejected": {
+          "const": true
+        },
+        "editor_restart_isolated": {
+          "const": true
+        },
+        "cache_rebuild_isolated": {
+          "const": true
+        },
+        "package_version_mismatch_rejected": {
+          "const": true
+        },
+        "no_cross_project_leakage": {
+          "const": true
+        },
+        "source_unchanged": {
+          "const": true
+        }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "editor_processes_stopped",
+        "game_processes_stopped",
+        "sidecar_processes_stopped",
+        "temporary_workspaces_removed"
+      ],
+      "properties": {
+        "editor_processes_stopped": {
+          "const": true
+        },
+        "game_processes_stopped": {
+          "const": true
+        },
+        "sidecar_processes_stopped": {
+          "const": true
+        },
+        "temporary_workspaces_removed": {
+          "const": true
+        }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "absolute_paths_absent",
+        "native_ids_absent",
+        "secrets_absent",
+        "source_content_absent"
+      ],
+      "properties": {
+        "absolute_paths_absent": {
+          "const": true
+        },
+        "native_ids_absent": {
+          "const": true
+        },
+        "secrets_absent": {
+          "const": true
+        },
+        "source_content_absent": {
+          "const": true
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-human-consent-receipt.schema.json",
+  "title": "Sprint 11 content-free human consent receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "acquisition_kind",
+    "qualification",
+    "status",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s11-human-consent-receipt/1.0"
+    },
+    "acquisition_kind": {
+      "enum": [
+        "template",
+        "synthetic_contract_fixture",
+        "real_human"
+      ]
+    },
+    "qualification": {
+      "const": false
+    },
+    "status": {
+      "enum": [
+        "unacquired",
+        "fixture_valid",
+        "recorded"
+      ]
+    },
+    "payload": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/template_payload"
+        },
+        {
+          "$ref": "#/$defs/receipt"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "template"
+          }
+        },
+        "required": [
+          "acquisition_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "unacquired"
+          },
+          "payload": {
+            "$ref": "#/$defs/template_payload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "synthetic_contract_fixture"
+          }
+        },
+        "required": [
+          "acquisition_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "fixture_valid"
+          },
+          "payload": {
+            "$ref": "#/$defs/receipt"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "real_human"
+          }
+        },
+        "required": [
+          "acquisition_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "const": "recorded"
+          },
+          "payload": {
+            "$ref": "#/$defs/receipt"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)[A-Za-z0-9._+/-]+$"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^s11u-run:[0-9a-f]{32}$"
+    },
+    "participant_id": {
+      "type": "string",
+      "pattern": "^participant:sha256:[0-9a-f]{64}$"
+    },
+    "operator_id": {
+      "type": "string",
+      "pattern": "^operator:sha256:[0-9a-f]{64}$"
+    },
+    "template_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "template_id",
+        "intended_acquisition_kind",
+        "notice"
+      ],
+      "properties": {
+        "template_id": {
+          "const": "sprint11-human-consent-receipt-template-v1"
+        },
+        "intended_acquisition_kind": {
+          "const": "real_human"
+        },
+        "notice": {
+          "const": "UNACQUIRED TEMPLATE: no person has consented and this file is not qualification evidence."
+        }
+      }
+    },
+    "consent_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "version",
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "const": "sprint11-human-usability-consent"
+        },
+        "version": {
+          "const": "v1"
+        },
+        "path": {
+          "const": "tests/codex/usability/sprint11-consent-v1.md"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "participant_id",
+        "operator_id",
+        "consent_document",
+        "accepted",
+        "recorded_before_tasks",
+        "voluntary_and_stop_explained",
+        "withdrawal_deadline_explained",
+        "retention_policy_id",
+        "collected_data_categories",
+        "excluded_data_categories",
+        "pseudonym",
+        "content_free",
+        "receipt_projection_sha256"
+      ],
+      "properties": {
+        "run_id": {
+          "$ref": "#/$defs/run_id"
+        },
+        "participant_id": {
+          "$ref": "#/$defs/participant_id"
+        },
+        "operator_id": {
+          "$ref": "#/$defs/operator_id"
+        },
+        "consent_document": {
+          "$ref": "#/$defs/consent_binding"
+        },
+        "accepted": {
+          "const": true
+        },
+        "recorded_before_tasks": {
+          "const": true
+        },
+        "voluntary_and_stop_explained": {
+          "const": true
+        },
+        "withdrawal_deadline_explained": {
+          "const": true
+        },
+        "retention_policy_id": {
+          "const": "private-ledger-until-withdrawal-deadline-v1"
+        },
+        "collected_data_categories": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "salted_pseudonym",
+              "bounded_task_outcomes",
+              "bounded_timings",
+              "wrong_turn_counts",
+              "help_source_ids",
+              "comprehension_scores",
+              "content_free_event_digests"
+            ]
+          }
+        },
+        "excluded_data_categories": {
+          "type": "array",
+          "minItems": 10,
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "name",
+              "account_identity",
+              "freeform_prompts",
+              "project_source",
+              "property_values",
+              "authentication_material",
+              "approval_material",
+              "native_handles",
+              "private_absolute_paths",
+              "screen_recording"
+            ]
+          }
+        },
+        "pseudonym": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "algorithm",
+            "domain_separator",
+            "salt_minimum_bytes",
+            "salt_stored_in_evidence",
+            "subject_key_stored_in_evidence",
+            "custody"
+          ],
+          "properties": {
+            "algorithm": {
+              "const": "salted-sha256-domain-separated-v1"
+            },
+            "domain_separator": {
+              "const": "s11-human-participant-v1"
+            },
+            "salt_minimum_bytes": {
+              "const": 32
+            },
+            "salt_stored_in_evidence": {
+              "const": false
+            },
+            "subject_key_stored_in_evidence": {
+              "const": false
+            },
+            "custody": {
+              "const": "private_consent_ledger_until_withdrawal_deadline"
+            }
+          }
+        },
+        "content_free": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "pii_fields",
+            "prompt_fields",
+            "secret_fields",
+            "private_path_fields"
+          ],
+          "properties": {
+            "pii_fields": {
+              "const": 0
+            },
+            "prompt_fields": {
+              "const": 0
+            },
+            "secret_fields": {
+              "const": 0
+            },
+            "private_path_fields": {
+              "const": 0
+            }
+          }
+        },
+        "receipt_projection_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,291 @@
+{
+  "schema_version": "godot-codex-compatibility-matrix/1.0",
+  "matrix_id": "external-codex-beta-macos-arm64-v1",
+  "package": {
+    "version": "0.1.0",
+    "target": {
+      "os": "macos",
+      "architecture": "arm64"
+    }
+  },
+  "godot": {
+    "source_commit": "b225f77acf48648ef6f59a76ff5a7dbb824da7bb",
+    "build_id": "4.8.dev.codex.b225f77ac",
+    "artifact_sha256": "1bb7641df7dde23e6dbd638d40cf2ad0de4d09f34e08614a19be3e93879d4371",
+    "target": {
+      "os": "macos",
+      "architecture": "arm64"
+    }
+  },
+  "protocols": {
+    "bridge_major": 1,
+    "bridge_min_minor": 0,
+    "bridge_current_minor": 8,
+    "mcp_protocol": "2025-11-25",
+    "approval_protocol_floor": "2025-06-18",
+    "requires_form_elicitation": true
+  },
+  "schemas": {
+    "index": "1.3",
+    "transaction_journal": "transaction-journal/1.0",
+    "validation_report": "validation-report-page/1.0"
+  },
+  "registry": {
+    "profile_id": "external-codex-beta-v1",
+    "digest": "95b15688c07f089578c364856962b39d3367fc2ecd371bb3b1a6f7d8a39848c7",
+    "tool_count": 41,
+    "fixed_resource_count": 4,
+    "resource_template_count": 1
+  },
+  "bridge_profiles": [
+    {
+      "profile_id": "bridge-rpc-1.0",
+      "bridge_minor": 0,
+      "capabilities": [
+        "bridge.lifecycle",
+        "transport.uds"
+      ],
+      "qualification": "compatible_reduced"
+    },
+    {
+      "profile_id": "bridge-rpc-1.1",
+      "bridge_minor": 1,
+      "capabilities": [
+        "bridge.lifecycle",
+        "editor.context",
+        "editor.inspector",
+        "sync.event_stream_v1",
+        "sync.full_snapshot_v1",
+        "transport.uds"
+      ],
+      "qualification": "compatible_reduced"
+    },
+    {
+      "profile_id": "bridge-rpc-1.2",
+      "bridge_minor": 2,
+      "capabilities": [
+        "bridge.lifecycle",
+        "editor.context",
+        "editor.inspector",
+        "resource.incremental_index",
+        "resource.uid_dependencies",
+        "sync.event_stream_v1",
+        "sync.full_snapshot_v1",
+        "transport.uds"
+      ],
+      "qualification": "compatible_reduced"
+    },
+    {
+      "profile_id": "bridge-rpc-1.3",
+      "bridge_minor": 3,
+      "capabilities": [
+        "bridge.lifecycle",
+        "editor.context",
+        "editor.inspector",
+        "resource.incremental_index",
+        "resource.uid_dependencies",
+        "scene.incremental_index",
+        "scene.packed_state",
+        "scene.project_context",
+        "sync.event_stream_v1",
+        "sync.full_snapshot_v1",
+        "transport.uds"
+      ],
+      "qualification": "compatible_reduced"
+    },
+    {
+      "profile_id": "bridge-rpc-1.4",
+      "bridge_minor": 4,
+      "capabilities": [
+        "bridge.lifecycle",
+        "editor.context",
+        "editor.inspector",
+        "resource.incremental_index",
+        "resource.uid_dependencies",
+        "scene.incremental_index",
+        "scene.packed_state",
+        "scene.project_context",
+        "script.csharp_discovery",
+        "script.diagnostics",
+        "script.gdscript_semantics",
+        "script.incremental_index",
+        "sync.event_stream_v1",
+        "sync.full_snapshot_v1",
+        "transport.uds"
+      ],
+      "qualification": "compatible_reduced"
+    },
+    {
+      "profile_id": "bridge-rpc-1.5",
+      "bridge_minor": 5,
+      "capabilities": [
+        "bridge.lifecycle",
+        "editor.context",
+        "editor.diagnostics",
+        "editor.inspector",
+        "editor.native_history",
+        "editor.open_scenes",
+        "editor.open_scripts",
+        "editor.viewport_metadata",
+        "resource.incremental_index",
+        "resource.uid_dependencies",
+        "scene.incremental_index",
+        "scene.packed_state",
+        "scene.project_context",
+        "script.csharp_discovery",
+        "script.diagnostics",
+        "script.gdscript_semantics",
+        "script.incremental_index",
+        "sync.event_stream_v1",
+        "sync.full_snapshot_v1",
+        "transport.uds"
+      ],
+      "qualification": "compatible_reduced"
+    },
+    {
+      "profile_id": "bridge-rpc-1.6",
+      "bridge_minor": 6,
+      "capabilities": [
+        "bridge.lifecycle",
+        "editor.context",
+        "editor.diagnostics",
+        "editor.inspector",
+        "editor.native_history",
+        "editor.open_scenes",
+        "editor.open_scripts",
+        "editor.viewport_metadata",
+        "resource.incremental_index",
+        "resource.uid_dependencies",
+        "runtime.bounded_properties",
+        "runtime.debugger",
+        "runtime.diagnostics",
+        "runtime.process_control",
+        "runtime.remote_tree",
+        "runtime.viewport_capture",
+        "scene.incremental_index",
+        "scene.packed_state",
+        "scene.project_context",
+        "script.csharp_discovery",
+        "script.diagnostics",
+        "script.gdscript_semantics",
+        "script.incremental_index",
+        "sync.event_stream_v1",
+        "sync.full_snapshot_v1",
+        "transport.uds"
+      ],
+      "qualification": "compatible_reduced"
+    },
+    {
+      "profile_id": "bridge-rpc-1.7",
+      "bridge_minor": 7,
+      "capabilities": [
+        "bridge.lifecycle",
+        "editor.context",
+        "editor.diagnostics",
+        "editor.inspector",
+        "editor.native_history",
+        "editor.open_scenes",
+        "editor.open_scripts",
+        "editor.viewport_metadata",
+        "resource.incremental_index",
+        "resource.uid_dependencies",
+        "runtime.bounded_properties",
+        "runtime.debugger",
+        "runtime.diagnostics",
+        "runtime.process_control",
+        "runtime.remote_tree",
+        "runtime.viewport_capture",
+        "scene.incremental_index",
+        "scene.packed_state",
+        "scene.project_context",
+        "script.csharp_discovery",
+        "script.diagnostics",
+        "script.gdscript_semantics",
+        "script.incremental_index",
+        "sync.event_stream_v1",
+        "sync.full_snapshot_v1",
+        "transaction.scene_v1",
+        "transport.uds"
+      ],
+      "qualification": "compatible_reduced"
+    },
+    {
+      "profile_id": "bridge-rpc-1.8",
+      "bridge_minor": 8,
+      "capabilities": [
+        "bridge.lifecycle",
+        "editor.context",
+        "editor.diagnostics",
+        "editor.inspector",
+        "editor.native_history",
+        "editor.open_scenes",
+        "editor.open_scripts",
+        "editor.viewport_metadata",
+        "resource.incremental_index",
+        "resource.uid_dependencies",
+        "runtime.bounded_properties",
+        "runtime.debugger",
+        "runtime.diagnostics",
+        "runtime.process_control",
+        "runtime.remote_tree",
+        "runtime.viewport_capture",
+        "scene.incremental_index",
+        "scene.packed_state",
+        "scene.project_context",
+        "script.csharp_discovery",
+        "script.diagnostics",
+        "script.gdscript_semantics",
+        "script.incremental_index",
+        "sync.event_stream_v1",
+        "sync.full_snapshot_v1",
+        "transaction.change_set_v1",
+        "transaction.scene_v1",
+        "transport.uds",
+        "validation.automatic_v1"
+      ],
+      "qualification": "supported"
+    }
+  ],
+  "surfaces": [
+    {
+      "surface": "app",
+      "host_version": "26.721.31836",
+      "ide_host_version": null,
+      "target": {
+        "os": "macos",
+        "architecture": "arm64"
+      },
+      "qualification": "candidate"
+    },
+    {
+      "surface": "cli",
+      "host_version": "0.146.0-alpha.3.1",
+      "ide_host_version": null,
+      "target": {
+        "os": "macos",
+        "architecture": "arm64"
+      },
+      "qualification": "candidate"
+    },
+    {
+      "surface": "ide",
+      "host_version": "26.721.30844",
+      "ide_host_version": "1.127.0",
+      "target": {
+        "os": "macos",
+        "architecture": "arm64"
+      },
+      "qualification": "candidate"
+    },
+    {
+      "surface": "cursor",
+      "host_version": "26.721.30844",
+      "ide_host_version": "3.8.23",
+      "target": {
+        "os": "macos",
+        "architecture": "arm64"
+      },
+      "qualification": "not_tested"
+    }
+  ]
+}

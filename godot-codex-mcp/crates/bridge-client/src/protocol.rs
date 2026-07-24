@@ -3,7 +3,7 @@ use std::path::Path;
 
 #[cfg(any(unix, windows, test))]
 use base64::Engine;
-use godot_codex_semantic_model::SnapshotReplicator;
+use godot_codex_semantic_model::{NegotiatedBridgeMetadata, ReplicaFailure, SnapshotReplicator};
 #[cfg(any(unix, windows))]
 use godot_codex_semantic_model::{RevisionVector, SnapshotChunk, SnapshotEnd, SnapshotMetadata};
 #[cfg(any(unix, windows, test))]
@@ -64,6 +64,72 @@ pub(crate) fn has_change_set_profile(version: &str) -> bool {
     version == "1.8"
 }
 
+fn required_replication_capability(capability: &str) -> bool {
+    !matches!(
+        capability,
+        "transaction.scene_v1" | "transaction.change_set_v1" | "validation.automatic_v1"
+    )
+}
+
+fn capabilities_for_protocol(
+    version: &str,
+    transport_capability: &'static str,
+) -> Vec<&'static str> {
+    let mut capabilities = vec!["bridge.lifecycle", transport_capability];
+    if version != "1.0" {
+        capabilities.extend([
+            "editor.context",
+            "editor.inspector",
+            "sync.full_snapshot_v1",
+            "sync.event_stream_v1",
+        ]);
+    }
+    if has_resource_profile(version) {
+        capabilities.extend(["resource.uid_dependencies", "resource.incremental_index"]);
+    }
+    if has_scene_profile(version) {
+        capabilities.extend([
+            "scene.packed_state",
+            "scene.incremental_index",
+            "scene.project_context",
+        ]);
+    }
+    if has_script_profile(version) {
+        capabilities.extend([
+            "script.csharp_discovery",
+            "script.diagnostics",
+            "script.gdscript_semantics",
+            "script.incremental_index",
+        ]);
+    }
+    if has_live_editor_profile(version) {
+        capabilities.extend([
+            "editor.open_scenes",
+            "editor.open_scripts",
+            "editor.native_history",
+            "editor.diagnostics",
+            "editor.viewport_metadata",
+        ]);
+    }
+    if has_runtime_profile(version) {
+        capabilities.extend([
+            "runtime.debugger",
+            "runtime.process_control",
+            "runtime.remote_tree",
+            "runtime.bounded_properties",
+            "runtime.diagnostics",
+            "runtime.viewport_capture",
+        ]);
+    }
+    if has_transaction_profile(version) {
+        capabilities.push("transaction.scene_v1");
+    }
+    if has_change_set_profile(version) {
+        capabilities.extend(["transaction.change_set_v1", "validation.automatic_v1"]);
+    }
+    capabilities
+}
+
 #[derive(Debug, Error)]
 pub enum BridgeError {
     #[error("bridge I/O failed: {0}")]
@@ -74,6 +140,12 @@ pub enum BridgeError {
     Invalid(String),
     #[error("bridge authentication failed")]
     Authentication,
+    #[error("bridge project binding mismatch")]
+    ProjectBindingMismatch,
+    #[error("bridge editor session is stale")]
+    SessionMismatch,
+    #[error("bridge protocol version is incompatible")]
+    ProtocolVersionMismatch,
     #[error("bridge snapshot failed: {0}")]
     Replica(#[from] godot_codex_semantic_model::ReplicaError),
     #[error("Godot bridge transport is unavailable on this platform")]
@@ -94,6 +166,74 @@ pub enum BridgeError {
     },
 }
 
+/// Closed, detail-free public classification of a Bridge failure.
+///
+/// The classifier intentionally distinguishes a bounded timeout from other
+/// transport failures for `doctor`, while preserving only three proven
+/// negotiation faults. It never carries I/O text, JSON parser details, paths,
+/// tokens, endpoints, RPC messages, or RPC data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BridgeFailureClass {
+    TransportUnavailable,
+    TimedOut,
+    AuthenticationFailed,
+    ProjectBindingMismatch,
+    ProtocolVersionIncompatible,
+}
+
+impl BridgeFailureClass {
+    /// Stable summary safe for stderr, doctor, and MCP error envelopes.
+    #[must_use]
+    pub const fn safe_summary(self) -> &'static str {
+        match self {
+            Self::TransportUnavailable => "Godot bridge is unavailable",
+            Self::TimedOut => "Godot bridge timed out",
+            Self::AuthenticationFailed => "Godot bridge authentication failed",
+            Self::ProjectBindingMismatch => "Godot bridge project binding mismatch",
+            Self::ProtocolVersionIncompatible => "Godot bridge protocol version is incompatible",
+        }
+    }
+
+    /// Stable closed spelling suitable for bounded diagnostic logging.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::TransportUnavailable => "transport_unavailable",
+            Self::TimedOut => "timed_out",
+            Self::AuthenticationFailed => "authentication_failed",
+            Self::ProjectBindingMismatch => "project_binding_mismatch",
+            Self::ProtocolVersionIncompatible => "protocol_version_incompatible",
+        }
+    }
+
+    /// Projects the public classifier into the replica's persistent health
+    /// vocabulary. Replica health intentionally folds timeouts into transport.
+    #[must_use]
+    pub const fn replica_failure(self) -> ReplicaFailure {
+        match self {
+            Self::TransportUnavailable | Self::TimedOut => ReplicaFailure::TransportDisconnected,
+            Self::AuthenticationFailed => ReplicaFailure::AuthenticationFailed,
+            Self::ProjectBindingMismatch => ReplicaFailure::ProjectBindingMismatch,
+            Self::ProtocolVersionIncompatible => ReplicaFailure::ProtocolVersionIncompatible,
+        }
+    }
+}
+
+/// Proven RPC 1.0 base-handshake codes are frozen through 1.8. The normative
+/// `session_mismatch` denotes stale discovery/editor-session state, not failed
+/// authentication, so it intentionally falls back to transport-unavailable
+/// in this narrower classifier. Product diagnostic spellings such as
+/// `project_binding_mismatch`, and package/test scenario names such as
+/// `version_mismatch`, are not Bridge RPC aliases.
+fn proven_failure_for_rpc_code(code: &str) -> Option<BridgeFailureClass> {
+    match code {
+        "unauthenticated" => Some(BridgeFailureClass::AuthenticationFailed),
+        "project_not_bound" => Some(BridgeFailureClass::ProjectBindingMismatch),
+        "protocol_mismatch" => Some(BridgeFailureClass::ProtocolVersionIncompatible),
+        _ => None,
+    }
+}
+
 impl BridgeError {
     /// Returns a stable, user-facing description that cannot expose local paths,
     /// socket names, or parser details through the MCP error envelope.
@@ -102,11 +242,39 @@ impl BridgeError {
             Self::Io(_) => "Godot bridge is unavailable",
             Self::Json(_) | Self::Invalid(_) => "Godot bridge validation failed",
             Self::Authentication => "Godot bridge authentication failed",
+            Self::ProjectBindingMismatch => "Godot bridge project binding mismatch",
+            Self::SessionMismatch => "Godot bridge editor session is stale",
+            Self::ProtocolVersionMismatch => "Godot bridge protocol version is incompatible",
             Self::Replica(_) => "Godot bridge snapshot validation failed",
             Self::Unsupported => "Godot bridge transport is unavailable on this platform",
             Self::Timeout => "Godot bridge timed out",
             Self::CapabilityUnavailable { .. } => "Godot bridge capability is unavailable",
             Self::Rpc { .. } => "Godot bridge request failed",
+        }
+    }
+
+    /// Projects an internal Bridge error into the single closed public
+    /// classifier consumed by sync, doctor, and MCP.
+    ///
+    /// No contained I/O, JSON, RPC message, data, path, or endpoint survives
+    /// this conversion.
+    #[must_use]
+    pub fn failure_class(&self) -> BridgeFailureClass {
+        match self {
+            Self::Authentication => BridgeFailureClass::AuthenticationFailed,
+            Self::ProjectBindingMismatch => BridgeFailureClass::ProjectBindingMismatch,
+            Self::SessionMismatch => BridgeFailureClass::TransportUnavailable,
+            Self::ProtocolVersionMismatch | Self::CapabilityUnavailable { .. } => {
+                BridgeFailureClass::ProtocolVersionIncompatible
+            }
+            Self::Rpc { code, .. } => proven_failure_for_rpc_code(code)
+                .unwrap_or(BridgeFailureClass::TransportUnavailable),
+            Self::Timeout => BridgeFailureClass::TimedOut,
+            Self::Io(_)
+            | Self::Json(_)
+            | Self::Invalid(_)
+            | Self::Replica(_)
+            | Self::Unsupported => BridgeFailureClass::TransportUnavailable,
         }
     }
 }
@@ -183,6 +351,31 @@ fn required_u64(value: &Value, key: &str) -> Result<u64, BridgeError> {
         .get(key)
         .and_then(Value::as_u64)
         .ok_or_else(|| BridgeError::Invalid(format!("missing integer field {key}")))
+}
+
+#[cfg(any(unix, windows, test))]
+fn reject_handshake_error(value: &Value) -> Result<(), BridgeError> {
+    if value.get("kind").and_then(Value::as_str) != Some("handshake.error") {
+        return Ok(());
+    }
+    let code = value.pointer("/error/code").and_then(Value::as_str);
+    if code == Some("session_mismatch") {
+        return Err(BridgeError::SessionMismatch);
+    }
+    match code.and_then(proven_failure_for_rpc_code) {
+        Some(BridgeFailureClass::AuthenticationFailed) => Err(BridgeError::Authentication),
+        Some(BridgeFailureClass::ProjectBindingMismatch) => {
+            Err(BridgeError::ProjectBindingMismatch)
+        }
+        Some(BridgeFailureClass::ProtocolVersionIncompatible) => {
+            Err(BridgeError::ProtocolVersionMismatch)
+        }
+        Some(BridgeFailureClass::TransportUnavailable | BridgeFailureClass::TimedOut) | None => {
+            Err(BridgeError::Invalid(
+                "handshake error classification is invalid".to_owned(),
+            ))
+        }
+    }
 }
 
 #[cfg(any(unix, windows, test))]
@@ -365,15 +558,18 @@ fn validate_context(
 ) -> Result<(), BridgeError> {
     if value.pointer("/context/project_id").and_then(Value::as_str)
         != Some(discovery.project_id.as_str())
-        || value
-            .pointer("/context/editor_session_id")
-            .and_then(Value::as_str)
-            != Some(discovery.editor_session_id.as_str())
-        || value.get("protocol_version").and_then(Value::as_str) != Some(protocol_version)
     {
-        return Err(BridgeError::Invalid(
-            "RPC context binding mismatch".to_owned(),
-        ));
+        return Err(BridgeError::ProjectBindingMismatch);
+    }
+    if value.get("protocol_version").and_then(Value::as_str) != Some(protocol_version) {
+        return Err(BridgeError::ProtocolVersionMismatch);
+    }
+    if value
+        .pointer("/context/editor_session_id")
+        .and_then(Value::as_str)
+        != Some(discovery.editor_session_id.as_str())
+    {
+        return Err(BridgeError::SessionMismatch);
     }
     Ok(())
 }
@@ -501,14 +697,22 @@ impl Session {
         });
         stream.send(&hello).await?;
         let challenge = stream.receive_timed().await?;
+        reject_handshake_error(&challenge)?;
         let selected_protocol_version =
             required_str(&challenge, "selected_protocol_version")?.to_owned();
-        if required_str(&challenge, "kind")? != "handshake.server_challenge"
-            || !supported_protocol_version(&selected_protocol_version)
-            || required_str(&challenge, "project_id")? != discovery.project_id
-            || required_str(&challenge, "editor_session_id")? != discovery.editor_session_id
-        {
-            return Err(BridgeError::Authentication);
+        if required_str(&challenge, "kind")? != "handshake.server_challenge" {
+            return Err(BridgeError::Invalid(
+                "unexpected handshake challenge".to_owned(),
+            ));
+        }
+        if !supported_protocol_version(&selected_protocol_version) {
+            return Err(BridgeError::ProtocolVersionMismatch);
+        }
+        if required_str(&challenge, "project_id")? != discovery.project_id {
+            return Err(BridgeError::ProjectBindingMismatch);
+        }
+        if required_str(&challenge, "editor_session_id")? != discovery.editor_session_id {
+            return Err(BridgeError::SessionMismatch);
         }
         let server_nonce = decode_base64url_32(required_str(&challenge, "server_nonce")?)?;
         let transcript = handshake_transcript(
@@ -538,12 +742,20 @@ impl Session {
         });
         stream.send(&authenticate).await?;
         let ready = stream.receive_timed().await?;
-        if required_str(&ready, "kind")? != "handshake.server_ready"
-            || required_str(&ready, "selected_protocol_version")? != selected_protocol_version
-            || required_str(&ready, "project_id")? != discovery.project_id
-            || required_str(&ready, "editor_session_id")? != discovery.editor_session_id
-        {
-            return Err(BridgeError::Authentication);
+        reject_handshake_error(&ready)?;
+        if required_str(&ready, "kind")? != "handshake.server_ready" {
+            return Err(BridgeError::Invalid(
+                "unexpected handshake ready message".to_owned(),
+            ));
+        }
+        if required_str(&ready, "editor_session_id")? != discovery.editor_session_id {
+            return Err(BridgeError::SessionMismatch);
+        }
+        if required_str(&ready, "selected_protocol_version")? != selected_protocol_version {
+            return Err(BridgeError::ProtocolVersionMismatch);
+        }
+        if required_str(&ready, "project_id")? != discovery.project_id {
+            return Err(BridgeError::ProjectBindingMismatch);
         }
         discovery.assert_unchanged()?;
         let transport_capability = discovery.transport_capability();
@@ -555,48 +767,12 @@ impl Session {
             selected_protocol_version,
             capabilities: BTreeSet::new(),
         };
-        let mut requested_capabilities = vec!["bridge.lifecycle", transport_capability];
-        if session.selected_protocol_version != "1.0" {
-            requested_capabilities.extend([
-                "editor.context",
-                "editor.inspector",
-                "sync.full_snapshot_v1",
-                "sync.event_stream_v1",
-            ]);
-        }
-        if has_resource_profile(&session.selected_protocol_version) {
-            requested_capabilities
-                .extend(["resource.uid_dependencies", "resource.incremental_index"]);
-        }
-        if has_scene_profile(&session.selected_protocol_version) {
-            requested_capabilities.extend([
-                "scene.packed_state",
-                "scene.incremental_index",
-                "scene.project_context",
-            ]);
-        }
-        if has_live_editor_profile(&session.selected_protocol_version) {
-            requested_capabilities.extend([
-                "editor.open_scenes",
-                "editor.open_scripts",
-                "editor.native_history",
-                "editor.diagnostics",
-                "editor.viewport_metadata",
-            ]);
-        }
-        if has_runtime_profile(&session.selected_protocol_version) {
-            requested_capabilities.extend([
-                "runtime.debugger",
-                "runtime.process_control",
-                "runtime.remote_tree",
-                "runtime.bounded_properties",
-                "runtime.diagnostics",
-                "runtime.viewport_capture",
-            ]);
-        }
-        if has_transaction_profile(&session.selected_protocol_version) {
-            requested_capabilities.push("transaction.scene_v1");
-        }
+        let requested_capabilities =
+            capabilities_for_protocol(&session.selected_protocol_version, transport_capability);
+        let requested_capability_set = requested_capabilities
+            .iter()
+            .copied()
+            .collect::<BTreeSet<_>>();
         let initialize = session
             .request(
                 "bridge.initialize",
@@ -610,21 +786,28 @@ impl Session {
             .pointer("/result/capabilities")
             .and_then(Value::as_array)
             .ok_or_else(|| BridgeError::Invalid("capabilities are missing".to_owned()))?;
+        if capabilities.len() > 128 {
+            return Err(BridgeError::Invalid(
+                "capability result exceeds the negotiated bound".to_owned(),
+            ));
+        }
         for entry in capabilities {
             if entry.get("readiness").and_then(Value::as_str) == Some("ready")
                 && let Some(name) = entry.get("name").and_then(Value::as_str)
+                && requested_capability_set.contains(name)
             {
                 session.capabilities.insert(name.to_owned());
             }
         }
         for capability in requested_capabilities {
-            if capability == "transaction.scene_v1" {
+            if !required_replication_capability(capability) {
                 continue;
             }
             if !session.capabilities.contains(capability) {
-                return Err(BridgeError::Invalid(format!(
-                    "required capability is unavailable: {capability}"
-                )));
+                return Err(BridgeError::CapabilityUnavailable {
+                    capability,
+                    negotiated_version: session.selected_protocol_version.clone(),
+                });
             }
         }
         Ok(session)
@@ -1016,6 +1199,12 @@ pub async fn run_session(
     replicator: &SnapshotReplicator,
 ) -> Result<(), BridgeError> {
     let mut session = Session::connect(project_root).await?;
+    let negotiated = NegotiatedBridgeMetadata::new(
+        session.protocol_version().to_owned(),
+        session.capabilities().iter().cloned(),
+    )
+    .ok_or_else(|| BridgeError::Invalid("negotiated Bridge metadata is unsafe".to_owned()))?;
+    replicator.mark_bridge_negotiated(negotiated);
     loop {
         let needs_resync = session.snapshot(replicator).await?;
         if !needs_resync {
@@ -1093,11 +1282,211 @@ mod tests {
     }
 
     #[test]
-    fn rpc_1_8_is_additive_and_all_older_minor_profiles_remain_supported() {
+    fn bridge_errors_use_one_closed_public_failure_classifier() {
+        let cases = [
+            (
+                BridgeError::Io(std::io::Error::other(
+                    "/Users/alice/secret-project/.godot/codex/run/bridge.sock",
+                )),
+                BridgeFailureClass::TransportUnavailable,
+            ),
+            (
+                BridgeError::Authentication,
+                BridgeFailureClass::AuthenticationFailed,
+            ),
+            (
+                BridgeError::ProjectBindingMismatch,
+                BridgeFailureClass::ProjectBindingMismatch,
+            ),
+            (
+                BridgeError::ProtocolVersionMismatch,
+                BridgeFailureClass::ProtocolVersionIncompatible,
+            ),
+            (BridgeError::Timeout, BridgeFailureClass::TimedOut),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(error.failure_class(), expected);
+            assert!(!expected.safe_summary().contains("/Users/alice"));
+            assert_eq!(
+                expected.replica_failure(),
+                match expected {
+                    BridgeFailureClass::TransportUnavailable | BridgeFailureClass::TimedOut => {
+                        ReplicaFailure::TransportDisconnected
+                    }
+                    BridgeFailureClass::AuthenticationFailed => {
+                        ReplicaFailure::AuthenticationFailed
+                    }
+                    BridgeFailureClass::ProjectBindingMismatch => {
+                        ReplicaFailure::ProjectBindingMismatch
+                    }
+                    BridgeFailureClass::ProtocolVersionIncompatible => {
+                        ReplicaFailure::ProtocolVersionIncompatible
+                    }
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn only_exact_bridge_codes_retain_safe_typed_classification() {
+        for (code, expected) in [
+            ("unauthenticated", BridgeFailureClass::AuthenticationFailed),
+            (
+                "project_not_bound",
+                BridgeFailureClass::ProjectBindingMismatch,
+            ),
+            (
+                "protocol_mismatch",
+                BridgeFailureClass::ProtocolVersionIncompatible,
+            ),
+        ] {
+            let error = reject_handshake_error(&json!({
+                "kind": "handshake.error",
+                "error": {
+                    "code": code,
+                    "message": "/Users/alice/private?token=secret"
+                }
+            }))
+            .unwrap_err();
+            assert_eq!(error.failure_class(), expected);
+            assert!(!expected.safe_summary().contains("alice"));
+            assert!(!expected.safe_summary().contains("secret"));
+
+            let rpc = BridgeError::Rpc {
+                code: code.to_owned(),
+                message: "/Users/alice/private?token=secret".to_owned(),
+                retryable: false,
+                data: json!({"native_handle": 42}),
+            };
+            assert_eq!(rpc.failure_class(), expected);
+        }
+
+        for alias_or_unknown in [
+            "authentication_failed",
+            "project_binding_mismatch",
+            "protocol_version_mismatch",
+            "version_mismatch",
+            "unknown_private_failure",
+        ] {
+            let error = BridgeError::Rpc {
+                code: alias_or_unknown.to_owned(),
+                message: "/Users/alice/private?token=secret".to_owned(),
+                retryable: false,
+                data: json!({"native_handle": 42}),
+            };
+            assert_eq!(
+                error.failure_class(),
+                BridgeFailureClass::TransportUnavailable,
+                "{alias_or_unknown} must not manufacture a proven negotiation fault"
+            );
+
+            let handshake = reject_handshake_error(&json!({
+                "kind": "handshake.error",
+                "error": {
+                    "code": alias_or_unknown,
+                    "message": "/Users/alice/private?token=secret"
+                }
+            }))
+            .unwrap_err();
+            assert!(matches!(handshake, BridgeError::Invalid(_)));
+            assert_eq!(
+                handshake.failure_class(),
+                BridgeFailureClass::TransportUnavailable
+            );
+        }
+
+        let session_rpc = BridgeError::Rpc {
+            code: "session_mismatch".to_owned(),
+            message: "/Users/alice/private?token=secret".to_owned(),
+            retryable: true,
+            data: json!({"native_handle": 42}),
+        };
+        assert_eq!(
+            session_rpc.failure_class(),
+            BridgeFailureClass::TransportUnavailable
+        );
+        let session_handshake = reject_handshake_error(&json!({
+            "kind": "handshake.error",
+            "error": {
+                "code": "session_mismatch",
+                "message": "/Users/alice/private?token=secret"
+            }
+        }))
+        .unwrap_err();
+        assert!(matches!(session_handshake, BridgeError::SessionMismatch));
+        assert_eq!(
+            session_handshake.failure_class(),
+            BridgeFailureClass::TransportUnavailable
+        );
+    }
+
+    #[test]
+    fn malformed_and_internal_failures_are_transport_not_authentication() {
+        let malformed_json =
+            serde_json::from_str::<Value>("{").expect_err("fixture must be malformed");
+        let cases = [
+            BridgeError::Json(malformed_json),
+            BridgeError::Invalid("invalid payload at /Users/alice/private?token=secret".to_owned()),
+            BridgeError::Replica(godot_codex_semantic_model::ReplicaError::InvalidSnapshot(
+                "malformed fixture",
+            )),
+            BridgeError::Unsupported,
+            BridgeError::Rpc {
+                code: "invalid_request".to_owned(),
+                message: "server path /Users/alice/private".to_owned(),
+                retryable: false,
+                data: json!({"token": "secret"}),
+            },
+        ];
+        for error in cases {
+            assert_eq!(
+                error.failure_class(),
+                BridgeFailureClass::TransportUnavailable
+            );
+        }
+    }
+
+    #[test]
+    fn rpc_1_0_failure_codes_remain_stable_through_rpc_1_8() {
         for version in [
             "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8",
         ] {
             assert!(supported_protocol_version(version));
+            assert_eq!(
+                proven_failure_for_rpc_code("unauthenticated"),
+                Some(BridgeFailureClass::AuthenticationFailed),
+                "{version}"
+            );
+            assert_eq!(
+                proven_failure_for_rpc_code("project_not_bound"),
+                Some(BridgeFailureClass::ProjectBindingMismatch),
+                "{version}"
+            );
+            assert_eq!(
+                proven_failure_for_rpc_code("protocol_mismatch"),
+                Some(BridgeFailureClass::ProtocolVersionIncompatible),
+                "{version}"
+            );
+            assert_eq!(
+                proven_failure_for_rpc_code("session_mismatch"),
+                None,
+                "{version}: stale editor session must not become auth_failed"
+            );
+        }
+    }
+
+    #[test]
+    fn rpc_1_8_is_additive_and_all_older_minor_profiles_remain_supported() {
+        let mut previous = BTreeSet::new();
+        for version in [
+            "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8",
+        ] {
+            assert!(supported_protocol_version(version));
+            let current = capabilities_for_protocol(version, "transport.uds")
+                .into_iter()
+                .collect::<BTreeSet<_>>();
+            assert!(previous.is_subset(&current));
+            previous = current;
         }
         assert!(!supported_protocol_version("1.9"));
         assert!(!supported_protocol_version("2.0"));
@@ -1115,6 +1504,22 @@ mod tests {
         assert!(has_transaction_profile("1.8"));
         assert!(!has_change_set_profile("1.7"));
         assert!(has_change_set_profile("1.8"));
+        for capability in [
+            "script.gdscript_semantics",
+            "resource.uid_dependencies",
+            "scene.packed_state",
+            "runtime.debugger",
+        ] {
+            assert!(previous.contains(capability));
+            assert!(required_replication_capability(capability));
+        }
+        for capability in [
+            "transaction.scene_v1",
+            "transaction.change_set_v1",
+            "validation.automatic_v1",
+        ] {
+            assert!(!required_replication_capability(capability));
+        }
     }
 
     #[test]

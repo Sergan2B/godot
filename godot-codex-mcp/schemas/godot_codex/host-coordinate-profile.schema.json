@@ -1,0 +1,257 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/host-coordinate-profile.schema.json",
+  "title": "Godot Codex exact external host coordinate profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile_id",
+    "compatibility_matrix",
+    "server_instructions",
+    "surfaces"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "godot-codex-host-coordinate-profile/1.0"
+    },
+    "profile_id": {
+      "const": "external-codex-beta-macos-arm64-hosts-v1"
+    },
+    "compatibility_matrix": {
+      "$ref": "#/$defs/binding"
+    },
+    "server_instructions": {
+      "$ref": "#/$defs/instructions_binding"
+    },
+    "surfaces": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/surface"
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)[A-Za-z0-9._+/-]+$"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "instructions_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "file_sha256",
+        "wire_sha256"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "file_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "wire_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface",
+        "host_name",
+        "host_identifier",
+        "host_artifact_kind",
+        "host_version",
+        "host_build",
+        "host_commit",
+        "host_artifact_sha256",
+        "host_metadata_sha256",
+        "host_code_signature",
+        "client_version",
+        "client_artifact_sha256",
+        "client_code_signature",
+        "ide_host_version",
+        "ide_shell_identifier",
+        "ide_shell_artifact_sha256",
+        "ide_shell_team_id",
+        "ide_shell_code_signature",
+        "qualification"
+      ],
+      "properties": {
+        "surface": {
+          "enum": [
+            "app",
+            "cli",
+            "ide"
+          ]
+        },
+        "host_name": {
+          "$ref": "#/$defs/token"
+        },
+        "host_identifier": {
+          "$ref": "#/$defs/token"
+        },
+        "host_artifact_kind": {
+          "enum": [
+            "macos_bundle_executable",
+            "standalone_executable",
+            "extension_tree"
+          ]
+        },
+        "host_version": {
+          "$ref": "#/$defs/token"
+        },
+        "host_build": {
+          "$ref": "#/$defs/token"
+        },
+        "host_commit": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/commit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_metadata_sha256": {
+          "oneOf": [
+            {"$ref": "#/$defs/digest"},
+            {"type": "null"}
+          ]
+        },
+        "host_code_signature": {
+          "oneOf": [
+            {"$ref": "#/$defs/code_signature"},
+            {"type": "null"}
+          ]
+        },
+        "client_version": {
+          "$ref": "#/$defs/token"
+        },
+        "client_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "client_code_signature": {
+          "oneOf": [
+            {"$ref": "#/$defs/code_signature"},
+            {"type": "null"}
+          ]
+        },
+        "ide_host_version": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/token"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ide_shell_identifier": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/token"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ide_shell_artifact_sha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ide_shell_team_id": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/token"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ide_shell_code_signature": {
+          "oneOf": [
+            {"$ref": "#/$defs/code_signature"},
+            {"type": "null"}
+          ]
+        },
+        "qualification": {
+          "enum": [
+            "candidate",
+            "supported",
+            "compatible_reduced"
+          ]
+        }
+      }
+    },
+    "code_signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "identifier", "team_id", "cdhash"],
+      "properties": {
+        "mode": {
+          "enum": ["strict", "deep_strict"]
+        },
+        "identifier": {
+          "$ref": "#/$defs/token"
+        },
+        "team_id": {
+          "$ref": "#/$defs/token"
+        },
+        "cdhash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$"
+        }
+      }
+    }
+  }
+}

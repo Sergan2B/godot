@@ -1,0 +1,11 @@
+{
+  "schema_version": "s11-human-usability-trace/1.0",
+  "acquisition_kind": "template",
+  "qualification": false,
+  "status": "unacquired",
+  "payload": {
+    "template_id": "sprint11-human-usability-trace-template-v1",
+    "intended_acquisition_kind": "real_human",
+    "notice": "UNACQUIRED TEMPLATE: this file contains no participant observation and is not qualification evidence."
+  }
+}

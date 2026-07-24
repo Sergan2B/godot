@@ -10,10 +10,12 @@ base64.workspace = true
 getrandom.workspace = true
 godot-codex-bridge-client = { path = "../bridge-client" }
 godot-codex-index-store = { path = "../index-store" }
+godot-codex-product = { path = "../product-core" }
 godot-codex-resource-indexer = { path = "../resource-indexer" }
 godot-codex-semantic-model = { path = "../semantic-model" }
 godot-codex-transactions = { path = "../transactions" }
 hmac.workspace = true
+jsonschema = { version = "0.47.0", default-features = false }
 rmcp.workspace = true
 schemars.workspace = true
 serde.workspace = true
@@ -23,6 +25,7 @@ thiserror.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
+godot-codex-operations = { path = "../operations" }
 rmcp = { workspace = true, features = ["client"] }
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["test-util"] }

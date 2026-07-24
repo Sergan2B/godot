@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/doctor-report.schema.json",
+  "title": "Godot Codex doctor report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "exit_code",
+    "editor_required",
+    "requested_surface",
+    "surface",
+    "project_root",
+    "package_version",
+    "compatibility_matrix_digest",
+    "registry_digest",
+    "checks"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "godot-codex-doctor-report/1.0"
+    },
+    "status": {
+      "enum": [
+        "ready",
+        "warning",
+        "error"
+      ]
+    },
+    "exit_code": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 7
+    },
+    "editor_required": {
+      "type": "boolean"
+    },
+    "requested_surface": {
+      "enum": [
+        "auto",
+        "app",
+        "cli",
+        "ide"
+      ]
+    },
+    "surface": {
+      "oneOf": [
+        {
+          "enum": [
+            "app",
+            "cli",
+            "ide",
+            "cursor"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "project_root": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "package_version": {
+      "$ref": "#/$defs/coordinate"
+    },
+    "compatibility_matrix_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "registry_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "coordinate": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+:/-]{0,127}$"
+    },
+    "optional_coordinate": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/coordinate"
+        },
+        {
+          "const": "[redacted]"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "component": {
+      "enum": [
+        "package",
+        "sidecar",
+        "project",
+        "project_config",
+        "host_surface",
+        "bridge_discovery",
+        "bridge",
+        "static_cache",
+        "transaction_recovery"
+      ]
+    },
+    "diagnostic_code": {
+      "enum": [
+        "package_invalid",
+        "binary_missing",
+        "binary_not_executable",
+        "binary_arch_mismatch",
+        "project_invalid",
+        "project_config_missing",
+        "project_config_invalid",
+        "project_config_not_effective",
+        "project_untrusted_or_restart_required",
+        "bridge_discovery_missing",
+        "bridge_discovery_stale",
+        "permissions_invalid",
+        "bridge_unreachable",
+        "bridge_connecting",
+        "bridge_syncing",
+        "bridge_version_incompatible",
+        "bridge_authentication_failed",
+        "project_binding_mismatch",
+        "editor_offline",
+        "static_cache_unavailable",
+        "static_cache_stale",
+        "static_cache_incompatible",
+        "static_cache_corrupt",
+        "static_cache_rebuilding",
+        "surface_unsupported",
+        "surface_restart_required",
+        "host_interaction_unsupported",
+        "capability_unavailable",
+        "sidecar_overloaded",
+        "transaction_recovery_required",
+        "ready"
+      ]
+    },
+    "remediation_id": {
+      "oneOf": [
+        {
+          "enum": [
+            "start_matching_editor",
+            "open_exact_project",
+            "restart_codex_surface",
+            "wait_for_full_sync",
+            "run_godot_codex_doctor",
+            "repair_project_config",
+            "fix_private_permissions",
+            "upgrade_godot_bridge",
+            "upgrade_godot_codex",
+            "rebuild_static_cache",
+            "resolve_transaction_recovery"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "check_id",
+        "component",
+        "status",
+        "code",
+        "summary",
+        "observed_version",
+        "supported",
+        "remediation_id",
+        "retryable"
+      ],
+      "properties": {
+        "check_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_.-]*$"
+        },
+        "component": {
+          "$ref": "#/$defs/component"
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "warn",
+            "fail"
+          ]
+        },
+        "code": {
+          "$ref": "#/$defs/diagnostic_code"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "observed_version": {
+          "$ref": "#/$defs/optional_coordinate"
+        },
+        "supported": {
+          "$ref": "#/$defs/optional_coordinate"
+        },
+        "remediation_id": {
+          "$ref": "#/$defs/remediation_id"
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

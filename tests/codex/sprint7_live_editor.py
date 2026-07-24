@@ -46,6 +46,7 @@ TOOL_NAMES = {
     "godot_inspect_symbol",
     "godot_search_symbols",
 }
+SPRINT11_TOOL_NAME = "godot_get_connection_status"
 FORBIDDEN_RESPONSE_MATERIAL = (
     "/Users/",
     "/home/",
@@ -151,7 +152,11 @@ def read_editor_summary(client: McpClient) -> tuple[dict[str, Any], int, float]:
 
 
 def initialize_sidecar(
-    executable: Path, project: Path, timeout: float
+    executable: Path,
+    project: Path,
+    timeout: float,
+    *,
+    additive_sprint11_registry: bool = False,
 ) -> tuple[LineProcess, McpClient, dict[str, bool]]:
     process = LineProcess(
         [str(executable), "--project-root", str(project)],
@@ -181,8 +186,14 @@ def initialize_sidecar(
     tools = listed.get("result", {}).get("tools")
     require(isinstance(tools, list), "MCP tool registry omitted tools")
     tool_names = {tool.get("name") for tool in tools}
+    expected_tool_count = 41 if additive_sprint11_registry else 40
     require(
-        len(tools) == len(tool_names) == 40 and TOOL_NAMES <= tool_names,
+        len(tools) == len(tool_names) == expected_tool_count
+        and TOOL_NAMES <= tool_names
+        and (
+            (SPRINT11_TOOL_NAME in tool_names)
+            is additive_sprint11_registry
+        ),
         "MCP registry does not preserve the 16-tool Sprint 7 surface",
     )
     sprint7_tools = [
@@ -551,6 +562,8 @@ def run_session(
     run_root: Path,
     timeout: float,
     old_session_id: str | None = None,
+    *,
+    additive_sprint11_registry: bool = False,
 ) -> dict[str, Any]:
     log_path = run_root / ("godot-restart.log" if old_session_id else "godot.log")
     phase_path = project / ".godot/codex-sprint7-phase.json"
@@ -565,7 +578,12 @@ def run_session(
         discovery = project / ".godot/codex/bridge.json"
         wait_for_file(editor, discovery, log_path, timeout)
         paths = runtime_paths(project)
-        sidecar_process, client, contract = initialize_sidecar(sidecar, project, timeout)
+        sidecar_process, client, contract = initialize_sidecar(
+            sidecar,
+            project,
+            timeout,
+            additive_sprint11_registry=additive_sprint11_registry,
+        )
         values, initial = wait_observation(client, timeout, expected_value=LIVE_VALUE)
         if old_session_id is not None:
             require(initial["editor_session_id"] != old_session_id, "editor restart reused the old session ID")
@@ -701,7 +719,12 @@ def run_session(
         reconnect_operation = opaque["operation_seq"]
         close_sidecar(sidecar_process)
         sidecar_process = None
-        sidecar_process, client, reconnect_contract = initialize_sidecar(sidecar, project, timeout)
+        sidecar_process, client, reconnect_contract = initialize_sidecar(
+            sidecar,
+            project,
+            timeout,
+            additive_sprint11_registry=additive_sprint11_registry,
+        )
         _, reconnected = wait_observation(client, timeout, expected_value=LIVE_VALUE)
         require(reconnected["editor_session_id"] == reconnect_session, "sidecar reconnect changed editor session")
         require(reconnected["operation_seq"] >= reconnect_operation, "sidecar reconnect regressed operation sequence")
@@ -828,7 +851,13 @@ def run_session(
             log.close()
 
 
-def run(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
+def run(
+    godot: Path,
+    sidecar: Path,
+    timeout: float,
+    *,
+    additive_sprint11_registry: bool = False,
+) -> dict[str, Any]:
     platform_tag = target_platform()
     require(godot.is_file() and sidecar.is_file(), "Godot and release sidecar must be built")
     run_root = Path(
@@ -840,7 +869,14 @@ def run(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
     project = run_root / "project"
     shutil.copytree(PROJECT_SOURCE, project, ignore=shutil.ignore_patterns(".godot"))
     try:
-        first = run_session(godot, sidecar, project, run_root, timeout)
+        first = run_session(
+            godot,
+            sidecar,
+            project,
+            run_root,
+            timeout,
+            additive_sprint11_registry=additive_sprint11_registry,
+        )
         restart = run_session(
             godot,
             sidecar,
@@ -848,6 +884,7 @@ def run(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
             run_root,
             timeout,
             old_session_id=first["coordinates"]["editor_session_id"],
+            additive_sprint11_registry=additive_sprint11_registry,
         )
         telemetry_samples = [
             first["telemetry"]["dispatcher_max_elapsed_usec"],
@@ -902,9 +939,19 @@ def main() -> int:
     parser.add_argument("--sidecar", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=120.0)
+    parser.add_argument(
+        "--additive-sprint11-registry",
+        action="store_true",
+        help="require the exact additive Sprint 11 41-tool profile",
+    )
     arguments = parser.parse_args()
     try:
-        report = run(arguments.godot.resolve(strict=True), arguments.sidecar.resolve(strict=True), arguments.timeout)
+        report = run(
+            arguments.godot.resolve(strict=True),
+            arguments.sidecar.resolve(strict=True),
+            arguments.timeout,
+            additive_sprint11_registry=arguments.additive_sprint11_registry,
+        )
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(
             json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",

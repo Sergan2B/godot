@@ -26,6 +26,8 @@ SPRINT10_TOOLS = {
     "godot_get_confirmation_policy",
     "godot_reset_confirmation_policy",
 }
+BASE_SPRINT9_TOOLS = frozenset(s9.TOOL_NAMES)
+BASE_SPRINT9_MUTATING_TOOLS = frozenset(s9.MUTATING_TOOLS)
 
 
 class Sprint10McpClient(s9.ModelFreeMcpClient):
@@ -61,16 +63,26 @@ class Sprint10McpClient(s9.ModelFreeMcpClient):
         s9.require(params.get("mode") == "form", "compound approval is not a form")
         schema = params.get("requestedSchema")
         properties = schema.get("properties") if isinstance(schema, dict) else None
-        s9.require(
+        legacy_confirm = (
             isinstance(schema, dict)
-            and schema.get("type") == "object"
             and schema.get("required") == ["confirm"]
             and isinstance(properties, dict)
             and set(properties).issubset(
                 {"confirm", "allow_low_risk_for_session"}
             )
             and set(properties).issuperset({"confirm"})
-            and properties["confirm"].get("type") == "boolean",
+            and properties["confirm"].get("type") == "boolean"
+        )
+        action_only = (
+            isinstance(schema, dict)
+            and schema.get("required") in (None, [])
+            and isinstance(properties, dict)
+            and not properties
+        )
+        s9.require(
+            isinstance(schema, dict)
+            and schema.get("type") == "object"
+            and (legacy_confirm or action_only),
             "compound approval schema is not exact",
         )
         message_text = params.get("message")
@@ -89,17 +101,23 @@ class Sprint10McpClient(s9.ModelFreeMcpClient):
             {
                 "jsonrpc": "2.0",
                 "id": request_id,
-                "result": {
-                    "action": "accept",
-                    "content": {"confirm": True},
-                },
+                "result": (
+                    {
+                        "action": "accept",
+                        "content": {"confirm": True},
+                    }
+                    if legacy_confirm
+                    else {"action": "accept"}
+                ),
             }
         )
 
 
-def _install_sprint10_client() -> None:
-    s9.TOOL_NAMES = set(s9.TOOL_NAMES) | SPRINT10_TOOLS
-    s9.MUTATING_TOOLS = set(s9.MUTATING_TOOLS) | {
+def _install_sprint10_client(*, additive_sprint11_registry: bool = False) -> None:
+    s9.TOOL_NAMES = set(BASE_SPRINT9_TOOLS) | SPRINT10_TOOLS
+    if additive_sprint11_registry:
+        s9.TOOL_NAMES |= s9.SPRINT11_TOOL_NAMES
+    s9.MUTATING_TOOLS = set(BASE_SPRINT9_MUTATING_TOOLS) | {
         "godot_prepare_change_set",
         "godot_reset_confirmation_policy",
     }
@@ -178,8 +196,16 @@ def _wait_scene_node(
     raise s9.WorkflowError(f"scene node readback did not converge: {last}")
 
 
-def run_workflow(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
-    _install_sprint10_client()
+def run_workflow(
+    godot: Path,
+    sidecar: Path,
+    timeout: float,
+    *,
+    additive_sprint11_registry: bool = False,
+) -> dict[str, Any]:
+    _install_sprint10_client(
+        additive_sprint11_registry=additive_sprint11_registry
+    )
     session = s9.FixtureSession(godot=godot, sidecar=sidecar, timeout=timeout)
     with session:
         s9.require(session.project_root is not None, "fixture project is unavailable")
@@ -390,7 +416,11 @@ def run_workflow(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
             "platform": "macos-arm64",
             "protocol": "2025-11-25",
             "bridge_rpc": "1.8",
-            "tool_registry": 40,
+            "tool_registry": 41 if additive_sprint11_registry else 40,
+            "artifacts": {
+                "godot_sha256": s9.sha256_file(godot),
+                "sidecar_sha256": s9.sha256_file(sidecar),
+            },
             "change_set_id": prepared["change_set_id"],
             "validation_report_id": report_id,
             "operation_count": 2,
@@ -421,9 +451,19 @@ def main() -> int:
     parser.add_argument("--sidecar", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--report", type=Path)
+    parser.add_argument(
+        "--additive-sprint11-registry",
+        action="store_true",
+        help="require the exact additive Sprint 11 41-tool profile",
+    )
     args = parser.parse_args()
     try:
-        result = run_workflow(args.godot.resolve(), args.sidecar.resolve(), args.timeout)
+        result = run_workflow(
+            args.godot.resolve(),
+            args.sidecar.resolve(),
+            args.timeout,
+            additive_sprint11_registry=args.additive_sprint11_registry,
+        )
     except (OSError, s9.WorkflowError) as error:
         print(f"Sprint 10 model-free workflow failed: {error}", file=s9.sys.stderr)
         return 1

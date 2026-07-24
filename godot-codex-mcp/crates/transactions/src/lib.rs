@@ -1092,7 +1092,7 @@ impl TransactionCoordinator {
             ApprovalDecision::Invalid => {
                 return Err(TransactionError::new(
                     "approval_invalid",
-                    "The approval response did not contain confirm=true.",
+                    "The approval response did not contain one exact host accept action.",
                     true,
                 )
                 .for_transaction(&command.transaction_id));

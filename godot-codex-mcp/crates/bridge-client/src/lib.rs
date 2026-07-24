@@ -12,7 +12,7 @@ use std::time::Duration;
 
 pub use discovery::{BridgeEndpoint, Discovery, project_id_for_path, project_id_for_root};
 use godot_codex_semantic_model::SnapshotReplicator;
-pub use protocol::BridgeError;
+pub use protocol::{BridgeError, BridgeFailureClass};
 pub use resource::{
     DependencyObservation, DependencyResolution, PathResourceRef, ResourceDeltaBatch,
     ResourceDeltaOperation, ResourceDeltaPoll, ResourceDiagnostic, ResourceDiagnosticCode,
@@ -466,18 +466,65 @@ impl BridgeClient {
 pub async fn run_bridge_sync(project_root: PathBuf, replicator: SnapshotReplicator) -> ! {
     let mut retry = Duration::from_millis(200);
     loop {
+        replicator.mark_connecting();
         let result = protocol::run_session(&project_root, &replicator).await;
         if let Err(error) = &result
             && std::env::var_os("GODOT_CODEX_DEBUG_ERRORS").is_some()
         {
-            eprintln!("[godot-codex-bridge-sync] {error}");
+            eprintln!("{}", bridge_sync_debug_line(error));
         }
-        let message = result.map_or_else(
-            |error| error.safe_summary().to_owned(),
-            |()| "bridge session ended".to_owned(),
-        );
-        replicator.mark_disconnected(message);
+        let failure = match result {
+            Ok(()) => BridgeFailureClass::TransportUnavailable.replica_failure(),
+            Err(error) => error.failure_class().replica_failure(),
+        };
+        replicator.mark_disconnected(failure);
         tokio::time::sleep(retry).await;
         retry = (retry * 2).min(Duration::from_secs(5));
+    }
+}
+
+fn bridge_sync_debug_line(error: &BridgeError) -> String {
+    let failure = error.failure_class();
+    format!(
+        "[godot-codex-bridge-sync] class={} summary={}",
+        failure.as_str(),
+        failure.safe_summary()
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn production_debug_line_never_formats_internal_bridge_error_details() {
+        let cases = [
+            BridgeError::Io(std::io::Error::other(
+                "/Users/alice/secret-project/.godot/codex/run/bridge.sock?token=top-secret",
+            )),
+            BridgeError::Invalid(
+                "server said /Users/alice/secret-project token=top-secret".to_owned(),
+            ),
+            BridgeError::Rpc {
+                code: "unknown_private_failure".to_owned(),
+                message: "server at /Users/alice/private sent token=top-secret".to_owned(),
+                retryable: false,
+                data: json!({
+                    "path": "/Users/alice/secret-project",
+                    "token": "top-secret",
+                    "native_handle": 42,
+                }),
+            },
+        ];
+        for error in cases {
+            let line = bridge_sync_debug_line(&error);
+            assert!(line.starts_with("[godot-codex-bridge-sync] class="));
+            assert!(!line.contains("/Users/"));
+            assert!(!line.contains("top-secret"));
+            assert!(!line.contains("unknown_private_failure"));
+            assert!(!line.contains("native_handle"));
+        }
     }
 }

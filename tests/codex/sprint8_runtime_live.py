@@ -53,6 +53,7 @@ TOOL_NAMES = {
     "godot_run_project",
     "godot_stop_project",
 }
+SPRINT11_TOOL_NAME = "godot_get_connection_status"
 FORBIDDEN_KEYS = {
     "address",
     "endpoint",
@@ -139,6 +140,14 @@ class RuntimeSafetyAudit:
 
     def result(self) -> dict[str, bool]:
         return dict(self.flags)
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
 
 
 def require(condition: bool, message: str) -> None:
@@ -454,7 +463,13 @@ def retire_fixture_processes(project: Path) -> bool:
     return not fixture_process_ids(project)
 
 
-def initialize_sidecar(sidecar: Path, project: Path, timeout: float) -> tuple[LineProcess, McpClient]:
+def initialize_sidecar(
+    sidecar: Path,
+    project: Path,
+    timeout: float,
+    *,
+    additive_sprint11_registry: bool = False,
+) -> tuple[LineProcess, McpClient]:
     environment = os.environ.copy()
     environment["GODOT_CODEX_DEBUG_ERRORS"] = "1"
     process = LineProcess(
@@ -479,9 +494,15 @@ def initialize_sidecar(sidecar: Path, project: Path, timeout: float) -> tuple[Li
     tools = listed.get("result", {}).get("tools")
     require(isinstance(tools, list), "MCP tool list is absent")
     tool_names = {tool.get("name") for tool in tools}
+    expected_tool_count = 41 if additive_sprint11_registry else 40
     require(
-        len(tools) == len(tool_names) == 40 and TOOL_NAMES <= tool_names,
-        "MCP registry does not preserve the 25-tool Sprint 8 surface",
+        len(tools) == len(tool_names) == expected_tool_count
+        and (
+            (SPRINT11_TOOL_NAME in tool_names)
+            is additive_sprint11_registry
+        )
+        and TOOL_NAMES <= tool_names,
+        "MCP registry does not preserve the exact Sprint 8 surface",
     )
     require(
         all(
@@ -684,7 +705,14 @@ def wait_runtime_state(
     raise RuntimeGateError(f"runtime did not reach {state}: {last}")
 
 
-def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict[str, Any]:
+def run_live(
+    godot: Path,
+    sidecar: Path,
+    timeout: float,
+    headless: bool,
+    *,
+    additive_sprint11_registry: bool = False,
+) -> dict[str, Any]:
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     report: dict[str, Any] | None = None
     primary_failure = False
@@ -723,7 +751,12 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
         try:
             wait_file(editor, project / ".godot/codex-sprint8-editor-ready.json", timeout)
             wait_file(editor, project / ".godot/codex/bridge.json", timeout)
-            sidecar_process, client = initialize_sidecar(sidecar, project, timeout)
+            sidecar_process, client = initialize_sidecar(
+                sidecar,
+                project,
+                timeout,
+                additive_sprint11_registry=additive_sprint11_registry,
+            )
             wait_editor_ready(client, timeout)
 
             run, run_error, _, run_ms = tool_call(client, "godot_run_project", {})
@@ -1820,6 +1853,10 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                 "sprint": 8,
                 "status": "passed",
                 "headless": headless,
+                "artifacts": {
+                    "godot_sha256": sha256_file(godot),
+                    "sidecar_sha256": sha256_file(sidecar),
+                },
                 "sessions": [
                     first_session,
                     second_session,
@@ -1992,6 +2029,11 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--additive-sprint11-registry",
+        action="store_true",
+        help="require the exact additive Sprint 11 41-tool profile",
+    )
     arguments = parser.parse_args()
     report = finalize_live_report(
         run_live(
@@ -1999,6 +2041,7 @@ def main() -> int:
             arguments.sidecar.resolve(),
             arguments.timeout,
             arguments.headless,
+            additive_sprint11_registry=arguments.additive_sprint11_registry,
         )
     )
     encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"

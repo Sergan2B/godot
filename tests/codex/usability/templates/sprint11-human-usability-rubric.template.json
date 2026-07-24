@@ -1,0 +1,11 @@
+{
+  "schema_version": "s11-human-usability-rubric/1.0",
+  "acquisition_kind": "template",
+  "qualification": false,
+  "status": "unacquired",
+  "payload": {
+    "template_id": "sprint11-human-usability-rubric-template-v1",
+    "intended_acquisition_kind": "real_human",
+    "notice": "UNACQUIRED TEMPLATE: this file contains no participant score and is not qualification evidence."
+  }
+}

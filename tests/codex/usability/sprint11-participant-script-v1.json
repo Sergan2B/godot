@@ -1,0 +1,142 @@
+{
+  "schema_version": "s11-human-participant-script/1.0",
+  "script_id": "sprint11-human-participant-script-v1",
+  "artifact_kind": "frozen_participant_script",
+  "qualification": false,
+  "audience": "participant",
+  "language": "en",
+  "prompt_pack": {
+    "id": "sprint11-external-beta-v1",
+    "path": "tests/codex/prompts/sprint11-external-beta-v1.json"
+  },
+  "allowed_help_sources": [
+    "package_beta_guide",
+    "package_skill",
+    "mcp_server_instructions",
+    "godot_codex_help",
+    "godot_codex_doctor_output",
+    "project_agents_guidance"
+  ],
+  "prohibited_assistance": [
+    "developer_coaching",
+    "fixture_oracle",
+    "golden_outputs",
+    "source_tests",
+    "tool_call_recipe",
+    "raw_project_config",
+    "another_participant"
+  ],
+  "opening": [
+    "Work only in the disposable project and with the package identified by the operator.",
+    "Use the product, its bundled documentation, and the allowed help sources; do not inspect tests, fixture oracles, or golden outputs.",
+    "Narrate what you are trying to learn, but do not read secrets, account data, native handles, raw configuration, or unrestricted project content aloud.",
+    "Ask the operator only for a safety stop or to announce that you are ready for the next operator-controlled fault; the operator cannot diagnose or solve a task for you."
+  ],
+  "goals": [
+    {
+      "sequence": 1,
+      "goal_id": "install_and_connect",
+      "participant_prompt": "Install the frozen package using its package-owned workflow, connect this exact trusted fixture project, and obtain a useful connection status.",
+      "completion_prompt": "Explain how you know the package and current task are bound to this project.",
+      "semantic_assertion_ids": [
+        "connection.status",
+        "host.approval_layers",
+        "host.config_reload",
+        "host.launcher"
+      ]
+    },
+    {
+      "sequence": 2,
+      "goal_id": "saved_semantic_context",
+      "participant_prompt": "Identify the current saved scene and support one semantic fact about it with bounded evidence from the integration.",
+      "completion_prompt": "Explain which evidence makes the fact trustworthy without quoting unrestricted project content.",
+      "semantic_assertion_ids": [
+        "saved.current_scene"
+      ]
+    },
+    {
+      "sequence": 3,
+      "goal_id": "offline_context",
+      "participant_prompt": "After the operator confirms that the editor is closed, inspect the connection state and obtain only the saved-project context that remains honestly available.",
+      "completion_prompt": "Explain what can and cannot be claimed while the editor is offline.",
+      "semantic_assertion_ids": [
+        "host.offline_status",
+        "offline.saved_query"
+      ]
+    },
+    {
+      "sequence": 4,
+      "goal_id": "doctor_fault_matrix",
+      "participant_prompt": "For each operator-provided faulty state, use the product's diagnostics and allowed documentation to identify the problem and restore the disposable fixture to a verified healthy state.",
+      "completion_prompt": "For every state, report the stable diagnosis and the product remediation you used before the operator advances to the next state.",
+      "semantic_assertion_ids": [
+        "connection.status"
+      ]
+    },
+    {
+      "sequence": 5,
+      "goal_id": "runtime_diagnostics",
+      "participant_prompt": "Run the fixture and locate its intentional runtime error with a bounded source-mapped stack.",
+      "completion_prompt": "Explain how the runtime evidence is tied to the active runtime session and saved source.",
+      "semantic_assertion_ids": [
+        "runtime.error_stack"
+      ]
+    },
+    {
+      "sequence": 6,
+      "goal_id": "compound_write_and_undo",
+      "participant_prompt": "Preview one supported compound scene change, distinguish host sandbox approval from the action-only semantic confirmation, apply and validate the accepted change, then undo it exactly. Also exercise the operator-directed decline, cancel, timeout, and unavailable-form cases without mutation.",
+      "completion_prompt": "Explain the commit point, validation result, no-mutation negative outcomes, and how you verified exact Undo.",
+      "semantic_assertion_ids": [
+        "approval.accept",
+        "approval.cancel",
+        "approval.decline",
+        "approval.timeout",
+        "host.unsupported_form",
+        "transaction.apply",
+        "transaction.preview",
+        "transaction.undo",
+        "validation.result"
+      ]
+    },
+    {
+      "sequence": 7,
+      "goal_id": "project_isolation",
+      "participant_prompt": "Open the second disposable project and demonstrate that identities or selectors from one project are rejected by the other without fallback.",
+      "completion_prompt": "Explain which evidence proves isolation and that neither project was redirected or mutated by the negative check.",
+      "semantic_assertion_ids": [
+        "multi_project.reject"
+      ]
+    }
+  ],
+  "comprehension_questions": [
+    {
+      "comprehension_id": "project_binding",
+      "question": "What evidence prevents this task from silently attaching to a different project?"
+    },
+    {
+      "comprehension_id": "offline_limits",
+      "question": "Which facts remain eligible offline, and which live or runtime facts must not be inferred?"
+    },
+    {
+      "comprehension_id": "sandbox_approval",
+      "question": "What does host sandbox approval authorize, and what does it not replace?"
+    },
+    {
+      "comprehension_id": "action_only_form",
+      "question": "What is the action-only semantic confirmation bound to?"
+    },
+    {
+      "comprehension_id": "validation",
+      "question": "What does post-apply validation establish?"
+    },
+    {
+      "comprehension_id": "undo",
+      "question": "How do you know the targeted Undo restored the exact prior state?"
+    }
+  ],
+  "closing": [
+    "Do not include free-form prompts, account data, source text, property values, tokens, approval material, native IDs, or private paths in the study record.",
+    "Review only the content-free task, fault, timing, help, and comprehension summary before confirming that it reflects the run."
+  ]
+}

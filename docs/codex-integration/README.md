@@ -42,6 +42,16 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 36. [SPRINT-7-PLAN.md](SPRINT-7-PLAN.md) — implementation-ready live editor overlay, history, MCP, and local macOS acceptance plan.
 37. [EDITOR-001-live-editor-context.md](EDITOR-001-live-editor-context.md) — authoritative open-scene, Inspector, script-tab, native-history, revision, and live-overlay contract.
 38. [SPRINT-7-EVIDENCE.md](SPRINT-7-EVIDENCE.md) — source-bound macOS live editor acceptance, lifecycle/revision conflicts, SLOs, and Live Editor Alpha closeout.
+39. [SPRINT-8-PLAN.md](SPRINT-8-PLAN.md) — implemented EditorDebugger lifecycle, runtime observation/control, bounded screenshots, and recovery.
+40. [RUNTIME-001-debugger-and-runtime-observation.md](RUNTIME-001-debugger-and-runtime-observation.md) — runtime session, remote tree, diagnostics, source mapping, and safety contract.
+41. [SPRINT-9-PLAN.md](SPRINT-9-PLAN.md) — implemented host-approved editor-native transactions and targeted Undo.
+42. [WRITE-001-editor-transactions-and-undo.md](WRITE-001-editor-transactions-and-undo.md) — transaction lifecycle, approval boundary, compound changes, persistence, and Undo contract.
+43. [SPRINT-10-PLAN.md](SPRINT-10-PLAN.md) — completed compound changes, automatic validation/rollback, and M3 qualification.
+44. [VALIDATION-001-automatic-validation-and-rollback.md](VALIDATION-001-automatic-validation-and-rollback.md) — validation report, rollback policy, and recovery contract.
+45. [SPRINT-11-PLAN.md](SPRINT-11-PLAN.md) — external Codex productization, setup/doctor/offline/package/parity/usability plan.
+46. [SPRINT-11-HOST-CONTRACT.md](SPRINT-11-HOST-CONTRACT.md) — exact local App/CLI/IDE/Godot candidate coordinate and open feasibility gates.
+47. [EXTERNAL-CODEX-BETA-GUIDE.md](EXTERNAL-CODEX-BETA-GUIDE.md) — install/setup/status/read/runtime/write/offline/multi-project/troubleshooting workflow.
+48. [TEST-001-fixtures-and-e2e-strategy.md](TEST-001-fixtures-and-e2e-strategy.md) — closed fixture, trace, usability, package, and source-bound evidence rules.
 
 ## Document status
 
@@ -53,7 +63,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | `RELEASE-001` | Draft for review 0.1 | `TEST-001` evidence manifest |
 | `ADR-000` | Accepted | Revisit only if fork topology changes |
 | `ADR-001` | Accepted and locally verified | Production sidecar boundary starts in Sprint 2 |
-| `PROTOCOL-001` | Bridge RPC 1.0–1.5 locally verified, including the live-editor snapshot profile | Extend only through a versioned post-Sprint-7 contract; Windows Sprint 5 qualification remains waived |
+| `PROTOCOL-001` | Bridge RPC 1.0–1.8 implemented and locally qualified through compound validation | Sprint 11 adds no Bridge semantics; retain lower-minor regressions |
 | Sprint 0 local baseline | Passed | Remote CI is `not_run` until publication is authorized |
 | Sprint 1 Stage 2 local evidence | Passed | Superseded by Stage 3 evidence |
 | Sprint 1 Stage 3 local evidence | Passed | Superseded by Stage 4 evidence |
@@ -75,9 +85,13 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | Sprint 6 plan | Complete; `S6-01`–`S6-10` pass the source-bound local macOS gate | Begin Sprint 7 full live editor context |
 | `EVIDENCE-001` / `CONTEXT-001` | Accepted and locally verified; 7/7 oracle facts, zero false `exact`, bounded resources | Extend only through a versioned post-Sprint-6 contract |
 | Sprint 6 evidence | Final for the agreed macOS-only coordinate; Windows/Linux/remote CI are `not_run` | Semantic Alpha / M1 achieved; begin Sprint 7 |
-| Sprint 7 plan | Complete; `S7-01`–`S7-10` pass the source-bound local macOS gate | Begin Sprint 8 Runtime and EditorDebugger |
-| `EDITOR-001` live editor contract | Accepted and locally verified through Bridge RPC 1.5 and the exact sixteen-tool MCP registry | Extend only through a versioned post-Sprint-7 contract |
-| Sprint 7 evidence | Final for the agreed macOS-only coordinate; Windows/Linux/remote CI and model-facing smoke are `not_run` | Live Editor Alpha achieved; begin Sprint 8 |
+| Sprint 7 plan | Complete; `S7-01`–`S7-10` pass the source-bound local macOS gate | Superseded by Sprint 8 |
+| `EDITOR-001` live editor contract | Accepted and locally verified through Bridge RPC 1.5 | Retained unchanged through Sprints 8–11 |
+| Sprint 7 evidence | Final for the agreed macOS-only coordinate; Windows/Linux/remote CI and model-facing smoke are `not_run` | Live Editor Alpha achieved |
+| Sprint 8 plan / `RUNTIME-001` | Complete locally on macOS arm64 through Bridge RPC 1.6 | Runtime regressions remain blocking for Sprint 11 |
+| Sprint 9 plan / WRITE-001 v1 | Complete locally through Bridge RPC 1.7 and targeted native Undo | Superseded by Sprint 10 compound profile |
+| Sprint 10 plan / VALIDATION-001 / WRITE-001 v2 | Complete locally on source `b225f77acf48648ef6f59a76ff5a7dbb824da7bb`; evidence-only commit `815bccedddcd7c64a387dc8e9d5de2e941003fea` | M3 achieved; immutable Sprint 11 input |
+| Sprint 11 plan / host contract / TEST-001 | In progress; local candidate and fail-closed external beta gates frozen | Implement and qualify App/CLI/official IDE package workflow |
 
 ## Interim ownership
 

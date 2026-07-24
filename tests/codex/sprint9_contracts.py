@@ -330,8 +330,29 @@ def audit_documents_and_registry() -> dict[str, Any]:
     require("forward reference" not in documents["plan"].lower(), "Sprint plan still calls WRITE-001 a forward reference")
 
     server = SERVER_PATH.read_text(encoding="utf-8")
-    tool_count = len(re.findall(r"^    #\[tool\(", server, flags=re.MULTILINE))
-    require(tool_count == 36, f"production MCP registry source has {tool_count} tools, expected 36")
+    tool_names = set(
+        re.findall(
+            r"^    (?:async )?fn (godot_[a-z0-9_]+)\(",
+            server,
+            flags=re.MULTILINE,
+        )
+    )
+    post_s9_tools = {
+        "godot_prepare_change_set",
+        "godot_get_validation_report",
+        "godot_get_confirmation_policy",
+        "godot_reset_confirmation_policy",
+        "godot_get_connection_status",
+    }
+    require(
+        len(tool_names) == 41 and post_s9_tools <= tool_names,
+        "production MCP additive registry profile differs",
+    )
+    sprint9_tool_count = len(tool_names - post_s9_tools)
+    require(
+        sprint9_tool_count == 36,
+        "production MCP Sprint 9 baseline no longer contains exactly 36 tools",
+    )
     present = sorted(tool for tool in RESERVED_WRITE_TOOLS if tool in server)
     require(
         present == sorted(RESERVED_WRITE_TOOLS),
@@ -339,13 +360,22 @@ def audit_documents_and_registry() -> dict[str, Any]:
     )
     manifest = WORKSPACE_MANIFEST.read_text(encoding="utf-8")
     require(
-        '"elicitation"' in manifest and 'rmcp = { version = "=2.2.0"' in manifest,
+        'exclude = ["vendor/rmcp"]' in manifest
+        and '"elicitation"' in manifest
+        and 'rmcp = { path = "vendor/rmcp", version = "=2.2.0"'
+        in manifest,
         "pinned rmcp elicitation dependency differs",
     )
     probe = PROBE_SUPPORT.read_text(encoding="utf-8")
     require("exact_confirmation" in probe, "approval probe does not reject additional content")
     require(HOST_PROBE.is_file(), "macOS approval host probe runner is missing")
-    return {"documents": len(documents), "production_tools": tool_count, "reserved_tools": len(RESERVED_WRITE_TOOLS)}
+    return {
+        "documents": len(documents),
+        "production_tools": sprint9_tool_count,
+        "production_tools_current": len(tool_names),
+        "post_s9_tools": len(post_s9_tools),
+        "reserved_tools": len(RESERVED_WRITE_TOOLS),
+    }
 
 
 def validate_all(run_schemas: bool = True) -> dict[str, Any]:

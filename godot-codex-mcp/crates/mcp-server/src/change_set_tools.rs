@@ -1,13 +1,18 @@
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
-use godot_codex_bridge_client::{TransactionOperation, TransactionResourceRef, WritableVariant};
+use godot_codex_bridge_client::{
+    Risk, TransactionOperation, TransactionResourceRef, WritableVariant,
+};
 use godot_codex_transactions::{ReportPage, ValidationError};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 pub(crate) const CONFIRMATION_GRANT_MAX_MS: u64 = 15 * 60 * 1_000;
+pub(crate) const LOW_RISK_MEMORY_ONLY_SCOPE: &str = "change_set.atomic";
+const LOW_RISK_MEMORY_ONLY_OPERATIONS: [&str; 3] =
+    ["attach_script", "connect_signal", "create_node"];
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 pub(crate) enum ResourceClassInput {
@@ -391,6 +396,34 @@ fn validate_persistence_operation(
     Ok(())
 }
 
+pub(crate) fn session_grant_eligible(preview: &Value, risk: Risk) -> bool {
+    if risk != Risk::Low
+        || preview.get("schema_version").and_then(Value::as_str)
+            != Some("canonical-change-set-preview/1.0")
+        || preview.get("risk").and_then(Value::as_str) != Some("low")
+        || !preview
+            .get("save_scope")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+        || preview
+            .pointer("/validation_policy/runtime")
+            .and_then(Value::as_str)
+            != Some("skip")
+    {
+        return false;
+    }
+    let Some(operations) = preview.get("operations").and_then(Value::as_array) else {
+        return false;
+    };
+    !operations.is_empty()
+        && operations.iter().all(|operation| {
+            operation
+                .get("kind")
+                .and_then(Value::as_str)
+                .is_some_and(|kind| LOW_RISK_MEMORY_ONLY_OPERATIONS.contains(&kind))
+        })
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ConfirmationPolicyMode {
@@ -425,14 +458,10 @@ impl ConfirmationPolicyStore {
         &self,
         project_id: &str,
         editor_session_id: &str,
-        scopes: BTreeSet<String>,
         now_ms: u64,
         requested_lifetime_ms: u64,
     ) -> bool {
-        if scopes.is_empty()
-            || requested_lifetime_ms == 0
-            || requested_lifetime_ms > CONFIRMATION_GRANT_MAX_MS
-        {
+        if requested_lifetime_ms == 0 || requested_lifetime_ms > CONFIRMATION_GRANT_MAX_MS {
             return false;
         }
         let Ok(mut state) = self.inner.lock() else {
@@ -442,7 +471,7 @@ impl ConfirmationPolicyStore {
             project_id: project_id.to_owned(),
             editor_session_id: editor_session_id.to_owned(),
             expires_at_ms: now_ms.saturating_add(requested_lifetime_ms),
-            scopes,
+            scopes: BTreeSet::from([LOW_RISK_MEMORY_ONLY_SCOPE.to_owned()]),
         });
         true
     }
@@ -576,26 +605,25 @@ mod tests {
         assert!(!store.grant_low_risk_for_session(
             "project:a",
             "editor:a",
-            BTreeSet::from(["scene.property.set".to_owned()]),
             1_000,
             CONFIRMATION_GRANT_MAX_MS + 1,
         ));
-        assert!(store.grant_low_risk_for_session(
-            "project:a",
-            "editor:a",
-            BTreeSet::from(["scene.property.set".to_owned()]),
-            1_000,
-            60_000,
-        ));
+        assert!(store.grant_low_risk_for_session("project:a", "editor:a", 1_000, 60_000,));
         assert!(store.allows_low_risk_memory_only(
             "project:a",
             "editor:a",
-            "scene.property.set",
+            LOW_RISK_MEMORY_ONLY_SCOPE,
             2_000,
         ));
         assert!(!store.allows_low_risk_memory_only(
             "project:a",
             "editor:b",
+            LOW_RISK_MEMORY_ONLY_SCOPE,
+            2_000,
+        ));
+        assert!(!store.allows_low_risk_memory_only(
+            "project:a",
+            "editor:a",
             "scene.property.set",
             2_000,
         ));
@@ -603,25 +631,62 @@ mod tests {
         assert!(!store.allows_low_risk_memory_only(
             "project:a",
             "editor:a",
-            "scene.property.set",
+            LOW_RISK_MEMORY_ONLY_SCOPE,
             2_000,
         ));
     }
 
     #[test]
+    fn grant_eligibility_is_a_closed_memory_only_low_risk_profile() {
+        let eligible = json!({
+            "schema_version": "canonical-change-set-preview/1.0",
+            "risk": "low",
+            "operations": [
+                {"kind": "create_node"},
+                {"kind": "attach_script"},
+                {"kind": "connect_signal"},
+            ],
+            "save_scope": [],
+            "validation_policy": {"runtime": "skip"},
+        });
+        assert!(session_grant_eligible(&eligible, Risk::Low));
+
+        for mutation in [
+            json!({"risk": "destructive"}),
+            json!({"operations": [{"kind": "delete_node"}]}),
+            json!({"operations": [{"kind": "set_property"}]}),
+            json!({"operations": [{"kind": "create_resource"}]}),
+            json!({"operations": []}),
+            json!({"save_scope": ["res://main.tscn"]}),
+            json!({"validation_policy": {"runtime": "run_current_scene"}}),
+            json!({"schema_version": "canonical-change-set-preview/2.0"}),
+        ] {
+            let mut candidate = eligible.clone();
+            for (key, value) in mutation.as_object().unwrap() {
+                candidate
+                    .as_object_mut()
+                    .unwrap()
+                    .insert(key.clone(), value.clone());
+            }
+            assert!(
+                !session_grant_eligible(&candidate, Risk::Low),
+                "unexpected eligible preview: {candidate}"
+            );
+        }
+        assert!(!session_grant_eligible(&eligible, Risk::Write));
+        assert!(!session_grant_eligible(&eligible, Risk::Destructive));
+    }
+
+    #[test]
     fn grant_expires_without_exposing_opaque_material() {
         let store = ConfirmationPolicyStore::default();
-        assert!(store.grant_low_risk_for_session(
-            "project:a",
-            "editor:a",
-            BTreeSet::from(["scene.property.set".to_owned()]),
-            1_000,
-            1_000,
-        ));
+        assert!(store.grant_low_risk_for_session("project:a", "editor:a", 1_000, 1_000,));
         let snapshot = store.snapshot(Some("project:a"), Some("editor:a"), 2_000);
         assert_eq!(snapshot["mode"], "always_ask");
         assert_eq!(snapshot["grant_active"], false);
         assert!(snapshot.get("nonce").is_none());
         assert!(snapshot.get("receipt").is_none());
+        assert!(snapshot.get("receipt_hash").is_none());
+        assert!(snapshot.get("mac").is_none());
     }
 }

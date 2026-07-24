@@ -80,6 +80,8 @@ class Sprint9ContractTests(unittest.TestCase):
         audit = contract.audit_documents_and_registry()
         self.assertEqual(4, audit["documents"])
         self.assertEqual(36, audit["production_tools"])
+        self.assertEqual(41, audit["production_tools_current"])
+        self.assertEqual(5, audit["post_s9_tools"])
         self.assertEqual(11, audit["reserved_tools"])
 
     def test_validator_is_independent_of_production_implementation(self) -> None:

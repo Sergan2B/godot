@@ -13,10 +13,11 @@ const DEFAULT_ELICITATION_TIMEOUT: Duration = Duration::from_secs(120);
 
 fn parse_args(
     arguments: impl IntoIterator<Item = OsString>,
-) -> Result<(PathBuf, Duration), String> {
+) -> Result<(PathBuf, Duration, bool), String> {
     let mut arguments = arguments.into_iter();
     let mut output = None;
     let mut timeout = DEFAULT_ELICITATION_TIMEOUT;
+    let mut action_only = false;
     while let Some(argument) = arguments.next() {
         if argument == "--output" {
             if output.is_some() {
@@ -39,24 +40,35 @@ fn parse_args(
                 return Err("--timeout must be between 1 and 120 seconds".to_owned());
             }
             timeout = Duration::from_secs(seconds);
+        } else if argument == "--action-only" {
+            if action_only {
+                return Err("--action-only may be specified only once".to_owned());
+            }
+            action_only = true;
         } else {
             return Err(format!("unknown argument: {}", argument.to_string_lossy()));
         }
     }
     let output = output.ok_or_else(|| {
-        "usage: approval_probe --output <new-json-path> [--timeout <1..120>]".to_owned()
+        "usage: approval_probe --output <new-json-path> [--timeout <1..120>] [--action-only]"
+            .to_owned()
     })?;
     if !output.is_absolute() {
         return Err("--output must be an absolute path".to_owned());
     }
-    Ok((output, timeout))
+    Ok((output, timeout, action_only))
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let (output, timeout) =
+    let (output, timeout, action_only) =
         parse_args(std::env::args_os().skip(1)).map_err(std::io::Error::other)?;
-    ApprovalProbeServer::new(timeout, Some(output))
+    let server = if action_only {
+        ApprovalProbeServer::new_action_only(timeout, Some(output))
+    } else {
+        ApprovalProbeServer::new(timeout, Some(output))
+    };
+    server
         .serve(rmcp::transport::stdio())
         .await?
         .waiting()
@@ -83,5 +95,12 @@ mod tests {
             ])
             .is_err()
         );
+        let parsed = parse_args([
+            OsString::from("--output"),
+            OsString::from("/tmp/s11-approval-probe.json"),
+            OsString::from("--action-only"),
+        ])
+        .expect("action-only probe arguments");
+        assert!(parsed.2);
     }
 }

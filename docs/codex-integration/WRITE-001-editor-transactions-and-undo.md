@@ -1,13 +1,13 @@
 # WRITE-001 — Editor transactions, approval, and native Undo
 
-**Status:** Sprint 9 version implemented and qualified; Sprint 10 compound
-extension proposed by VALIDATION-001
+**Status:** Sprint 9 single-operation and Sprint 10 compound extensions
+implemented and source-bound locally on macOS arm64
 
 **Contract version:** `1.0` for single-operation transactions; `2.0` compound
 extension
 
-**Wire version:** Bridge RPC `1.7` implemented; `1.8` compound extension
-proposed
+**Wire version:** Bridge RPC `1.7` single-operation and `1.8` compound
+profiles implemented
 
 **MCP protocol:** server profile `2025-11-25`; form-compatible negotiated
 fallback `2025-06-18`
@@ -70,7 +70,8 @@ replacing existing state, including property writes, is `destructive`.
 operation because MCP annotations cannot vary by prepared transaction.
 
 Multi-operation changes, resource creation, save, source patching, validation
-through diagnostics/tests/runtime, and policy rollback are Sprint 10 work.
+through diagnostics/tests/runtime, and policy rollback belong to the bounded
+Sprint 10 version `2.0` extension in §16 and VALIDATION-001.
 
 ## 3. Identity, revisions, and idempotency
 
@@ -193,7 +194,8 @@ URL-only elicitation, and proprietary form extensions are unsupported for
 approval. The local S9-01 Codex qualification records the exact negotiated
 revision instead of inferring it from the server profile.
 
-The sidecar then sends standard `elicitation/create` form mode with:
+The Sprint 11 External Codex Beta host profile sends standard
+`elicitation/create` form mode with an empty object schema:
 
 ```json
 {
@@ -201,21 +203,30 @@ The sidecar then sends standard `elicitation/create` form mode with:
   "message": "<bounded operation, scope, risk, affected entities and expiry>",
   "requestedSchema": {
     "type": "object",
-    "properties": {
-      "confirm": {
-        "type": "boolean",
-        "description": "Apply this exact prepared Godot editor transaction."
-      }
-    },
-    "required": ["confirm"]
+    "properties": {}
   }
 }
 ```
 
-There is no default. Only `action: accept` together with object content
-`{"confirm": true}` is approval-eligible. Accept with false, missing, malformed,
-or additional authoritative content is `approval_invalid`. Decline, cancel,
-timeout, and transport failure map to distinct errors and never call apply.
+Only the host-owned `action: accept` with absent or exactly empty content is
+approval-eligible. Any non-empty content is `approval_invalid`. `action:
+decline`, `action: cancel`, timeout, and transport failure map to distinct
+errors and never call apply. An empty form is intentional: Codex clients render
+the three protocol actions as Allow/Deny/Cancel, so decline cannot be confused
+with submitting a boolean field value.
+
+Immutable Sprint 9 evidence used the earlier required `confirm: true` content
+profile. That remains historical input evidence, not the External Beta host
+binding. Moving to the action-only profile does not widen authority: the
+message still carries the exact transaction ID, digest, scope, risk, and
+bounded immutable preview, while only the interactive host can return the
+accept action.
+
+For an eligible low-risk memory-only change set, the request may additionally
+advertise `_meta.persist: ["session"]`. A session grant is created only when
+the host returns `action: accept` and host-owned response
+`_meta.persist: "session"`. Missing, malformed, `always`, model input, or
+request metadata alone never creates a grant.
 
 The model-facing apply input contains only transaction ID, preview digest, and
 expected revision coordinates. `approved`, approval receipt, arbitrary proof,

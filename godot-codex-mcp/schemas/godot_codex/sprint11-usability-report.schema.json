@@ -1,0 +1,348 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-usability-report.schema.json",
+  "title": "Sprint 11 source-bound human usability report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "acquisition_kind",
+    "attestation_trust_boundary",
+    "status",
+    "package_source_commit",
+    "package_manifest_sha256",
+    "prompt_pack",
+    "participants",
+    "metrics",
+    "defects"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s11-usability-report/1.0"
+    },
+    "acquisition_kind": {
+      "enum": [
+        "real_human",
+        "synthetic_contract_fixture"
+      ]
+    },
+    "attestation_trust_boundary": {
+      "const": "git_binds_exact_bytes_external_operator_attests_human_facts_without_cryptographic_identity_proof"
+    },
+    "status": {
+      "enum": [
+        "passed",
+        "fixture_valid"
+      ]
+    },
+    "package_source_commit": {
+      "$ref": "#/$defs/commit"
+    },
+    "package_manifest_sha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "prompt_pack": {
+      "$ref": "#/$defs/prompt_binding"
+    },
+    "participants": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/participant"
+      }
+    },
+    "metrics": {
+      "$ref": "#/$defs/metrics"
+    },
+    "defects": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/defect"
+      }
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)[A-Za-z0-9._+/-]+$"
+    },
+    "participant_id": {
+      "type": "string",
+      "pattern": "^participant:sha256:[0-9a-f]{64}$"
+    },
+    "prompt_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "const": "sprint11-external-beta-v1"
+        },
+        "path": {
+          "const": "tests/codex/prompts/sprint11-external-beta-v1.json"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "participant_id",
+        "external_attestation_independence",
+        "tasks",
+        "doctor_faults",
+        "trace_path",
+        "trace_sha256",
+        "rubric_path",
+        "rubric_sha256",
+        "consent_path",
+        "consent_sha256",
+        "defect_ledger_path",
+        "defect_ledger_sha256",
+        "authority_path",
+        "authority_sha256"
+      ],
+      "properties": {
+        "participant_id": {
+          "$ref": "#/$defs/participant_id"
+        },
+        "external_attestation_independence": {
+          "enum": [
+            "independent",
+            "not_independent"
+          ]
+        },
+        "tasks": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": {
+            "$ref": "#/$defs/task"
+          }
+        },
+        "doctor_faults": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/doctor_fault"
+          }
+        },
+        "trace_path": {
+          "$ref": "#/$defs/path"
+        },
+        "trace_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "rubric_path": {
+          "$ref": "#/$defs/path"
+        },
+        "rubric_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "consent_path": {
+          "$ref": "#/$defs/path"
+        },
+        "consent_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "defect_ledger_path": {
+          "$ref": "#/$defs/path"
+        },
+        "defect_ledger_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "authority_path": {
+          "$ref": "#/$defs/path"
+        },
+        "authority_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "goal_id",
+        "status",
+        "duration_seconds",
+        "wrong_turns",
+        "help_used",
+        "remediation_succeeded"
+      ],
+      "properties": {
+        "goal_id": {
+          "enum": [
+            "compound_write_and_undo",
+            "doctor_fault_matrix",
+            "install_and_connect",
+            "offline_context",
+            "project_isolation",
+            "runtime_diagnostics",
+            "saved_semantic_context"
+          ]
+        },
+        "status": {
+          "const": "passed"
+        },
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 3600
+        },
+        "wrong_turns": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "help_used": {
+          "type": "boolean"
+        },
+        "remediation_succeeded": {
+          "type": "boolean"
+        }
+      }
+    },
+    "doctor_fault": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenario",
+        "diagnostic_code",
+        "remediation_id",
+        "status",
+        "remediation_succeeded"
+      ],
+      "properties": {
+        "scenario": {
+          "enum": [
+            "missing_binary",
+            "stale_discovery",
+            "version_mismatch",
+            "authentication_failure",
+            "invalid_project_config"
+          ]
+        },
+        "diagnostic_code": {
+          "enum": [
+            "binary_missing",
+            "bridge_discovery_stale",
+            "bridge_version_incompatible",
+            "bridge_authentication_failed",
+            "project_config_invalid"
+          ]
+        },
+        "remediation_id": {
+          "enum": [
+            "upgrade_godot_codex",
+            "start_matching_editor",
+            "upgrade_godot_bridge",
+            "repair_project_config"
+          ]
+        },
+        "status": {
+          "const": "passed"
+        },
+        "remediation_succeeded": {
+          "const": true
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "first_useful_status_seconds",
+        "connected_live_query_seconds",
+        "secret_copy_count",
+        "manual_toml_steps",
+        "project_integrity_failures",
+        "project_isolation_failures",
+        "fault_recoveries"
+      ],
+      "properties": {
+        "first_useful_status_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 300
+        },
+        "connected_live_query_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 900
+        },
+        "secret_copy_count": {
+          "const": 0
+        },
+        "manual_toml_steps": {
+          "const": 0
+        },
+        "project_integrity_failures": {
+          "const": 0
+        },
+        "project_isolation_failures": {
+          "const": 0
+        },
+        "fault_recoveries": {
+          "type": "integer",
+          "minimum": 15,
+          "maximum": 160
+        }
+      }
+    },
+    "defect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "severity",
+        "status",
+        "retest_passed"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "status": {
+          "enum": [
+            "open",
+            "resolved"
+          ]
+        },
+        "retest_passed": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

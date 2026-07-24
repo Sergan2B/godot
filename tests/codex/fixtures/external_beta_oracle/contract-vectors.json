@@ -1,0 +1,86 @@
+{
+  "schema_version": "s11-external-beta-contract-vectors/1.0",
+  "qualification": false,
+  "normalization_cases": [
+    {
+      "id": "alpha_ids_revision_magnitude_and_local_digest",
+      "expected": "match",
+      "mutation": "isolated_run_coordinates"
+    },
+    {
+      "id": "persistent_scene_identity_changed",
+      "expected": "reject",
+      "mutation": "persistent_scene_id"
+    },
+    {
+      "id": "ephemeral_bijection_collapsed",
+      "expected": "reject",
+      "mutation": "runtime_session_alias"
+    },
+    {
+      "id": "required_assertion_missing",
+      "expected": "reject",
+      "mutation": "missing_assertion"
+    },
+    {
+      "id": "local_preview_digest_changed",
+      "expected": "reject",
+      "mutation": "preview_digest"
+    },
+    {
+      "id": "revision_transition_reordered",
+      "expected": "reject",
+      "mutation": "revision_order"
+    },
+    {
+      "id": "negative_form_mutated",
+      "expected": "reject",
+      "mutation": "decline_mutation"
+    }
+  ],
+  "redaction_cases": [
+    {
+      "id": "session_token_field",
+      "field": "session_token",
+      "value": "redacted-placeholder"
+    },
+    {
+      "id": "native_handle_field",
+      "field": "native_handle",
+      "value": 42
+    },
+    {
+      "id": "absolute_private_path",
+      "field": "detail",
+      "value": "/Users/operator/project"
+    },
+    {
+      "id": "secret_canary",
+      "field": "detail",
+      "value": "S11_SECRET_CANARY"
+    },
+    {
+      "id": "source_content_field",
+      "field": "source_text",
+      "value": "extends Node"
+    }
+  ],
+  "package_path_cases": [
+    {
+      "path": "share/Godot Beta/readme.txt",
+      "expected": "accept"
+    },
+    {
+      "path": "share/Сцена/readme.txt",
+      "expected": "accept"
+    },
+    {
+      "path": "../outside",
+      "expected": "reject"
+    },
+    {
+      "path": "/absolute/file",
+      "expected": "reject"
+    }
+  ]
+}

@@ -1,0 +1,718 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-human-usability-rubric.schema.json",
+  "title": "Sprint 11 closed human-usability rubric",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "acquisition_kind",
+    "qualification",
+    "status",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s11-human-usability-rubric/1.0"
+    },
+    "acquisition_kind": {
+      "enum": [
+        "template",
+        "synthetic_contract_fixture",
+        "real_human"
+      ]
+    },
+    "qualification": {
+      "type": "boolean"
+    },
+    "status": {
+      "enum": [
+        "unacquired",
+        "fixture_valid",
+        "passed",
+        "failed"
+      ]
+    },
+    "payload": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/template_payload"
+        },
+        {
+          "$ref": "#/$defs/scored_rubric"
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "template"
+          }
+        },
+        "required": [
+          "acquisition_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualification": {
+            "const": false
+          },
+          "status": {
+            "const": "unacquired"
+          },
+          "payload": {
+            "$ref": "#/$defs/template_payload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "synthetic_contract_fixture"
+          }
+        },
+        "required": [
+          "acquisition_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualification": {
+            "const": false
+          },
+          "status": {
+            "const": "fixture_valid"
+          },
+          "payload": {
+            "$ref": "#/$defs/scored_rubric"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "real_human"
+          },
+          "status": {
+            "const": "passed"
+          }
+        },
+        "required": [
+          "acquisition_kind",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualification": {
+            "const": true
+          },
+          "payload": {
+            "$ref": "#/$defs/scored_rubric"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "acquisition_kind": {
+            "const": "real_human"
+          },
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": [
+          "acquisition_kind",
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "qualification": {
+            "const": false
+          },
+          "payload": {
+            "$ref": "#/$defs/scored_rubric"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)[A-Za-z0-9._+/-]+$"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^s11u-run:[0-9a-f]{32}$"
+    },
+    "participant_id": {
+      "type": "string",
+      "pattern": "^participant:sha256:[0-9a-f]{64}$"
+    },
+    "operator_id": {
+      "type": "string",
+      "pattern": "^operator:sha256:[0-9a-f]{64}$"
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^event:[0-9]{4}$"
+    },
+    "goal_id": {
+      "enum": [
+        "install_and_connect",
+        "saved_semantic_context",
+        "offline_context",
+        "doctor_fault_matrix",
+        "runtime_diagnostics",
+        "compound_write_and_undo",
+        "project_isolation"
+      ]
+    },
+    "fault_id": {
+      "enum": [
+        "missing_binary",
+        "stale_discovery",
+        "version_mismatch",
+        "authentication_failure",
+        "invalid_project_config"
+      ]
+    },
+    "comprehension_id": {
+      "enum": [
+        "project_binding",
+        "offline_limits",
+        "sandbox_approval",
+        "action_only_form",
+        "validation",
+        "undo"
+      ]
+    },
+    "criterion_id": {
+      "enum": [
+        "package_manifest_verified",
+        "package_owned_launcher_used",
+        "exact_project_bound",
+        "first_status_obtained",
+        "saved_scene_identified",
+        "fact_supported_by_bounded_evidence",
+        "editor_closed_confirmed",
+        "offline_state_honest",
+        "saved_context_only",
+        "live_runtime_not_inferred",
+        "exact_five_faults_attempted",
+        "diagnostic_codes_identified",
+        "remediations_succeeded",
+        "scene_started",
+        "intentional_error_identified",
+        "source_mapped_stack_bounded",
+        "preview_understood",
+        "sandbox_approval_distinguished",
+        "action_form_understood",
+        "accepted_apply_validated",
+        "undo_exact",
+        "negative_outcomes_no_mutation",
+        "second_project_opened",
+        "cross_project_identity_rejected",
+        "no_project_fallback"
+      ]
+    },
+    "template_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "template_id",
+        "intended_acquisition_kind",
+        "notice"
+      ],
+      "properties": {
+        "template_id": {
+          "const": "sprint11-human-usability-rubric-template-v1"
+        },
+        "intended_acquisition_kind": {
+          "const": "real_human"
+        },
+        "notice": {
+          "const": "UNACQUIRED TEMPLATE: this file contains no participant score and is not qualification evidence."
+        }
+      }
+    },
+    "artifact_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[A-Za-z0-9._/-]+$"
+        },
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "trace_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256",
+        "run_id",
+        "participant_id"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "run_id": {
+          "$ref": "#/$defs/run_id"
+        },
+        "participant_id": {
+          "$ref": "#/$defs/participant_id"
+        }
+      }
+    },
+    "coordinate_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package_source_commit",
+        "package_manifest_sha256",
+        "fixture_tree_sha256",
+        "surface",
+        "host_coordinate_sha256",
+        "prompt_pack",
+        "participant_script",
+        "rubric_schema",
+        "rubric_template"
+      ],
+      "properties": {
+        "package_source_commit": {
+          "$ref": "#/$defs/commit"
+        },
+        "package_manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "fixture_tree_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "surface": {
+          "enum": [
+            "app",
+            "cli",
+            "ide"
+          ]
+        },
+        "host_coordinate_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "prompt_pack": {
+          "$ref": "#/$defs/artifact_binding"
+        },
+        "participant_script": {
+          "$ref": "#/$defs/artifact_binding"
+        },
+        "rubric_schema": {
+          "$ref": "#/$defs/artifact_binding"
+        },
+        "rubric_template": {
+          "$ref": "#/$defs/artifact_binding"
+        }
+      }
+    },
+    "criterion_score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "criterion_id",
+        "result",
+        "evidence_event_ids"
+      ],
+      "properties": {
+        "criterion_id": {
+          "$ref": "#/$defs/criterion_id"
+        },
+        "result": {
+          "enum": [
+            "passed",
+            "failed",
+            "not_observed"
+          ]
+        },
+        "evidence_event_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/event_id"
+          }
+        }
+      }
+    },
+    "task_score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "goal_id",
+        "result",
+        "criteria"
+      ],
+      "properties": {
+        "goal_id": {
+          "$ref": "#/$defs/goal_id"
+        },
+        "result": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "criteria": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/criterion_score"
+          }
+        }
+      }
+    },
+    "fault_score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scenario",
+        "diagnostic_code",
+        "remediation_id",
+        "diagnosis_result",
+        "remediation_result",
+        "reset_result",
+        "evidence_event_ids"
+      ],
+      "properties": {
+        "scenario": {
+          "$ref": "#/$defs/fault_id"
+        },
+        "diagnostic_code": {
+          "enum": [
+            "binary_missing",
+            "bridge_discovery_stale",
+            "bridge_version_incompatible",
+            "bridge_authentication_failed",
+            "project_config_invalid"
+          ]
+        },
+        "remediation_id": {
+          "enum": [
+            "upgrade_godot_codex",
+            "start_matching_editor",
+            "upgrade_godot_bridge",
+            "repair_project_config"
+          ]
+        },
+        "diagnosis_result": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "remediation_result": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "reset_result": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "evidence_event_ids": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/event_id"
+          }
+        }
+      }
+    },
+    "comprehension_score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "comprehension_id",
+        "result",
+        "evidence_event_id"
+      ],
+      "properties": {
+        "comprehension_id": {
+          "$ref": "#/$defs/comprehension_id"
+        },
+        "result": {
+          "enum": [
+            "correct",
+            "partial",
+            "incorrect"
+          ]
+        },
+        "evidence_event_id": {
+          "$ref": "#/$defs/event_id"
+        }
+      }
+    },
+    "target_score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_id",
+        "observed",
+        "limit",
+        "comparison",
+        "result"
+      ],
+      "properties": {
+        "target_id": {
+          "enum": [
+            "first_useful_status_ms",
+            "connected_live_query_ms",
+            "secret_copy_count",
+            "manual_toml_steps",
+            "project_integrity_failures",
+            "project_isolation_failures",
+            "fault_recoveries"
+          ]
+        },
+        "observed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 14400000
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 14400000
+        },
+        "comparison": {
+          "enum": [
+            "less_than_or_equal",
+            "equal"
+          ]
+        },
+        "result": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        }
+      }
+    },
+    "defect_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ledger_path",
+        "ledger_sha256",
+        "unresolved_defect_ids",
+        "unresolved_high_or_critical"
+      ],
+      "properties": {
+        "ledger_path": {
+          "$ref": "#/$defs/path"
+        },
+        "ledger_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "unresolved_defect_ids": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^S11-UX-[0-9]{3}$"
+          }
+        },
+        "unresolved_high_or_critical": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 128
+        }
+      }
+    },
+    "overall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scoring_rule",
+        "result",
+        "all_required_task_criteria_passed",
+        "all_faults_recovered",
+        "all_comprehension_correct",
+        "all_targets_met",
+        "no_high_or_critical_open"
+      ],
+      "properties": {
+        "scoring_rule": {
+          "const": "all-required-criteria-faults-comprehension-targets-v1"
+        },
+        "result": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "all_required_task_criteria_passed": {
+          "type": "boolean"
+        },
+        "all_faults_recovered": {
+          "type": "boolean"
+        },
+        "all_comprehension_correct": {
+          "type": "boolean"
+        },
+        "all_targets_met": {
+          "type": "boolean"
+        },
+        "no_high_or_critical_open": {
+          "type": "boolean"
+        }
+      }
+    },
+    "assessment_attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assessor_id",
+        "trace_digest_verified",
+        "frozen_rubric_verified",
+        "no_freeform_notes_recorded",
+        "no_developer_coaching_confirmed",
+        "assessment_projection_sha256"
+      ],
+      "properties": {
+        "assessor_id": {
+          "$ref": "#/$defs/operator_id"
+        },
+        "trace_digest_verified": {
+          "const": true
+        },
+        "frozen_rubric_verified": {
+          "const": true
+        },
+        "no_freeform_notes_recorded": {
+          "const": true
+        },
+        "no_developer_coaching_confirmed": {
+          "const": true
+        },
+        "assessment_projection_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "scored_rubric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rubric_id",
+        "trace",
+        "coordinates",
+        "task_scores",
+        "fault_scores",
+        "comprehension_scores",
+        "target_scores",
+        "defects",
+        "overall",
+        "attestation"
+      ],
+      "properties": {
+        "rubric_id": {
+          "const": "sprint11-human-usability-rubric-v1"
+        },
+        "trace": {
+          "$ref": "#/$defs/trace_binding"
+        },
+        "coordinates": {
+          "$ref": "#/$defs/coordinate_binding"
+        },
+        "task_scores": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": {
+            "$ref": "#/$defs/task_score"
+          }
+        },
+        "fault_scores": {
+          "type": "array",
+          "minItems": 5,
+          "maxItems": 5,
+          "items": {
+            "$ref": "#/$defs/fault_score"
+          }
+        },
+        "comprehension_scores": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/comprehension_score"
+          }
+        },
+        "target_scores": {
+          "type": "array",
+          "minItems": 7,
+          "maxItems": 7,
+          "items": {
+            "$ref": "#/$defs/target_score"
+          }
+        },
+        "defects": {
+          "$ref": "#/$defs/defect_binding"
+        },
+        "overall": {
+          "$ref": "#/$defs/overall"
+        },
+        "attestation": {
+          "$ref": "#/$defs/assessment_attestation"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-surface-trace.schema.json",
+  "title": "Godot Codex Sprint 11 external-surface trace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capture_kind",
+    "status",
+    "surface",
+    "host",
+    "bindings",
+    "registry",
+    "assertions",
+    "form_outcomes",
+    "revision_timeline",
+    "redaction"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s11-surface-trace/1.0"
+    },
+    "capture_kind": {
+      "enum": [
+        "surface_transport_capture",
+        "synthetic_contract_fixture"
+      ]
+    },
+    "status": {
+      "enum": [
+        "passed",
+        "fixture_valid"
+      ]
+    },
+    "surface": {
+      "enum": [
+        "app",
+        "cli",
+        "ide"
+      ]
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "identifier",
+        "artifact_kind",
+        "version",
+        "build",
+        "commit",
+        "client_version",
+        "host_metadata_sha256",
+        "host_code_signature",
+        "client_code_signature",
+        "ide_host_version",
+        "ide_shell_identifier",
+        "ide_shell_artifact_sha256",
+        "ide_shell_team_id",
+        "ide_shell_code_signature",
+        "architecture"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "identifier": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "artifact_kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "build": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "commit": {
+          "oneOf": [
+            {"$ref": "#/$defs/commit"},
+            {"type": "null"}
+          ]
+        },
+        "client_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "host_metadata_sha256": {
+          "oneOf": [
+            {"$ref": "#/$defs/digest"},
+            {"type": "null"}
+          ]
+        },
+        "host_code_signature": {
+          "oneOf": [
+            {"$ref": "#/$defs/observed_code_signature"},
+            {"type": "null"}
+          ]
+        },
+        "client_code_signature": {
+          "oneOf": [
+            {"$ref": "#/$defs/observed_code_signature"},
+            {"type": "null"}
+          ]
+        },
+        "ide_host_version": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        },
+        "ide_shell_identifier": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        },
+        "ide_shell_artifact_sha256": {
+          "oneOf": [
+            {"$ref": "#/$defs/digest"},
+            {"type": "null"}
+          ]
+        },
+        "ide_shell_team_id": {
+          "type": ["string", "null"],
+          "maxLength": 128
+        },
+        "ide_shell_code_signature": {
+          "oneOf": [
+            {"$ref": "#/$defs/observed_code_signature"},
+            {"type": "null"}
+          ]
+        },
+        "architecture": {
+          "const": "arm64"
+        }
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package_source_commit",
+        "package_manifest_sha256",
+        "compatibility_matrix_sha256",
+        "host_coordinate_profile_sha256",
+        "project_fixture_sha256",
+        "registry_sha256",
+        "prompt_pack_sha256",
+        "host_artifact_sha256",
+        "client_artifact_sha256",
+        "host_provenance_sha256",
+        "mcp_binary_sha256",
+        "godot_artifact_sha256",
+        "recorder_journal_sha256",
+        "recorder_event_chain_sha256",
+        "recorder_event_count"
+      ],
+      "properties": {
+        "package_source_commit": {
+          "$ref": "#/$defs/commit"
+        },
+        "package_manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "compatibility_matrix_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_coordinate_profile_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "project_fixture_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "registry_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "prompt_pack_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "client_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_provenance_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "mcp_binary_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "godot_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "recorder_journal_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "recorder_event_chain_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "recorder_event_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        }
+      }
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tools",
+        "fixed_resources",
+        "resource_templates",
+        "instructions_sha256"
+      ],
+      "properties": {
+        "tools": {
+          "type": "array",
+          "minItems": 41,
+          "maxItems": 41,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^godot_[a-z0-9_]+$"
+          }
+        },
+        "fixed_resources": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^godot://[a-z0-9_/.-]+$"
+          }
+        },
+        "resource_templates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^godot://[a-z0-9_/{}/.-]+$"
+          }
+        },
+        "instructions_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "assertions": {
+      "type": "array",
+      "minItems": 18,
+      "maxItems": 18,
+      "items": {
+        "oneOf": [
+          {"$ref": "#/$defs/assertion_approval_accept"},
+          {"$ref": "#/$defs/assertion_approval_cancel"},
+          {"$ref": "#/$defs/assertion_approval_decline"},
+          {"$ref": "#/$defs/assertion_approval_timeout"},
+          {"$ref": "#/$defs/assertion_connection_status"},
+          {"$ref": "#/$defs/assertion_host_approval_layers"},
+          {"$ref": "#/$defs/assertion_host_config_reload"},
+          {"$ref": "#/$defs/assertion_host_launcher"},
+          {"$ref": "#/$defs/assertion_host_offline_status"},
+          {"$ref": "#/$defs/assertion_host_unsupported_form"},
+          {"$ref": "#/$defs/assertion_multi_project_reject"},
+          {"$ref": "#/$defs/assertion_offline_saved_query"},
+          {"$ref": "#/$defs/assertion_runtime_error_stack"},
+          {"$ref": "#/$defs/assertion_saved_current_scene"},
+          {"$ref": "#/$defs/assertion_transaction_apply"},
+          {"$ref": "#/$defs/assertion_transaction_preview"},
+          {"$ref": "#/$defs/assertion_transaction_undo"},
+          {"$ref": "#/$defs/assertion_validation_result"}
+        ]
+      }
+    },
+    "form_outcomes": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scenario",
+          "action",
+          "semantic_state",
+          "mutation_observed",
+          "content_recorded"
+        ],
+        "properties": {
+          "scenario": {
+            "enum": [
+              "accept",
+              "decline",
+              "cancel",
+              "timeout"
+            ]
+          },
+          "action": {
+            "enum": [
+              "accept",
+              "decline",
+              "cancel",
+              "timeout"
+            ]
+          },
+          "semantic_state": {
+            "enum": [
+              "committed",
+              "not_applied"
+            ]
+          },
+          "mutation_observed": {
+            "type": "boolean"
+          },
+          "content_recorded": {
+            "const": false
+          }
+        }
+      }
+    },
+    "revision_timeline": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "step",
+          "editor_session_id",
+          "event_seq",
+          "scene_revision",
+          "operation_seq"
+        ],
+        "properties": {
+          "step": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+          },
+          "editor_session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "event_seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "scene_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "operation_seq": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "absolute_paths_absent",
+        "approval_content_absent",
+        "native_ids_absent",
+        "secrets_absent",
+        "source_content_absent",
+        "truncated"
+      ],
+      "properties": {
+        "absolute_paths_absent": {
+          "const": true
+        },
+        "approval_content_absent": {
+          "const": true
+        },
+        "native_ids_absent": {
+          "const": true
+        },
+        "secrets_absent": {
+          "const": true
+        },
+        "source_content_absent": {
+          "const": true
+        },
+        "truncated": {
+          "const": false
+        }
+      }
+    }
+  },
+  "$defs": {
+    "semantic_token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^\\S+$"
+    },
+    "observed_code_signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verified", "mode", "identifier", "team_id", "cdhash"],
+      "properties": {
+        "verified": {"const": true},
+        "mode": {"enum": ["strict", "deep_strict"]},
+        "identifier": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}$"
+        },
+        "team_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}$"
+        },
+        "cdhash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$"
+        }
+      }
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "assertion_approval_accept": {
+      "$ref": "#/$defs/approval_accept_record"
+    },
+    "assertion_approval_cancel": {
+      "$ref": "#/$defs/approval_cancel_record"
+    },
+    "assertion_approval_decline": {
+      "$ref": "#/$defs/approval_decline_record"
+    },
+    "assertion_approval_timeout": {
+      "$ref": "#/$defs/approval_timeout_record"
+    },
+    "approval_accept_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "approval.accept"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["transaction_id", "action", "state"],
+          "properties": {
+            "transaction_id": {"type": "string", "pattern": "^transaction:\\S+$", "maxLength": 256},
+            "action": {"const": "accept"},
+            "state": {"const": "committed"}
+          }
+        }
+      }
+    },
+    "approval_cancel_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "approval.cancel"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["transaction_id", "action", "state"],
+          "properties": {
+            "transaction_id": {"type": "string", "pattern": "^transaction:\\S+$", "maxLength": 256},
+            "action": {"const": "cancel"},
+            "state": {"const": "not_applied"}
+          }
+        }
+      }
+    },
+    "approval_decline_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "approval.decline"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["transaction_id", "action", "state"],
+          "properties": {
+            "transaction_id": {"type": "string", "pattern": "^transaction:\\S+$", "maxLength": 256},
+            "action": {"const": "decline"},
+            "state": {"const": "not_applied"}
+          }
+        }
+      }
+    },
+    "approval_timeout_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "approval.timeout"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["transaction_id", "action", "state"],
+          "properties": {
+            "transaction_id": {"type": "string", "pattern": "^transaction:\\S+$", "maxLength": 256},
+            "action": {"const": "timeout"},
+            "state": {"const": "not_applied"}
+          }
+        }
+      }
+    },
+    "assertion_connection_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "connection.status"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["project_id", "state", "remediation_id"],
+          "properties": {
+            "project_id": {"type": "string", "pattern": "^project:\\S+$", "maxLength": 256},
+            "state": {"const": "ready"},
+            "remediation_id": {"const": "none"}
+          }
+        }
+      }
+    },
+    "assertion_host_approval_layers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "host.approval_layers"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sandbox_approval", "mcp_approval", "independent"],
+          "properties": {
+            "sandbox_approval": {"const": "observed"},
+            "mcp_approval": {"const": "action_only_form"},
+            "independent": {"const": true}
+          }
+        }
+      }
+    },
+    "assertion_host_config_reload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "host.config_reload"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["config_reloaded", "root_rebound", "restart_required"],
+          "properties": {
+            "config_reloaded": {"const": true},
+            "root_rebound": {"const": true},
+            "restart_required": {"const": false}
+          }
+        }
+      }
+    },
+    "assertion_host_launcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "host.launcher"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256",
+            "path_lookup_used",
+            "private_absolute_path_recorded"
+          ],
+          "properties": {
+            "path": {"const": "bin/godot-codex-mcp"},
+            "sha256": {"$ref": "#/$defs/digest"},
+            "path_lookup_used": {"const": false},
+            "private_absolute_path_recorded": {"const": false}
+          }
+        }
+      }
+    },
+    "assertion_host_offline_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "host.offline_status"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "freshness",
+            "live_state_claimed",
+            "remediation_id"
+          ],
+          "properties": {
+            "state": {"const": "offline"},
+            "freshness": {"const": "offline_cached"},
+            "live_state_claimed": {"const": false},
+            "remediation_id": {"const": "start_matching_editor"}
+          }
+        }
+      }
+    },
+    "assertion_host_unsupported_form": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "host.unsupported_form"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "error_code",
+            "mutation_observed",
+            "read_only_available"
+          ],
+          "properties": {
+            "error_code": {"const": "approval_host_unsupported"},
+            "mutation_observed": {"const": false},
+            "read_only_available": {"const": true}
+          }
+        }
+      }
+    },
+    "assertion_multi_project_reject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "multi_project.reject"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["project_id", "foreign_project_id", "error"],
+          "properties": {
+            "project_id": {"type": "string", "pattern": "^project:\\S+$", "maxLength": 256},
+            "foreign_project_id": {"type": "string", "pattern": "^project:\\S+$", "maxLength": 256},
+            "error": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "retryable", "remediation_id"],
+              "properties": {
+                "code": {"const": "project_binding_mismatch"},
+                "retryable": {"const": false},
+                "remediation_id": {"const": "select_bound_project"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "assertion_offline_saved_query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "offline.saved_query"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["project_id", "scene_id", "freshness", "cursor"],
+          "properties": {
+            "project_id": {"type": "string", "pattern": "^project:\\S+$", "maxLength": 256},
+            "scene_id": {"type": "string", "pattern": "^scene:res://.+$", "maxLength": 512},
+            "freshness": {"const": "offline_cached"},
+            "cursor": {"$ref": "#/$defs/semantic_token"}
+          }
+        }
+      }
+    },
+    "assertion_runtime_error_stack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "runtime.error_stack"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "runtime_session_before",
+            "runtime_session_after",
+            "runtime_node_id",
+            "stack_frame_id",
+            "error_code",
+            "source"
+          ],
+          "properties": {
+            "runtime_session_before": {"type": "string", "pattern": "^runtime-session:\\S+$", "maxLength": 256},
+            "runtime_session_after": {"type": "string", "pattern": "^runtime-session:\\S+$", "maxLength": 256},
+            "runtime_node_id": {"type": "string", "pattern": "^runtime-node:\\S+$", "maxLength": 256},
+            "stack_frame_id": {"type": "string", "pattern": "^stack-frame:\\S+$", "maxLength": 256},
+            "error_code": {"$ref": "#/$defs/semantic_token"},
+            "source": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "line"],
+              "properties": {
+                "path": {"type": "string", "pattern": "^res://.+$", "maxLength": 512},
+                "line": {"type": "integer", "minimum": 1, "maximum": 10000000}
+              }
+            }
+          }
+        }
+      }
+    },
+    "assertion_saved_current_scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "saved.current_scene"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "scene_id",
+            "scene_node_id",
+            "evidence_id",
+            "fact_code",
+            "fact_value_redacted",
+            "fact_value_digest",
+            "confidence",
+            "freshness"
+          ],
+          "properties": {
+            "project_id": {"type": "string", "pattern": "^project:\\S+$", "maxLength": 256},
+            "scene_id": {"type": "string", "pattern": "^scene:res://.+$", "maxLength": 512},
+            "scene_node_id": {"type": "string", "pattern": "^scene-node:\\S+$", "maxLength": 256},
+            "evidence_id": {"type": "string", "pattern": "^evidence:\\S+$", "maxLength": 256},
+            "fact_code": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+              "maxLength": 256
+            },
+            "fact_value_redacted": {"const": true},
+            "fact_value_digest": {"$ref": "#/$defs/digest"},
+            "confidence": {"const": "authoritative"},
+            "freshness": {"const": "current"}
+          }
+        }
+      }
+    },
+    "transaction_result_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "editor_session_id",
+        "transaction_id",
+        "event_seq",
+        "scene_revision",
+        "operation_seq",
+        "state"
+      ],
+      "properties": {
+        "editor_session_id": {"type": "string", "pattern": "^editor-session:\\S+$", "maxLength": 256},
+        "transaction_id": {"type": "string", "pattern": "^transaction:\\S+$", "maxLength": 256},
+        "event_seq": {"$ref": "#/$defs/revision"},
+        "scene_revision": {"$ref": "#/$defs/revision"},
+        "operation_seq": {"$ref": "#/$defs/revision"},
+        "state": {"enum": ["committed", "undone"]}
+      }
+    },
+    "assertion_transaction_apply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "transaction.apply"},
+        "projection": {
+          "allOf": [
+            {"$ref": "#/$defs/transaction_result_projection"},
+            {"properties": {"state": {"const": "committed"}}}
+          ]
+        }
+      }
+    },
+    "assertion_transaction_undo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "transaction.undo"},
+        "projection": {
+          "allOf": [
+            {"$ref": "#/$defs/transaction_result_projection"},
+            {"properties": {"state": {"const": "undone"}}}
+          ]
+        }
+      }
+    },
+    "assertion_transaction_preview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "transaction.preview"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["transaction_id", "preview", "preview_digest", "risk", "scope"],
+          "properties": {
+            "transaction_id": {"type": "string", "pattern": "^transaction:\\S+$", "maxLength": 256},
+            "preview_digest": {"$ref": "#/$defs/digest"},
+            "risk": {"enum": ["low", "medium", "high"]},
+            "scope": {"const": "change_set.atomic"},
+            "preview": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["editor_session_id", "coordinates", "operations", "risk", "scope"],
+              "properties": {
+                "editor_session_id": {"type": "string", "pattern": "^editor-session:\\S+$", "maxLength": 256},
+                "coordinates": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["event_seq", "scene_revision", "operation_seq"],
+                  "properties": {
+                    "event_seq": {"$ref": "#/$defs/revision"},
+                    "scene_revision": {"$ref": "#/$defs/revision"},
+                    "operation_seq": {"$ref": "#/$defs/revision"}
+                  }
+                },
+                "operations": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 64,
+                  "items": {
+                    "oneOf": [
+                      {"$ref": "#/$defs/preview_create_node"},
+                      {"$ref": "#/$defs/preview_delete_node"},
+                      {"$ref": "#/$defs/preview_reparent_node"},
+                      {"$ref": "#/$defs/preview_set_property"},
+                      {"$ref": "#/$defs/preview_attach_script"},
+                      {"$ref": "#/$defs/preview_detach_script"},
+                      {"$ref": "#/$defs/preview_connect_signal"},
+                      {"$ref": "#/$defs/preview_disconnect_signal"}
+                    ]
+                  }
+                },
+                "risk": {"enum": ["low", "medium", "high"]},
+                "scope": {"const": "change_set.atomic"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "preview_create_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parent_scene_node_id",
+        "godot_type",
+        "name_redacted",
+        "name_digest"
+      ],
+      "properties": {
+        "kind": {"const": "create_node"},
+        "parent_scene_node_id": {"$ref": "#/$defs/scene_node_id"},
+        "godot_type": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+        },
+        "name_redacted": {"const": true},
+        "name_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "preview_delete_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "scene_node_id", "subtree_node_count"],
+      "properties": {
+        "kind": {"const": "delete_node"},
+        "scene_node_id": {"$ref": "#/$defs/scene_node_id"},
+        "subtree_node_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        }
+      }
+    },
+    "preview_reparent_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "scene_node_id", "new_parent_scene_node_id"],
+      "properties": {
+        "kind": {"const": "reparent_node"},
+        "scene_node_id": {"$ref": "#/$defs/scene_node_id"},
+        "new_parent_scene_node_id": {"$ref": "#/$defs/scene_node_id"}
+      }
+    },
+    "preview_set_property": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "scene_node_id",
+        "property_name",
+        "value_type",
+        "value_redacted",
+        "value_digest"
+      ],
+      "properties": {
+        "kind": {"const": "set_property"},
+        "scene_node_id": {"$ref": "#/$defs/scene_node_id"},
+        "property_name": {"$ref": "#/$defs/semantic_token"},
+        "value_type": {"$ref": "#/$defs/semantic_token"},
+        "value_redacted": {"const": true},
+        "value_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "preview_attach_script": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "scene_node_id",
+        "script_redacted",
+        "script_digest"
+      ],
+      "properties": {
+        "kind": {"const": "attach_script"},
+        "scene_node_id": {"$ref": "#/$defs/scene_node_id"},
+        "script_redacted": {"const": true},
+        "script_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "preview_detach_script": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "scene_node_id",
+        "script_redacted",
+        "script_digest"
+      ],
+      "properties": {
+        "kind": {"const": "detach_script"},
+        "scene_node_id": {"$ref": "#/$defs/scene_node_id"},
+        "script_redacted": {"const": true},
+        "script_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "preview_connect_signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "emitter_scene_node_id",
+        "receiver_scene_node_id",
+        "signal_name",
+        "method_name",
+        "binds_redacted",
+        "binds_digest"
+      ],
+      "properties": {
+        "kind": {"const": "connect_signal"},
+        "emitter_scene_node_id": {"$ref": "#/$defs/scene_node_id"},
+        "receiver_scene_node_id": {"$ref": "#/$defs/scene_node_id"},
+        "signal_name": {"$ref": "#/$defs/semantic_token"},
+        "method_name": {"$ref": "#/$defs/semantic_token"},
+        "binds_redacted": {"const": true},
+        "binds_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "preview_disconnect_signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "emitter_scene_node_id",
+        "receiver_scene_node_id",
+        "signal_name",
+        "method_name",
+        "binds_redacted",
+        "binds_digest"
+      ],
+      "properties": {
+        "kind": {"const": "disconnect_signal"},
+        "emitter_scene_node_id": {"$ref": "#/$defs/scene_node_id"},
+        "receiver_scene_node_id": {"$ref": "#/$defs/scene_node_id"},
+        "signal_name": {"$ref": "#/$defs/semantic_token"},
+        "method_name": {"$ref": "#/$defs/semantic_token"},
+        "binds_redacted": {"const": true},
+        "binds_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "assertion_validation_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertion_id", "projection"],
+      "properties": {
+        "assertion_id": {"const": "validation.result"},
+        "projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["transaction_id", "validation_report_id", "outcome", "diagnostics"],
+          "properties": {
+            "transaction_id": {"type": "string", "pattern": "^transaction:\\S+$", "maxLength": 256},
+            "validation_report_id": {"type": "string", "pattern": "^validation-report:\\S+$", "maxLength": 256},
+            "outcome": {"const": "passed"},
+            "diagnostics": {
+              "type": "array",
+              "maxItems": 256,
+              "items": {"$ref": "#/$defs/json_value"}
+            }
+          }
+        }
+      }
+    },
+    "assertion_id": {
+      "enum": [
+        "approval.accept",
+        "approval.cancel",
+        "approval.decline",
+        "approval.timeout",
+        "connection.status",
+        "host.approval_layers",
+        "host.config_reload",
+        "host.launcher",
+        "host.offline_status",
+        "host.unsupported_form",
+        "multi_project.reject",
+        "offline.saved_query",
+        "runtime.error_stack",
+        "saved.current_scene",
+        "transaction.apply",
+        "transaction.preview",
+        "transaction.undo",
+        "validation.result"
+      ]
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "scene_node_id": {
+      "type": "string",
+      "pattern": "^scene-node:\\S+$",
+      "maxLength": 256
+    },
+    "json_value": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string",
+          "maxLength": 8192
+        },
+        {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/json_value"
+          }
+        },
+        {
+          "type": "object",
+          "maxProperties": 128,
+          "additionalProperties": {
+            "$ref": "#/$defs/json_value"
+          }
+        }
+      ]
+    }
+  }
+}

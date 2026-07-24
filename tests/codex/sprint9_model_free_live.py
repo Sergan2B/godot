@@ -107,6 +107,9 @@ SPRINT10_MUTATING_TOOLS = {
     "godot_prepare_change_set",
     "godot_reset_confirmation_policy",
 }
+SPRINT11_TOOL_NAMES = {
+    "godot_get_connection_status",
+}
 PREPARE_TOOLS = {
     "attach_script": "godot_prepare_attach_script",
     "connect_signal": "godot_prepare_connect_signal",
@@ -158,6 +161,14 @@ def default_godot_path() -> Path:
 def default_sidecar_path() -> Path:
     executable = "godot-codex-mcp.exe" if sys.platform == "win32" else "godot-codex-mcp"
     return REPOSITORY_ROOT / "godot-codex-mcp/target/release" / executable
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
 
 
 def require(condition: bool, message: str) -> None:
@@ -444,13 +455,21 @@ class ModelFreeMcpClient:
         schema = params.get("requestedSchema")
         require(isinstance(schema, dict), "approval schema is missing")
         properties = schema.get("properties")
-        require(
-            schema.get("type") == "object"
-            and schema.get("required") == ["confirm"]
+        legacy_confirm = (
+            schema.get("required") == ["confirm"]
             and isinstance(properties, dict)
             and set(properties) == {"confirm"}
             and properties["confirm"].get("type") == "boolean"
-            and "default" not in properties["confirm"],
+            and "default" not in properties["confirm"]
+        )
+        action_only = (
+            schema.get("required") in (None, [])
+            and isinstance(properties, dict)
+            and not properties
+        )
+        require(
+            schema.get("type") == "object"
+            and (legacy_confirm or action_only),
             "approval schema is not exact",
         )
         message_text = params.get("message")
@@ -470,10 +489,9 @@ class ModelFreeMcpClient:
         if decision == "timeout":
             return
         if decision == "accept":
-            result: dict[str, Any] = {
-                "action": "accept",
-                "content": {"confirm": True},
-            }
+            result: dict[str, Any] = {"action": "accept"}
+            if legacy_confirm:
+                result["content"] = {"confirm": True}
         elif decision == "confirm_false":
             result = {
                 "action": "accept",
@@ -2675,6 +2693,11 @@ def parse_arguments() -> argparse.Namespace:
         help="accept the four additive Sprint 10 tools while exercising Sprint 9",
     )
     parser.add_argument(
+        "--additive-sprint11-registry",
+        action="store_true",
+        help="accept the additive Sprint 11 connection-status tool",
+    )
+    parser.add_argument(
         "--fault-scenarios",
         nargs="*",
         choices=FAULT_SCENARIOS,
@@ -2689,6 +2712,8 @@ def main() -> int:
     if arguments.additive_sprint10_registry:
         TOOL_NAMES = TOOL_NAMES | SPRINT10_TOOL_NAMES
         MUTATING_TOOLS = MUTATING_TOOLS | SPRINT10_MUTATING_TOOLS
+    if arguments.additive_sprint11_registry:
+        TOOL_NAMES = TOOL_NAMES | SPRINT11_TOOL_NAMES
     platform_tag = target_platform()
     godot = arguments.godot.resolve(strict=True)
     sidecar = arguments.sidecar.resolve(strict=True)
@@ -2851,6 +2876,10 @@ def main() -> int:
         "platform": platform_tag,
         "protocol": MCP_PROTOCOL,
         "tool_registry": len(TOOL_NAMES),
+        "artifacts": {
+            "godot_sha256": sha256_file(godot),
+            "sidecar_sha256": sha256_file(sidecar),
+        },
         "operations": operations,
         "operation_count": len(operations),
         "transaction_identity_unique": True,

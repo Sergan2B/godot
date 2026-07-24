@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-reproducibility-receipt.schema.json",
+  "title": "Sprint 11 clean package rebuild reproducibility receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "capture_kind",
+    "status",
+    "bindings",
+    "commands",
+    "outputs",
+    "reproducibility",
+    "cleanup",
+    "redaction"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s11-reproducibility-receipt/1.0"
+    },
+    "capture_kind": {
+      "const": "real_clean_rebuild"
+    },
+    "status": {
+      "const": "passed"
+    },
+    "bindings": {
+      "$ref": "#/$defs/bindings"
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/command"
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/output"
+      }
+    },
+    "reproducibility": {
+      "$ref": "#/$defs/reproducibility"
+    },
+    "cleanup": {
+      "$ref": "#/$defs/cleanup"
+    },
+    "redaction": {
+      "$ref": "#/$defs/redaction"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)[A-Za-z0-9._+/-]+$"
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_commit",
+        "godot_artifact_sha256",
+        "build_runner_path",
+        "build_runner_sha256",
+        "qualified_manifest_sha256",
+        "qualified_archive_sha256",
+        "qualified_archive_bytes",
+        "qualified_package_tree_sha256",
+        "qualified_build_provenance_sha256"
+      ],
+      "properties": {
+        "source_commit": {
+          "$ref": "#/$defs/commit"
+        },
+        "godot_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "build_runner_path": {
+          "const": "godot-codex-mcp/packaging/build_macos.py"
+        },
+        "build_runner_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "qualified_manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "qualified_archive_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "qualified_archive_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 536870912
+        },
+        "qualified_package_tree_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "qualified_build_provenance_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "cwd",
+        "argv_template",
+        "command_sha256",
+        "runner_path",
+        "runner_sha256",
+        "stdout_sha256",
+        "stderr_sha256",
+        "exit_code",
+        "duration_ms"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "clean_rebuild_a",
+            "clean_rebuild_b"
+          ]
+        },
+        "cwd": {
+          "const": "."
+        },
+        "argv_template": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        },
+        "command_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "runner_path": {
+          "const": "godot-codex-mcp/packaging/build_macos.py"
+        },
+        "runner_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "stdout_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "stderr_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "exit_code": {
+          "const": 0
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 180000
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "manifest_sha256",
+        "build_provenance_sha256",
+        "archive_sha256",
+        "archive_bytes",
+        "package_tree_sha256"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "a",
+            "b"
+          ]
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "build_provenance_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "archive_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "archive_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 536870912
+        },
+        "package_tree_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "reproducibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest_bytes_equal",
+        "archive_bytes_equal",
+        "package_tree_equal",
+        "source_checkout_unchanged"
+      ],
+      "properties": {
+        "manifest_bytes_equal": {
+          "const": true
+        },
+        "archive_bytes_equal": {
+          "const": true
+        },
+        "package_tree_equal": {
+          "const": true
+        },
+        "source_checkout_unchanged": {
+          "const": true
+        }
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "build_processes_stopped",
+        "repository_unchanged"
+      ],
+      "properties": {
+        "build_processes_stopped": {
+          "const": true
+        },
+        "repository_unchanged": {
+          "const": true
+        }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "absolute_paths_absent",
+        "environment_secrets_absent",
+        "source_content_absent"
+      ],
+      "properties": {
+        "absolute_paths_absent": {
+          "const": true
+        },
+        "environment_secrets_absent": {
+          "const": true
+        },
+        "source_content_absent": {
+          "const": true
+        }
+      }
+    }
+  }
+}

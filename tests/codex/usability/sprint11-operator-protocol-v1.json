@@ -1,0 +1,468 @@
+{
+  "schema_version": "s11-human-operator-protocol/1.0",
+  "protocol_id": "sprint11-human-operator-protocol-v1",
+  "artifact_kind": "frozen_operator_only_protocol",
+  "qualification": false,
+  "audience": "operator_only",
+  "contract_bindings": [
+    {
+      "id": "sprint11-external-beta-v1",
+      "path": "tests/codex/prompts/sprint11-external-beta-v1.json",
+      "sha256": "sha256:9e48fe205b212572b22d31c8b0b85bb2ca00c1f4a9259def190085a2506409b3"
+    },
+    {
+      "id": "sprint11-human-usability-consent-v1",
+      "path": "tests/codex/usability/sprint11-consent-v1.md",
+      "sha256": "sha256:e670915cf5d681c699c11bd6a5aa878190d841ccff19466b3f31ebe406fac2db"
+    },
+    {
+      "id": "sprint11-human-participant-script-v1",
+      "path": "tests/codex/usability/sprint11-participant-script-v1.json",
+      "sha256": "sha256:101fb145b2c582cc9e573728dd391cbd9fd905a976c666a1545a7d6c318b3a70"
+    },
+    {
+      "id": "sprint11-human-fault-harness-v1",
+      "path": "tests/codex/usability/sprint11_fault_harness.py",
+      "sha256": "sha256:ee1f162b25aeec2b0ef1c37e1becab4b08ede7a18a88bbb90b9632075b4cc273"
+    },
+    {
+      "id": "s11-human-acquisition-authority-schema-v1",
+      "path": "godot-codex-mcp/schemas/godot_codex/sprint11-human-acquisition-authority.schema.json",
+      "sha256": "sha256:11fd1854321008652730c4d5dda6dc9770911fa1f8026326a1e9262a67b9e843"
+    },
+    {
+      "id": "s11-human-usability-trace-schema-v1",
+      "path": "godot-codex-mcp/schemas/godot_codex/sprint11-human-usability-trace.schema.json",
+      "sha256": "sha256:874c6914b5fe4cb0f37851c375539abe2eb6d6910486f3f39fc479adf3f42021"
+    },
+    {
+      "id": "s11-human-usability-trace-template-v1",
+      "path": "tests/codex/usability/templates/sprint11-human-usability-trace.template.json",
+      "sha256": "sha256:5910fd588eb4668261641bc5dd67e32322f5c59aad83057d9fd8bfb3f935ac90"
+    },
+    {
+      "id": "s11-human-usability-rubric-schema-v1",
+      "path": "godot-codex-mcp/schemas/godot_codex/sprint11-human-usability-rubric.schema.json",
+      "sha256": "sha256:8b798590a1b3a2144d128ee029f9e4b8797afde4f8741a51836c47fe8a597e3c"
+    },
+    {
+      "id": "s11-human-usability-rubric-template-v1",
+      "path": "tests/codex/usability/templates/sprint11-human-usability-rubric.template.json",
+      "sha256": "sha256:be624c9fa6064fced79e653e8f684bbf9eef80991a70b3aaf9f5fa8674f37b39"
+    },
+    {
+      "id": "s11-human-consent-receipt-schema-v1",
+      "path": "godot-codex-mcp/schemas/godot_codex/sprint11-human-consent-receipt.schema.json",
+      "sha256": "sha256:caeca4d7bd7b205a90a3c6e1db11b6bdcba7b6db0c23f8db0b829c7b9d479c49"
+    },
+    {
+      "id": "s11-human-consent-receipt-template-v1",
+      "path": "tests/codex/usability/templates/sprint11-human-consent-receipt.template.json",
+      "sha256": "sha256:9739c5799054a466b9ac82b3265c296e08bac065493bb0a8b5d9713877f1b5dd"
+    },
+    {
+      "id": "s11-human-usability-defect-ledger-schema-v1",
+      "path": "godot-codex-mcp/schemas/godot_codex/sprint11-human-usability-defect-ledger.schema.json",
+      "sha256": "sha256:0170366d49c3a8e931241ed84eda590a5eabf4d76898cb550057fec727ef2dcd"
+    },
+    {
+      "id": "s11-human-usability-defect-ledger-template-v1",
+      "path": "tests/codex/usability/templates/sprint11-human-usability-defect-ledger.template.json",
+      "sha256": "sha256:eacf0ff39c9e2dfe376a99b355d1ae05fa4e50621aa2db3b899959274a3e8990"
+    }
+  ],
+  "run_coordinate_contract": {
+    "freeze_before_consent": true,
+    "immutable_through_cleanup": true,
+    "package_fields": [
+      "source_commit",
+      "manifest_sha256",
+      "archive_sha256",
+      "package_tree_sha256",
+      "operations_binary_sha256",
+      "mcp_binary_sha256",
+      "godot_prerequisite_sha256"
+    ],
+    "fixture_fields": [
+      "fixture_id",
+      "tree_sha256",
+      "project_file_sha256"
+    ],
+    "surface_host_fields": [
+      "surface",
+      "host_coordinate_id",
+      "host_coordinate_sha256",
+      "host_artifact_sha256",
+      "host_tree_sha256",
+      "host_version",
+      "host_build",
+      "architecture"
+    ],
+    "source_contract_fields": [
+      "prompt_pack",
+      "participant_script",
+      "operator_protocol",
+      "consent_document",
+      "trace_schema",
+      "rubric_schema",
+      "rubric_template"
+    ],
+    "rules": [
+      "Read every bound file as a regular non-symlink file with a bounded no-follow reader.",
+      "Reject duplicate JSON members, unexpected files, dirty source scopes, changed bytes, or a coordinate absent from the package manifest and host profile.",
+      "Record run-specific package, fixture, surface, and host digests only in the acquired trace to avoid a self-referential package manifest.",
+      "Discard the run if any bound coordinate changes before cleanup attestation."
+    ]
+  },
+  "eligibility": {
+    "native_os": "macos",
+    "native_architecture": "arm64",
+    "minimum_participants": 3,
+    "minimum_implementation_independent_participants": 1,
+    "real_person_required": true,
+    "clean_start_required": true,
+    "disposable_fixture_required": true,
+    "developer_coaching_allowed": false,
+    "fixture_answers_allowed": false,
+    "screen_recording_allowed": false,
+    "raw_prompt_recording_allowed": false
+  },
+  "consent": {
+    "document_id": "sprint11-human-usability-consent",
+    "version": "v1",
+    "record_before_tasks": true,
+    "operator_must_explain": [
+      "voluntary_participation_and_stop",
+      "collected_content_free_fields",
+      "excluded_private_fields",
+      "retention_period",
+      "withdrawal_deadline",
+      "allowed_help_sources",
+      "developer_coaching_prohibition"
+    ],
+    "receipt_schema": "s11-human-consent-receipt/1.0",
+    "private_ledger_location": "outside_repository_and_release_evidence"
+  },
+  "pseudonymization": {
+    "algorithm": "salted-sha256-domain-separated-v1",
+    "formula": "SHA256(UTF8('s11-human-participant-v1') || 0x00 || random_salt_32_bytes || 0x00 || UTF8(local_subject_key))",
+    "output_format": "participant:sha256:<lowercase-hex>",
+    "salt_source": "cryptographically_secure_os_rng",
+    "salt_minimum_bytes": 32,
+    "salt_and_subject_key_storage": "private_consent_ledger_only",
+    "salt_or_subject_key_in_trace": false,
+    "retention": "until_declared_withdrawal_deadline_then_destroy"
+  },
+  "fault_randomization": {
+    "algorithm": "sha256-seeded-sort-v1",
+    "seed_source": "cryptographically_secure_os_rng",
+    "seed_bytes": 32,
+    "score_formula": "SHA256(UTF8('s11-fault-order-v1') || 0x00 || seed || 0x00 || UTF8(run_id) || 0x00 || UTF8(scenario))",
+    "ordering": "ascending_lexicographic_score_then_scenario",
+    "seed_commitment_formula": "SHA256(UTF8('s11-fault-seed-v1') || 0x00 || seed)",
+    "record": [
+      "algorithm",
+      "seed_commitment",
+      "committed_before_first_fault",
+      "order"
+    ],
+    "do_not_record": [
+      "seed"
+    ],
+    "exact_scenarios": [
+      "missing_binary",
+      "stale_discovery",
+      "version_mismatch",
+      "authentication_failure",
+      "invalid_project_config"
+    ]
+  },
+  "operator_interventions": {
+    "allowed": [
+      "consent",
+      "fault_inject",
+      "fault_reset",
+      "safety_stop"
+    ],
+    "prohibited": [
+      "diagnosis",
+      "remediation_answer",
+      "tool_selection",
+      "fixture_answer",
+      "task_rephrasing_after_start",
+      "configuration_edit_for_participant",
+      "approval_choice"
+    ],
+    "safety_stop_triggers": [
+      "participant_attempts_non_disposable_target",
+      "participant_attempts_secret_or_account_disclosure",
+      "fault_state_escapes_run_root",
+      "unexpected_source_or_package_mutation",
+      "reset_verification_fails"
+    ]
+  },
+  "clean_start_protocol": [
+    {
+      "step_id": "verify_frozen_inputs",
+      "action": "Verify all contract and run coordinates, native host identity, package manifest, archive, binaries, Godot prerequisite, fixture tree, and surface host profile before consent."
+    },
+    {
+      "step_id": "create_private_run_root",
+      "action": "Create a new mode-0700 run root outside the repository; reject a symlink, reused directory, broad home/root target, or foreign content."
+    },
+    {
+      "step_id": "copy_disposable_fixture",
+      "action": "Copy the frozen fixture into the run root without prior .godot, .codex, cache, discovery, token, socket, receipt, or acquisition artifacts; verify the source fixture tree remains unchanged."
+    },
+    {
+      "step_id": "allocate_disposable_install",
+      "action": "Set GODOT_CODEX_DATA_ROOT and GODOT_CODEX_BIN_DIR to new descendants of the run root before invoking the package installer; never fault the operator's normal user-local installation."
+    },
+    {
+      "step_id": "start_fresh_surface_task",
+      "action": "Start a new surface task at the exact disposable project root with no prior conversation or project context and bind the exact package-owned launcher."
+    },
+    {
+      "step_id": "emit_clean_start_receipt",
+      "action": "Emit a content-free receipt containing only contract digests and true/false preconditions; hash it and bind it into the primary trace."
+    }
+  ],
+  "faults": [
+    {
+      "scenario": "missing_binary",
+      "expected_diagnostic_code": "binary_missing",
+      "expected_remediation_id": "upgrade_godot_codex",
+      "harness_commands": [
+        "inject --scenario missing_binary --run-root <private-short-run-root> --package-root <disposable-installed-version> --state-directory <new-private-state-dir>",
+        "recover --run-root <private-short-run-root> --package-root <disposable-installed-version> --state-directory <private-state-dir>"
+      ],
+      "preconditions": [
+        "disposable_install_only",
+        "package_manifest_and_installed_tree_verified",
+        "surface_and_sidecar_stopped",
+        "exact_operations_binary_available",
+        "private_backup_destination_absent"
+      ],
+      "inject": [
+        "Open the installed package directory using no-follow directory descriptors rooted below GODOT_CODEX_DATA_ROOT.",
+        "Atomically rename only bin/godot-codex-mcp to a mode-0600 private backup in the same disposable version directory; do not delete or overwrite it.",
+        "Verify the operations binary and package manifest remain byte-identical and the sidecar path is absent."
+      ],
+      "participant_check": [
+        "Run doctor from the exact installed package-owned godot-codex path.",
+        "Record only the observed stable code and remediation ID before any reset."
+      ],
+      "reset": [
+        "Stop the surface, reject any newly created sidecar path, and atomically rename the exact private backup back to bin/godot-codex-mcp.",
+        "Restore executable mode, run the package installer verify action with the same disposable roots, and compare the complete installed tree digest to its pre-fault digest.",
+        "Restart only after verification succeeds."
+      ],
+      "postconditions": [
+        "package_tree_restored",
+        "source_package_unchanged",
+        "no_backup_remaining",
+        "healthy_status_reobserved"
+      ]
+    },
+    {
+      "scenario": "stale_discovery",
+      "expected_diagnostic_code": "bridge_discovery_stale",
+      "expected_remediation_id": "start_matching_editor",
+      "harness_commands": [
+        "serve --scenario stale_discovery --run-root <private-short-run-root> --project-root <disposable-project> --state-directory <new-private-state-dir>",
+        "recover --run-root <private-short-run-root> --project-root <disposable-project> --state-directory <private-state-dir>"
+      ],
+      "preconditions": [
+        "disposable_fixture_only",
+        "editor_and_sidecar_stopped",
+        "existing_private_bridge_state_snapshotted",
+        "fault_harness_bound",
+        "private_backup_destination_absent"
+      ],
+      "inject": [
+        "Move the disposable fixture's .godot/codex directory to a private same-parent backup without following links.",
+        "Create mode-0700 .godot/codex and run plus bounded mode-0600 discovery, lock, token, and Unix-socket entries whose lock PID is intentionally non-live.",
+        "Record only the fault-state tree digest; never record the token, endpoint, PID, or private path."
+      ],
+      "participant_check": [
+        "Run doctor before opening Godot and record only the stable code and remediation ID.",
+        "Let the participant use the named product remediation; do not tell them that starting the matching editor is expected."
+      ],
+      "reset": [
+        "Stop every process owned by the fault harness, remove only marker-bound synthetic entries below the disposable fixture, and restore the exact private backup.",
+        "Start the matching editor and verify a fresh editor session and ready status; do not reuse synthetic discovery."
+      ],
+      "postconditions": [
+        "all_synthetic_runtime_entries_removed",
+        "original_or_fresh_bridge_state_verified",
+        "healthy_status_reobserved"
+      ]
+    },
+    {
+      "scenario": "version_mismatch",
+      "expected_diagnostic_code": "bridge_version_incompatible",
+      "expected_remediation_id": "upgrade_godot_bridge",
+      "harness_commands": [
+        "serve --scenario version_mismatch --run-root <private-short-run-root> --project-root <disposable-project> --state-directory <new-private-state-dir>",
+        "recover --run-root <private-short-run-root> --project-root <disposable-project> --state-directory <private-state-dir>"
+      ],
+      "preconditions": [
+        "disposable_fixture_only",
+        "editor_and_sidecar_stopped",
+        "existing_private_bridge_state_snapshotted",
+        "fault_harness_bound",
+        "private_backup_destination_absent"
+      ],
+      "inject": [
+        "Use the bound fault harness to hold a private Unix socket and live harness PID while publishing otherwise valid private discovery metadata with only unsupported Bridge RPC 2.0.",
+        "Use a fresh random token only inside the disposable fixture and never copy it into a trace."
+      ],
+      "participant_check": [
+        "Run doctor while the harness is live and record only the stable code and remediation ID.",
+        "Do not disclose the injected protocol value to the participant."
+      ],
+      "reset": [
+        "Terminate the exact marker-bound harness process group, remove its synthetic private metadata, restore the snapshot, then start the matching frozen Godot prerequisite.",
+        "Verify the negotiated Bridge version is within the frozen 1.0-1.8 range and status is ready."
+      ],
+      "postconditions": [
+        "fault_harness_stopped",
+        "synthetic_token_destroyed",
+        "fresh_supported_bridge_observed"
+      ]
+    },
+    {
+      "scenario": "authentication_failure",
+      "expected_diagnostic_code": "bridge_authentication_failed",
+      "expected_remediation_id": "start_matching_editor",
+      "harness_commands": [
+        "serve --scenario authentication_failure --run-root <private-short-run-root> --project-root <disposable-project> --state-directory <new-private-state-dir>",
+        "recover --run-root <private-short-run-root> --project-root <disposable-project> --state-directory <private-state-dir>"
+      ],
+      "preconditions": [
+        "disposable_fixture_only",
+        "editor_and_sidecar_stopped",
+        "existing_private_bridge_state_snapshotted",
+        "fault_harness_bound",
+        "private_backup_destination_absent"
+      ],
+      "inject": [
+        "Use the bound fault harness to hold a private Unix socket and live harness PID while publishing supported Bridge RPC metadata with a token file whose length is not 32 bytes.",
+        "Never expose either the synthetic token bytes or the original token bytes."
+      ],
+      "participant_check": [
+        "Run doctor while the harness is live and record only the stable code and remediation ID.",
+        "Do not identify the token fault or tell the participant to restart the editor."
+      ],
+      "reset": [
+        "Terminate the exact marker-bound harness process group, destroy the synthetic token and metadata, restore the snapshot, and start the matching editor.",
+        "Verify fresh authenticated discovery and ready status without retaining old token material."
+      ],
+      "postconditions": [
+        "fault_harness_stopped",
+        "all_synthetic_token_material_destroyed",
+        "fresh_authenticated_bridge_observed"
+      ]
+    },
+    {
+      "scenario": "invalid_project_config",
+      "expected_diagnostic_code": "project_config_invalid",
+      "expected_remediation_id": "repair_project_config",
+      "harness_commands": [
+        "inject --scenario invalid_project_config --run-root <private-short-run-root> --project-root <disposable-project> --state-directory <new-private-state-dir>",
+        "recover --run-root <private-short-run-root> --project-root <disposable-project> --state-directory <private-state-dir>"
+      ],
+      "preconditions": [
+        "disposable_fixture_only",
+        "valid_private_setup_receipt_verified",
+        "owned_godot_editor_stanza_verified",
+        "config_is_regular_non_symlink_utf8_bounded_toml",
+        "config_snapshot_digest_recorded"
+      ],
+      "inject": [
+        "In the receipt-owned godot_editor table only, change cwd from '..' to '.' while preserving valid TOML, unrelated tables, comments, file mode, and every other owned field.",
+        "Write by same-directory exclusive temporary file plus fsync and no-clobber atomic replacement; reject concurrent change."
+      ],
+      "participant_check": [
+        "Run doctor and record only the stable code and remediation ID.",
+        "The participant may use setup --repair only through its immutable dry-run preview and exact apply consent; the operator must not edit the config for them."
+      ],
+      "reset": [
+        "If participant repair succeeds, verify unrelated TOML/comments/mode are unchanged, the refreshed private receipt binds the exact config, and doctor is healthy.",
+        "If participant repair does not complete, restore the exact snapshot atomically, verify its digest, and mark the fault outcome failed rather than coaching."
+      ],
+      "postconditions": [
+        "valid_config_restored",
+        "unrelated_config_preserved",
+        "receipt_and_config_binding_verified",
+        "healthy_status_reobserved"
+      ]
+    }
+  ],
+  "task_and_comprehension_capture": {
+    "goal_order": [
+      "install_and_connect",
+      "saved_semantic_context",
+      "offline_context",
+      "doctor_fault_matrix",
+      "runtime_diagnostics",
+      "compound_write_and_undo",
+      "project_isolation"
+    ],
+    "comprehension_ids": [
+      "project_binding",
+      "offline_limits",
+      "sandbox_approval",
+      "action_only_form",
+      "validation",
+      "undo"
+    ],
+    "record_only": [
+      "bounded_duration_ms",
+      "wrong_turn_count",
+      "allowed_help_source_ids",
+      "closed_outcome",
+      "content_free_event_projection_digest",
+      "closed_comprehension_result",
+      "defect_id"
+    ],
+    "never_record": [
+      "participant_prompt",
+      "participant_answer",
+      "account_identity",
+      "project_source",
+      "property_value",
+      "token",
+      "endpoint",
+      "pid",
+      "approval_receipt",
+      "native_handle",
+      "private_absolute_path",
+      "screen_recording"
+    ]
+  },
+  "cleanup_protocol": [
+    "Stop the surface, Godot, sidecar, and exact fault-harness process groups.",
+    "Reset and verify every fault before removing the disposable fixture.",
+    "Verify the frozen source fixture, archive, package source, and host artifact remain byte-identical.",
+    "Validate and hash only content-free trace, rubric, consent receipt, defect ledger, and clean-start/reset receipts.",
+    "Uninstall only the marker-owned disposable package roots, then remove only the marker-bound run root.",
+    "Keep salt and local subject key only in the private consent ledger until the withdrawal deadline; never copy them into acquisition or Git.",
+    "Discard the run on failed reset, redaction, digest, provenance, or coordinate verification."
+  ],
+  "retest_policy": {
+    "high_or_critical_requires_fix": true,
+    "waiver_allowed": false,
+    "required_resolution_fields": [
+      "fixed_by_commit",
+      "fixed_package_manifest_sha256",
+      "source_retest_run_ids",
+      "package_retest_run_ids",
+      "human_retest_run_ids",
+      "source_retest_passed",
+      "package_retest_passed",
+      "human_retest_passed"
+    ],
+    "source_change_discards_prior_package_and_human_qualification": true
+  }
+}
