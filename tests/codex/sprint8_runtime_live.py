@@ -688,7 +688,10 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     report: dict[str, Any] | None = None
     primary_failure = False
-    with tempfile.TemporaryDirectory(prefix="s8-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="s8-",
+        dir=None if os.name == "nt" else "/tmp",
+    ) as temporary:
         project = Path(temporary) / "p"
         shutil.copytree(PROJECT_SOURCE, project, ignore=shutil.ignore_patterns(".godot"))
         initial_source_snapshot = project_source_snapshot(project)

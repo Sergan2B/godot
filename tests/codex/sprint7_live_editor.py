@@ -831,7 +831,12 @@ def run_session(
 def run(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
     platform_tag = target_platform()
     require(godot.is_file() and sidecar.is_file(), "Godot and release sidecar must be built")
-    run_root = Path(tempfile.mkdtemp(prefix="s7."))
+    run_root = Path(
+        tempfile.mkdtemp(
+            prefix="s7.",
+            dir=None if os.name == "nt" else "/tmp",
+        )
+    )
     project = run_root / "project"
     shutil.copytree(PROJECT_SOURCE, project, ignore=shutil.ignore_patterns(".godot"))
     try:
