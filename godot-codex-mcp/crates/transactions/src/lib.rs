@@ -27,8 +27,9 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 pub use validation::{
     CheckAuthority, CheckOutcome, DiagnosticFingerprint, DiagnosticSeverity, DiagnosticSummary,
-    ExpectedSemanticDelta, ReportPage, SemanticComparison, SemanticRelation, SemanticSnapshot,
-    ValidationCheck, ValidationCoordinator, ValidationError, ValidationPolicy, ValidationReport,
+    ExpectedSemanticDelta, MAX_REPORT_PAGE_BYTES, MAX_REPORT_PAGES, MAX_RETAINED_REPORT_BYTES,
+    ReportPage, SemanticComparison, SemanticRelation, SemanticSnapshot, ValidationCheck,
+    ValidationCoordinator, ValidationError, ValidationPolicy, ValidationReport,
     ValidationReportOutcome,
 };
 

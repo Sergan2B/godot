@@ -1,3 +1,4 @@
+mod change_set_tools;
 mod cursor;
 mod live_overlay;
 mod runtime_overlay;
@@ -9,6 +10,10 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
+use change_set_tools::{
+    ConfirmationPolicyInput, ConfirmationPolicyStore, PrepareChangeSetInput, ValidationReportInput,
+    report_page_value, validation_report_error,
+};
 use cursor::{CursorBinding, CursorCodec, CursorTool};
 use godot_codex_bridge_client::{
     BridgeError, RuntimeDomain, RuntimeEntity, RuntimeNode, RuntimeTarget, RuntimeViewportCapture,
@@ -30,7 +35,9 @@ use godot_codex_resource_indexer::{
     SemanticPartialCode, SemanticPartialDomain, SemanticPartialReason, normalize_resource_path,
 };
 use godot_codex_semantic_model::{SemanticSnapshot, SnapshotReplicator};
-use godot_codex_transactions::{ApplyCommand, PrepareCommand, TransactionCoordinator, UndoCommand};
+use godot_codex_transactions::{
+    ApplyCommand, PrepareCommand, TransactionCoordinator, UndoCommand, ValidationCoordinator,
+};
 use live_overlay::{LiveOverlay, overlay_metadata};
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
@@ -506,6 +513,8 @@ pub struct GodotMcpServer {
     cursor_codec: CursorCodec,
     runtime_overlay: RuntimeOverlay,
     transaction_coordinator: Option<Arc<TransactionCoordinator>>,
+    validation_coordinator: Arc<tokio::sync::Mutex<ValidationCoordinator>>,
+    confirmation_policy: ConfirmationPolicyStore,
 }
 
 impl std::fmt::Debug for GodotMcpServer {
@@ -628,6 +637,10 @@ impl GodotMcpServer {
             cursor_codec: CursorCodec::new(),
             runtime_overlay,
             transaction_coordinator,
+            validation_coordinator: Arc::new(tokio::sync::Mutex::new(
+                ValidationCoordinator::default(),
+            )),
+            confirmation_policy: ConfirmationPolicyStore::default(),
         }
     }
 
@@ -4416,6 +4429,14 @@ fn unix_seconds() -> u64 {
         .map_or(0, |duration| duration.as_secs())
 }
 
+fn unix_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| {
+            u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
 #[tool_router]
 impl GodotMcpServer {
     #[tool(
@@ -5046,6 +5067,99 @@ impl GodotMcpServer {
         Parameters(input): Parameters<PrepareDisconnectSignalInput>,
     ) -> CallToolResult {
         self.prepare_transaction(input.into_command()).await
+    }
+
+    #[tool(
+        description = "Prepare one immutable bounded multi-operation Godot change-set preview with explicit save, validation, and rollback policy; this never accepts approval material and performs no mutation",
+        annotations(
+            title = "Prepare Godot change set",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_prepare_change_set(
+        &self,
+        Parameters(input): Parameters<PrepareChangeSetInput>,
+    ) -> CallToolResult {
+        if let Err(message) = input.validate() {
+            return structured_error("change_set_invalid", message, false);
+        }
+        let _bounded_bridge_params = input.bridge_params();
+        structured_error(
+            "change_set_coordinator_unavailable",
+            "The negotiated Bridge does not expose a ready compound executor.",
+            true,
+        )
+    }
+
+    #[tool(
+        description = "Read one immutable bounded page of a retained automatic validation report by opaque report identifier",
+        annotations(
+            title = "Godot validation report",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn godot_get_validation_report(
+        &self,
+        Parameters(input): Parameters<ValidationReportInput>,
+    ) -> CallToolResult {
+        let coordinator = self.validation_coordinator.lock().await;
+        match coordinator.page(&input.report_id, input.page) {
+            Ok(page) => CallToolResult::structured(report_page_value(page)),
+            Err(error) => CallToolResult::structured_error(validation_report_error(error)),
+        }
+    }
+
+    #[tool(
+        description = "Return the effective host-owned Godot confirmation policy without exposing policy grants, nonces, or approval receipts",
+        annotations(
+            title = "Godot confirmation policy",
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn godot_get_confirmation_policy(
+        &self,
+        Parameters(_input): Parameters<ConfirmationPolicyInput>,
+    ) -> CallToolResult {
+        let snapshot = self.replicator.read().ok();
+        CallToolResult::structured(
+            self.confirmation_policy.snapshot(
+                snapshot.as_ref().map(|value| value.project_id.as_str()),
+                snapshot
+                    .as_ref()
+                    .map(|value| value.editor_session_id.as_str()),
+                unix_millis(),
+            ),
+        )
+    }
+
+    #[tool(
+        description = "Immediately revoke the memory-only host confirmation grant; this operation can only narrow write authority",
+        annotations(
+            title = "Reset Godot confirmation policy",
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    fn godot_reset_confirmation_policy(
+        &self,
+        Parameters(_input): Parameters<ConfirmationPolicyInput>,
+    ) -> CallToolResult {
+        CallToolResult::structured(json!({
+            "mode": "always_ask",
+            "revoked": self.confirmation_policy.reset(),
+            "grant_active": false,
+        }))
     }
 
     #[tool(
@@ -6057,10 +6171,10 @@ mod tests {
     }
 
     #[test]
-    fn exactly_thirty_six_tools_have_closed_schemas_and_transaction_annotations() {
+    fn exactly_forty_tools_have_closed_schemas_and_transaction_annotations() {
         let server = GodotMcpServer::new(SnapshotReplicator::new());
         let tools = server.tool_router.list_all();
-        assert_eq!(tools.len(), 36);
+        assert_eq!(tools.len(), 40);
         let names: BTreeSet<_> = tools.iter().map(|tool| tool.name.as_ref()).collect();
         let expected: BTreeSet<_> = [
             "godot_get_editor_state",
@@ -6096,9 +6210,13 @@ mod tests {
             "godot_prepare_detach_script",
             "godot_prepare_connect_signal",
             "godot_prepare_disconnect_signal",
+            "godot_prepare_change_set",
             "godot_apply_transaction",
             "godot_get_transaction_status",
             "godot_undo_transaction",
+            "godot_get_validation_report",
+            "godot_get_confirmation_policy",
+            "godot_reset_confirmation_policy",
         ]
         .into_iter()
         .collect();
@@ -6320,6 +6438,64 @@ mod tests {
         assert!(apply.input_schema["properties"].get("approval").is_none());
         assert!(apply.input_schema["properties"].get("receipt").is_none());
         assert!(apply.input_schema["properties"].get("approved").is_none());
+
+        let prepare_change_set = tools
+            .iter()
+            .find(|tool| tool.name.as_ref() == "godot_prepare_change_set")
+            .expect("change-set prepare tool");
+        let annotations = prepare_change_set.annotations.as_ref().unwrap();
+        assert_eq!(annotations.read_only_hint, Some(false));
+        assert_eq!(annotations.destructive_hint, Some(false));
+        assert_eq!(annotations.idempotent_hint, Some(true));
+        for forbidden in [
+            "approval",
+            "receipt",
+            "approved",
+            "grant",
+            "confirmation_policy",
+            "validation_report",
+            "rollback_proof",
+        ] {
+            assert!(
+                prepare_change_set.input_schema["properties"]
+                    .get(forbidden)
+                    .is_none()
+            );
+        }
+        assert_eq!(
+            prepare_change_set.input_schema["properties"]["operations"]["minItems"],
+            1
+        );
+        assert_eq!(
+            prepare_change_set.input_schema["properties"]["operations"]["maxItems"],
+            16
+        );
+
+        for name in [
+            "godot_get_validation_report",
+            "godot_get_confirmation_policy",
+        ] {
+            let annotations = tools
+                .iter()
+                .find(|tool| tool.name.as_ref() == name)
+                .unwrap()
+                .annotations
+                .as_ref()
+                .unwrap();
+            assert_eq!(annotations.read_only_hint, Some(true));
+            assert_eq!(annotations.destructive_hint, Some(false));
+            assert_eq!(annotations.idempotent_hint, Some(true));
+        }
+        let reset = tools
+            .iter()
+            .find(|tool| tool.name.as_ref() == "godot_reset_confirmation_policy")
+            .unwrap()
+            .annotations
+            .as_ref()
+            .unwrap();
+        assert_eq!(reset.read_only_hint, Some(false));
+        assert_eq!(reset.destructive_hint, Some(false));
+        assert_eq!(reset.idempotent_hint, Some(true));
     }
 
     #[tokio::test]
