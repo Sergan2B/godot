@@ -38,9 +38,19 @@
     "planRef": {
       "oneOf": [
         { "type": "string", "pattern": "^node:[0-9a-f]{32}$" },
-        { "type": "string", "pattern": "^resource:(?:uid:[0-9]+|path:[0-9a-f]{64})$" },
+        { "type": "string", "pattern": "^godot:resource:(?:uid|path-content):v1:[A-Za-z0-9_-]{43}$" },
         { "type": "string", "pattern": "^alias:[a-z][a-z0-9_]{0,63}$" }
       ]
+    },
+    "nodePlanRef": {
+      "oneOf": [
+        { "type": "string", "pattern": "^node:[0-9a-f]{32}$" },
+        { "type": "string", "pattern": "^alias:[a-z][a-z0-9_]{0,63}$" }
+      ]
+    },
+    "nodeAlias": {
+      "type": "string",
+      "pattern": "^alias:[a-z][a-z0-9_]{0,63}$"
     },
     "saveScope": {
       "type": "object",
@@ -127,6 +137,7 @@
       "properties": {
         "kind": { "const": "update_resource" },
         "resource": { "$ref": "#/$defs/planRef" },
+        "resolved_path": { "$ref": "#/$defs/projectPath" },
         "expected_hash": { "$ref": "#/$defs/digest" },
         "properties": {
           "type": "array",
@@ -135,7 +146,22 @@
           "items": { "$ref": "#/$defs/storedProperty" }
         }
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "resource": { "pattern": "^alias:" }
+            }
+          },
+          "then": {
+            "not": { "required": ["resolved_path"] }
+          },
+          "else": {
+            "required": ["resolved_path"]
+          }
+        }
+      ]
     },
     "scriptEdit": {
       "type": "object",
@@ -174,9 +200,123 @@
     "legacyOperation": {
       "$ref": "transaction.schema.json#/$defs/operation"
     },
+    "compoundCreateNode": {
+      "type": "object",
+      "required": ["kind", "alias", "parent_node_id", "godot_type", "name"],
+      "properties": {
+        "kind": { "const": "create_node" },
+        "alias": { "$ref": "#/$defs/nodeAlias" },
+        "parent_node_id": { "$ref": "#/$defs/nodePlanRef" },
+        "godot_type": { "$ref": "transaction.schema.json#/$defs/godotType" },
+        "name": { "$ref": "transaction.schema.json#/$defs/nodeName" },
+        "insertion_index": { "type": "integer", "minimum": 0, "maximum": 2147483647 }
+      },
+      "additionalProperties": false
+    },
+    "compoundDeleteNode": {
+      "type": "object",
+      "required": ["kind", "node_id"],
+      "properties": {
+        "kind": { "const": "delete_node" },
+        "node_id": { "$ref": "#/$defs/nodeAlias" }
+      },
+      "additionalProperties": false
+    },
+    "compoundReparentNode": {
+      "type": "object",
+      "required": ["kind", "node_id", "new_parent_node_id", "insertion_index", "keep_global_transform"],
+      "properties": {
+        "kind": { "const": "reparent_node" },
+        "node_id": { "$ref": "#/$defs/nodePlanRef" },
+        "new_parent_node_id": { "$ref": "#/$defs/nodePlanRef" },
+        "insertion_index": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "keep_global_transform": { "type": "boolean" }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        { "properties": { "node_id": { "pattern": "^alias:" } } },
+        { "properties": { "new_parent_node_id": { "pattern": "^alias:" } } }
+      ]
+    },
+    "compoundSetProperty": {
+      "type": "object",
+      "required": ["kind", "node_id", "property", "value"],
+      "properties": {
+        "kind": { "const": "set_property" },
+        "node_id": { "$ref": "#/$defs/nodeAlias" },
+        "property": { "$ref": "transaction.schema.json#/$defs/memberName" },
+        "value": { "$ref": "transaction.schema.json#/$defs/writableVariant" }
+      },
+      "additionalProperties": false
+    },
+    "compoundAttachScript": {
+      "type": "object",
+      "required": ["kind", "node_id", "script_ref"],
+      "properties": {
+        "kind": { "const": "attach_script" },
+        "node_id": { "$ref": "#/$defs/nodeAlias" },
+        "script_ref": { "$ref": "resource.schema.json#/$defs/resourceRef" }
+      },
+      "additionalProperties": false
+    },
+    "compoundDetachScript": {
+      "type": "object",
+      "required": ["kind", "node_id"],
+      "properties": {
+        "kind": { "const": "detach_script" },
+        "node_id": { "$ref": "#/$defs/nodeAlias" }
+      },
+      "additionalProperties": false
+    },
+    "compoundConnectSignal": {
+      "type": "object",
+      "required": ["kind", "emitter_node_id", "signal", "receiver_node_id", "method", "flags", "unbinds", "binds"],
+      "properties": {
+        "kind": { "const": "connect_signal" },
+        "emitter_node_id": { "$ref": "#/$defs/nodePlanRef" },
+        "signal": { "$ref": "transaction.schema.json#/$defs/memberName" },
+        "receiver_node_id": { "$ref": "#/$defs/nodePlanRef" },
+        "method": { "$ref": "transaction.schema.json#/$defs/memberName" },
+        "flags": { "enum": [2, 3, 6, 7] },
+        "unbinds": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "binds": { "type": "array", "maxItems": 1000, "items": { "$ref": "transaction.schema.json#/$defs/writableVariant" } }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        { "properties": { "emitter_node_id": { "pattern": "^alias:" } } },
+        { "properties": { "receiver_node_id": { "pattern": "^alias:" } } }
+      ]
+    },
+    "compoundDisconnectSignal": {
+      "type": "object",
+      "required": ["kind", "emitter_node_id", "signal", "receiver_node_id", "method", "flags", "unbinds", "binds"],
+      "properties": {
+        "kind": { "const": "disconnect_signal" },
+        "emitter_node_id": { "$ref": "#/$defs/nodePlanRef" },
+        "signal": { "$ref": "transaction.schema.json#/$defs/memberName" },
+        "receiver_node_id": { "$ref": "#/$defs/nodePlanRef" },
+        "method": { "$ref": "transaction.schema.json#/$defs/memberName" },
+        "flags": { "enum": [2, 3, 6, 7] },
+        "unbinds": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "binds": { "type": "array", "maxItems": 1000, "items": { "$ref": "transaction.schema.json#/$defs/writableVariant" } }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        { "properties": { "emitter_node_id": { "pattern": "^alias:" } } },
+        { "properties": { "receiver_node_id": { "pattern": "^alias:" } } }
+      ]
+    },
     "operation": {
       "oneOf": [
         { "$ref": "#/$defs/legacyOperation" },
+        { "$ref": "#/$defs/compoundCreateNode" },
+        { "$ref": "#/$defs/compoundDeleteNode" },
+        { "$ref": "#/$defs/compoundReparentNode" },
+        { "$ref": "#/$defs/compoundSetProperty" },
+        { "$ref": "#/$defs/compoundAttachScript" },
+        { "$ref": "#/$defs/compoundDetachScript" },
+        { "$ref": "#/$defs/compoundConnectSignal" },
+        { "$ref": "#/$defs/compoundDisconnectSignal" },
         { "$ref": "#/$defs/createResource" },
         { "$ref": "#/$defs/updateResource" },
         { "$ref": "#/$defs/updateGdscript" }
@@ -259,12 +399,14 @@
     },
     "validationCompleteParams": {
       "type": "object",
-      "required": ["change_set_id", "validation_report_id", "report_digest", "outcome"],
+      "required": ["change_set_id", "validation_report_id", "report_digest", "outcome", "expected_transaction_seq", "expected_postimage_digest"],
       "properties": {
         "change_set_id": { "$ref": "#/$defs/changeSetId" },
         "validation_report_id": { "$ref": "#/$defs/validationReportId" },
         "report_digest": { "$ref": "#/$defs/digest" },
-        "outcome": { "$ref": "#/$defs/validationOutcome" }
+        "outcome": { "$ref": "#/$defs/validationOutcome" },
+        "expected_transaction_seq": { "$ref": "#/$defs/safeInteger" },
+        "expected_postimage_digest": { "$ref": "#/$defs/digest" }
       },
       "additionalProperties": false
     },

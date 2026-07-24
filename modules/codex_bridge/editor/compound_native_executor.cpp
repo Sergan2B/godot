@@ -8,6 +8,7 @@
 #include "compound_native_executor.h"
 
 #include "bridge_editor_identity.h"
+#include "modules/codex_bridge/protocol/bridge_transaction_canonicalizer.h"
 
 #include "core/object/callable_mp.h"
 #include "editor/editor_data.h"
@@ -24,7 +25,7 @@ static CompoundNativeExecutor::Outcome failure(const String &p_code, const Strin
 	return outcome;
 }
 
-static bool scene_binding(const String &p_editor_session_id, const String &p_scene_id, String &r_history_id, int &r_native_history_id) {
+static bool scene_binding(const String &p_editor_session_id, const String &p_scene_id, String &r_history_id, int &r_native_history_id, String &r_scene_path, ObjectID &r_scene_root_id) {
 	EditorData &editor_data = EditorNode::get_editor_data();
 	for (int scene_index = 0; scene_index < editor_data.get_edited_scene_count(); scene_index++) {
 		Node *root = editor_data.get_edited_scene_root(scene_index);
@@ -33,14 +34,54 @@ static bool scene_binding(const String &p_editor_session_id, const String &p_sce
 		}
 		r_native_history_id = editor_data.get_scene_history_id(scene_index);
 		r_history_id = BridgeEditorIdentity::make_history_id(p_editor_session_id, r_native_history_id);
+		r_scene_path = root->get_scene_file_path();
+		r_scene_root_id = root->get_instance_id();
 		return true;
 	}
 	return false;
 }
 
-static bool resolve_scene_operation(const String &p_editor_session_id, const String &p_scene_id, const String &p_history_id, const Dictionary &p_operation, TransactionSceneResolver::Job &r_job, TransactionPreviewBuilder::Resolution &r_resolution, String &r_error_code, String &r_error_message) {
-	if (TransactionSceneResolver::begin(p_editor_session_id, p_scene_id, p_history_id, p_operation, r_job, r_error_code, r_error_message) != OK) {
+static String alias_node_id(const String &p_alias) {
+	String digest;
+	if (BridgeTransactionCanonicalizer::sha256_utf8(p_alias, digest, "godot-codex-plan-node-alias/v1\n") != OK) {
+		return String();
+	}
+	return "node:" + digest.trim_prefix("sha256:").substr(0, 32);
+}
+
+static bool bind_node_aliases(const Dictionary &p_operation, const HashMap<String, ObjectID> &p_aliases, Dictionary &r_operation, HashMap<String, ObjectID> &r_bound_nodes, String &r_error_code, String &r_error_message) {
+	r_operation = p_operation.duplicate(true);
+	r_operation.erase("alias");
+	for (const char *field : { "node_id", "parent_node_id", "new_parent_node_id", "emitter_node_id", "receiver_node_id" }) {
+		if (!r_operation.has(field) || r_operation[field].get_type() != Variant::STRING || !String(r_operation[field]).begins_with("alias:")) {
+			continue;
+		}
+		const String alias = r_operation[field];
+		const ObjectID *object_id = p_aliases.getptr(alias);
+		const String node_id = alias_node_id(alias);
+		if (!object_id || node_id.is_empty()) {
+			r_error_code = "alias_not_found";
+			r_error_message = "A plan-local node alias was not resolved before native preflight.";
+			return false;
+		}
+		r_operation[field] = node_id;
+		r_bound_nodes.insert(node_id, *object_id);
+	}
+	return true;
+}
+
+static bool resolve_scene_operation(const String &p_editor_session_id, const String &p_scene_id, const String &p_history_id, const Dictionary &p_operation, const HashMap<String, ObjectID> &p_aliases, TransactionSceneResolver::Job &r_job, TransactionPreviewBuilder::Resolution &r_resolution, String &r_error_code, String &r_error_message) {
+	Dictionary bound_operation;
+	HashMap<String, ObjectID> bound_nodes;
+	if (!bind_node_aliases(p_operation, p_aliases, bound_operation, bound_nodes, r_error_code, r_error_message)) {
 		return false;
+	}
+	if (TransactionSceneResolver::begin(p_editor_session_id, p_scene_id, p_history_id, bound_operation, r_job, r_error_code, r_error_message) != OK) {
+		return false;
+	}
+	for (const KeyValue<String, ObjectID> &entry : bound_nodes) {
+		r_job.objects_by_node_id.insert(entry.key, entry.value);
+		r_job.node_ids_by_object.insert(entry.value, entry.key);
 	}
 	for (uint32_t slice = 0; slice <= TransactionSceneResolver::MAX_STRUCTURAL_NODES; slice++) {
 		const TransactionSceneResolver::ProcessOutcome outcome = TransactionSceneResolver::process(r_job, TransactionSceneResolver::MAX_NODES_PER_SLICE, TransactionSceneResolver::MAX_SLICE_USEC);
@@ -141,6 +182,8 @@ CompoundNativeExecutor::Outcome CompoundNativeExecutor::apply(const CompoundChan
 	r_execution.change_set_id = p_plan.change_set_id;
 	const String scene_id = p_coordinates.get("scene_id", String());
 	String history_id;
+	String scene_path;
+	ObjectID scene_root_id;
 	int scene_history_id = -1;
 	bool has_scene_operation = false;
 	for (int index = 0; index < p_plan.ordered_operations.size(); index++) {
@@ -150,10 +193,11 @@ CompoundNativeExecutor::Outcome CompoundNativeExecutor::apply(const CompoundChan
 			break;
 		}
 	}
-	if (has_scene_operation && !scene_binding(p_editor_session_id, scene_id, history_id, scene_history_id)) {
+	if (has_scene_operation && !scene_binding(p_editor_session_id, scene_id, history_id, scene_history_id, scene_path, scene_root_id)) {
 		return failure("scene_not_open", "The compound scene anchor is not an open saved scene.");
 	}
 	r_execution.native_history_id = has_scene_operation ? scene_history_id : EditorUndoRedoManager::GLOBAL_HISTORY;
+	HashMap<String, ObjectID> node_aliases;
 
 	for (int index = 0; index < p_plan.ordered_operations.size(); index++) {
 		const Dictionary operation = p_plan.ordered_operations[index];
@@ -170,7 +214,7 @@ CompoundNativeExecutor::Outcome CompoundNativeExecutor::apply(const CompoundChan
 		TransactionPreviewBuilder::Resolution resolution;
 		String error_code;
 		String error_message;
-		if (!resolve_scene_operation(p_editor_session_id, scene_id, history_id, operation, resolver_job, resolution, error_code, error_message)) {
+		if (!resolve_scene_operation(p_editor_session_id, scene_id, history_id, operation, node_aliases, resolver_job, resolution, error_code, error_message)) {
 			cleanup(r_execution);
 			return failure(error_code, error_message);
 		}
@@ -194,6 +238,14 @@ CompoundNativeExecutor::Outcome CompoundNativeExecutor::apply(const CompoundChan
 			cleanup(r_execution);
 			return failure("change_set_history_mismatch", "A compound step selected a different native history.");
 		}
+		if (kind == "create_node" && operation.has("alias")) {
+			const ObjectID created_id = structural_executor.get_created_node_id(step.native_plan);
+			if (created_id == ObjectID()) {
+				cleanup(r_execution);
+				return failure("alias_not_found", "The created node could not be bound to its plan-local alias.");
+			}
+			node_aliases.insert(operation["alias"], created_id);
+		}
 		r_execution.steps.push_back(step);
 	}
 
@@ -202,7 +254,7 @@ CompoundNativeExecutor::Outcome CompoundNativeExecutor::apply(const CompoundChan
 	String persistence_message;
 	const bool has_persistence = p_plan.save_scope.size() > 0;
 	if (has_persistence) {
-		if (ScopedPersistenceExecutor::stage(p_plan, p_resource_paths, staged, persistence_code, persistence_message) != OK) {
+		if (ScopedPersistenceExecutor::stage(p_plan, p_resource_paths, scene_path, scene_root_id, staged, persistence_code, persistence_message) != OK) {
 			cleanup(r_execution);
 			return failure(persistence_code, persistence_message);
 		}

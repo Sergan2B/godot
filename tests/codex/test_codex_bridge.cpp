@@ -1625,6 +1625,12 @@ TEST_CASE("[CodexS10Rpc18Profile] RPC 1.8 preserves the version matrix and route
 				coordinates["editor_session_id"] = editor_session_id;
 				compound_params["coordinates"] = coordinates;
 				REQUIRE(BridgeChangeSetProfile::validate_prepare_params(compound_params));
+				Dictionary validation_params = Dictionary(Dictionary(change_set_vector["validation_complete_request"])["params"]).duplicate(true);
+				REQUIRE(BridgeChangeSetProfile::validate_validation_complete_params(validation_params));
+				validation_params["expected_transaction_seq"] = 7.0;
+				CHECK(BridgeChangeSetProfile::validate_validation_complete_params(validation_params));
+				validation_params.erase("expected_postimage_digest");
+				CHECK_FALSE(BridgeChangeSetProfile::validate_validation_complete_params(validation_params));
 				REQUIRE(rpc.handle_message(make_rpc_request("req:compound-ready", "transaction.prepare_change_set", compound_params, project_id, editor_session_id, 5000, version), 2, 2, outcome) == OK);
 				CHECK(outcome.dispatch);
 				CHECK(outcome.method == BridgeRpcSession::METHOD_CHANGE_SET_PREPARE);

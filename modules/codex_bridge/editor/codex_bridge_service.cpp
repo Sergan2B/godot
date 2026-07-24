@@ -219,24 +219,37 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 		case MainThreadDispatcher::COMMAND_CHANGE_SET_VALIDATION_COMPLETE:
 		case MainThreadDispatcher::COMMAND_CHANGE_SET_ROLLBACK: {
 			const uint64_t now_ms = (uint64_t)(Time::get_singleton()->get_unix_time_from_system() * 1000.0);
+			Dictionary params = p_command.params.duplicate(true);
+			params.erase("_protocol_version");
 			CompoundChangeSetCoordinator::Outcome outcome;
 			if (p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_PREPARE) {
-				outcome = service->compound_change_set_coordinator.prepare(p_command.params, now_ms);
+				outcome = service->compound_change_set_coordinator.prepare(params, now_ms);
 			} else if (p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_APPLY) {
-				outcome = service->compound_change_set_coordinator.apply(p_command.params, now_ms);
+				outcome = service->compound_change_set_coordinator.apply(params, now_ms);
 			} else if (p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_STATUS) {
-				outcome = service->compound_change_set_coordinator.status(p_command.params.get("change_set_id", String()), now_ms);
+				outcome = service->compound_change_set_coordinator.status(params.get("change_set_id", String()), now_ms);
 			} else if (p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_UNDO) {
-				outcome = service->compound_change_set_coordinator.undo(p_command.params, now_ms);
+				outcome = service->compound_change_set_coordinator.undo(params, now_ms);
 			} else if (p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_VALIDATION_COMPLETE) {
-				outcome = service->compound_change_set_coordinator.validation_complete(p_command.params, now_ms);
+				outcome = service->compound_change_set_coordinator.validation_complete(params, now_ms);
 			} else {
-				outcome = service->compound_change_set_coordinator.rollback(p_command.params, now_ms);
+				outcome = service->compound_change_set_coordinator.rollback(params, now_ms);
 			}
 			if (outcome.has_result) {
 				service->transport_worker.complete_request(p_command.request_id, outcome.result);
 			} else {
 				service->transport_worker.complete_request_error(p_command.request_id, outcome.error_code, outcome.error_message, outcome.retryable);
+			}
+			Vector<Dictionary> events;
+			service->compound_change_set_coordinator.drain_events(events);
+			for (const Dictionary &params : events) {
+				Dictionary notification;
+				notification["protocol_version"] = "1.8";
+				notification["kind"] = "notification";
+				notification["method"] = "transaction.event";
+				notification["params"] = params;
+				notification["context"] = service->_make_context();
+				service->transport_worker.publish_notification(notification);
 			}
 		} break;
 		case MainThreadDispatcher::COMMAND_CANCEL: {
@@ -557,7 +570,7 @@ void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Diction
 	_refresh_open_scene_ids(true);
 	const Dictionary revisions = revision_clock.get_revision_vector();
 	const String protocol_version = p_params.get("_protocol_version", "1.1");
-	const bool full_live_context = protocol_version == "1.5" || protocol_version == "1.6" || protocol_version == "1.7";
+	const bool full_live_context = protocol_version == "1.5" || protocol_version == "1.6" || protocol_version == "1.7" || protocol_version == "1.8";
 	if (full_live_context) {
 		PendingEditorSnapshot pending;
 		pending.request_id = p_request_id;

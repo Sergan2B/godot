@@ -98,8 +98,11 @@ static bool inject_fault(const String &p_operation_kind, const String &p_stage) 
 }
 
 static bool is_editable(Node *p_root, Node *p_node) {
-	if (!p_root || !p_node || p_node->is_internal() || (p_node != p_root && !p_root->is_ancestor_of(p_node))) {
+	if (!p_root || !p_node || p_node->is_internal()) {
 		return false;
+	}
+	if (p_node != p_root && !p_root->is_ancestor_of(p_node)) {
+		return !p_node->get_parent() && !p_node->get_owner();
 	}
 	if (p_node == p_root || p_node->get_owner() == p_root) {
 		return true;
@@ -506,6 +509,11 @@ Error StructuralTransactionExecutor::register_native_action_on_history(const Nat
 	return register_action(p_plan, registrar);
 }
 
+ObjectID StructuralTransactionExecutor::get_created_node_id(const NativeActionPlan &p_plan) const {
+	StructuralPlanData *data = plan_data(p_plan);
+	return data && data->kind == STRUCTURAL_CREATE ? data->created_id : ObjectID();
+}
+
 bool StructuralTransactionExecutor::verify_postcondition(const PreparedTransactionStore::Record &p_record, const NativeActionPlan &p_plan) const {
 	if (inject_fault(p_record.operation_kind, "postcondition") || inject_fault(p_record.operation_kind, "rollback_proof")) {
 		return false;
@@ -568,7 +576,7 @@ Array StructuralTransactionExecutor::collect_committed_entities(const PreparedTr
 	}
 	Node *root = node_from_id(data->root_id);
 	Node *node = node_from_id(data->kind == STRUCTURAL_CREATE ? data->created_id : data->target_id);
-	if (!root || !node || (node != root && !root->is_ancestor_of(node))) {
+	if (!root || !node || !root->is_inside_tree() || !node->is_inside_tree() || (node != root && !root->is_ancestor_of(node))) {
 		return entities;
 	}
 	Dictionary entity;

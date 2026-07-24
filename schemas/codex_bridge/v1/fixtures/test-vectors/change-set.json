@@ -129,7 +129,9 @@
       "change_set_id": "change-set:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "validation_report_id": "validation-report:ffffffffffffffffffffffffffffffff",
       "report_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
-      "outcome": "passed"
+      "outcome": "passed",
+      "expected_transaction_seq": 7,
+      "expected_postimage_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
     }
   },
   "rollback_request": {

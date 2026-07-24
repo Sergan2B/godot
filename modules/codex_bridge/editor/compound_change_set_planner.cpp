@@ -126,11 +126,42 @@ static bool valid_stored_properties(const Array &p_properties) {
 	return true;
 }
 
+static Dictionary sanitize_compound_scene_operation(const Dictionary &p_operation) {
+	Dictionary sanitized = p_operation.duplicate(true);
+	sanitized.erase("alias");
+	for (const char *key : { "node_id", "parent_node_id", "new_parent_node_id", "emitter_node_id", "receiver_node_id" }) {
+		if (sanitized.has(key) && sanitized[key].get_type() == Variant::STRING && valid_alias(sanitized[key])) {
+			sanitized[key] = "node:00000000000000000000000000000000";
+		}
+	}
+	return sanitized;
+}
+
+static bool valid_compound_scene_operation(const Dictionary &p_operation) {
+	const String kind = p_operation.get("kind", String());
+	if (kind != "create_node" && kind != "reparent_node" && kind != "delete_node" && kind != "set_property" && kind != "attach_script" && kind != "detach_script" && kind != "connect_signal" && kind != "disconnect_signal") {
+		return false;
+	}
+	if (p_operation.has("alias") && (kind != "create_node" || p_operation["alias"].get_type() != Variant::STRING || !valid_alias(p_operation["alias"]))) {
+		return false;
+	}
+	bool has_plan_alias = p_operation.has("alias");
+	for (const char *key : { "node_id", "parent_node_id", "new_parent_node_id", "emitter_node_id", "receiver_node_id" }) {
+		if (p_operation.has(key) && p_operation[key].get_type() == Variant::STRING && valid_alias(p_operation[key])) {
+			has_plan_alias = true;
+		}
+	}
+	return has_plan_alias && BridgeTransactionProfile::validate_operation(sanitize_compound_scene_operation(p_operation));
+}
+
 static bool valid_new_operation(const Dictionary &p_operation) {
 	if (!p_operation.has("kind") || p_operation["kind"].get_type() != Variant::STRING) {
 		return false;
 	}
 	const String kind = p_operation["kind"];
+	if (valid_compound_scene_operation(p_operation)) {
+		return true;
+	}
 	if (kind == "create_resource") {
 		return has_only_keys(p_operation, { "kind", "alias", "path", "resource_class", "properties" }) && p_operation.size() == 5 &&
 				p_operation["alias"].get_type() == Variant::STRING && valid_alias(p_operation["alias"]) &&
@@ -139,11 +170,15 @@ static bool valid_new_operation(const Dictionary &p_operation) {
 				p_operation["properties"].get_type() == Variant::ARRAY && valid_stored_properties(p_operation["properties"]);
 	}
 	if (kind == "update_resource") {
-		if (!has_only_keys(p_operation, { "kind", "resource", "expected_hash", "properties" }) || p_operation.size() != 4 || p_operation["resource"].get_type() != Variant::STRING || p_operation["expected_hash"].get_type() != Variant::STRING || !valid_digest(p_operation["expected_hash"]) || p_operation["properties"].get_type() != Variant::ARRAY || Array(p_operation["properties"]).is_empty() || !valid_stored_properties(p_operation["properties"])) {
+		if (!has_only_keys(p_operation, { "kind", "resource", "resolved_path", "expected_hash", "properties" }) || (p_operation.size() != 4 && p_operation.size() != 5) || p_operation["resource"].get_type() != Variant::STRING || p_operation["expected_hash"].get_type() != Variant::STRING || !valid_digest(p_operation["expected_hash"]) || p_operation["properties"].get_type() != Variant::ARRAY || Array(p_operation["properties"]).is_empty() || !valid_stored_properties(p_operation["properties"])) {
 			return false;
 		}
 		const String resource = p_operation["resource"];
-		return valid_alias(resource) || resource.begins_with("resource:uid:") || resource.begins_with("resource:path:");
+		if (valid_alias(resource)) {
+			return !p_operation.has("resolved_path");
+		}
+		return (resource.begins_with("godot:resource:uid:v1:") || resource.begins_with("godot:resource:path-content:v1:")) &&
+				p_operation.has("resolved_path") && p_operation["resolved_path"].get_type() == Variant::STRING && valid_project_path(p_operation["resolved_path"], ".tres");
 	}
 	if (kind == "update_gdscript") {
 		if (!has_only_keys(p_operation, { "kind", "path", "expected_hash", "edits" }) || p_operation.size() != 4 || p_operation["path"].get_type() != Variant::STRING || !valid_project_path(p_operation["path"], ".gd") || p_operation["expected_hash"].get_type() != Variant::STRING || !valid_digest(p_operation["expected_hash"]) || p_operation["edits"].get_type() != Variant::ARRAY) {
@@ -177,6 +212,18 @@ static bool valid_new_operation(const Dictionary &p_operation) {
 static Dictionary normalize_operation(const Dictionary &p_operation) {
 	if (BridgeTransactionProfile::validate_operation(p_operation)) {
 		return BridgeTransactionCanonicalizer::normalize_operation(p_operation);
+	}
+	if (valid_compound_scene_operation(p_operation)) {
+		Dictionary normalized = BridgeTransactionCanonicalizer::normalize_operation(sanitize_compound_scene_operation(p_operation));
+		if (p_operation.has("alias")) {
+			normalized["alias"] = p_operation["alias"];
+		}
+		for (const char *key : { "node_id", "parent_node_id", "new_parent_node_id", "emitter_node_id", "receiver_node_id" }) {
+			if (p_operation.has(key) && p_operation[key].get_type() == Variant::STRING && valid_alias(p_operation[key])) {
+				normalized[key] = p_operation[key];
+			}
+		}
+		return normalized;
 	}
 	Dictionary normalized = p_operation.duplicate(true);
 	const String kind = normalized["kind"];
@@ -231,7 +278,7 @@ static Dictionary redacted_operation(const Dictionary &p_operation) {
 	Dictionary redacted;
 	const String kind = p_operation["kind"];
 	redacted["kind"] = kind;
-	for (const char *key : { "alias", "path", "resource_class", "resource", "node_id", "parent_node_id", "new_parent_node_id", "property", "emitter_node_id", "signal", "receiver_node_id", "method", "name", "godot_type" }) {
+	for (const char *key : { "alias", "path", "resolved_path", "resource_class", "resource", "node_id", "parent_node_id", "new_parent_node_id", "property", "emitter_node_id", "signal", "receiver_node_id", "method", "name", "godot_type" }) {
 		if (p_operation.has(key)) {
 			redacted[key] = p_operation[key];
 		}
@@ -326,14 +373,24 @@ bool CompoundChangeSetPlanner::validate_params(const Dictionary &p_params) {
 		unique_paths.insert(paths[index]);
 	}
 	bool has_persistence_operation = false;
+	bool has_scene_operation = false;
 	for (int index = 0; index < operations.size(); index++) {
 		const String kind = Dictionary(operations[index])["kind"];
 		if (kind == "create_resource" || kind == "update_resource" || kind == "update_gdscript") {
 			has_persistence_operation = true;
-			break;
+		} else {
+			has_scene_operation = true;
 		}
 	}
-	if (has_persistence_operation != !paths.is_empty()) {
+	int scene_path_count = 0;
+	for (int index = 0; index < paths.size(); index++) {
+		if (String(paths[index]).ends_with(".tscn")) {
+			scene_path_count++;
+		}
+	}
+	if (scene_path_count > (has_scene_operation ? 1 : 0) ||
+			(!has_persistence_operation && !paths.is_empty() && !(has_scene_operation && scene_path_count == paths.size())) ||
+			(has_persistence_operation && paths.is_empty())) {
 		return false;
 	}
 	return validation_policy_valid(p_params["validation_policy"]);
@@ -373,6 +430,7 @@ Error CompoundChangeSetPlanner::build(const String &p_project_id, const String &
 	Vector<HashSet<int>> dependencies;
 	dependencies.resize(operations.size());
 	HashSet<String> writes;
+	HashSet<String> deleted_nodes;
 	for (int index = 0; index < operations.size(); index++) {
 		const Dictionary operation = operations[index];
 		if (operation.has("resource") && operation["resource"].get_type() == Variant::STRING && String(operation["resource"]).begins_with("alias:")) {
@@ -383,8 +441,50 @@ Error CompoundChangeSetPlanner::build(const String &p_project_id, const String &
 				r_error_message = "A plan-local alias has no producer.";
 				return ERR_DOES_NOT_EXIST;
 			}
-			ERR_FAIL_COND_V(*producer == index, ERR_CYCLIC_LINK);
+			if (String(Dictionary(operations[*producer])["kind"]) != "create_resource") {
+				r_error_code = "alias_type_mismatch";
+				r_error_message = "A resource reference must use an alias produced by create_resource.";
+				return ERR_INVALID_DATA;
+			}
+			if (*producer == index) {
+				r_error_code = "dependency_cycle";
+				r_error_message = "An operation cannot reference its own plan-local alias.";
+				return ERR_CYCLIC_LINK;
+			}
 			dependencies.write[index].insert(*producer);
+		}
+		for (const char *field : { "node_id", "parent_node_id", "new_parent_node_id", "emitter_node_id", "receiver_node_id" }) {
+			if (!operation.has(field) || operation[field].get_type() != Variant::STRING) {
+				continue;
+			}
+			const String reference = operation[field];
+			if (deleted_nodes.has(reference)) {
+				r_error_code = "deleted_node_referenced";
+				r_error_message = "A later operation references a node already deleted by this change set.";
+				return ERR_DOES_NOT_EXIST;
+			}
+			if (valid_alias(reference)) {
+				const int *producer = alias_producers.getptr(reference);
+				if (!producer) {
+					r_error_code = "alias_not_found";
+					r_error_message = "A plan-local node alias has no producer.";
+					return ERR_DOES_NOT_EXIST;
+				}
+				if (String(Dictionary(operations[*producer])["kind"]) != "create_node") {
+					r_error_code = "alias_type_mismatch";
+					r_error_message = "A node reference must use an alias produced by create_node.";
+					return ERR_INVALID_DATA;
+				}
+				if (*producer == index) {
+					r_error_code = "dependency_cycle";
+					r_error_message = "An operation cannot reference its own plan-local alias.";
+					return ERR_CYCLIC_LINK;
+				}
+				dependencies.write[index].insert(*producer);
+			}
+		}
+		if (String(operation["kind"]) == "delete_node") {
+			deleted_nodes.insert(operation["node_id"]);
 		}
 		const String key = write_key(operation);
 		if (!key.is_empty() && writes.has(key)) {

@@ -298,13 +298,16 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		while (!pending.is_empty() && node_count < MAX_SCENE_NODES) {
 			Node *node = pending.front()->get();
 			pending.pop_front();
+			if (!node || !scene_root->is_inside_tree() || !node->is_inside_tree() || (node != scene_root && !scene_root->is_ancestor_of(node))) {
+				continue;
+			}
 			const bool project_node = !capture_context || p_node_start < 0 || (node_count >= p_node_start && (p_node_count < 0 || node_count < p_node_start + p_node_count));
 			if (project_node) {
 				const String node_path = String(scene_root->get_path_to(node));
 				const String node_id = _make_node_id(p_editor_session_id, scene_id, node_path);
 				if (capture_context) {
 					Node *owner = node->get_owner();
-					const String owner_path = owner && (owner == scene_root || scene_root->is_ancestor_of(owner)) ? String(scene_root->get_path_to(owner)) : String();
+					const String owner_path = owner && owner->is_inside_tree() && (owner == scene_root || scene_root->is_ancestor_of(owner)) ? String(scene_root->get_path_to(owner)) : String();
 					const Ref<Script> script = node->get_script();
 					Dictionary entity;
 					entity["kind"] = "node";
@@ -613,6 +616,8 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		HashSet<String> captured_id_set;
 		int diagnostic_bytes = 0;
 		int omitted_diagnostics = 0;
+		int64_t first_output_seq = 0;
+		int64_t last_output_seq = 0;
 		EditorLog *editor_log = EditorNode::get_log();
 		if (editor_log) {
 			const Array output_messages = editor_log->get_messages_snapshot(MIN(MAX_DIAGNOSTICS, DIAGNOSTIC_CAPTURE_RECORDS));
@@ -638,6 +643,10 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 				Dictionary diagnostic;
 				diagnostic["kind"] = "editor_diagnostic";
 				const int64_t output_seq = raw_message.get("output_seq", 0);
+				if (output_seq > 0) {
+					first_output_seq = first_output_seq == 0 ? output_seq : MIN(first_output_seq, output_seq);
+					last_output_seq = MAX(last_output_seq, output_seq);
+				}
 				const String session_component = p_editor_session_id.trim_prefix("editor:").left(16).rpad(16, "0");
 				uint64_t identity_seq = (uint64_t)MAX((int64_t)0, output_seq);
 				if (identity_seq == 0) {
@@ -683,6 +692,9 @@ Error EditorContextAdapter::capture(const String &p_project_id, const String &p_
 		diagnostic_state["diagnostic_ids"] = diagnostic_ids;
 		diagnostic_state["omitted_count"] = omitted_diagnostics;
 		diagnostic_state["encoded_bytes"] = diagnostic_bytes;
+		diagnostic_state["first_output_seq"] = first_output_seq;
+		diagnostic_state["last_output_seq"] = last_output_seq;
+		diagnostic_state["omitted_before_first"] = omitted_diagnostics > 0 && first_output_seq > 0;
 		entities.push_back(diagnostic_state);
 	}
 

@@ -58,6 +58,31 @@ static Dictionary update_resource(const String &p_reference) {
 	return operation;
 }
 
+static Dictionary update_indexed_resource(const String &p_reference, const String &p_path) {
+	Dictionary operation = update_resource(p_reference);
+	operation["resolved_path"] = p_path;
+	return operation;
+}
+
+static Dictionary create_node(const String &p_alias, const String &p_parent) {
+	Dictionary operation;
+	operation["kind"] = "create_node";
+	operation["alias"] = p_alias;
+	operation["parent_node_id"] = p_parent;
+	operation["godot_type"] = "Node2D";
+	operation["name"] = "Created";
+	return operation;
+}
+
+static Dictionary set_alias_property(const String &p_alias) {
+	Dictionary operation;
+	operation["kind"] = "set_property";
+	operation["node_id"] = p_alias;
+	operation["property"] = "process_priority";
+	operation["value"] = int_value(7);
+	return operation;
+}
+
 static Dictionary params_for(const Array &p_operations) {
 	Dictionary coordinates;
 	coordinates["editor_session_id"] = EDITOR_ID;
@@ -137,6 +162,52 @@ TEST_CASE("[CodexS10CompoundLifecycle] Operation bounds aliases and conflicting 
 	CHECK(code == "conflicting_writes");
 }
 
+TEST_CASE("[CodexS10CompoundLifecycle] Existing resources require canonical opaque identity and a host-resolved tres path") {
+	const String resource_id = "godot:resource:uid:v1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+	Array operations;
+	operations.push_back(update_indexed_resource(resource_id, "res://validation/accent.tres"));
+	CompoundChangeSetPlanner::Plan plan;
+	String code;
+	String message;
+	REQUIRE(CompoundChangeSetPlanner::build(PROJECT_ID, EDITOR_ID, params_for(operations), 1000, plan, code, message) == OK);
+	CHECK(Dictionary(plan.ordered_operations[0])["resource"] == resource_id);
+	CHECK(Dictionary(plan.ordered_operations[0])["resolved_path"] == "res://validation/accent.tres");
+
+	operations.clear();
+	operations.push_back(update_resource(resource_id));
+	CHECK(CompoundChangeSetPlanner::build(PROJECT_ID, EDITOR_ID, params_for(operations), 1000, plan, code, message) == ERR_INVALID_DATA);
+
+	operations.clear();
+	operations.push_back(update_indexed_resource("resource:uid:42", "res://validation/accent.tres"));
+	CHECK(CompoundChangeSetPlanner::build(PROJECT_ID, EDITOR_ID, params_for(operations), 1000, plan, code, message) == ERR_INVALID_DATA);
+}
+
+TEST_CASE("[CodexS10CompoundLifecycle] Forward node aliases order create before dependent scene writes and stay opaque") {
+	Array operations;
+	operations.push_back(set_alias_property("alias:created"));
+	operations.push_back(create_node("alias:created", "node:11111111111111111111111111111111"));
+	Dictionary params = params_for(operations);
+	Dictionary save_scope;
+	save_scope["paths"] = Array();
+	params["save_scope"] = save_scope;
+	CompoundChangeSetPlanner::Plan plan;
+	String code;
+	String message;
+	REQUIRE(CompoundChangeSetPlanner::build(PROJECT_ID, EDITOR_ID, params, 1000, plan, code, message) == OK);
+	REQUIRE(plan.ordered_operations.size() == 2);
+	CHECK(Dictionary(plan.ordered_operations[0])["kind"] == "create_node");
+	CHECK(Dictionary(plan.ordered_operations[0])["alias"] == "alias:created");
+	CHECK(Dictionary(plan.ordered_operations[1])["node_id"] == "alias:created");
+	CHECK_FALSE(plan.canonical_preview_json.contains("ObjectID"));
+
+	operations.clear();
+	operations.push_back(create_resource("alias:wrong_type", "res://validation/accent.tres"));
+	operations.push_back(set_alias_property("alias:wrong_type"));
+	params = params_for(operations);
+	CHECK(CompoundChangeSetPlanner::build(PROJECT_ID, EDITOR_ID, params, 1000, plan, code, message) == ERR_INVALID_DATA);
+	CHECK(code == "alias_type_mismatch");
+}
+
 TEST_CASE("[CodexS10CompoundLifecycle] Memory-only scene changes require an empty save scope") {
 	Array operations;
 	Dictionary operation;
@@ -202,6 +273,12 @@ TEST_CASE("[CodexS10CompoundLifecycle] Coordinator rejects stale revisions and r
 	REQUIRE(first.has_result);
 	CHECK(first.result["state"] == "previewed");
 	CHECK(coordinator.get_active_count() == 1);
+	Vector<Dictionary> events;
+	coordinator.drain_events(events);
+	REQUIRE(events.size() == 1);
+	CHECK(events[0]["state"] == "previewed");
+	CHECK((int64_t)events[0]["transaction_seq"] == 1);
+	CHECK_FALSE(events[0].has("native_history_id"));
 	const String id = first.result["change_set_id"];
 	const String digest = first.result["preview_digest"];
 	CompoundChangeSetCoordinator::Outcome replay = coordinator.prepare(params, 1001);
@@ -209,6 +286,9 @@ TEST_CASE("[CodexS10CompoundLifecycle] Coordinator rejects stale revisions and r
 	CHECK(replay.result["change_set_id"] == id);
 	CHECK(replay.result["preview_digest"] == digest);
 	CHECK(coordinator.get_active_count() == 1);
+	events.clear();
+	coordinator.drain_events(events);
+	CHECK(events.is_empty());
 
 	coordinates["resource_revision"] = 2;
 	params["coordinates"] = coordinates;

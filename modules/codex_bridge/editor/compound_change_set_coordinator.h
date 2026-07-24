@@ -32,10 +32,14 @@ private:
 	CompoundNativeExecutor native_executor;
 	HashMap<String, CompoundNativeExecutor::Execution> executions;
 	Dictionary resource_paths;
+	Vector<Dictionary> events;
 
 	bool _coordinates_current(const Dictionary &p_coordinates) const;
 	static Dictionary _preview_result(const PreparedChangeSetStore::Record &p_record);
 	static Outcome _error(const String &p_code, const String &p_message, bool p_retryable = false);
+	void _emit(const PreparedChangeSetStore::Record &p_record);
+	Error _transition(const String &p_change_set_id, PreparedChangeSetStore::State p_state, uint64_t p_now_ms, const String &p_outcome = String(), const String &p_error_code = String(), const String &p_error_message = String());
+	void _expire(uint64_t p_now_ms);
 	void _reconcile(PreparedChangeSetStore::Record &r_record, uint64_t p_now_ms);
 
 public:
@@ -47,6 +51,7 @@ public:
 	Outcome validation_complete(const Dictionary &p_params, uint64_t p_now_ms);
 	Outcome rollback(const Dictionary &p_params, uint64_t p_now_ms);
 	Outcome undo(const Dictionary &p_params, uint64_t p_now_ms);
+	void drain_events(Vector<Dictionary> &r_events);
 	void invalidate_all(uint64_t p_now_ms);
 	uint32_t get_active_count() const;
 	bool is_ready() const;

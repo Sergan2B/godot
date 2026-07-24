@@ -190,7 +190,7 @@ static Dictionary script_summary(const Ref<Script> &p_script, const String &p_di
 }
 
 static Error inspect_operation(Node *p_root, Node *p_target, const Dictionary &p_operation, ScriptState &r_old_state, Ref<Script> &r_new_script, TransactionPreviewBuilder::Resolution *r_resolution, String &r_error_code, String &r_error_message) {
-	if (!p_root || !p_target || p_target->is_internal() || (p_target != p_root && !p_root->is_ancestor_of(p_target))) {
+	if (!p_root || !p_target || p_target->is_internal() || (p_target != p_root && !p_root->is_ancestor_of(p_target) && (p_target->get_parent() || p_target->get_owner()))) {
 		return fail("node_not_editable", "The script target is outside the editable scene.", r_error_code, r_error_message, ERR_DOES_NOT_EXIST);
 	}
 	const String kind = p_operation.get("kind", String());

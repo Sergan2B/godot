@@ -24,6 +24,11 @@ static bool parse_request_coordinates(const CompoundChangeSetPlanner::Plan &p_pl
 		return false;
 	}
 	r_coordinates = Dictionary(coordinates).duplicate(true);
+	for (const char *key : { "scene_revision", "operation_seq", "resource_revision", "script_graph_revision" }) {
+		if (r_coordinates.has(key) && r_coordinates[key].get_type() == Variant::FLOAT) {
+			r_coordinates[key] = (int64_t)(double)r_coordinates[key];
+		}
+	}
 	return true;
 }
 
@@ -50,6 +55,10 @@ Dictionary CompoundChangeSetCoordinator::_preview_result(const PreparedChangeSet
 	result["preview_digest"] = p_record.plan.preview_digest;
 	result["request_digest"] = p_record.plan.request_digest;
 	result["preview"] = JSON::parse_string(p_record.plan.canonical_preview_json);
+	Dictionary coordinates;
+	if (parse_request_coordinates(p_record.plan, coordinates)) {
+		result["coordinates"] = coordinates;
+	}
 	result["risk"] = p_record.plan.risk;
 	result["scope"] = "change_set.atomic";
 	result["operation_count"] = p_record.plan.ordered_operations.size();
@@ -70,6 +79,38 @@ CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::_error(const
 	return outcome;
 }
 
+void CompoundChangeSetCoordinator::_emit(const PreparedChangeSetStore::Record &p_record) {
+	Dictionary event;
+	event["change_set_id"] = p_record.plan.change_set_id;
+	event["transaction_seq"] = (int64_t)p_record.transaction_seq;
+	event["state"] = PreparedChangeSetStore::state_name(p_record.state);
+	if (!p_record.validation_report_id.is_empty()) {
+		event["validation_report_id"] = p_record.validation_report_id;
+	}
+	events.push_back(event);
+}
+
+Error CompoundChangeSetCoordinator::_transition(const String &p_change_set_id, PreparedChangeSetStore::State p_state, uint64_t p_now_ms, const String &p_outcome, const String &p_error_code, const String &p_error_message) {
+	const Error error = store.transition(p_change_set_id, p_state, p_now_ms, p_outcome, p_error_code, p_error_message);
+	if (error == OK) {
+		PreparedChangeSetStore::Record record;
+		if (store.get(p_change_set_id, record)) {
+			_emit(record);
+		}
+	}
+	return error;
+}
+
+void CompoundChangeSetCoordinator::_expire(uint64_t p_now_ms) {
+	const Vector<String> expired = store.expire(p_now_ms);
+	for (const String &change_set_id : expired) {
+		PreparedChangeSetStore::Record record;
+		if (store.get(change_set_id, record)) {
+			_emit(record);
+		}
+	}
+}
+
 void CompoundChangeSetCoordinator::initialize(const String &p_project_id, const String &p_editor_session_id, BridgeRevisionClock *p_revision_clock, const PackedByteArray &p_approval_key) {
 	project_id = p_project_id;
 	editor_session_id = p_editor_session_id;
@@ -78,6 +119,7 @@ void CompoundChangeSetCoordinator::initialize(const String &p_project_id, const 
 	store.clear();
 	executions.clear();
 	resource_paths.clear();
+	events.clear();
 }
 
 void CompoundChangeSetCoordinator::shutdown() {
@@ -88,6 +130,7 @@ void CompoundChangeSetCoordinator::shutdown() {
 	approval_verifier.shutdown();
 	store.clear();
 	resource_paths.clear();
+	events.clear();
 	project_id.clear();
 	editor_session_id.clear();
 	revision_clock = nullptr;
@@ -98,7 +141,7 @@ CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::prepare(cons
 	if (!is_ready()) {
 		return _error("compound_executor_unavailable", "The compound coordinator is not initialized.");
 	}
-	store.expire(p_now_ms);
+	_expire(p_now_ms);
 	if (!CompoundChangeSetPlanner::validate_params(p_params)) {
 		return _error("invalid_request", "The compound change-set parameters are invalid.");
 	}
@@ -113,6 +156,10 @@ CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::prepare(cons
 	PreparedChangeSetStore::Record record;
 	switch (store.admit(plan, record)) {
 		case PreparedChangeSetStore::ADMISSION_CREATED:
+			_emit(record);
+			outcome.has_result = true;
+			outcome.result = _preview_result(record);
+			return outcome;
 		case PreparedChangeSetStore::ADMISSION_REPLAY:
 			outcome.has_result = true;
 			outcome.result = _preview_result(record);
@@ -126,7 +173,7 @@ CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::prepare(cons
 }
 
 CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::apply(const Dictionary &p_params, uint64_t p_now_ms) {
-	store.expire(p_now_ms);
+	_expire(p_now_ms);
 	const String change_set_id = p_params.get("change_set_id", String());
 	PreparedChangeSetStore::Record *record = store.get_mutable(change_set_id);
 	if (!record) {
@@ -150,7 +197,7 @@ CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::apply(const 
 	}
 	Dictionary coordinates;
 	if (!parse_request_coordinates(record->plan, coordinates) || !_coordinates_current(coordinates)) {
-		store.transition(change_set_id, PreparedChangeSetStore::STATE_CONFLICTED, p_now_ms, "not_applied", "stale_editor_state", "The editor state changed before compound apply.");
+		_transition(change_set_id, PreparedChangeSetStore::STATE_CONFLICTED, p_now_ms, "not_applied", "stale_editor_state", "The editor state changed before compound apply.");
 		return _error("stale_editor_state", "The editor state changed before compound apply.", true);
 	}
 	if ((uint64_t)(int64_t)p_params.get("expected_scene_revision", -1) != (uint64_t)(int64_t)coordinates.get("scene_revision", -2) || (uint64_t)(int64_t)p_params.get("expected_operation_seq", -1) != (uint64_t)(int64_t)coordinates.get("operation_seq", -2)) {
@@ -170,7 +217,7 @@ CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::apply(const 
 	const TransactionApprovalVerifier::Outcome approval = approval_verifier.verify(receipt, binding, p_now_ms);
 	if (!approval.valid) {
 		if (record->state == PreparedChangeSetStore::STATE_PREVIEWED) {
-			store.transition(change_set_id, PreparedChangeSetStore::STATE_AWAITING_APPROVAL, p_now_ms);
+			_transition(change_set_id, PreparedChangeSetStore::STATE_AWAITING_APPROVAL, p_now_ms);
 		}
 		return _error(approval.error_code, approval.error_message);
 	}
@@ -182,7 +229,7 @@ CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::apply(const 
 	if (record->state != PreparedChangeSetStore::STATE_PREVIEWED && record->state != PreparedChangeSetStore::STATE_AWAITING_APPROVAL) {
 		return _error("transaction_busy", "The change set is not eligible for apply.", true);
 	}
-	store.transition(change_set_id, PreparedChangeSetStore::STATE_APPLYING, p_now_ms);
+	_transition(change_set_id, PreparedChangeSetStore::STATE_APPLYING, p_now_ms);
 	record = store.get_mutable(change_set_id);
 	ERR_FAIL_NULL_V(record, _error("change_set_not_found", "The change set disappeared before apply."));
 	record->mutation_started = true;
@@ -196,20 +243,20 @@ CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::apply(const 
 	executions.insert(change_set_id, execution);
 	if (!applied.success) {
 		if (applied.in_doubt) {
-			store.transition(change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", applied.error_code, applied.error_message);
+			_transition(change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", applied.error_code, applied.error_message);
 		} else {
-			store.transition(change_set_id, PreparedChangeSetStore::STATE_FAILED, p_now_ms, execution.undone ? "rolled_back" : "not_applied", applied.error_code, applied.error_message);
+			_transition(change_set_id, PreparedChangeSetStore::STATE_FAILED, p_now_ms, execution.undone ? "rolled_back" : "not_applied", applied.error_code, applied.error_message);
 		}
 		return _error(applied.error_code, applied.error_message);
 	}
 	String postimage_digest;
 	const String postimage_material = record->plan.preview_digest + "\n" + itos(execution.history_version_committed) + "\n" + itos(execution.history_action_committed);
 	if (BridgeTransactionCanonicalizer::sha256_utf8(postimage_material, postimage_digest, "godot-codex-change-set-postimage/v1\n") != OK) {
-		store.transition(change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", "transaction_in_doubt", "The committed postimage identity could not be created.");
+		_transition(change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", "transaction_in_doubt", "The committed postimage identity could not be created.");
 		return _error("transaction_in_doubt", "The committed postimage identity could not be created.");
 	}
 	record->postimage_digest = postimage_digest;
-	store.transition(change_set_id, PreparedChangeSetStore::STATE_VALIDATING, p_now_ms, "applied");
+	_transition(change_set_id, PreparedChangeSetStore::STATE_VALIDATING, p_now_ms, "applied");
 	record = store.get_mutable(change_set_id);
 	Outcome outcome;
 	outcome.has_result = true;
@@ -226,15 +273,15 @@ void CompoundChangeSetCoordinator::_reconcile(PreparedChangeSetStore::Record &r_
 	}
 	if (r_record.state == PreparedChangeSetStore::STATE_COMMITTED && native_executor.verify_prestate(*execution)) {
 		execution->undone = true;
-		store.transition(r_record.plan.change_set_id, PreparedChangeSetStore::STATE_UNDONE, p_now_ms, "undone");
+		_transition(r_record.plan.change_set_id, PreparedChangeSetStore::STATE_UNDONE, p_now_ms, "undone");
 	} else if (r_record.state == PreparedChangeSetStore::STATE_UNDONE && native_executor.verify_poststate(*execution)) {
 		execution->undone = false;
-		store.transition(r_record.plan.change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", "validation_required", "Native Redo requires a new automatic validation result.");
+		_transition(r_record.plan.change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", "validation_required", "Native Redo requires a new automatic validation result.");
 	}
 }
 
 CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::status(const String &p_change_set_id, uint64_t p_now_ms) {
-	store.expire(p_now_ms);
+	_expire(p_now_ms);
 	PreparedChangeSetStore::Record *mutable_record = store.get_mutable(p_change_set_id);
 	if (!mutable_record) {
 		return _error("change_set_not_found", "The bounded change-set record was not found.");
@@ -272,6 +319,10 @@ CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::validation_c
 	if (record->state != PreparedChangeSetStore::STATE_VALIDATING) {
 		return _error("validation_state_invalid", "The change set is not awaiting validation.");
 	}
+	if (record->transaction_seq != (uint64_t)(int64_t)p_params.get("expected_transaction_seq", -1) ||
+			record->postimage_digest != String(p_params.get("expected_postimage_digest", String()))) {
+		return _error("validation_report_mismatch", "The validation report does not bind the exact retained post-state.");
+	}
 	const String report_id = p_params.get("validation_report_id", String());
 	const String report_digest = p_params.get("report_digest", String());
 	const String outcome_name = p_params.get("outcome", String());
@@ -280,27 +331,27 @@ CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::validation_c
 	}
 	record->validation_report_id = report_id;
 	if (outcome_name == "passed") {
-		store.transition(change_set_id, PreparedChangeSetStore::STATE_COMMITTED, p_now_ms, "committed");
+		_transition(change_set_id, PreparedChangeSetStore::STATE_COMMITTED, p_now_ms, "committed");
 		return status(change_set_id, p_now_ms);
 	}
 	const String rollback_policy = record->plan.validation_policy.get("rollback", "on_required_failure");
 	if (rollback_policy == "never") {
-		store.transition(change_set_id, PreparedChangeSetStore::STATE_FAILED, p_now_ms, "validation_failed", "validation_failed", "Automatic validation did not pass and rollback policy is never.");
+		_transition(change_set_id, PreparedChangeSetStore::STATE_FAILED, p_now_ms, "validation_failed", "validation_failed", "Automatic validation did not pass and rollback policy is never.");
 		return status(change_set_id, p_now_ms);
 	}
-	store.transition(change_set_id, PreparedChangeSetStore::STATE_ROLLING_BACK, p_now_ms, "validation_failed");
+	_transition(change_set_id, PreparedChangeSetStore::STATE_ROLLING_BACK, p_now_ms, "validation_failed");
 	CompoundNativeExecutor::Execution *execution = executions.getptr(change_set_id);
 	if (!execution) {
-		store.transition(change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", "rollback_in_doubt", "The retained compound inverse is unavailable.");
+		_transition(change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", "rollback_in_doubt", "The retained compound inverse is unavailable.");
 		return status(change_set_id, p_now_ms);
 	}
 	const CompoundNativeExecutor::Outcome rolled_back = native_executor.rollback(*execution);
 	if (rolled_back.success) {
-		store.transition(change_set_id, PreparedChangeSetStore::STATE_ROLLED_BACK, p_now_ms, "failed_rolled_back", "validation_failed", "Automatic validation did not pass; the exact pre-state was restored.");
+		_transition(change_set_id, PreparedChangeSetStore::STATE_ROLLED_BACK, p_now_ms, "failed_rolled_back", "validation_failed", "Automatic validation did not pass; the exact pre-state was restored.");
 	} else if (rolled_back.in_doubt) {
-		store.transition(change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", rolled_back.error_code, rolled_back.error_message);
+		_transition(change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", rolled_back.error_code, rolled_back.error_message);
 	} else {
-		store.transition(change_set_id, PreparedChangeSetStore::STATE_ROLLBACK_BLOCKED, p_now_ms, "validation_failed", rolled_back.error_code, rolled_back.error_message);
+		_transition(change_set_id, PreparedChangeSetStore::STATE_ROLLBACK_BLOCKED, p_now_ms, "validation_failed", rolled_back.error_code, rolled_back.error_message);
 	}
 	return status(change_set_id, p_now_ms);
 }
@@ -317,19 +368,19 @@ CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::rollback(con
 	if (record->state != PreparedChangeSetStore::STATE_VALIDATING && record->state != PreparedChangeSetStore::STATE_COMMITTED) {
 		return _error("rollback_blocked", "The change set is not eligible for rollback.");
 	}
-	store.transition(change_set_id, PreparedChangeSetStore::STATE_ROLLING_BACK, p_now_ms);
+	_transition(change_set_id, PreparedChangeSetStore::STATE_ROLLING_BACK, p_now_ms);
 	CompoundNativeExecutor::Execution *execution = executions.getptr(change_set_id);
 	if (!execution) {
-		store.transition(change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", "rollback_in_doubt", "The retained compound inverse is unavailable.");
+		_transition(change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", "rollback_in_doubt", "The retained compound inverse is unavailable.");
 		return status(change_set_id, p_now_ms);
 	}
 	const CompoundNativeExecutor::Outcome rolled_back = native_executor.rollback(*execution);
 	if (rolled_back.success) {
-		store.transition(change_set_id, PreparedChangeSetStore::STATE_ROLLED_BACK, p_now_ms, "rolled_back");
+		_transition(change_set_id, PreparedChangeSetStore::STATE_ROLLED_BACK, p_now_ms, "rolled_back");
 	} else if (rolled_back.in_doubt) {
-		store.transition(change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", rolled_back.error_code, rolled_back.error_message);
+		_transition(change_set_id, PreparedChangeSetStore::STATE_IN_DOUBT, p_now_ms, "unknown", rolled_back.error_code, rolled_back.error_message);
 	} else {
-		store.transition(change_set_id, PreparedChangeSetStore::STATE_ROLLBACK_BLOCKED, p_now_ms, "rollback_blocked", rolled_back.error_code, rolled_back.error_message);
+		_transition(change_set_id, PreparedChangeSetStore::STATE_ROLLBACK_BLOCKED, p_now_ms, "rollback_blocked", rolled_back.error_code, rolled_back.error_message);
 	}
 	return status(change_set_id, p_now_ms);
 }
@@ -351,8 +402,13 @@ CompoundChangeSetCoordinator::Outcome CompoundChangeSetCoordinator::undo(const D
 	if (!undone.success) {
 		return _error(undone.error_code, undone.error_message, undone.in_doubt);
 	}
-	store.transition(change_set_id, PreparedChangeSetStore::STATE_UNDONE, p_now_ms, "undone");
+	_transition(change_set_id, PreparedChangeSetStore::STATE_UNDONE, p_now_ms, "undone");
 	return status(change_set_id, p_now_ms);
+}
+
+void CompoundChangeSetCoordinator::drain_events(Vector<Dictionary> &r_events) {
+	r_events.append_array(events);
+	events.clear();
 }
 
 void CompoundChangeSetCoordinator::invalidate_all(uint64_t p_now_ms) {
@@ -362,6 +418,7 @@ void CompoundChangeSetCoordinator::invalidate_all(uint64_t p_now_ms) {
 	}
 	executions.clear();
 	store.clear();
+	events.clear();
 }
 
 uint32_t CompoundChangeSetCoordinator::get_active_count() const {

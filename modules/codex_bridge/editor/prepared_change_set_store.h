@@ -57,7 +57,7 @@ public:
 	};
 
 	static constexpr uint32_t MAX_ACTIVE = 64;
-	static constexpr uint32_t MAX_TERMINAL = 64;
+	static constexpr int MAX_TERMINAL = 64;
 
 private:
 	HashMap<String, Record> records;

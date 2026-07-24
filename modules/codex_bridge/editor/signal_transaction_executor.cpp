@@ -64,8 +64,11 @@ static bool inject_fault(const String &p_operation, const String &p_stage) {
 }
 
 static bool is_editable(Node *p_root, Node *p_node) {
-	if (!p_root || !p_node || p_node->is_internal() || (p_node != p_root && !p_root->is_ancestor_of(p_node))) {
+	if (!p_root || !p_node || p_node->is_internal()) {
 		return false;
+	}
+	if (p_node != p_root && !p_root->is_ancestor_of(p_node)) {
+		return !p_node->get_parent() && !p_node->get_owner();
 	}
 	if (p_node == p_root || p_node->get_owner() == p_root) {
 		return true;

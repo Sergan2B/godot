@@ -16,6 +16,8 @@
 #include "core/object/class_db.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/hash_set.h"
+#include "scene/main/node.h"
+#include "scene/resources/packed_scene.h"
 
 #include "writable_variant_codec.h"
 
@@ -200,6 +202,24 @@ static Error apply_properties(const Ref<Resource> &p_resource, const String &p_c
 	return OK;
 }
 
+static Error stage_scene_postimage(ScopedPersistenceExecutor::FileRecord &r_record, String &r_error_code, String &r_error_message) {
+	Node *root = Object::cast_to<Node>(ObjectDB::get_instance(r_record.scene_root_id));
+	if (!root || root->get_scene_file_path() != r_record.target_path) {
+		return fail("scene_not_open", "The scoped scene root no longer matches its saved target.", r_error_code, r_error_message, ERR_DOES_NOT_EXIST);
+	}
+	Ref<PackedScene> packed;
+	packed.instantiate();
+	if (packed->pack(root) != OK || ResourceSaver::save(packed, r_record.stage_path, ResourceSaver::FLAG_OMIT_EDITOR_PROPERTIES) != OK) {
+		return fail("scene_serialize_failed", "The scoped scene postimage could not be serialized.", r_error_code, r_error_message, ERR_CANT_CREATE);
+	}
+	const String digest = file_digest(r_record.stage_path);
+	if (digest.is_empty() || (!r_record.postimage_digest.is_empty() && r_record.postimage_digest != digest)) {
+		return fail("scene_postimage_changed", "The scoped scene Redo did not reproduce the exact postimage.", r_error_code, r_error_message, ERR_FILE_CORRUPT);
+	}
+	r_record.postimage_digest = digest;
+	return OK;
+}
+
 } // namespace
 
 bool ScopedPersistenceExecutor::property_allowed(const String &p_class, const String &p_property) {
@@ -227,7 +247,7 @@ bool ScopedPersistenceExecutor::property_allowed(const String &p_class, const St
 	return false;
 }
 
-Error ScopedPersistenceExecutor::stage(const CompoundChangeSetPlanner::Plan &p_plan, const Dictionary &p_resource_paths, Prepared &r_prepared, String &r_error_code, String &r_error_message) {
+Error ScopedPersistenceExecutor::stage(const CompoundChangeSetPlanner::Plan &p_plan, const Dictionary &p_resource_paths, const String &p_scene_path, ObjectID p_scene_root_id, Prepared &r_prepared, String &r_error_code, String &r_error_message) {
 	r_prepared = Prepared();
 	r_error_code.clear();
 	r_error_message.clear();
@@ -279,7 +299,7 @@ Error ScopedPersistenceExecutor::stage(const CompoundChangeSetPlanner::Plan &p_p
 			alias_paths.insert(operation["alias"], path);
 			resources.insert(path, resource);
 		} else if (kind == "update_resource") {
-			const String path = resolve_resource_path(operation["resource"], alias_paths, p_resource_paths);
+			const String path = operation.has("resolved_path") ? String(operation["resolved_path"]) : resolve_resource_path(operation["resource"], alias_paths, p_resource_paths);
 			if (!safe_target_path(path, ".tres") || !save_paths.has(path) || target_is_symlink(path)) {
 				cleanup(r_prepared);
 				return fail("resource_path_conflict", "The Resource target is unsafe or outside save_scope.", r_error_code, r_error_message);
@@ -329,12 +349,19 @@ Error ScopedPersistenceExecutor::stage(const CompoundChangeSetPlanner::Plan &p_p
 	int file_index = 0;
 	for (int save_index = 0; save_index < p_plan.save_scope.size(); save_index++) {
 		const String path = p_plan.save_scope[save_index];
-		if (!resources.has(path) && !scripts.has(path)) {
+		const bool scene = !p_scene_path.is_empty() && path == p_scene_path;
+		if (!resources.has(path) && !scripts.has(path) && !scene) {
 			cleanup(r_prepared);
 			return fail("save_scope_mismatch", "Every save_scope path must have a planned postimage.", r_error_code, r_error_message);
 		}
+		if (scene && (!safe_target_path(path, ".tscn") || p_scene_root_id == ObjectID() || !FileAccess::exists(path) || target_is_symlink(path))) {
+			cleanup(r_prepared);
+			return fail("scene_path_conflict", "The saved open scene target is unsafe or stale.", r_error_code, r_error_message);
+		}
 		FileRecord record;
 		record.target_path = path;
+		record.scene = scene;
+		record.scene_root_id = scene ? p_scene_root_id : ObjectID();
 		record.existed = FileAccess::exists(path);
 		record.preimage_digest = record.existed ? file_digest(path) : "missing";
 		const String extension = path.get_extension();
@@ -347,7 +374,10 @@ Error ScopedPersistenceExecutor::stage(const CompoundChangeSetPlanner::Plan &p_p
 				return fail("escrow_unavailable", "The private rollback escrow could not capture a preimage.", r_error_code, r_error_message, ERR_CANT_CREATE);
 			}
 		}
-		if (const Ref<Resource> *resource = resources.getptr(path)) {
+		if (scene) {
+			// The final scene postimage is serialized by the one native action
+			// after its in-memory steps and before the first project-file write.
+		} else if (const Ref<Resource> *resource = resources.getptr(path)) {
 			if (ResourceSaver::save(*resource, record.stage_path, ResourceSaver::FLAG_OMIT_EDITOR_PROPERTIES) != OK) {
 				cleanup(r_prepared);
 				return fail("resource_serialize_failed", "The Resource postimage could not be serialized.", r_error_code, r_error_message, ERR_CANT_CREATE);
@@ -358,12 +388,12 @@ Error ScopedPersistenceExecutor::stage(const CompoundChangeSetPlanner::Plan &p_p
 				return fail("script_stage_failed", "The GDScript postimage could not be staged.", r_error_code, r_error_message, ERR_CANT_CREATE);
 			}
 		}
-		total_bytes += FileAccess::get_size(record.stage_path);
+		total_bytes += scene ? 0 : FileAccess::get_size(record.stage_path);
 		if (total_bytes > MAX_TOTAL_STAGED_BYTES) {
 			cleanup(r_prepared);
 			return fail("change_set_too_large", "The staged postimages exceed the 4 MiB aggregate limit.", r_error_code, r_error_message, ERR_OUT_OF_MEMORY);
 		}
-		record.postimage_digest = file_digest(record.stage_path);
+		record.postimage_digest = scene ? String() : file_digest(record.stage_path);
 		r_prepared.files.push_back(record);
 		file_index++;
 	}
@@ -381,6 +411,17 @@ Error ScopedPersistenceExecutor::commit(Prepared &r_prepared, String &r_error_co
 		}
 		if (target_is_symlink(record.target_path) || (record.existed ? file_digest(record.target_path) != record.preimage_digest : FileAccess::exists(record.target_path))) {
 			return fail("stale_file_hash", "A target changed after staging; no file was written.", r_error_code, r_error_message);
+		}
+	}
+	int64_t total_bytes = 0;
+	for (int index = 0; index < r_prepared.files.size(); index++) {
+		FileRecord &record = r_prepared.files.write[index];
+		if (record.scene && stage_scene_postimage(record, r_error_code, r_error_message) != OK) {
+			return ERR_CANT_CREATE;
+		}
+		total_bytes += FileAccess::get_size(record.stage_path);
+		if (total_bytes > MAX_TOTAL_STAGED_BYTES) {
+			return fail("change_set_too_large", "The staged postimages exceed the 4 MiB aggregate limit.", r_error_code, r_error_message, ERR_OUT_OF_MEMORY);
 		}
 	}
 	r_prepared.commit_point_entered = true;

@@ -66,7 +66,7 @@ static bool property_info_matches(const PropertyInfo &p_left, const PropertyInfo
 }
 
 static Error resolve_property(Node *p_root, Node *p_target, const StringName &p_property, PropertyInfo &r_info, Variant &r_value, String &r_error_code, String &r_error_message) {
-	if (!p_root || !p_target || (p_target != p_root && !p_root->is_ancestor_of(p_target)) || p_target->is_internal()) {
+	if (!p_root || !p_target || p_target->is_internal() || (p_target != p_root && !p_root->is_ancestor_of(p_target) && (p_target->get_parent() || p_target->get_owner()))) {
 		return fail("node_not_editable", "The property target is no longer inside the editable scene.", r_error_code, r_error_message, ERR_DOES_NOT_EXIST);
 	}
 	if (p_property == SNAME("script") || !ClassDB::get_property_info(p_target->get_class_name(), p_property, &r_info) || ClassDB::get_property_setter(p_target->get_class_name(), p_property).is_empty() || ClassDB::get_property_getter(p_target->get_class_name(), p_property).is_empty() || !(r_info.usage & PROPERTY_USAGE_EDITOR) || (r_info.usage & (PROPERTY_USAGE_INTERNAL | PROPERTY_USAGE_READ_ONLY | PROPERTY_USAGE_SECRET))) {

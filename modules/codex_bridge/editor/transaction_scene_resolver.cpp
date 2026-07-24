@@ -39,8 +39,11 @@ static Node *node_from_id(ObjectID p_id) {
 }
 
 static bool is_editable(Node *p_root, Node *p_node) {
-	if (!p_root || !p_node || (p_node != p_root && !p_root->is_ancestor_of(p_node))) {
+	if (!p_root || !p_node) {
 		return false;
+	}
+	if (p_node != p_root && !p_root->is_ancestor_of(p_node)) {
+		return !p_node->get_parent() && !p_node->get_owner();
 	}
 	if (p_node == p_root || p_node->get_owner() == p_root) {
 		return true;
@@ -51,6 +54,9 @@ static bool is_editable(Node *p_root, Node *p_node) {
 
 static bool owner_is_valid(Node *p_root, Node *p_node) {
 	if (p_node == p_root) {
+		return true;
+	}
+	if (p_node && p_node != p_root && !p_root->is_ancestor_of(p_node) && !p_node->get_parent() && !p_node->get_owner()) {
 		return true;
 	}
 	Node *owner = p_node ? p_node->get_owner() : nullptr;

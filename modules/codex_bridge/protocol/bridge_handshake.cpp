@@ -126,7 +126,7 @@ Error BridgeHandshakeSession::_handle_client_hello(const Dictionary &p_message, 
 	}
 
 	const Array versions = p_message["supported_protocol_versions"];
-	if (versions.is_empty() || versions.size() > 8) {
+	if (versions.is_empty() || versions.size() > 9) {
 		state = STATE_CLOSED;
 		return ERR_INVALID_DATA;
 	}

@@ -44,10 +44,21 @@ static bool prefixed_hex(const Variant &p_value, const String &p_prefix, int p_h
 }
 
 static bool safe_integer(const Variant &p_value, bool p_nonzero = false) {
-	if (p_value.get_type() != Variant::INT) {
+	int64_t value = 0;
+	if (p_value.get_type() == Variant::INT) {
+		value = p_value;
+	} else if (p_value.get_type() == Variant::FLOAT) {
+		const double number = p_value;
+		if (!Math::is_finite(number)) {
+			return false;
+		}
+		value = (int64_t)number;
+		if ((double)value != number) {
+			return false;
+		}
+	} else {
 		return false;
 	}
-	const int64_t value = p_value;
 	return value >= (p_nonzero ? 1 : 0) && value <= MAX_SAFE_INTEGER;
 }
 
@@ -121,10 +132,12 @@ bool BridgeChangeSetProfile::validate_undo_params(const Dictionary &p_params) {
 }
 
 bool BridgeChangeSetProfile::validate_validation_complete_params(const Dictionary &p_params) {
-	if (!exact_keys(p_params, { "change_set_id", "validation_report_id", "report_digest", "outcome" }) ||
+	if (!exact_keys(p_params, { "change_set_id", "validation_report_id", "report_digest", "outcome", "expected_transaction_seq", "expected_postimage_digest" }) ||
 			!prefixed_hex(p_params.get("change_set_id", Variant()), "change-set:") ||
 			!prefixed_hex(p_params.get("validation_report_id", Variant()), "validation-report:") ||
 			!digest(p_params.get("report_digest", Variant())) ||
+			!safe_integer(p_params.get("expected_transaction_seq", Variant()), true) ||
+			!digest(p_params.get("expected_postimage_digest", Variant())) ||
 			p_params.get("outcome", Variant()).get_type() != Variant::STRING) {
 		return false;
 	}

@@ -156,7 +156,7 @@ Error BridgeCrypto::base64url_decode_32(const String &p_encoded, PackedByteArray
 }
 
 Error BridgeCrypto::build_handshake_transcript(const String &p_handshake_version, const PackedStringArray &p_supported_versions, const String &p_selected_version, const String &p_project_id, const String &p_editor_session_id, const PackedByteArray &p_client_nonce, const PackedByteArray &p_server_nonce, PackedByteArray &r_transcript) {
-	ERR_FAIL_COND_V(p_supported_versions.is_empty() || p_supported_versions.size() > 8, ERR_INVALID_PARAMETER);
+	ERR_FAIL_COND_V(p_supported_versions.is_empty() || p_supported_versions.size() > 9, ERR_INVALID_PARAMETER);
 	ERR_FAIL_COND_V(p_client_nonce.size() != RANDOM_VALUE_BYTES || p_server_nonce.size() != RANDOM_VALUE_BYTES, ERR_INVALID_PARAMETER);
 
 	r_transcript.clear();
