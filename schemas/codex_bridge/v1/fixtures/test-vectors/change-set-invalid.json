@@ -5,15 +5,15 @@
     "request_id": "req:old-minor",
     "method": "transaction.prepare_change_set",
     "context": {
-      "project_id": "project:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "project_id": "project:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "editor_session_id": "editor:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     },
     "params": {}
   },
   "too_many_operations": {
     "idempotency_key": "idempotency:cccccccccccccccccccccccccccccccc",
     "coordinates": {
-      "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "editor_session_id": "editor:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "scene_id": "scene:dddddddddddddddddddddddddddddddd",
       "scene_revision": 1,
       "operation_seq": 1,

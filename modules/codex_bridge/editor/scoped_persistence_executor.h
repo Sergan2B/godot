@@ -39,6 +39,8 @@ public:
 	static Error stage(const CompoundChangeSetPlanner::Plan &p_plan, const Dictionary &p_resource_paths, Prepared &r_prepared, String &r_error_code, String &r_error_message);
 	static Error commit(Prepared &r_prepared, String &r_error_code, String &r_error_message);
 	static Error restore(Prepared &r_prepared, String &r_error_code, String &r_error_message);
+	static bool verify_postimages(const Prepared &p_prepared);
+	static bool verify_preimages(const Prepared &p_prepared);
 	static void cleanup(Prepared &r_prepared);
 	static bool property_allowed(const String &p_class, const String &p_property);
 };

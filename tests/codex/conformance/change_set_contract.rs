@@ -103,7 +103,7 @@ fn alias_graph_is_acyclic(operations: &[Value]) -> bool {
 }
 
 #[test]
-fn rpc_1_8_capabilities_are_closed_bounded_and_fail_closed() {
+fn rpc_1_8_capabilities_are_closed_bounded_and_ready_after_executor_wiring() {
     let fixture = vector("change-set.json");
     let capabilities: Vec<Capability> =
         serde_json::from_value(fixture["capabilities"].clone()).unwrap();
@@ -112,8 +112,8 @@ fn rpc_1_8_capabilities_are_closed_bounded_and_fail_closed() {
     assert_eq!(capabilities[1].name, "validation.automatic_v1");
     for capability in capabilities {
         assert_eq!(capability.version, "1.0");
-        assert_eq!(capability.readiness, "unavailable");
-        assert!(capability.reason.ends_with("_unavailable"));
+        assert_eq!(capability.readiness, "ready");
+        assert_eq!(capability.reason, "ready");
         assert_eq!(capability.limits.operations, MAX_OPERATIONS);
         assert_eq!(
             capability.limits.report_page_bytes,

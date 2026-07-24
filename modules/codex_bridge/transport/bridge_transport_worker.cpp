@@ -512,6 +512,18 @@ static MainThreadDispatcher::CommandType command_type_for_method(BridgeRpcSessio
 			return MainThreadDispatcher::COMMAND_TRANSACTION_STATUS;
 		case BridgeRpcSession::METHOD_TRANSACTION_UNDO:
 			return MainThreadDispatcher::COMMAND_TRANSACTION_UNDO;
+		case BridgeRpcSession::METHOD_CHANGE_SET_PREPARE:
+			return MainThreadDispatcher::COMMAND_CHANGE_SET_PREPARE;
+		case BridgeRpcSession::METHOD_CHANGE_SET_APPLY:
+			return MainThreadDispatcher::COMMAND_CHANGE_SET_APPLY;
+		case BridgeRpcSession::METHOD_CHANGE_SET_STATUS:
+			return MainThreadDispatcher::COMMAND_CHANGE_SET_STATUS;
+		case BridgeRpcSession::METHOD_CHANGE_SET_UNDO:
+			return MainThreadDispatcher::COMMAND_CHANGE_SET_UNDO;
+		case BridgeRpcSession::METHOD_CHANGE_SET_VALIDATION_COMPLETE:
+			return MainThreadDispatcher::COMMAND_CHANGE_SET_VALIDATION_COMPLETE;
+		case BridgeRpcSession::METHOD_CHANGE_SET_ROLLBACK:
+			return MainThreadDispatcher::COMMAND_CHANGE_SET_ROLLBACK;
 		case BridgeRpcSession::METHOD_SHUTDOWN:
 			return MainThreadDispatcher::COMMAND_SHUTDOWN;
 	}

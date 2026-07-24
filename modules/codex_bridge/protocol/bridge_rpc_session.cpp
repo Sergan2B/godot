@@ -361,8 +361,9 @@ Dictionary BridgeRpcSession::_make_capabilities() const {
 		capabilities.push_back(BridgeTransactionProfile::make_ready_capability(transaction_busy, transaction_scene_available, transaction_approval_available, transaction_coordinator_available));
 	}
 	if (has_change_set_profile(protocol_version)) {
-		capabilities.push_back(BridgeChangeSetProfile::make_capability("transaction.change_set_v1", false, "compound_executor_unavailable"));
-		capabilities.push_back(BridgeChangeSetProfile::make_capability("validation.automatic_v1", false, "validation_coordinator_unavailable"));
+		const bool compound_ready = transaction_coordinator_available && transaction_approval_available && !transaction_busy;
+		capabilities.push_back(BridgeChangeSetProfile::make_capability("transaction.change_set_v1", compound_ready, compound_ready ? "ready" : "compound_executor_unavailable"));
+		capabilities.push_back(BridgeChangeSetProfile::make_capability("validation.automatic_v1", transaction_coordinator_available, transaction_coordinator_available ? "ready" : "validation_coordinator_unavailable"));
 	}
 	Dictionary result;
 	result["capabilities"] = capabilities;
@@ -923,28 +924,42 @@ Error BridgeRpcSession::_handle_request(const Dictionary &p_message, uint64_t p_
 		} else if (method_name == "transaction.prepare_change_set" || method_name == "transaction.validation_complete" || method_name == "transaction.rollback") {
 			if (!has_change_set_profile(protocol_version)) {
 				_set_error_outcome(request_id, "capability_unavailable", "Compound changes require Bridge RPC 1.8.", false, r_outcome);
-			} else {
-				_set_error_outcome(request_id, "capability_unavailable", "The negotiated compound executor is not ready.", false, r_outcome);
+				return OK;
 			}
-			return OK;
+			bool valid = false;
+			if (method_name == "transaction.prepare_change_set") {
+				method = METHOD_CHANGE_SET_PREPARE;
+				valid = BridgeChangeSetProfile::validate_prepare_params(params);
+			} else if (method_name == "transaction.validation_complete") {
+				method = METHOD_CHANGE_SET_VALIDATION_COMPLETE;
+				valid = BridgeChangeSetProfile::validate_validation_complete_params(params);
+			} else {
+				method = METHOD_CHANGE_SET_ROLLBACK;
+				valid = BridgeChangeSetProfile::validate_rollback_params(params);
+			}
+			if (!valid) {
+				_set_error_outcome(request_id, "invalid_request", "The compound transaction parameters are invalid.", false, r_outcome);
+				return OK;
+			}
 		} else if (method_name == "transaction.prepare" || method_name == "transaction.apply" || method_name == "transaction.status" || method_name == "transaction.undo") {
 			if (!has_transaction_profile(protocol_version)) {
 				_set_error_outcome(request_id, "capability_unavailable", "Editor transactions require Bridge RPC 1.7.", false, r_outcome);
 				return OK;
 			}
 			bool valid = false;
+			const bool compound_projection = has_change_set_profile(protocol_version) && params.has("change_set_id");
 			if (method_name == "transaction.prepare") {
 				method = METHOD_TRANSACTION_PREPARE;
 				valid = BridgeTransactionProfile::validate_prepare_params(params);
 			} else if (method_name == "transaction.apply") {
-				method = METHOD_TRANSACTION_APPLY;
-				valid = BridgeTransactionProfile::validate_apply_params(params);
+				method = compound_projection ? METHOD_CHANGE_SET_APPLY : METHOD_TRANSACTION_APPLY;
+				valid = compound_projection ? BridgeChangeSetProfile::validate_apply_params(params) : BridgeTransactionProfile::validate_apply_params(params);
 			} else if (method_name == "transaction.status") {
-				method = METHOD_TRANSACTION_STATUS;
-				valid = BridgeTransactionProfile::validate_status_params(params);
+				method = compound_projection ? METHOD_CHANGE_SET_STATUS : METHOD_TRANSACTION_STATUS;
+				valid = compound_projection ? BridgeChangeSetProfile::validate_status_params(params) : BridgeTransactionProfile::validate_status_params(params);
 			} else {
-				method = METHOD_TRANSACTION_UNDO;
-				valid = BridgeTransactionProfile::validate_undo_params(params);
+				method = compound_projection ? METHOD_CHANGE_SET_UNDO : METHOD_TRANSACTION_UNDO;
+				valid = compound_projection ? BridgeChangeSetProfile::validate_undo_params(params) : BridgeTransactionProfile::validate_undo_params(params);
 			}
 			if (!valid) {
 				_set_error_outcome(request_id, "invalid_request", "The transaction parameters are invalid.", false, r_outcome);
@@ -1157,6 +1172,19 @@ Error BridgeRpcSession::complete(uint64_t p_internal_request_id, uint64_t p_now_
 		case METHOD_TRANSACTION_UNDO: {
 			if (p_result_override.is_empty() || !BridgeTransactionProfile::validate_status_result(p_result_override)) {
 				_set_error_outcome(pending.request_id, "internal_error", "The transaction status response was not produced or failed validation.", true, r_outcome);
+				_remove_pending(p_internal_request_id);
+				return OK;
+			}
+			result = p_result_override;
+		} break;
+		case METHOD_CHANGE_SET_PREPARE:
+		case METHOD_CHANGE_SET_APPLY:
+		case METHOD_CHANGE_SET_STATUS:
+		case METHOD_CHANGE_SET_UNDO:
+		case METHOD_CHANGE_SET_VALIDATION_COMPLETE:
+		case METHOD_CHANGE_SET_ROLLBACK: {
+			if (p_result_override.is_empty()) {
+				_set_error_outcome(pending.request_id, "internal_error", "The compound transaction response was not produced.", true, r_outcome);
 				_remove_pending(p_internal_request_id);
 				return OK;
 			}

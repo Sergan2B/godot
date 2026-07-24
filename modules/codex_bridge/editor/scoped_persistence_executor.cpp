@@ -426,6 +426,37 @@ Error ScopedPersistenceExecutor::restore(Prepared &r_prepared, String &r_error_c
 	return OK;
 }
 
+bool ScopedPersistenceExecutor::verify_postimages(const Prepared &p_prepared) {
+	if (!p_prepared.staged || !p_prepared.commit_point_entered) {
+		return false;
+	}
+	for (const FileRecord &record : p_prepared.files) {
+		if (!record.written || target_is_symlink(record.target_path) || file_digest(record.target_path) != record.postimage_digest) {
+			return false;
+		}
+	}
+	return !p_prepared.files.is_empty();
+}
+
+bool ScopedPersistenceExecutor::verify_preimages(const Prepared &p_prepared) {
+	if (!p_prepared.staged) {
+		return false;
+	}
+	for (const FileRecord &record : p_prepared.files) {
+		if (record.written || target_is_symlink(record.target_path)) {
+			return false;
+		}
+		if (record.existed) {
+			if (file_digest(record.target_path) != record.preimage_digest) {
+				return false;
+			}
+		} else if (FileAccess::exists(record.target_path)) {
+			return false;
+		}
+	}
+	return !p_prepared.files.is_empty();
+}
+
 void ScopedPersistenceExecutor::cleanup(Prepared &r_prepared) {
 	for (const FileRecord &record : r_prepared.files) {
 		if (!record.stage_path.is_empty()) {

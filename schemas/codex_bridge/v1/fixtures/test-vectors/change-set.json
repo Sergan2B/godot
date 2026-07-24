@@ -3,8 +3,8 @@
     {
       "name": "transaction.change_set_v1",
       "version": "1.0",
-      "readiness": "unavailable",
-      "reason": "compound_executor_unavailable",
+      "readiness": "ready",
+      "reason": "ready",
       "limits": {
         "operations": 16,
         "report_page_bytes": 65536,
@@ -15,8 +15,8 @@
     {
       "name": "validation.automatic_v1",
       "version": "1.0",
-      "readiness": "unavailable",
-      "reason": "validation_coordinator_unavailable",
+      "readiness": "ready",
+      "reason": "ready",
       "limits": {
         "operations": 16,
         "report_page_bytes": 65536,
@@ -68,14 +68,14 @@
     "request_id": "req:s10-prepare",
     "method": "transaction.prepare_change_set",
     "context": {
-      "project_id": "project:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "project_id": "project:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "editor_session_id": "editor:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     },
     "deadline_ms": 5000,
     "params": {
       "idempotency_key": "idempotency:cccccccccccccccccccccccccccccccc",
       "coordinates": {
-        "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "editor_session_id": "editor:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "scene_id": "scene:dddddddddddddddddddddddddddddddd",
         "scene_revision": 7,
         "operation_seq": 12,
@@ -122,8 +122,8 @@
     "request_id": "req:s10-validation-complete",
     "method": "transaction.validation_complete",
     "context": {
-      "project_id": "project:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "project_id": "project:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "editor_session_id": "editor:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     },
     "params": {
       "change_set_id": "change-set:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
@@ -138,8 +138,8 @@
     "request_id": "req:s10-rollback",
     "method": "transaction.rollback",
     "context": {
-      "project_id": "project:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "project_id": "project:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "editor_session_id": "editor:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     },
     "params": {
       "change_set_id": "change-set:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
@@ -151,8 +151,8 @@
     "protocol_version": "1.8",
     "kind": "notification",
     "context": {
-      "project_id": "project:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "editor_session_id": "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "project_id": "project:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "editor_session_id": "editor:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     },
     "method": "transaction.event",
     "params": {

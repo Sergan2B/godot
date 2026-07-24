@@ -212,6 +212,33 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 			}
 			service->_update_transaction_readiness();
 		} break;
+		case MainThreadDispatcher::COMMAND_CHANGE_SET_PREPARE:
+		case MainThreadDispatcher::COMMAND_CHANGE_SET_APPLY:
+		case MainThreadDispatcher::COMMAND_CHANGE_SET_STATUS:
+		case MainThreadDispatcher::COMMAND_CHANGE_SET_UNDO:
+		case MainThreadDispatcher::COMMAND_CHANGE_SET_VALIDATION_COMPLETE:
+		case MainThreadDispatcher::COMMAND_CHANGE_SET_ROLLBACK: {
+			const uint64_t now_ms = (uint64_t)(Time::get_singleton()->get_unix_time_from_system() * 1000.0);
+			CompoundChangeSetCoordinator::Outcome outcome;
+			if (p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_PREPARE) {
+				outcome = service->compound_change_set_coordinator.prepare(p_command.params, now_ms);
+			} else if (p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_APPLY) {
+				outcome = service->compound_change_set_coordinator.apply(p_command.params, now_ms);
+			} else if (p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_STATUS) {
+				outcome = service->compound_change_set_coordinator.status(p_command.params.get("change_set_id", String()), now_ms);
+			} else if (p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_UNDO) {
+				outcome = service->compound_change_set_coordinator.undo(p_command.params, now_ms);
+			} else if (p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_VALIDATION_COMPLETE) {
+				outcome = service->compound_change_set_coordinator.validation_complete(p_command.params, now_ms);
+			} else {
+				outcome = service->compound_change_set_coordinator.rollback(p_command.params, now_ms);
+			}
+			if (outcome.has_result) {
+				service->transport_worker.complete_request(p_command.request_id, outcome.result);
+			} else {
+				service->transport_worker.complete_request_error(p_command.request_id, outcome.error_code, outcome.error_message, outcome.retryable);
+			}
+		} break;
 		case MainThreadDispatcher::COMMAND_CANCEL: {
 			service->transaction_coordinator.cancel_waiter(p_command.request_id);
 			service->runtime_debugger_adapter->cancel(p_command.request_id);
@@ -1302,6 +1329,7 @@ Error CodexBridgeService::start() {
 
 	revision_clock.initialize(transport_worker.get_editor_session_id());
 	transaction_coordinator.initialize(transport_worker.get_project_id(), transport_worker.get_editor_session_id(), &revision_clock, transport_worker.get_approval_key());
+	compound_change_set_coordinator.initialize(transport_worker.get_project_id(), transport_worker.get_editor_session_id(), &revision_clock, transport_worker.get_approval_key());
 	transaction_coordinator.register_executor("create_node", &structural_transaction_executor);
 	transaction_coordinator.register_executor("reparent_node", &structural_transaction_executor);
 	transaction_coordinator.register_executor("delete_node", &structural_transaction_executor);
@@ -1353,6 +1381,7 @@ void CodexBridgeService::stop() {
 	scene_state_adapter.shutdown();
 	script_graph_adapter.shutdown();
 	transaction_coordinator.shutdown();
+	compound_change_set_coordinator.shutdown();
 	work_lane_turn = 0;
 	scene_change_pending = false;
 	scene_change_not_before_usec = 0;

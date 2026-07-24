@@ -65,6 +65,7 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "modules/codex_bridge/editor/script_delta_journal.h"
 #include "modules/codex_bridge/editor/script_graph_adapter.h"
 #include "modules/codex_bridge/protocol/bridge_crypto.h"
+#include "modules/codex_bridge/protocol/bridge_change_set_profile.h"
 #include "modules/codex_bridge/protocol/bridge_frame_codec.h"
 #include "modules/codex_bridge/protocol/bridge_handshake.h"
 #include "modules/codex_bridge/protocol/bridge_rpc_session.h"
@@ -880,6 +881,16 @@ static Dictionary load_transaction_vector() {
 	return parsed;
 }
 
+static Dictionary load_change_set_vector() {
+	const String path = TestUtils::get_executable_dir().path_join("../schemas/codex_bridge/v1/fixtures/test-vectors/change-set.json").simplify_path();
+	Error error = OK;
+	const String text = FileAccess::get_file_as_string(path, &error);
+	REQUIRE(error == OK);
+	const Variant parsed = JSON::parse_string(text);
+	REQUIRE(parsed.get_type() == Variant::DICTIONARY);
+	return parsed;
+}
+
 TEST_CASE("[CodexBridge] Mutual handshake authenticates both peers") {
 	const String project_id = "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd";
 	const String editor_session_id = "editor:0123456789abcdef0123456789abcdef";
@@ -1578,6 +1589,7 @@ TEST_CASE("[CodexS10Rpc18Profile] RPC 1.8 preserves the version matrix and route
 	const char *versions[] = { "1.0", "1.1", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7", "1.8" };
 	const int capability_counts[] = { 2, 6, 8, 11, 15, 20, 26, 27, 29 };
 	const Dictionary vector = load_transaction_vector();
+	const Dictionary change_set_vector = load_change_set_vector();
 	for (int version_index = 0; version_index < 9; version_index++) {
 		const String version = versions[version_index];
 		BridgeRpcSession rpc(project_id, editor_session_id);
@@ -1603,14 +1615,19 @@ TEST_CASE("[CodexS10Rpc18Profile] RPC 1.8 preserves the version matrix and route
 				const Dictionary change_set = capabilities[capabilities.size() - 2];
 				const Dictionary validation = capabilities[capabilities.size() - 1];
 				CHECK(change_set["name"] == "transaction.change_set_v1");
-				CHECK(change_set["readiness"] == "unavailable");
-				CHECK(change_set["reason"] == "compound_executor_unavailable");
+				CHECK(change_set["readiness"] == "ready");
+				CHECK(change_set["reason"] == "ready");
 				CHECK(validation["name"] == "validation.automatic_v1");
-				CHECK(validation["readiness"] == "unavailable");
+				CHECK(validation["readiness"] == "ready");
 				CHECK((int64_t)limits["change_set_operations"] == 16);
-				REQUIRE(rpc.handle_message(make_rpc_request("req:compound-unavailable", "transaction.prepare_change_set", Dictionary(), project_id, editor_session_id, 5000, version), 2, 2, outcome) == OK);
-				CHECK(rpc_error_code(outcome) == "capability_unavailable");
-				CHECK_FALSE(outcome.dispatch);
+				Dictionary compound_params = Dictionary(Dictionary(change_set_vector["prepare_request"])["params"]).duplicate(true);
+				Dictionary coordinates = compound_params["coordinates"];
+				coordinates["editor_session_id"] = editor_session_id;
+				compound_params["coordinates"] = coordinates;
+				REQUIRE(BridgeChangeSetProfile::validate_prepare_params(compound_params));
+				REQUIRE(rpc.handle_message(make_rpc_request("req:compound-ready", "transaction.prepare_change_set", compound_params, project_id, editor_session_id, 5000, version), 2, 2, outcome) == OK);
+				CHECK(outcome.dispatch);
+				CHECK(outcome.method == BridgeRpcSession::METHOD_CHANGE_SET_PREPARE);
 			}
 		} else {
 			CHECK_FALSE(limits.has("transaction_prepared_records"));

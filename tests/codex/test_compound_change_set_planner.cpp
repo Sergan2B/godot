@@ -18,8 +18,8 @@ TEST_FORCE_LINK(test_compound_change_set_planner)
 
 namespace TestCompoundChangeSetPlanner {
 
-static const String PROJECT_ID = "project:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-static const String EDITOR_ID = "editor-session:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+static const String PROJECT_ID = "project:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+static const String EDITOR_ID = "editor:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 static Dictionary int_value(int64_t p_value) {
 	Dictionary value;
@@ -135,6 +135,26 @@ TEST_CASE("[CodexS10CompoundLifecycle] Operation bounds aliases and conflicting 
 	duplicates.push_back(create_resource("alias:second", "res://validation/accent.tres"));
 	CHECK(CompoundChangeSetPlanner::build(PROJECT_ID, EDITOR_ID, params_for(duplicates), 1000, plan, code, message) == ERR_ALREADY_EXISTS);
 	CHECK(code == "conflicting_writes");
+}
+
+TEST_CASE("[CodexS10CompoundLifecycle] Memory-only scene changes require an empty save scope") {
+	Array operations;
+	Dictionary operation;
+	operation["kind"] = "create_node";
+	operation["parent_node_id"] = "node:11111111111111111111111111111111";
+	operation["godot_type"] = "Node2D";
+	operation["name"] = "MemoryOnly";
+	operations.push_back(operation);
+	Dictionary params = params_for(operations);
+	Dictionary save_scope;
+	save_scope["paths"] = Array();
+	params["save_scope"] = save_scope;
+	CHECK(CompoundChangeSetPlanner::validate_params(params));
+
+	Array persistent;
+	persistent.push_back(create_resource("alias:accent", "res://validation/accent.tres"));
+	params["operations"] = persistent;
+	CHECK_FALSE(CompoundChangeSetPlanner::validate_params(params));
 }
 
 TEST_CASE("[CodexS10CompoundLifecycle] Prepared store is bounded idempotent immutable and expiry-safe") {

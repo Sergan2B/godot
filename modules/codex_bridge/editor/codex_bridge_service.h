@@ -41,6 +41,7 @@
 #include "script_transaction_executor.h"
 #include "signal_transaction_executor.h"
 #include "structural_transaction_executor.h"
+#include "compound_change_set_coordinator.h"
 #include "transaction_coordinator.h"
 #ifdef CODEX_BRIDGE_TESTS_ENABLED
 #include "transaction_test_executor.h"
@@ -73,6 +74,7 @@ private:
 	SceneStateAdapter scene_state_adapter;
 	ScriptGraphAdapter script_graph_adapter;
 	TransactionCoordinator transaction_coordinator;
+	CompoundChangeSetCoordinator compound_change_set_coordinator;
 	StructuralTransactionExecutor structural_transaction_executor;
 	PropertyTransactionExecutor property_transaction_executor;
 	ScriptTransactionExecutor script_transaction_executor;

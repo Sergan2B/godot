@@ -75,6 +75,22 @@ static bool valid_digest(const String &p_digest) {
 	return true;
 }
 
+static bool valid_safe_integer(const Variant &p_value, int64_t &r_value) {
+	if (p_value.get_type() == Variant::INT) {
+		r_value = p_value;
+		return r_value >= 0 && r_value <= 9007199254740991LL;
+	}
+	if (p_value.get_type() != Variant::FLOAT) {
+		return false;
+	}
+	const double number = p_value;
+	if (!Math::is_finite(number) || number < 0.0 || number > 9007199254740991.0) {
+		return false;
+	}
+	r_value = (int64_t)number;
+	return (double)r_value == number;
+}
+
 static bool valid_resource_class(const String &p_class) {
 	return p_class == "Gradient" || p_class == "Curve" || p_class == "Curve2D" || p_class == "Curve3D" || p_class == "Animation" || p_class == "CanvasItemMaterial" || p_class == "StandardMaterial3D";
 }
@@ -143,12 +159,12 @@ static bool valid_new_operation(const Dictionary &p_operation) {
 				return false;
 			}
 			const Dictionary edit = edits[index];
-			if (!has_only_keys(edit, { "start_byte", "end_byte", "replacement" }) || edit.size() != 3 || edit["start_byte"].get_type() != Variant::INT || edit["end_byte"].get_type() != Variant::INT || edit["replacement"].get_type() != Variant::STRING) {
+			if (!has_only_keys(edit, { "start_byte", "end_byte", "replacement" }) || edit.size() != 3 || edit["replacement"].get_type() != Variant::STRING) {
 				return false;
 			}
-			const int64_t start = edit["start_byte"];
-			const int64_t end = edit["end_byte"];
-			if (start < previous_end || end < start || String(edit["replacement"]).utf8().length() > 65536) {
+			int64_t start = 0;
+			int64_t end = 0;
+			if (!valid_safe_integer(edit["start_byte"], start) || !valid_safe_integer(edit["end_byte"], end) || start < previous_end || end < start || String(edit["replacement"]).utf8().length() > 65536) {
 				return false;
 			}
 			previous_end = end;
@@ -248,7 +264,8 @@ static bool validation_policy_valid(const Dictionary &p_policy) {
 		return false;
 	}
 	if (p_policy.has("runtime_timeout_ms")) {
-		if (p_policy["runtime_timeout_ms"].get_type() != Variant::INT || (int64_t)p_policy["runtime_timeout_ms"] < 250 || (int64_t)p_policy["runtime_timeout_ms"] > 30000) {
+		int64_t runtime_timeout_ms = 0;
+		if (!valid_safe_integer(p_policy["runtime_timeout_ms"], runtime_timeout_ms) || runtime_timeout_ms < 250 || runtime_timeout_ms > 30000) {
 			return false;
 		}
 	}
@@ -275,7 +292,8 @@ bool CompoundChangeSetPlanner::validate_params(const Dictionary &p_params) {
 		return false;
 	}
 	for (const char *key : { "scene_revision", "operation_seq", "resource_revision", "script_graph_revision" }) {
-		if (coordinates[key].get_type() != Variant::INT || (int64_t)coordinates[key] < 0) {
+		int64_t coordinate = 0;
+		if (!valid_safe_integer(coordinates[key], coordinate)) {
 			return false;
 		}
 	}
@@ -297,7 +315,7 @@ bool CompoundChangeSetPlanner::validate_params(const Dictionary &p_params) {
 		return false;
 	}
 	const Array paths = save_scope["paths"];
-	if (paths.is_empty() || paths.size() > MAX_SAVE_PATHS) {
+	if (paths.size() > MAX_SAVE_PATHS) {
 		return false;
 	}
 	HashSet<String> unique_paths;
@@ -306,6 +324,17 @@ bool CompoundChangeSetPlanner::validate_params(const Dictionary &p_params) {
 			return false;
 		}
 		unique_paths.insert(paths[index]);
+	}
+	bool has_persistence_operation = false;
+	for (int index = 0; index < operations.size(); index++) {
+		const String kind = Dictionary(operations[index])["kind"];
+		if (kind == "create_resource" || kind == "update_resource" || kind == "update_gdscript") {
+			has_persistence_operation = true;
+			break;
+		}
+	}
+	if (has_persistence_operation != !paths.is_empty()) {
+		return false;
 	}
 	return validation_policy_valid(p_params["validation_policy"]);
 }
