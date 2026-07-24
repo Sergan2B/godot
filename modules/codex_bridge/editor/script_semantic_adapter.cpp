@@ -305,11 +305,11 @@ struct ProjectionContext {
 			return true;
 		}
 		relation_keys.insert(relation_key);
-		Dictionary source;
-		source["kind"] = "symbol";
-		source["symbol_id"] = p_source_symbol_id;
+		Dictionary source_endpoint;
+		source_endpoint["kind"] = "symbol";
+		source_endpoint["symbol_id"] = p_source_symbol_id;
 		Dictionary relation;
-		relation["source"] = source;
+		relation["source"] = source_endpoint;
 		relation["predicate"] = p_predicate;
 		relation["target"] = p_target;
 		relation["confidence"] = p_confidence;

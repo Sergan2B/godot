@@ -519,8 +519,17 @@ fn create_new_private_file(path: &Path) -> Result<File, JournalError> {
     Ok(file)
 }
 
+#[cfg(unix)]
 fn sync_directory(path: &Path) -> Result<(), JournalError> {
     File::open(path)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> Result<(), JournalError> {
+    // Opening a directory as `File` is rejected with ERROR_ACCESS_DENIED on
+    // Windows. File contents are flushed before every rename; the Windows
+    // replacement path below supplies the corresponding metadata durability.
     Ok(())
 }
 

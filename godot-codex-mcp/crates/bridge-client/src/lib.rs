@@ -10,7 +10,7 @@ mod transaction;
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub use discovery::{BridgeEndpoint, Discovery, project_id_for_root};
+pub use discovery::{BridgeEndpoint, Discovery, project_id_for_path, project_id_for_root};
 use godot_codex_semantic_model::SnapshotReplicator;
 pub use protocol::BridgeError;
 pub use resource::{

@@ -1649,7 +1649,7 @@ void RuntimeDebuggerAdapter::capture_viewport(uint64_t p_request_id, const Dicti
 	pending_capture = p_request_id;
 	pending_capture_params = p_params;
 	last_capture_usec = now;
-	if (!EditorRun::request_screenshot(callable_mp(this, &RuntimeDebuggerAdapter::_on_screenshot))) {
+	if (!EditorRun::request_screenshot(callable_mp(this, &RuntimeDebuggerAdapter::_on_screenshot), false)) {
 		pending_capture = 0;
 		pending_capture_params.clear();
 		transport->complete_request_error(p_request_id, "runtime_capture_unavailable", "The runtime viewport cannot provide a screenshot.", true, _safe_coordinates());

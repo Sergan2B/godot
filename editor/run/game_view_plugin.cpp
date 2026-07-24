@@ -490,21 +490,28 @@ void GameView::_instance_starting(int p_idx, List<String> &r_arguments) {
 	_update_arguments_for_instance(p_idx, r_arguments);
 }
 
-bool GameView::_instance_rq_screenshot_static(const Callable &p_callback) {
+bool GameView::_instance_rq_screenshot_static(const Callable &p_callback, bool p_require_embedded) {
 	ERR_FAIL_NULL_V(singleton, false);
-	return singleton->_instance_rq_screenshot(p_callback);
+	return singleton->_instance_rq_screenshot(p_callback, p_require_embedded);
 }
 
-bool GameView::_instance_rq_screenshot(const Callable &p_callback) {
-	if (debugger.is_null() || window_wrapper->get_window_enabled() || !embedded_process || !embedded_process->is_embedding_completed()) {
+bool GameView::_instance_rq_screenshot(const Callable &p_callback, bool p_require_embedded) {
+	if (debugger.is_null()) {
 		return false;
 	}
-	Rect2 r = embedded_process->get_adjusted_embedded_window_rect(embedded_process->get_rect());
-	r.position += embedded_process->get_global_position();
+	Rect2i rect;
+	if (p_require_embedded) {
+		if (window_wrapper->get_window_enabled() || !embedded_process || !embedded_process->is_embedding_completed()) {
+			return false;
+		}
+		Rect2 embedded_rect = embedded_process->get_adjusted_embedded_window_rect(embedded_process->get_rect());
+		embedded_rect.position += embedded_process->get_global_position();
 #ifndef MACOS_ENABLED
-	r.position -= embedded_process->get_window()->get_position();
+		embedded_rect.position -= embedded_process->get_window()->get_position();
 #endif
-	return debugger->add_screenshot_callback(p_callback, r);
+		rect = embedded_rect;
+	}
+	return debugger->add_screenshot_callback(p_callback, rect);
 }
 
 void GameView::_show_update_window_wrapper() {

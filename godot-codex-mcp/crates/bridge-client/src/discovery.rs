@@ -12,6 +12,34 @@ pub fn project_id_for_root(root: &[u8]) -> String {
     format!("project:sha256:{:x}", hasher.finalize())
 }
 
+fn canonical_project_identity(path: &Path) -> Result<String, BridgeError> {
+    let raw = path
+        .to_str()
+        .ok_or_else(|| BridgeError::Invalid("project root is not UTF-8".to_owned()))?;
+    #[cfg(windows)]
+    {
+        let normalized = raw.replace('\\', "/");
+        if let Some(rest) = normalized.strip_prefix("//?/UNC/") {
+            return Ok(format!("//{rest}").trim_end_matches('/').to_owned());
+        }
+        Ok(normalized
+            .strip_prefix("//?/")
+            .unwrap_or(&normalized)
+            .trim_end_matches('/')
+            .to_owned())
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(raw.trim_end_matches('/').to_owned())
+    }
+}
+
+pub fn project_id_for_path(path: &Path) -> Result<String, BridgeError> {
+    let canonical = std::fs::canonicalize(path)?;
+    let identity = canonical_project_identity(&canonical)?;
+    Ok(project_id_for_root(identity.as_bytes()))
+}
+
 #[derive(Clone, Debug)]
 pub enum BridgeEndpoint {
     Unix(PathBuf),
@@ -194,7 +222,7 @@ mod windows {
 
     use serde::Deserialize;
 
-    use super::{BridgeEndpoint, BridgeError, Discovery, project_id_for_root};
+    use super::{BridgeEndpoint, BridgeError, Discovery, project_id_for_path};
 
     const DISCOVERY_RELATIVE_PATH: &str = ".godot/codex/bridge.json";
     const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
@@ -259,22 +287,6 @@ mod windows {
         Ok(canonical)
     }
 
-    fn canonical_identity(path: &Path) -> Result<String, BridgeError> {
-        let raw = path
-            .to_str()
-            .ok_or_else(|| BridgeError::Invalid("project root is not UTF-8".to_owned()))?
-            .replace('\\', "/");
-        if let Some(rest) = raw.strip_prefix("//?/UNC/") {
-            Ok(format!("//{rest}").trim_end_matches('/').to_owned())
-        } else {
-            Ok(raw
-                .strip_prefix("//?/")
-                .unwrap_or(&raw)
-                .trim_end_matches('/')
-                .to_owned())
-        }
-    }
-
     fn valid_editor_session_id(value: &str) -> bool {
         value.len() == 39
             && value.starts_with("editor:")
@@ -331,8 +343,7 @@ mod windows {
             ));
         }
 
-        let identity = canonical_identity(&canonical_root)?;
-        if record.project_id != project_id_for_root(identity.as_bytes()) {
+        if record.project_id != project_id_for_path(&canonical_root)? {
             return Err(BridgeError::Invalid(
                 "discovery project binding mismatch".to_owned(),
             ));
@@ -383,6 +394,24 @@ mod windows {
             ] {
                 assert!(parse_loopback_endpoint(invalid).is_err(), "{invalid}");
             }
+        }
+
+        #[test]
+        fn canonical_windows_identity_matches_godot_path_spelling() {
+            assert_eq!(
+                crate::discovery::canonical_project_identity(Path::new(
+                    r"\\?\C:\Users\Player\Game\",
+                ))
+                .unwrap(),
+                "C:/Users/Player/Game"
+            );
+            assert_eq!(
+                crate::discovery::canonical_project_identity(Path::new(
+                    r"\\?\UNC\server\share\Game\",
+                ))
+                .unwrap(),
+                "//server/share/Game"
+            );
         }
     }
 }

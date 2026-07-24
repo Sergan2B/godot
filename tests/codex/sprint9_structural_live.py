@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the local macOS S9-05 structural transaction acceptance gate."""
+"""Run the local S9-05 structural transaction acceptance gate."""
 
 from __future__ import annotations
 
@@ -133,7 +133,7 @@ def run_fault_case(
         "postcondition": "failed_rolled_back",
         "rollback_proof": "in_doubt",
     }[stage]
-    with tempfile.TemporaryDirectory(prefix="s9sf-", dir="/tmp") as temporary_path:
+    with tempfile.TemporaryDirectory(prefix="s9sf-") as temporary_path:
         project_root = Path(temporary_path) / "p"
         shutil.copytree(FIXTURE_ROOT, project_root, ignore=shutil.ignore_patterns(".godot"))
         phase_path = project_root / ".godot/codex-s9-prepare-phase.json"
@@ -262,7 +262,7 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=60.0)
     arguments = parser.parse_args()
     godot = arguments.godot.resolve(strict=True)
-    temporary = tempfile.TemporaryDirectory(prefix="s9s-", dir="/tmp")
+    temporary = tempfile.TemporaryDirectory(prefix="s9s-")
     project_root = Path(temporary.name) / "p"
     shutil.copytree(FIXTURE_ROOT, project_root, ignore=shutil.ignore_patterns(".godot"))
     phase_path = project_root / ".godot/codex-s9-prepare-phase.json"

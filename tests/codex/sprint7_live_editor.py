@@ -101,11 +101,13 @@ def require_dispatcher_within_budget(
 
 def target_platform() -> str:
     machine = platform.machine().lower()
-    require(
-        sys.platform == "darwin" and machine in {"arm64", "aarch64"},
-        "Sprint 7 qualifying live gate requires local macOS arm64",
+    if sys.platform == "darwin" and machine in {"arm64", "aarch64"}:
+        return "macos-arm64"
+    if sys.platform == "win32" and machine in {"amd64", "x86_64"}:
+        return "windows-x86_64"
+    raise LiveEditorError(
+        f"Sprint 7 live gate requires macOS arm64 or Windows x86_64, got {sys.platform}/{machine}"
     )
-    return "macos-arm64"
 
 
 def require_safe_value(value: Any, context: str) -> None:
@@ -227,7 +229,7 @@ def wait_phase(
             last = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(last, dict) and last.get("phase") == expected_phase:
                 return cast(dict[str, Any], last)
-        except (FileNotFoundError, json.JSONDecodeError, UnicodeError):
+        except (OSError, json.JSONDecodeError, UnicodeError):
             pass
         if process.poll() is not None:
             tail = log_path.read_text(encoding="utf-8", errors="replace")[-8000:]
@@ -537,7 +539,7 @@ def runtime_paths(project: Path) -> list[Path]:
             endpoint = Path(str(json.loads(discovery.read_text(encoding="utf-8")).get("endpoint", "")))
             if endpoint and not endpoint.is_absolute() and ".." not in endpoint.parts:
                 paths.append(project / endpoint)
-        except (json.JSONDecodeError, UnicodeError):
+        except (OSError, json.JSONDecodeError, UnicodeError):
             pass
     return paths
 
@@ -829,7 +831,7 @@ def run_session(
 def run(godot: Path, sidecar: Path, timeout: float) -> dict[str, Any]:
     platform_tag = target_platform()
     require(godot.is_file() and sidecar.is_file(), "Godot and release sidecar must be built")
-    run_root = Path(tempfile.mkdtemp(prefix="s7.", dir="/tmp"))
+    run_root = Path(tempfile.mkdtemp(prefix="s7."))
     project = run_root / "project"
     shutil.copytree(PROJECT_SOURCE, project, ignore=shutil.ignore_patterns(".godot"))
     try:

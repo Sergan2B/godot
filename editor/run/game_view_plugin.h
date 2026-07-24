@@ -245,8 +245,8 @@ class GameView : public VBoxContainer {
 	void _play_pressed();
 	static void _instance_starting_static(int p_idx, List<String> &r_arguments);
 	void _instance_starting(int p_idx, List<String> &r_arguments);
-	static bool _instance_rq_screenshot_static(const Callable &p_callback);
-	bool _instance_rq_screenshot(const Callable &p_callback);
+	static bool _instance_rq_screenshot_static(const Callable &p_callback, bool p_require_embedded);
+	bool _instance_rq_screenshot(const Callable &p_callback, bool p_require_embedded);
 	void _stop_pressed();
 	void _embedding_completed();
 	void _embedding_failed();

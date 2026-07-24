@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Qualify and validate Sprint 9 editor transactions on local macOS arm64."""
+"""Qualify and validate Sprint 9 editor transactions on a supported desktop host."""
 
 from __future__ import annotations
 
@@ -21,21 +21,87 @@ from typing import Any, Mapping, cast
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPOSITORY_ROOT = SCRIPT_DIR.parent.parent
 SOURCE_SCOPE_PATH = SCRIPT_DIR / "sprint9_source_scopes.txt"
-EVIDENCE_PATH = SCRIPT_DIR / "evidence" / "sprint-9-editor-transactions-macos.json"
 MODEL_FREE_RUNNER = SCRIPT_DIR / "sprint9_model_free_live.py"
 FIXTURE_VALIDATOR = SCRIPT_DIR / "transaction_fixture.py"
 FIXTURE_MANIFEST = (
     SCRIPT_DIR / "fixtures" / "transaction_oracle" / "fixture-manifest.json"
 )
 GOLDEN = SCRIPT_DIR / "fixtures" / "transaction_oracle" / "golden-transactions.json"
-GODOT = REPOSITORY_ROOT / "bin" / "godot.macos.editor.dev.arm64"
-SIDECAR = (
-    REPOSITORY_ROOT
-    / "godot-codex-mcp"
-    / "target"
-    / "release"
-    / "godot-codex-mcp"
+RUST_TOOLCHAIN_PATH = REPOSITORY_ROOT / "godot-codex-mcp" / "rust-toolchain.toml"
+
+HOST_IS_MACOS_ARM64 = (
+    sys.platform == "darwin"
+    and platform.machine().lower() in {"arm64", "aarch64"}
 )
+HOST_IS_WINDOWS_X86_64 = (
+    sys.platform == "win32"
+    and platform.machine().lower() in {"amd64", "x86_64"}
+)
+if HOST_IS_WINDOWS_X86_64:
+    EVIDENCE_PATH = (
+        SCRIPT_DIR / "evidence" / "sprint-9-editor-transactions-windows.json"
+    )
+    GODOT = (
+        REPOSITORY_ROOT
+        / "bin"
+        / "godot.windows.editor.dev.x86_64.console.exe"
+    )
+    SIDECAR = (
+        REPOSITORY_ROOT
+        / "godot-codex-mcp"
+        / "target"
+        / "release"
+        / "godot-codex-mcp.exe"
+    )
+    LOCAL_PROFILE = "qualifying_local_windows_x86_64"
+    LOCAL_PLATFORM = {"architecture": "x86_64", "os": "windows"}
+    MODEL_PLATFORM = "windows-x86_64"
+else:
+    EVIDENCE_PATH = (
+        SCRIPT_DIR / "evidence" / "sprint-9-editor-transactions-macos.json"
+    )
+    GODOT = REPOSITORY_ROOT / "bin" / "godot.macos.editor.dev.arm64"
+    SIDECAR = (
+        REPOSITORY_ROOT
+        / "godot-codex-mcp"
+        / "target"
+        / "release"
+        / "godot-codex-mcp"
+    )
+    LOCAL_PROFILE = "qualifying_local_macos_arm64"
+    LOCAL_PLATFORM = {"architecture": "arm64", "os": "macos"}
+    MODEL_PLATFORM = "macos-arm64"
+
+QUALIFYING_PROFILES = {
+    ("macos", "arm64"): {
+        "profile": "qualifying_local_macos_arm64",
+        "rust_host": "aarch64-apple-darwin",
+        "toolchain_fields": {
+            "cargo",
+            "macos_sdk",
+            "python",
+            "rust_host",
+            "rustc",
+            "scons",
+            "xcode",
+        },
+        "external_platform": "windows",
+    },
+    ("windows", "x86_64"): {
+        "profile": "qualifying_local_windows_x86_64",
+        "rust_host": "x86_64-pc-windows-msvc",
+        "toolchain_fields": {
+            "cargo",
+            "msvc",
+            "python",
+            "rust_host",
+            "rustc",
+            "scons",
+            "windows_sdk",
+        },
+        "external_platform": "macos",
+    },
+}
 
 COMMIT_RE = re.compile(r"[0-9a-f]{40}\Z")
 SHA256_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
@@ -254,6 +320,19 @@ def current_commit() -> str:
     return commit
 
 
+def rust_toolchain_channel() -> str:
+    match = re.search(
+        r'(?m)^\s*channel\s*=\s*"([^"]+)"\s*$',
+        RUST_TOOLCHAIN_PATH.read_text(encoding="utf-8"),
+    )
+    require(match is not None, "Rust toolchain channel is missing")
+    return match.group(1)
+
+
+def rust_command(tool: str, *arguments: str) -> list[str]:
+    return [tool, f"+{rust_toolchain_channel()}", *arguments]
+
+
 def require_pristine_worktree() -> None:
     require(not status_lines(), "qualifying run requires a fully clean worktree")
 
@@ -282,7 +361,7 @@ def evidence_checkout_relation(source_commit: str) -> str:
 
 
 def rust_host() -> str:
-    output = command_output(["rustc", "-vV"])
+    output = command_output(rust_command("rustc", "-vV"))
     return next(
         line.split(":", 1)[1].strip()
         for line in output.splitlines()
@@ -292,30 +371,114 @@ def rust_host() -> str:
 
 def verify_toolchain() -> dict[str, str]:
     require(
-        sys.platform == "darwin"
-        and platform.machine().lower() in {"arm64", "aarch64"},
-        "Sprint 9 qualification requires macOS arm64",
+        HOST_IS_MACOS_ARM64 or HOST_IS_WINDOWS_X86_64,
+        "Sprint 9 qualification requires macOS arm64 or Windows x86_64",
     )
-    for executable in ("cargo", "rustc", "xcodebuild", "xcrun"):
+    for executable in ("cargo", "rustc", "rustup"):
         require(shutil.which(executable) is not None, f"missing tool: {executable}")
-    require((REPOSITORY_ROOT / ".venv/bin/scons").is_file(), "SCons is missing")
     require(
-        rust_host() == "aarch64-apple-darwin",
-        "Rust host is not aarch64-apple-darwin",
-    )
-    return {
-        "python": platform.python_version(),
-        "rustc": command_output(["rustc", "--version"]),
-        "cargo": command_output(["cargo", "--version"]),
-        "rust_host": rust_host(),
-        "scons": command_output(
-            [str(REPOSITORY_ROOT / ".venv/bin/scons"), "--version"]
-        ).splitlines()[0],
-        "xcode": command_output(["xcodebuild", "-version"]).replace("\n", "; "),
-        "macos_sdk": command_output(
-            ["xcrun", "--sdk", "macosx", "--show-sdk-version"]
+        rust_host()
+        == cast(
+            str,
+            QUALIFYING_PROFILES[
+                (LOCAL_PLATFORM["os"], LOCAL_PLATFORM["architecture"])
+            ]["rust_host"],
         ),
+        "Rust host does not match the qualifying platform",
+    )
+    common = {
+        "python": platform.python_version(),
+        "rustc": command_output(rust_command("rustc", "--version")),
+        "cargo": command_output(rust_command("cargo", "--version")),
+        "rust_host": rust_host(),
     }
+    if HOST_IS_MACOS_ARM64:
+        for executable in ("xcodebuild", "xcrun"):
+            require(
+                shutil.which(executable) is not None,
+                f"missing tool: {executable}",
+            )
+        scons = REPOSITORY_ROOT / ".venv/bin/scons"
+        require(scons.is_file(), "SCons is missing")
+        return common | {
+            "scons": command_output([str(scons), "--version"]).splitlines()[0],
+            "xcode": command_output(["xcodebuild", "-version"]).replace(
+                "\n", "; "
+            ),
+            "macos_sdk": command_output(
+                ["xcrun", "--sdk", "macosx", "--show-sdk-version"]
+            ),
+        }
+
+    scons_version = command_output(
+        [sys.executable, "-m", "SCons", "--version"]
+    ).splitlines()[0]
+    program_files_x86 = os.environ.get("ProgramFiles(x86)", "")
+    vswhere = (
+        Path(program_files_x86)
+        / "Microsoft Visual Studio"
+        / "Installer"
+        / "vswhere.exe"
+    )
+    require(vswhere.is_file(), "Visual Studio locator is missing")
+    msvc = command_output(
+        [
+            str(vswhere),
+            "-latest",
+            "-products",
+            "*",
+            "-property",
+            "installationVersion",
+        ]
+    )
+    sdk_include = (
+        Path(program_files_x86) / "Windows Kits" / "10" / "Include"
+    )
+    sdk_versions = sorted(
+        (path.name for path in sdk_include.iterdir() if path.is_dir()),
+        reverse=True,
+    )
+    require(bool(msvc) and bool(sdk_versions), "MSVC or Windows SDK is missing")
+    return common | {
+        "scons": scons_version,
+        "msvc": msvc,
+        "windows_sdk": sdk_versions[0],
+    }
+
+
+def godot_build_command() -> list[str]:
+    if HOST_IS_WINDOWS_X86_64:
+        return [
+            sys.executable,
+            "-m",
+            "SCons",
+            "platform=windows",
+            "arch=x86_64",
+            "target=editor",
+            "dev_mode=yes",
+            "dev_build=yes",
+            "tests=yes",
+            "module_codex_bridge_enabled=yes",
+            "accesskit=no",
+            "d3d12=no",
+            "angle=no",
+            "-j8",
+        ]
+    return [
+        "env",
+        "BUILD_NAME=codex",
+        str(REPOSITORY_ROOT / ".venv/bin/scons"),
+        "platform=macos",
+        "arch=arm64",
+        "target=editor",
+        "dev_mode=yes",
+        "dev_build=yes",
+        "tests=yes",
+        "vulkan=no",
+        "accesskit=no",
+        "angle=no",
+        "-j4",
+    ]
 
 
 def run_gate(
@@ -369,11 +532,13 @@ def percentile(samples: list[float], value: int) -> float:
     return round(ordered[index], 3)
 
 
-def validate_model_free(report: Mapping[str, Any]) -> None:
+def validate_model_free(
+    report: Mapping[str, Any], expected_platform: str = MODEL_PLATFORM
+) -> None:
     require(
         report.get("schema_version") == "s9-model-free-workflow/1.0"
         and report.get("status") == "passed"
-        and report.get("platform") == "macos-arm64"
+        and report.get("platform") == expected_platform
         and report.get("protocol") == "2025-11-25"
         and report.get("tool_registry") == 36,
         "model-free report coordinates differ",
@@ -501,18 +666,30 @@ def validate_report(
     check_checkout: bool = True,
 ) -> dict[str, Any]:
     require(set(report) == TOP_LEVEL_FIELDS, "Sprint 9 evidence fields differ")
+    platform_coordinate = report.get("platform")
+    require(
+        isinstance(platform_coordinate, dict)
+        and set(platform_coordinate) == {"architecture", "os"},
+        "platform coordinate differs",
+    )
+    coordinate = (
+        str(platform_coordinate.get("os")),
+        str(platform_coordinate.get("architecture")),
+    )
+    qualifying_profile = QUALIFYING_PROFILES.get(coordinate)
+    require(qualifying_profile is not None, "platform coordinate differs")
     require(
         report.get("schema_version") == "s9-editor-transactions-evidence/1.0"
         and report.get("sprint") == 9
-        and report.get("profile") == "qualifying_local_macos_arm64"
+        and report.get("profile") == qualifying_profile["profile"]
         and report.get("status") == "passed",
         "Sprint 9 evidence coordinates differ",
     )
-    require(
-        report.get("platform")
-        == {"architecture": "arm64", "os": "macos"},
-        "platform coordinate differs",
-    )
+    if check_checkout:
+        require(
+            platform_coordinate == LOCAL_PLATFORM,
+            "evidence does not match the local qualifying platform",
+        )
     source = report.get("source")
     require(
         isinstance(source, dict)
@@ -561,17 +738,8 @@ def validate_report(
     toolchain = report.get("toolchain")
     require(
         isinstance(toolchain, dict)
-        and set(toolchain)
-        == {
-            "cargo",
-            "macos_sdk",
-            "python",
-            "rust_host",
-            "rustc",
-            "scons",
-            "xcode",
-        }
-        and toolchain.get("rust_host") == "aarch64-apple-darwin",
+        and set(toolchain) == qualifying_profile["toolchain_fields"]
+        and toolchain.get("rust_host") == qualifying_profile["rust_host"],
         "toolchain coordinates differ",
     )
     artifacts = report.get("artifacts")
@@ -736,9 +904,15 @@ def validate_report(
         "redaction proof differs",
     )
     external = report.get("external_gates")
+    expected_external = {
+        "linux",
+        "model_facing",
+        "remote_ci",
+        str(qualifying_profile["external_platform"]),
+    }
     require(
         isinstance(external, dict)
-        and set(external) == {"linux", "model_facing", "remote_ci", "windows"}
+        and set(external) == expected_external
         and all(
             isinstance(value, dict)
             and set(value) == {"reason", "status"}
@@ -839,7 +1013,7 @@ def build_report(timeout: float) -> dict[str, Any]:
     )
     gates["rust_format"] = run_gate(
         "Rust format",
-        [
+        rust_command(
             "cargo",
             "fmt",
             "--manifest-path",
@@ -847,11 +1021,11 @@ def build_report(timeout: float) -> dict[str, Any]:
             "--all",
             "--",
             "--check",
-        ],
+        ),
     )
     gates["rust_workspace_tests"] = run_gate(
         "Rust workspace tests",
-        [
+        rust_command(
             "cargo",
             "test",
             "--manifest-path",
@@ -860,12 +1034,12 @@ def build_report(timeout: float) -> dict[str, Any]:
             "--all-targets",
             "--locked",
             "--offline",
-        ],
+        ),
         timeout=max(timeout * 4, 1_800),
     )
     gates["rust_clippy"] = run_gate(
         "Rust clippy",
-        [
+        rust_command(
             "cargo",
             "clippy",
             "--manifest-path",
@@ -877,38 +1051,24 @@ def build_report(timeout: float) -> dict[str, Any]:
             "--",
             "-D",
             "warnings",
-        ],
+        ),
         timeout=max(timeout * 4, 1_800),
     )
     gates["rpc_conformance"] = run_gate(
         "Bridge RPC 1.0-1.7 conformance",
-        [
+        rust_command(
             "cargo",
             "test",
             "--manifest-path",
             "tests/codex/Cargo.toml",
             "--locked",
             "--offline",
-        ],
+        ),
         timeout=max(timeout * 2, 900),
     )
     gates["godot_editor_build"] = run_gate(
         "tests-enabled Godot editor build",
-        [
-            "env",
-            "BUILD_NAME=codex",
-            str(REPOSITORY_ROOT / ".venv/bin/scons"),
-            "platform=macos",
-            "arch=arm64",
-            "target=editor",
-            "dev_mode=yes",
-            "dev_build=yes",
-            "tests=yes",
-            "vulkan=no",
-            "accesskit=no",
-            "angle=no",
-            "-j4",
-        ],
+        godot_build_command(),
         timeout=max(timeout * 6, 3_600),
     )
     gates["cpp_s9_profiles"] = run_gate(
@@ -924,7 +1084,7 @@ def build_report(timeout: float) -> dict[str, Any]:
     )
     gates["release_sidecar_build"] = run_gate(
         "release sidecar build",
-        [
+        rust_command(
             "cargo",
             "build",
             "--manifest-path",
@@ -934,12 +1094,12 @@ def build_report(timeout: float) -> dict[str, Any]:
             "--offline",
             "-p",
             "godot-codex-mcp",
-        ],
+        ),
         timeout=max(timeout * 4, 1_800),
     )
     check_release_sidecar_has_no_fault_seam()
 
-    with tempfile.TemporaryDirectory(prefix="s9-acceptance.", dir="/tmp") as directory:
+    with tempfile.TemporaryDirectory(prefix="s9-acceptance.") as directory:
         workspace = Path(directory)
         direct_paths = [
             workspace / "prepare.json",
@@ -1101,8 +1261,8 @@ def build_report(timeout: float) -> dict[str, Any]:
     report = {
         "schema_version": "s9-editor-transactions-evidence/1.0",
         "sprint": 9,
-        "profile": "qualifying_local_macos_arm64",
-        "platform": {"architecture": "arm64", "os": "macos"},
+        "profile": LOCAL_PROFILE,
+        "platform": LOCAL_PLATFORM,
         "source": {
             "commit": source_commit,
             "sha256": digest_before,
@@ -1176,13 +1336,18 @@ def build_report(timeout: float) -> dict[str, Any]:
             "native_ids_absent": True,
         },
         "external_gates": {
-            "windows": {
+            cast(
+                str,
+                QUALIFYING_PROFILES[
+                    (LOCAL_PLATFORM["os"], LOCAL_PLATFORM["architecture"])
+                ]["external_platform"],
+            ): {
                 "status": "not_run",
-                "reason": "local qualifying coordinate is macOS arm64",
+                "reason": f"local qualifying coordinate is {MODEL_PLATFORM}",
             },
             "linux": {
                 "status": "not_run",
-                "reason": "local qualifying coordinate is macOS arm64",
+                "reason": f"local qualifying coordinate is {MODEL_PLATFORM}",
             },
             "remote_ci": {
                 "status": "not_run",

@@ -125,6 +125,27 @@ class Sprint9AcceptanceTests(unittest.TestCase):
             report,
         )
 
+    def test_windows_report_passes_without_checkout_binding(self) -> None:
+        report = valid_report()
+        report["profile"] = "qualifying_local_windows_x86_64"
+        report["platform"] = {"architecture": "x86_64", "os": "windows"}
+        report["toolchain"] = {
+            "python": "3.14.5",
+            "rustc": "rustc 1.94.1",
+            "cargo": "cargo 1.94.1",
+            "rust_host": "x86_64-pc-windows-msvc",
+            "scons": "SCons 4.10.1",
+            "msvc": "17.14.37216.2",
+            "windows_sdk": "10.0.26100.0",
+        }
+        external = report["external_gates"]
+        assert isinstance(external, dict)
+        external["macos"] = external.pop("windows")
+        self.assertIs(
+            acceptance.validate_report(report, check_checkout=False),
+            report,
+        )
+
     def test_strict_json_rejects_duplicate_members(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "duplicate.json"
@@ -181,6 +202,8 @@ class Sprint9AcceptanceTests(unittest.TestCase):
     def test_source_scope_is_sorted_unique_and_self_bound(self) -> None:
         scopes = acceptance.source_scopes()
         self.assertEqual(scopes, tuple(sorted(set(scopes))))
+        self.assertIn("docs/codex-integration/SPRINT-9-WINDOWS.md", scopes)
+        self.assertIn("editor/run/game_view_plugin.cpp", scopes)
         self.assertIn("tests/codex/sprint9_acceptance.py", scopes)
         self.assertIn("tests/codex/test_sprint9_acceptance.py", scopes)
 

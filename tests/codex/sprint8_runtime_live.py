@@ -336,6 +336,21 @@ def wait_file(process: subprocess.Popen[str], path: Path, timeout: float) -> Non
 
 def terminate_process_group(process: subprocess.Popen[str]) -> None:
     """Retire the editor and every game process spawned for this isolated gate."""
+    if os.name == "nt":
+        if process.poll() is not None:
+            return
+        subprocess.run(
+            ["taskkill.exe", "/PID", str(process.pid), "/T", "/F"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+        return
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -352,6 +367,33 @@ def terminate_process_group(process: subprocess.Popen[str]) -> None:
 
 def fixture_process_ids(project: Path) -> set[int]:
     """Return only processes whose argv targets this exact temporary fixture."""
+    if os.name == "nt":
+        environment = os.environ.copy()
+        environment["CODEX_S8_PROJECT_PATH"] = str(project.resolve())
+        completed = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                (
+                    "$target=$env:CODEX_S8_PROJECT_PATH; "
+                    "Get-CimInstance Win32_Process | "
+                    "Where-Object { $_.Name -like 'godot*' -and "
+                    "$_.CommandLine -and $_.CommandLine.Contains($target) } | "
+                    "ForEach-Object { $_.ProcessId }"
+                ),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        return {
+            int(line.strip())
+            for line in completed.stdout.splitlines()
+            if line.strip().isdigit()
+        }
     completed = subprocess.run(
         ["ps", "-axo", "pid=,command="],
         check=True,
@@ -372,10 +414,18 @@ def retire_fixture_processes(project: Path) -> bool:
     """Stop detached Godot game children and prove no exact match remains."""
     pids = fixture_process_ids(project)
     for pid in pids:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill.exe", "/PID", str(pid), "/T", "/F"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
     deadline = time.monotonic() + 5
     remaining = fixture_process_ids(project)
     while remaining and time.monotonic() < deadline:
@@ -383,10 +433,18 @@ def retire_fixture_processes(project: Path) -> bool:
         if remaining:
             time.sleep(0.05)
     for pid in remaining:
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill.exe", "/PID", str(pid), "/T", "/F"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
     kill_deadline = time.monotonic() + 5
     while time.monotonic() < kill_deadline:
         remaining = fixture_process_ids(project)
@@ -556,7 +614,7 @@ def wait_game_ack(project: Path, kind: str, timeout: float) -> dict[str, Any]:
     while time.monotonic() < deadline:
         try:
             last = json.loads(path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError):
             time.sleep(0.05)
             continue
         if isinstance(last, dict) and last.get("kind") == kind:
@@ -630,7 +688,7 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
     golden = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     report: dict[str, Any] | None = None
     primary_failure = False
-    with tempfile.TemporaryDirectory(prefix="s8-", dir="/tmp") as temporary:
+    with tempfile.TemporaryDirectory(prefix="s8-") as temporary:
         project = Path(temporary) / "p"
         shutil.copytree(PROJECT_SOURCE, project, ignore=shutil.ignore_patterns(".godot"))
         initial_source_snapshot = project_source_snapshot(project)
@@ -642,6 +700,13 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
         command = [str(godot), "--editor", "--path", str(project), "--no-header"]
         if headless:
             command.insert(2, "--headless")
+        process_group_options: dict[str, Any]
+        if os.name == "nt":
+            process_group_options = {
+                "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP,
+            }
+        else:
+            process_group_options = {"start_new_session": True}
         editor = subprocess.Popen(
             command,
             cwd=REPOSITORY_ROOT,
@@ -649,7 +714,7 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
             stdout=log,
             stderr=subprocess.STDOUT,
             text=True,
-            start_new_session=True,
+            **process_group_options,
         )
         sidecar_process: LineProcess | None = None
         try:
@@ -1875,10 +1940,11 @@ def run_live(godot: Path, sidecar: Path, timeout: float, headless: bool) -> dict
                             )
             # A normally closed or crashed editor can leave its game child alive;
             # the dedicated process group keeps this exact and unrelated-process safe.
-            try:
-                os.killpg(editor.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
+            if os.name != "nt":
+                try:
+                    os.killpg(editor.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
             try:
                 fixture_processes_stopped = retire_fixture_processes(project)
             except Exception as error:
