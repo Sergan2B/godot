@@ -17,8 +17,8 @@ import json
 import os
 import pwd
 import selectors
-import signal
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -34,11 +34,13 @@ try:
     from tests.codex import sprint11_host_provenance as host_provenance
     from tests.codex import sprint11_multi_project as multi_project
     from tests.codex import sprint11_packaged_regressions as package_contract
+    from tests.codex import sprint11_process_scope as process_scope
 except ModuleNotFoundError:  # Direct execution from tests/codex.
     import sprint11_acquisition_paths as acquisition_paths
     import sprint11_host_provenance as host_provenance
     import sprint11_multi_project as multi_project
     import sprint11_packaged_regressions as package_contract
+    import sprint11_process_scope as process_scope
 
 SCRIPT_DIR: Final = Path(__file__).resolve().parent
 REPOSITORY_ROOT: Final = SCRIPT_DIR.parent.parent
@@ -62,11 +64,17 @@ HOST_ACQUISITION_SCHEMA_PATH: Final = (
     "godot-codex-mcp/schemas/godot_codex/"
     "sprint11-host-provenance-acquisition.schema.json"
 )
+REPRODUCIBILITY_SCHEMA_PATH: Final = (
+    "godot-codex-mcp/schemas/godot_codex/"
+    "sprint11-reproducibility-receipt.schema.json"
+)
+ISOLATED_PYTHON_FLAGS: Final = ("-E", "-s", "-S")
 PACKAGE_MANIFEST_NAME: Final = "sprint11-package-manifest.json"
 MAX_RECEIPT_BYTES: Final = 262_144
 MAX_REPORT_BYTES: Final = multi_project.REPORT_LIMIT
 MAX_OUTPUT_BYTES: Final = 1_048_576
 MAX_COMMAND_SECONDS: Final = 180
+MAX_REBUILD_SECONDS: Final = 30 * 60
 MAX_PACKAGE_FILE_BYTES: Final = 256 * 1024 * 1024
 MAX_PACKAGE_TREE_BYTES: Final = 512 * 1024 * 1024
 GIT_EXECUTABLE: Final = "/usr/bin/git"
@@ -411,6 +419,16 @@ def _close_process_streams(process: subprocess.Popen[bytes]) -> None:
             stream.close()
 
 
+def _stop_process_group_preserving_failure(
+    process: subprocess.Popen[bytes],
+    failure: BaseException,
+) -> None:
+    try:
+        _stop_process_group(process)
+    except BaseException as cleanup_error:
+        failure.add_note(f"cleanup failure: {cleanup_error}")
+
+
 def _execute(
     argv: tuple[str, ...],
     cwd: Path,
@@ -425,16 +443,30 @@ def _execute(
     stderr_bytes = bytearray()
     deadline = started + timeout
     try:
+        scoped_environment, command_scope = process_scope.bind_environment(
+            environment
+        )
+    except process_scope.ProcessScopeError as error:
+        raise AcquisitionError(
+            "external acquisition process scope could not be created"
+        ) from error
+    try:
         process = subprocess.Popen(
-            argv,
+            process_scope.scoped_argv(argv, command_scope),
             cwd=cwd,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env=dict(environment),
+            env=scoped_environment,
             start_new_session=True,
             bufsize=0,
         )
+        try:
+            process_scope.activate_scope(command_scope, process)
+        except process_scope.ProcessScopeError as error:
+            raise AcquisitionError(
+                "external acquisition process scope could not be activated"
+            ) from error
         require(
             process.stdout is not None and process.stderr is not None,
             "external acquisition command streams are unavailable",
@@ -446,10 +478,19 @@ def _execute(
             os.set_blocking(stream.fileno(), False)
             selector.register(stream, selectors.EVENT_READ, label)
         while selector.get_map() or process.poll() is None:
+            try:
+                process_scope.require_scope_healthy(command_scope)
+            except process_scope.ProcessScopeError as error:
+                raise AcquisitionError(
+                    "external acquisition process scope tracker failed"
+                ) from error
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                _stop_process_group(process)
-                raise AcquisitionError("external acquisition command timed out")
+                failure = AcquisitionError(
+                    "external acquisition command timed out"
+                )
+                _stop_process_group_preserving_failure(process, failure)
+                raise failure
             events = selector.select(min(remaining, 0.1))
             for key, _mask in events:
                 stream = key.fileobj
@@ -465,34 +506,55 @@ def _execute(
                     stdout_bytes if key.data == "stdout" else stderr_bytes
                 )
                 if len(destination) + len(chunk) > MAX_OUTPUT_BYTES:
-                    _stop_process_group(process)
-                    raise AcquisitionError(
+                    failure = AcquisitionError(
                         "external acquisition output exceeds byte bound"
                     )
+                    _stop_process_group_preserving_failure(process, failure)
+                    raise failure
                 destination.extend(chunk)
             if process.poll() is not None and _process_group_exists(process.pid):
-                _stop_process_group(process)
-                raise AcquisitionError(
+                failure = AcquisitionError(
                     "external acquisition command left child processes"
                 )
+                _stop_process_group_preserving_failure(process, failure)
+                raise failure
         exit_code = process.wait(timeout=max(deadline - time.monotonic(), 0.001))
         if _process_group_exists(process.pid):
-            _stop_process_group(process)
-            raise AcquisitionError(
+            failure = AcquisitionError(
                 "external acquisition command left child processes"
             )
-    except AcquisitionError:
+            _stop_process_group_preserving_failure(process, failure)
+            raise failure
+    except AcquisitionError as error:
         if process is not None and _process_group_exists(process.pid):
-            _stop_process_group(process)
+            _stop_process_group_preserving_failure(process, error)
         raise
     except (OSError, subprocess.TimeoutExpired) as error:
+        failure = AcquisitionError("external acquisition command failed")
+        failure.__cause__ = error
         if process is not None and _process_group_exists(process.pid):
-            _stop_process_group(process)
-        raise AcquisitionError("external acquisition command failed") from error
+            _stop_process_group_preserving_failure(process, failure)
+        raise failure
     finally:
+        active_error = sys.exc_info()[1]
         selector.close()
         if process is not None:
             _close_process_streams(process)
+        escaped_scope = False
+        try:
+            escaped_scope = process_scope.close_scope(command_scope)
+        except process_scope.ProcessScopeError as error:
+            cleanup_error = AcquisitionError(
+                "external acquisition detached process scope could not be closed"
+            )
+            cleanup_error.__cause__ = error
+            if active_error is None:
+                raise cleanup_error
+            active_error.add_note(f"cleanup failure: {cleanup_error}")
+        if escaped_scope and active_error is None:
+            raise AcquisitionError(
+                "external acquisition detached descendants escaped the process group"
+            )
     return Execution(
         exit_code=exit_code,
         stdout=bytes(stdout_bytes),
@@ -633,10 +695,34 @@ def execute_host(argv: tuple[str, ...], cwd: Path, timeout: float) -> Execution:
         )
 
 
+def execute_package_live(
+    argv: tuple[str, ...],
+    cwd: Path,
+    timeout: float,
+) -> Execution:
+    """Run package runtime checks without account toolchain state."""
+
+    with _safe_temporary_root(".s11-package-live-process.") as private:
+        environment = _acquisition_environment(
+            private_root=Path(private),
+            include_toolchain=False,
+        )
+        for name in (*SAFE_LOCATION_VARIABLES, *SAFE_SCALAR_VARIABLES):
+            environment.pop(name, None)
+        return _execute(
+            argv,
+            cwd,
+            timeout,
+            environment=environment,
+        )
+
+
 def _git_environment() -> dict[str, str]:
     return {
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_LAZY_FETCH": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
         "GIT_OPTIONAL_LOCKS": "0",
         "GIT_TERMINAL_PROMPT": "0",
         "HOME": "/var/empty",
@@ -669,6 +755,7 @@ def _run_git(repository: Path, *arguments: str) -> Execution:
 class SourceSnapshot:
     root: Path
     source_commit: str
+    repository: Path = REPOSITORY_ROOT
 
 
 def _snapshot_file_digest(
@@ -678,14 +765,23 @@ def _snapshot_file_digest(
     path = snapshot.root / relative_path
     require_regular(path)
     digest = sha256_file(path, maximum=MAX_PACKAGE_FILE_BYTES)
-    committed = _run_git(
-        snapshot.root,
-        "show",
-        f"{snapshot.source_commit}:{relative_path}",
+    raw_snapshot = package_contract.SourceSnapshot(
+        root=snapshot.root,
+        source_commit=snapshot.source_commit,
+        repository=snapshot.repository,
     )
+    entries = {
+        entry.path: entry
+        for entry in package_contract._source_tree_entries(raw_snapshot)
+    }
+    entry = entries.get(relative_path)
     require(
-        committed.exit_code == 0
-        and sha256_bytes(committed.stdout) == digest,
+        entry is not None
+        and package_contract._git_blob_object_id(
+            path,
+            entry=entry,
+        )
+        == entry.object_id,
         "snapshot runner differs from declared source commit",
     )
     return digest
@@ -702,49 +798,18 @@ def _verify_snapshot_file(
     )
 
 
-def _set_snapshot_writable(root: Path, writable: bool) -> None:
-    file_mode = 0o600 if writable else 0o400
-    executable_mode = 0o700 if writable else 0o500
-    directory_mode = 0o700 if writable else 0o500
-    for current_root, directories, files in os.walk(root, topdown=writable):
-        current = Path(current_root)
-        if writable:
-            os.chmod(current, directory_mode)
-        for name in files:
-            path = current / name
-            metadata = path.lstat()
-            if stat.S_ISLNK(metadata.st_mode):
-                continue
-            os.chmod(
-                path,
-                executable_mode
-                if metadata.st_mode & 0o111
-                else file_mode,
-            )
-        if not writable:
-            for name in directories:
-                path = current / name
-                if not path.is_symlink():
-                    os.chmod(path, directory_mode)
-            os.chmod(current, directory_mode)
-
-
 def _verify_snapshot_coordinate(snapshot: SourceSnapshot) -> None:
-    head = _run_git(snapshot.root, "rev-parse", "--verify", "HEAD")
-    status = _run_git(
-        snapshot.root,
-        "status",
-        "--porcelain=v1",
-        "--untracked-files=all",
+    raw_snapshot = package_contract.SourceSnapshot(
+        root=snapshot.root,
+        source_commit=snapshot.source_commit,
+        repository=snapshot.repository,
     )
-    require(
-        head.exit_code == 0
-        and head.stdout.decode("ascii", errors="strict").strip()
-        == snapshot.source_commit
-        and status.exit_code == 0
-        and status.stdout == b"",
-        "private source snapshot changed during acquisition",
-    )
+    try:
+        package_contract._verify_source_snapshot(raw_snapshot)
+    except package_contract.PackagedRegressionError as error:
+        raise AcquisitionError(
+            "private source snapshot changed during acquisition"
+        ) from error
 
 
 @contextlib.contextmanager
@@ -757,53 +822,23 @@ def source_snapshot(
         package_contract.COMMIT_RE.fullmatch(source_commit) is not None,
         "snapshot source commit differs",
     )
-    with _safe_temporary_root(".s11-source-snapshot.") as private:
-        root = Path(private) / "source"
-        added = False
-        try:
-            execution = _run_git(
-                repository,
-                "worktree",
-                "add",
-                "--detach",
-                "--quiet",
-                str(root),
-                source_commit,
+    try:
+        with package_contract.source_snapshot(
+            source_commit,
+            repository=repository,
+        ) as raw_snapshot:
+            snapshot = SourceSnapshot(
+                root=raw_snapshot.root,
+                source_commit=raw_snapshot.source_commit,
+                repository=raw_snapshot.repository,
             )
-            require(
-                execution.exit_code == 0,
-                "private source snapshot could not be created",
-            )
-            added = True
-            snapshot = SourceSnapshot(root=root, source_commit=source_commit)
             _verify_snapshot_coordinate(snapshot)
-            _set_snapshot_writable(root, False)
             yield snapshot
             _verify_snapshot_coordinate(snapshot)
-        finally:
-            if added:
-                try:
-                    _set_snapshot_writable(root, True)
-                except OSError:
-                    pass
-                removal = _run_git(
-                    repository,
-                    "worktree",
-                    "remove",
-                    "--force",
-                    str(root),
-                )
-                if removal.exit_code != 0:
-                    shutil.rmtree(root, ignore_errors=True)
-                    prune = _run_git(repository, "worktree", "prune")
-                    require(
-                        prune.exit_code == 0 and not root.exists(),
-                        "private source snapshot could not be removed",
-                    )
-                require(
-                    not root.exists(),
-                    "private source snapshot was not removed",
-                )
+    except package_contract.PackagedRegressionError as error:
+        raise AcquisitionError(
+            "private source snapshot could not be verified"
+        ) from error
 
 
 def _command_record(
@@ -813,10 +848,13 @@ def _command_record(
     runner_path: str,
     runner_sha256: str,
     execution: Execution,
+    maximum_duration_seconds: int = MAX_COMMAND_SECONDS,
 ) -> dict[str, Any]:
     require(
         execution.exit_code == 0
-        and 0 <= execution.duration_ms <= MAX_COMMAND_SECONDS * 1_000,
+        and 0
+        <= execution.duration_ms
+        <= maximum_duration_seconds * 1_000,
         f"{command_id} failed or exceeded its bound",
     )
     require(
@@ -842,11 +880,16 @@ def _command_record(
 def multi_command_template() -> tuple[str, ...]:
     return (
         "{python}",
+        *ISOLATED_PYTHON_FLAGS,
         MULTI_RUNNER,
         "--godot",
         "{godot}",
         "--sidecar",
         "{package_sidecar}",
+        "--package-operations",
+        "{package_operations}",
+        "--package-data-root",
+        "{package_data_root}",
         "--expected-sidecar-sha256",
         "{package_sidecar_sha256}",
         "--expected-package-version",
@@ -861,6 +904,7 @@ def multi_command_template() -> tuple[str, ...]:
 def host_provenance_command_template() -> tuple[str, ...]:
     return (
         "{python}",
+        *ISOLATED_PYTHON_FLAGS,
         HOST_RUNNER,
         "--profile",
         "{profile}",
@@ -985,9 +1029,10 @@ def acquire_multi_project(
     godot: Path,
     output_root: Path,
     timeout: float,
-    executor: Executor = execute,
+    executor: Executor = execute_package_live,
     version_probe: Callable[[Path], str] = package_contract.probe_godot_version,
     check_repository: bool = True,
+    package_session_factory: package_contract.PackageSessionFactory | None = None,
 ) -> dict[str, Any]:
     require(1 <= timeout <= MAX_COMMAND_SECONDS, "timeout differs")
     artifact_root = artifact_root.resolve(strict=True)
@@ -1036,29 +1081,45 @@ def acquire_multi_project(
     try:
         report_path = staging / "report.json"
         template = multi_command_template()
-        substitutions = {
-            "{python}": sys.executable,
-            "{godot}": str(godot),
-            "{package_sidecar}": str(sidecar),
-            "{package_sidecar_sha256}": str(
-                bindings["package_sidecar_sha256"]
-            ),
-            "{package_version}": package_version,
-            "{timeout}": str(timeout),
-            "{report}": str(report_path),
-        }
-        argv = tuple(substitutions.get(item, item) for item in template)
-        with source_snapshot(
-            cast(str, bindings["package_source_commit"])
-        ) as snapshot:
-            runner_sha256 = _snapshot_file_digest(snapshot, MULTI_RUNNER)
-            execution = executor(argv, snapshot.root, timeout)
-            _verify_snapshot_file(
-                snapshot,
-                MULTI_RUNNER,
-                runner_sha256,
+        session_factory = (
+            package_session_factory or package_contract.installed_package
+        )
+        with session_factory(
+            artifact_root,
+            package_manifest,
+            timeout,
+        ) as installed:
+            require(
+                installed.package_version == package_version
+                and package_contract.sha256_file(installed.sidecar)
+                == bindings["package_sidecar_sha256"],
+                "installed package identity differs",
             )
-            fixtures = fixture_records(snapshot.root)
+            substitutions = {
+                "{python}": sys.executable,
+                "{godot}": str(godot),
+                "{package_sidecar}": str(installed.sidecar),
+                "{package_operations}": str(installed.operations),
+                "{package_data_root}": str(installed.data_root),
+                "{package_sidecar_sha256}": str(
+                    bindings["package_sidecar_sha256"]
+                ),
+                "{package_version}": package_version,
+                "{timeout}": str(timeout),
+                "{report}": str(report_path),
+            }
+            argv = tuple(substitutions.get(item, item) for item in template)
+            with source_snapshot(
+                cast(str, bindings["package_source_commit"])
+            ) as snapshot:
+                runner_sha256 = _snapshot_file_digest(snapshot, MULTI_RUNNER)
+                execution = executor(argv, snapshot.root, timeout)
+                _verify_snapshot_file(
+                    snapshot,
+                    MULTI_RUNNER,
+                    runner_sha256,
+                )
+                fixtures = fixture_records(snapshot.root)
         command = _command_record(
             command_id="multi_project_live",
             template=template,
@@ -1325,11 +1386,12 @@ def reproducibility_command_template(build_id: str) -> tuple[str, ...]:
     require(build_id in {"a", "b"}, "rebuild ID differs")
     return (
         "{python}",
+        *ISOLATED_PYTHON_FLAGS,
         BUILD_RUNNER,
         "--repository-root",
-        ".",
+        "{repository_root}",
         "--workspace",
-        "godot-codex-mcp",
+        "{workspace}",
         "--output-dir",
         f"{{build_{build_id}}}",
         "--source-commit",
@@ -1514,7 +1576,7 @@ def acquire_reproducibility(
     executor: Executor = execute,
     check_repository: bool = True,
 ) -> dict[str, Any]:
-    require(1 <= timeout <= MAX_COMMAND_SECONDS, "timeout differs")
+    require(1 <= timeout <= MAX_REBUILD_SECONDS, "timeout differs")
     qualified_artifact_root = qualified_artifact_root.resolve(strict=True)
     godot = godot_prerequisite.resolve(strict=True)
     source_commit = repository_head()
@@ -1549,6 +1611,10 @@ def acquire_reproducibility(
                 template = reproducibility_command_template(build_id)
                 substitutions = {
                     "{python}": sys.executable,
+                    "{repository_root}": str(REPOSITORY_ROOT),
+                    "{workspace}": str(
+                        REPOSITORY_ROOT / "godot-codex-mcp"
+                    ),
                     f"{{build_{build_id}}}": str(build_output),
                     "{source_commit}": source_commit,
                     "{godot}": str(godot),
@@ -1562,6 +1628,12 @@ def acquire_reproducibility(
                     BUILD_RUNNER,
                     runner_sha256,
                 )
+                if check_repository:
+                    require(
+                        repository_head() == source_commit,
+                        "rebuild source HEAD changed during acquisition",
+                    )
+                    require_clean_checkout()
                 command_records.append(
                     _command_record(
                         command_id=f"clean_rebuild_{build_id}",
@@ -1569,6 +1641,7 @@ def acquire_reproducibility(
                         runner_path=BUILD_RUNNER,
                         runner_sha256=runner_sha256,
                         execution=execution,
+                        maximum_duration_seconds=MAX_REBUILD_SECONDS,
                     )
                 )
                 output_records.append(
@@ -1663,7 +1736,11 @@ def parse_args() -> argparse.Namespace:
     reproducibility.add_argument("--godot-prerequisite", type=Path, required=True)
     reproducibility.add_argument("--build-root", type=Path, required=True)
     reproducibility.add_argument("--output-root", type=Path, required=True)
-    reproducibility.add_argument("--timeout", type=float, default=180.0)
+    reproducibility.add_argument(
+        "--timeout",
+        type=float,
+        default=float(MAX_REBUILD_SECONDS),
+    )
     host = subparsers.add_parser("host-provenance")
     host.add_argument("--app-bundle", type=Path, required=True)
     host.add_argument("--app-executable", type=Path, required=True)

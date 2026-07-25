@@ -125,15 +125,11 @@ fn sprint11_surface_evidence_requires_external_operator_authority() {
     let required = surface["required"].as_array().unwrap();
     for field in ["authority_path", "authority_sha256"] {
         assert!(
-            required
-                .iter()
-                .any(|value| value.as_str() == Some(field)),
+            required.iter().any(|value| value.as_str() == Some(field)),
             "missing surface authority binding: {field}"
         );
     }
-    let authority = load_schema(
-        "sprint11-surface-acquisition-authority.schema.json",
-    );
+    let authority = load_schema("sprint11-surface-acquisition-authority.schema.json");
     assert_eq!(
         authority["properties"]["trust_boundary"]["const"],
         "git_binds_exact_surface_artifacts_external_operator_attests_actual_host_session_without_cryptographic_process_origin_proof"
@@ -195,4 +191,141 @@ fn sprint11_evidence_gates_bind_runner_definitions_not_claimed_results() {
         "runner": "sprint11_acceptance/1.0",
         "definition_sha256": format!("sha256:{}", "a".repeat(64)),
     })));
+}
+
+#[test]
+fn sprint11_relative_path_schemas_reject_dot_and_empty_segments() {
+    for name in [
+        "sprint11-host-provenance-acquisition.schema.json",
+        "sprint11-multi-project-receipt.schema.json",
+        "sprint11-reproducibility-receipt.schema.json",
+    ] {
+        let schema = load_schema(name);
+        let path_schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": schema["$defs"].clone(),
+            "$ref": "#/$defs/path",
+        });
+        let validator = jsonschema::draft202012::options()
+            .build(&path_schema)
+            .unwrap();
+        assert!(
+            validator.is_valid(&json!("fixture/project.godot")),
+            "{name} rejects a canonical relative path"
+        );
+        for invalid in [
+            ".",
+            "..",
+            "fixture/.",
+            "fixture/..",
+            "fixture//project.godot",
+            "fixture/",
+            "/fixture",
+        ] {
+            assert!(
+                !validator.is_valid(&json!(invalid)),
+                "{name} accepts unsafe relative path {invalid:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn sprint11_reproducibility_schema_requires_ordered_independent_rebuilds() {
+    let schema = load_schema("sprint11-reproducibility-receipt.schema.json");
+    let array_schema = json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": schema["$defs"].clone(),
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["commands", "outputs"],
+        "properties": {
+            "commands": schema["properties"]["commands"].clone(),
+            "outputs": schema["properties"]["outputs"].clone(),
+        },
+    });
+    let validator = jsonschema::draft202012::options()
+        .build(&array_schema)
+        .unwrap();
+    let digest = format!("sha256:{}", "a".repeat(64));
+    let command_a = json!({
+        "id": "clean_rebuild_a",
+        "cwd": ".",
+        "argv_template": [
+            "{python}", "-E", "-s", "-S",
+            "godot-codex-mcp/packaging/build_macos.py",
+            "--repository-root", "{repository_root}",
+            "--workspace", "{workspace}",
+            "--output-dir", "{build_a}",
+            "--source-commit", "{source_commit}",
+            "--godot-prerequisite", "{godot}"
+        ],
+        "command_sha256": digest,
+        "runner_path": "godot-codex-mcp/packaging/build_macos.py",
+        "runner_sha256": digest,
+        "stdout_sha256": digest,
+        "stderr_sha256": digest,
+        "exit_code": 0,
+        "duration_ms": 1
+    });
+    let command_b = json!({
+        "id": "clean_rebuild_b",
+        "cwd": ".",
+        "argv_template": [
+            "{python}", "-E", "-s", "-S",
+            "godot-codex-mcp/packaging/build_macos.py",
+            "--repository-root", "{repository_root}",
+            "--workspace", "{workspace}",
+            "--output-dir", "{build_b}",
+            "--source-commit", "{source_commit}",
+            "--godot-prerequisite", "{godot}"
+        ],
+        "command_sha256": digest,
+        "runner_path": "godot-codex-mcp/packaging/build_macos.py",
+        "runner_sha256": digest,
+        "stdout_sha256": digest,
+        "stderr_sha256": digest,
+        "exit_code": 0,
+        "duration_ms": 1
+    });
+    let output_a = json!({
+        "id": "a",
+        "manifest_sha256": digest,
+        "build_provenance_sha256": digest,
+        "archive_sha256": digest,
+        "archive_bytes": 1,
+        "package_tree_sha256": digest
+    });
+    let output_b = json!({
+        "id": "b",
+        "manifest_sha256": digest,
+        "build_provenance_sha256": digest,
+        "archive_sha256": digest,
+        "archive_bytes": 1,
+        "package_tree_sha256": digest
+    });
+    let valid = json!({
+        "commands": [command_a, command_b],
+        "outputs": [output_a, output_b],
+    });
+    assert!(validator.is_valid(&valid));
+
+    let mut duplicate_command = valid.clone();
+    duplicate_command["commands"][1] = duplicate_command["commands"][0].clone();
+    assert!(!validator.is_valid(&duplicate_command));
+    let mut swapped_commands = valid.clone();
+    swapped_commands["commands"]
+        .as_array_mut()
+        .unwrap()
+        .swap(0, 1);
+    assert!(!validator.is_valid(&swapped_commands));
+    let mut duplicate_output = valid.clone();
+    duplicate_output["outputs"][1] = duplicate_output["outputs"][0].clone();
+    assert!(!validator.is_valid(&duplicate_output));
+    let mut swapped_outputs = valid;
+    swapped_outputs["outputs"]
+        .as_array_mut()
+        .unwrap()
+        .swap(0, 1);
+    assert!(!validator.is_valid(&swapped_outputs));
 }

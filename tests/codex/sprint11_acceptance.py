@@ -23,23 +23,26 @@ import tarfile
 import tempfile
 import threading
 import time
-import tomllib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
+
+import tomllib
 
 try:
     from tests.codex import sprint11_external_acquisitions as external_acquisitions
     from tests.codex import sprint11_host_provenance as host_provenance
     from tests.codex import sprint11_multi_project as multi_project
     from tests.codex import sprint11_packaged_regressions as packaged_regressions
+    from tests.codex import sprint11_process_scope as process_scope
     from tests.codex.usability import validator as human_usability
 except ModuleNotFoundError:  # Direct script execution from tests/codex.
     import sprint11_external_acquisitions as external_acquisitions
     import sprint11_host_provenance as host_provenance
     import sprint11_multi_project as multi_project
     import sprint11_packaged_regressions as packaged_regressions
+    import sprint11_process_scope as process_scope
     from usability import validator as human_usability
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -472,7 +475,9 @@ REQUIRED_SOURCE_PATHS = frozenset(
         "tests/codex/sprint11_external_acquisitions.py",
         "tests/codex/sprint11_host_provenance.py",
         "tests/codex/sprint11_multi_project.py",
+        "tests/codex/sprint11_packaged_fixture.py",
         "tests/codex/sprint11_packaged_regressions.py",
+        "tests/codex/sprint11_process_scope.py",
         "tests/codex/sprint11_source_scopes.txt",
         "tests/codex/sprint11_surface_recorder.py",
         "tests/codex/test_sprint11_acceptance.py",
@@ -483,6 +488,7 @@ REQUIRED_SOURCE_PATHS = frozenset(
         "tests/codex/test_sprint11_host_provenance.py",
         "tests/codex/test_sprint11_multi_project.py",
         "tests/codex/test_sprint11_package.py",
+        "tests/codex/test_sprint11_package_source_boundary.py",
         "tests/codex/test_sprint11_packaged_regressions.py",
         "tests/codex/test_sprint11_surface_recorder.py",
         "tests/codex/tests/sprint11_evidence_contract.rs",
@@ -935,6 +941,9 @@ AUTOMATED_GATE_GROUPS = (
                 cwd=".",
                 argv=(
                     "{python}",
+                    "-E",
+                    "-s",
+                    "-S",
                     "-m",
                     "unittest",
                     "tests.codex.test_sprint11_acceptance",
@@ -945,6 +954,7 @@ AUTOMATED_GATE_GROUPS = (
                     "tests.codex.test_sprint11_host_provenance",
                     "tests.codex.test_sprint11_multi_project",
                     "tests.codex.test_sprint11_package",
+                    "tests.codex.test_sprint11_package_source_boundary",
                     "tests.codex.test_sprint11_packaged_regressions",
                     "tests.codex.test_sprint11_surface_recorder",
                     "tests.codex.usability.test_human_acquisition_kit",
@@ -954,6 +964,9 @@ AUTOMATED_GATE_GROUPS = (
                 cwd="godot-codex-mcp",
                 argv=(
                     "{python}",
+                    "-E",
+                    "-s",
+                    "-S",
                     "packaging/generate_third_party_licenses.py",
                     "--check",
                 ),
@@ -1026,6 +1039,9 @@ AUTOMATED_GATE_GROUPS = (
                 cwd=".",
                 argv=(
                     "{python}",
+                    "-E",
+                    "-s",
+                    "-S",
                     "-m",
                     "unittest",
                     "tests.codex.test_sprint6_acceptance",
@@ -1230,8 +1246,16 @@ def _run_gate_command(
         )
         environment = _closed_gate_environment(Path(temporary))
         try:
+            environment, command_scope = process_scope.bind_environment(
+                environment
+            )
+        except process_scope.ProcessScopeError as error:
+            raise AcceptanceError(
+                "acceptance gate process scope could not be created"
+            ) from error
+        try:
             process = subprocess.Popen(
-                argv,
+                process_scope.scoped_argv(argv, command_scope),
                 cwd=cwd,
                 env=environment,
                 stdin=subprocess.DEVNULL,
@@ -1245,6 +1269,8 @@ def _run_gate_command(
         exceeded = threading.Event()
         stdout_buffer = bytearray()
         stderr_buffer = bytearray()
+        drain_failures: list[BaseException] = []
+        drain_lock = threading.Lock()
 
         def drain(stream: Any, destination: bytearray) -> None:
             try:
@@ -1255,54 +1281,170 @@ def _run_gate_command(
                     if len(destination) > MAX_GATE_OUTPUT_BYTES:
                         exceeded.set()
                         return
+            except BaseException as error:
+                with drain_lock:
+                    drain_failures.append(error)
             finally:
                 stream.close()
 
-        require(
-            process.stdout is not None and process.stderr is not None,
-            "acceptance gate pipes are unavailable",
-        )
-        stdout_thread = threading.Thread(
-            target=drain,
-            args=(process.stdout, stdout_buffer),
-            daemon=True,
-        )
-        stderr_thread = threading.Thread(
-            target=drain,
-            args=(process.stderr, stderr_buffer),
-            daemon=True,
-        )
-        stdout_thread.start()
-        stderr_thread.start()
-        deadline = started + timeout
+        drain_threads: list[threading.Thread] = []
         timed_out = False
-        while process.poll() is None:
-            if exceeded.is_set():
-                break
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                timed_out = True
-                break
-            exceeded.wait(min(remaining, 0.05))
-        if process.poll() is None:
-            if os.name == "posix":
-                os.killpg(process.pid, signal.SIGKILL)
+        escaped_scope = False
+        return_code: int | None = None
+        primary_failure: BaseException | None = None
+        primary_traceback: Any | None = None
+        cleanup_failures: list[AcceptanceError] = []
+        try:
+            try:
+                process_scope.activate_scope(command_scope, process)
+            except process_scope.ProcessScopeError as error:
+                raise AcceptanceError(
+                    "acceptance gate process scope could not be activated"
+                ) from error
+            require(
+                process.stdout is not None and process.stderr is not None,
+                "acceptance gate pipes are unavailable",
+            )
+            for stream, destination in (
+                (process.stdout, stdout_buffer),
+                (process.stderr, stderr_buffer),
+            ):
+                thread = threading.Thread(
+                    target=drain,
+                    args=(stream, destination),
+                    daemon=True,
+                )
+                thread.start()
+                drain_threads.append(thread)
+            deadline = started + timeout
+            while process.poll() is None:
+                try:
+                    process_scope.require_scope_healthy(command_scope)
+                except process_scope.ProcessScopeError as error:
+                    raise AcceptanceError(
+                        "acceptance gate process scope tracker failed"
+                    ) from error
+                if exceeded.is_set():
+                    break
+                with drain_lock:
+                    if drain_failures:
+                        break
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    break
+                exceeded.wait(min(remaining, 0.05))
+        except BaseException as error:
+            primary_failure = error
+            primary_traceback = error.__traceback__
+        finally:
+            try:
+                process_running = process.poll() is None
+            except BaseException as error:
+                process_running = True
+                failure = AcceptanceError(
+                    "acceptance gate process state could not be observed"
+                )
+                failure.__cause__ = error
+                cleanup_failures.append(failure)
+            if process_running:
+                if os.name == "posix":
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    except BaseException as error:
+                        failure = AcceptanceError(
+                            "acceptance gate process group could not be stopped"
+                        )
+                        failure.__cause__ = error
+                        cleanup_failures.append(failure)
+                else:
+                    try:
+                        process.kill()
+                    except BaseException as error:
+                        failure = AcceptanceError(
+                            "acceptance gate process could not be stopped"
+                        )
+                        failure.__cause__ = error
+                        cleanup_failures.append(failure)
+                try:
+                    process.wait(timeout=2)
+                except BaseException as error:
+                    failure = AcceptanceError(
+                        "acceptance gate process could not be stopped"
+                    )
+                    failure.__cause__ = error
+                    cleanup_failures.append(failure)
+            return_code = process.returncode
+            try:
+                escaped_scope = process_scope.close_scope(command_scope)
+            except BaseException as error:
+                failure = AcceptanceError(
+                    "acceptance gate detached process scope could not be closed"
+                )
+                failure.__cause__ = error
+                cleanup_failures.append(failure)
+            for thread in drain_threads:
+                try:
+                    thread.join(timeout=2)
+                except BaseException as error:
+                    failure = AcceptanceError(
+                        "acceptance gate output drain could not be joined"
+                    )
+                    failure.__cause__ = error
+                    cleanup_failures.append(failure)
+            for stream in (process.stdout, process.stderr):
+                if stream is not None and not stream.closed:
+                    try:
+                        stream.close()
+                    except BaseException as error:
+                        failure = AcceptanceError(
+                            "acceptance gate output stream could not be closed"
+                        )
+                        failure.__cause__ = error
+                        cleanup_failures.append(failure)
+        if primary_failure is None:
+            if any(thread.is_alive() for thread in drain_threads):
+                primary_failure = AcceptanceError(
+                    "acceptance gate output drain did not stop"
+                )
             else:
-                process.kill()
-            process.wait()
-        return_code = process.returncode
-        stdout_thread.join(timeout=2)
-        stderr_thread.join(timeout=2)
-        require(
-            not stdout_thread.is_alive() and not stderr_thread.is_alive(),
-            "acceptance gate output drain did not stop",
-        )
-        if timed_out:
-            raise AcceptanceError("acceptance gate command timed out")
-        require(
-            not exceeded.is_set(),
-            "acceptance gate output exceeds byte bound",
-        )
+                with drain_lock:
+                    if drain_failures:
+                        primary_failure = AcceptanceError(
+                            "acceptance gate output capture failed"
+                        )
+            if primary_failure is None and timed_out:
+                primary_failure = AcceptanceError(
+                    "acceptance gate command timed out"
+                )
+            if primary_failure is None and exceeded.is_set():
+                primary_failure = AcceptanceError(
+                    "acceptance gate output exceeds byte bound"
+                )
+            if primary_failure is None and escaped_scope:
+                primary_failure = AcceptanceError(
+                    "acceptance gate command left detached descendants"
+                )
+            if primary_failure is None and return_code != 0:
+                primary_failure = AcceptanceError(
+                    "acceptance gate command failed"
+                )
+        if primary_failure is not None:
+            for failure in cleanup_failures:
+                primary_failure.add_note(f"cleanup failure: {failure}")
+            raise primary_failure.with_traceback(primary_traceback)
+        if cleanup_failures:
+            failure = cleanup_failures[0]
+            for additional in cleanup_failures[1:]:
+                failure.add_note(f"additional cleanup failure: {additional}")
+            raise failure
+        with drain_lock:
+            require(
+                not drain_failures,
+                "acceptance gate output capture failed",
+            )
         duration_ms = int((time.monotonic() - started) * 1_000)
         stdout_bytes = bytes(stdout_buffer)
         stderr_bytes = bytes(stderr_buffer)
@@ -1310,10 +1452,6 @@ def _run_gate_command(
             _gate_executable_identity(executable) == executable_identity,
             "gate executable changed during execution",
         )
-    require(
-        return_code == 0,
-        "acceptance gate command failed",
-    )
     return CommandObservation(
         command_sha256=sha256_bytes(canonical_json(command_binding)),
         stdout_sha256=sha256_bytes(stdout_bytes),
@@ -1570,8 +1708,33 @@ def derive_surface_trace_redaction(value: Mapping[str, Any]) -> dict[str, bool]:
 class GitRepository:
     """Minimal immutable Git-object reader used by source-bound validation."""
 
+    MAX_RAW_ANCESTRY_COMMITS = 4_096
+
     def __init__(self, root: Path = REPOSITORY_ROOT) -> None:
         self.root = root.resolve()
+
+    def _execute(
+        self,
+        arguments: Sequence[str],
+        *,
+        output_limit: int = 1024 * 1024,
+    ) -> packaged_regressions._BoundedProcessResult:
+        try:
+            return packaged_regressions._run_bounded_process(
+                packaged_regressions._git_command(
+                    self.root,
+                    *arguments,
+                ),
+                cwd=self.root,
+                environment=packaged_regressions._git_environment(),
+                timeout=60.0,
+                output_limit=output_limit,
+                label="acceptance Git command",
+            )
+        except packaged_regressions.PackagedRegressionError as error:
+            raise AcceptanceError(
+                "required Git object or relation is unavailable"
+            ) from error
 
     def _run(
         self,
@@ -1579,34 +1742,66 @@ class GitRepository:
         *,
         text: bool = False,
         check: bool = True,
+        output_limit: int = 1024 * 1024,
     ) -> bytes | str:
-        result = subprocess.run(
-            ["git", *arguments],
-            cwd=self.root,
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=text,
-        )
+        result = self._execute(arguments, output_limit=output_limit)
         if check and result.returncode != 0:
             raise AcceptanceError("required Git object or relation is unavailable")
-        return result.stdout
+        if not text:
+            return result.stdout
+        try:
+            return result.stdout.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise AcceptanceError("required Git output is not UTF-8") from error
 
     def head(self) -> str:
         value = cast(str, self._run(["rev-parse", "HEAD"], text=True)).strip()
         return _commit(value, label="HEAD")
 
+    def _raw_parents(self, commit: str) -> tuple[str, ...]:
+        commit = _commit(commit, label="commit")
+        payload = cast(
+            bytes,
+            self._run(
+                ["cat-file", "commit", commit],
+                output_limit=packaged_regressions.MAX_SOURCE_FILE_BYTES,
+            ),
+        )
+        header, separator, _message = payload.partition(b"\n\n")
+        require(separator == b"\n\n", "Git commit object is malformed")
+        parents: list[str] = []
+        for line in header.splitlines():
+            if not line.startswith(b"parent "):
+                continue
+            try:
+                value = line.removeprefix(b"parent ").decode("ascii")
+            except UnicodeDecodeError as error:
+                raise AcceptanceError("Git commit parent is malformed") from error
+            parents.append(_commit(value, label="commit parent"))
+        require(
+            len(parents) <= 64 and len(set(parents)) == len(parents),
+            "Git commit parent set is invalid",
+        )
+        return tuple(parents)
+
     def parent(self, commit: str) -> str:
-        value = cast(
-            str,
-            self._run(["rev-parse", f"{commit}^"], text=True),
-        ).strip()
-        return _commit(value, label="commit parent")
+        parents = self._raw_parents(commit)
+        require(
+            len(parents) == 1,
+            "required Git commit does not have exactly one raw parent",
+        )
+        return parents[0]
 
     def blob_at(self, commit: str, relative: str) -> bytes:
         _commit(commit, label="blob commit")
         _safe_relative_path(relative, label="blob")
-        return cast(bytes, self._run(["show", f"{commit}:{relative}"]))
+        return cast(
+            bytes,
+            self._run(
+                ["cat-file", "blob", f"{commit}:{relative}"],
+                output_limit=packaged_regressions.MAX_SOURCE_FILE_BYTES,
+            ),
+        )
 
     def changed_paths(self, parent: str, child: str) -> list[str]:
         output = cast(
@@ -1620,7 +1815,8 @@ class GitRepository:
                     "-z",
                     parent,
                     child,
-                ]
+                ],
+                output_limit=packaged_regressions.MAX_SOURCE_TREE_INDEX_BYTES,
             ),
         )
         return sorted(
@@ -1630,16 +1826,27 @@ class GitRepository:
         )
 
     def is_ancestor(self, ancestor: str, descendant: str) -> bool:
-        _commit(ancestor, label="ancestor")
-        _commit(descendant, label="descendant")
-        result = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", ancestor, descendant],
-            cwd=self.root,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        )
-        return result.returncode == 0
+        ancestor = _commit(ancestor, label="ancestor")
+        descendant = _commit(descendant, label="descendant")
+        frontier = [descendant]
+        seen: set[str] = set()
+        while frontier:
+            require(
+                len(seen) < self.MAX_RAW_ANCESTRY_COMMITS,
+                "raw Git ancestry exceeds validation bound",
+            )
+            current = frontier.pop()
+            if current in seen:
+                continue
+            if current == ancestor:
+                return True
+            seen.add(current)
+            frontier.extend(
+                parent
+                for parent in self._raw_parents(current)
+                if parent not in seen
+            )
+        return False
 
     def status_lines(self) -> list[str]:
         output = cast(
@@ -1647,6 +1854,7 @@ class GitRepository:
             self._run(
                 ["status", "--porcelain=v1", "--untracked-files=all"],
                 text=True,
+                output_limit=packaged_regressions.MAX_SOURCE_TREE_INDEX_BYTES,
             ),
         )
         return output.splitlines()
@@ -1669,7 +1877,8 @@ class GitRepository:
                     commit,
                     "--",
                     *scopes,
-                ]
+                ],
+                output_limit=packaged_regressions.MAX_SOURCE_TREE_INDEX_BYTES,
             ),
         )
         entries: list[tuple[str, str, str]] = []
@@ -5474,7 +5683,7 @@ def validate_reproducibility_receipt(
             and not isinstance(command["duration_ms"], bool)
             and 0
             <= command["duration_ms"]
-            <= external_acquisitions.MAX_COMMAND_SECONDS * 1_000,
+            <= external_acquisitions.MAX_REBUILD_SECONDS * 1_000,
             "rebuild command differs",
         )
         _digest(command["stdout_sha256"], label="rebuild stdout")

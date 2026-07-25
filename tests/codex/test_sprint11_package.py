@@ -5,6 +5,7 @@ import io
 import json
 import os
 import shutil
+import signal
 import stat
 import struct
 import subprocess
@@ -446,6 +447,61 @@ class Sprint11PackageTests(unittest.TestCase):
         with self.assertRaises(package_builder.PackageError):
             package_builder.verify_source_checkout(repository.resolve(), "a" * 40)
 
+        git_directory = Path(
+            subprocess.run(
+                ["git", "-C", repository, "rev-parse", "--absolute-git-dir"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        )
+        for relative in (
+            Path("info/attributes"),
+            Path("info/grafts"),
+            Path("objects/info/alternates"),
+        ):
+            with self.subTest(local_git_overlay=relative.as_posix()):
+                overlay = git_directory / relative
+                overlay.parent.mkdir(parents=True, exist_ok=True)
+                overlay.write_text("unsafe local overlay\n", encoding="utf-8")
+                with self.assertRaises(package_builder.PackageError):
+                    package_builder.verify_source_checkout(
+                        repository.resolve(),
+                        source_commit,
+                    )
+                overlay.unlink()
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "GIT_CONFIG_GLOBAL": str(self.root / "hostile-git-config"),
+                "GIT_DIR": str(self.root / "hostile-git-dir"),
+                "GIT_WORK_TREE": str(self.root / "hostile-work-tree"),
+                "PATH": str(self.root / "hostile-path"),
+            },
+            clear=False,
+        ):
+            package_builder.verify_source_checkout(
+                repository.resolve(),
+                source_commit,
+            )
+
+        index_path = git_directory / "index"
+        index_before = index_path.read_bytes()
+        tracked_metadata = tracked.stat()
+        os.utime(
+            tracked,
+            ns=(
+                tracked_metadata.st_atime_ns,
+                tracked_metadata.st_mtime_ns + 10_000_000_000,
+            ),
+        )
+        package_builder.verify_source_checkout(
+            repository.resolve(),
+            source_commit,
+        )
+        self.assertEqual(index_path.read_bytes(), index_before)
+
         (repository / "untracked.txt").write_text("dirty\n", encoding="utf-8")
         with self.assertRaises(package_builder.PackageError):
             package_builder.verify_source_checkout(repository.resolve(), source_commit)
@@ -454,6 +510,21 @@ class Sprint11PackageTests(unittest.TestCase):
         self,
     ) -> None:
         repository, _prerequisite = package_fixture(self.root)
+        attributes = repository / ".gitattributes"
+        attributes.write_text(
+            "godot-codex-mcp/raw-substitution.txt export-subst\n"
+            "godot-codex-mcp/raw-ignore.txt export-ignore\n",
+            encoding="utf-8",
+        )
+        substitution_probe = (
+            repository / "godot-codex-mcp" / "raw-substitution.txt"
+        )
+        substitution_probe.write_text(
+            "commit=$Format:%H$\n",
+            encoding="utf-8",
+        )
+        ignored_probe = repository / "godot-codex-mcp" / "raw-ignore.txt"
+        ignored_probe.write_text("raw committed bytes\n", encoding="utf-8")
         subprocess.run(["git", "init", "-q", repository], check=True)
         subprocess.run(
             ["git", "-C", repository, "config", "user.name", "Sprint 11 Test"],
@@ -515,6 +586,131 @@ class Sprint11PackageTests(unittest.TestCase):
         )
         self.assertFalse(
             (snapshot / "godot-codex-mcp" / "target").exists()
+        )
+        self.assertEqual(
+            (
+                snapshot / "godot-codex-mcp" / "raw-substitution.txt"
+            ).read_text(encoding="utf-8"),
+            "commit=$Format:%H$\n",
+        )
+        self.assertEqual(
+            (snapshot / "godot-codex-mcp" / "raw-ignore.txt").read_text(
+                encoding="utf-8"
+            ),
+            "raw committed bytes\n",
+        )
+
+    @unittest.skipUnless(
+        Path("/usr/bin/git").is_file(),
+        "fixed system Git is required",
+    )
+    def test_source_snapshot_never_lazy_fetches_missing_promisor_blobs(
+        self,
+    ) -> None:
+        origin = self.root / "promisor-origin"
+        origin.mkdir()
+        tracked = origin / "godot-codex-mcp" / "Cargo.toml"
+        tracked.parent.mkdir()
+        tracked.write_bytes(b"[workspace]\n" + b"# source\n" * 131072)
+        git = "/usr/bin/git"
+        subprocess.run([git, "init", "-q", origin], check=True)
+        subprocess.run(
+            [git, "-C", origin, "config", "user.name", "Sprint 11 Test"],
+            check=True,
+        )
+        subprocess.run(
+            [
+                git,
+                "-C",
+                origin,
+                "config",
+                "user.email",
+                "sprint11@example.invalid",
+            ],
+            check=True,
+        )
+        subprocess.run([git, "-C", origin, "add", "--all"], check=True)
+        subprocess.run(
+            [git, "-C", origin, "commit", "-q", "-m", "fixture"],
+            check=True,
+        )
+        source_commit = subprocess.run(
+            [git, "-C", origin, "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        object_id = subprocess.run(
+            [
+                git,
+                "-C",
+                origin,
+                "rev-parse",
+                f"{source_commit}:godot-codex-mcp/Cargo.toml",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+        remote = self.root / "promisor-remote.git"
+        subprocess.run(
+            [git, "clone", "-q", "--bare", origin, remote],
+            check=True,
+        )
+        subprocess.run(
+            [
+                git,
+                "--git-dir",
+                remote,
+                "config",
+                "uploadpack.allowFilter",
+                "true",
+            ],
+            check=True,
+        )
+        partial = self.root / "promisor-partial"
+        subprocess.run(
+            [
+                git,
+                "clone",
+                "-q",
+                "--filter=blob:none",
+                "--no-checkout",
+                remote.as_uri(),
+                partial,
+            ],
+            check=True,
+        )
+
+        environment = package_builder.source_git_environment()
+
+        def object_is_missing() -> bool:
+            result = subprocess.run(
+                [git, "-C", partial, "cat-file", "-e", object_id],
+                check=False,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return result.returncode != 0
+
+        self.assertTrue(
+            object_is_missing(),
+            "blobless clone unexpectedly contains the required source blob",
+        )
+        with self.assertRaisesRegex(
+            package_builder.PackageError,
+            "source snapshot inventory is invalid",
+        ):
+            package_builder._preflight_source_snapshot(
+                partial.resolve(),
+                source_commit,
+            )
+        self.assertTrue(
+            object_is_missing(),
+            "source preflight lazy-fetched and persisted a promisor blob",
         )
 
     def test_workspace_must_be_the_exact_checked_out_workspace(self) -> None:
@@ -676,16 +872,21 @@ class Sprint11PackageTests(unittest.TestCase):
 
     def test_toolchain_children_receive_only_the_closed_environment(self) -> None:
         sentinel = "s11-super-secret-value"
+        process_scope_key = (
+            "GODOT_CODEX_PROCESS_SCOPE_" + "a" * 48
+        )
         with mock.patch.dict(
             os.environ,
             {
                 "SPRINT11_SENTINEL_SECRET": sentinel,
                 "HTTPS_PROXY": f"https://token:{sentinel}@example.invalid",
                 "RUSTFLAGS": f"--cfg={sentinel}",
+                process_scope_key: "1",
             },
             clear=False,
         ):
             environment = package_builder.minimal_toolchain_environment()
+            source_git_environment = package_builder.source_git_environment()
             result = package_builder.run_bounded_process(
                 [
                     sys.executable,
@@ -709,6 +910,74 @@ class Sprint11PackageTests(unittest.TestCase):
         self.assertEqual(environment["SOURCE_DATE_EPOCH"], "0")
         self.assertEqual(environment["LC_ALL"], "C")
         self.assertEqual(environment["CARGO_NET_OFFLINE"], "true")
+        self.assertEqual(environment[process_scope_key], "1")
+        self.assertEqual(source_git_environment[process_scope_key], "1")
+        self.assertEqual(source_git_environment["GIT_NO_LAZY_FETCH"], "1")
+        self.assertNotIn("SPRINT11_SENTINEL_SECRET", source_git_environment)
+        self.assertNotIn("HTTPS_PROXY", source_git_environment)
+        self.assertNotIn("RUSTFLAGS", source_git_environment)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX process-group cleanup")
+    def test_bounded_process_enforces_capture_and_file_sink_limits_while_running(
+        self,
+    ) -> None:
+        command = [
+            sys.executable,
+            "-c",
+            (
+                "import os,time;"
+                "os.write(1,b'x'*65536);"
+                "time.sleep(30)"
+            ),
+        ]
+        started = time.monotonic()
+        with self.assertRaisesRegex(
+            package_builder.PackageError,
+            "output exceeds its byte bound",
+        ):
+            package_builder.run_bounded_process(
+                command,
+                cwd=self.root,
+                timeout=10,
+                stdout_limit=1024,
+                stderr_limit=1024,
+            )
+        self.assertLess(time.monotonic() - started, 3)
+
+        with tempfile.TemporaryFile() as output:
+            started = time.monotonic()
+            with self.assertRaisesRegex(
+                package_builder.PackageError,
+                "output exceeds its byte bound",
+            ):
+                package_builder.run_bounded_process(
+                    command,
+                    cwd=self.root,
+                    timeout=10,
+                    stdout=output,
+                    stdout_limit=1024,
+                    stderr_limit=1024,
+                )
+            self.assertLessEqual(os.fstat(output.fileno()).st_size, 1024)
+            self.assertLess(time.monotonic() - started, 3)
+
+    def test_bounded_process_streams_bounded_stdin_and_output(self) -> None:
+        payload = b"bounded-input"
+        result = package_builder.run_bounded_process(
+            [
+                sys.executable,
+                "-c",
+                "import sys;sys.stdout.buffer.write(sys.stdin.buffer.read())",
+            ],
+            cwd=self.root,
+            timeout=10,
+            stdin_data=payload,
+            stdout_limit=len(payload),
+            stderr_limit=0,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, payload)
+        self.assertEqual(result.stderr, b"")
 
     @unittest.skipUnless(os.name == "posix", "POSIX process-group cleanup")
     def test_bounded_process_terminates_descendants(self) -> None:
@@ -740,6 +1009,143 @@ class Sprint11PackageTests(unittest.TestCase):
                 break
             time.sleep(0.05)
         self.assertFalse(live, "bounded subprocess left a live descendant")
+
+    @unittest.skipUnless(
+        sys.platform == "darwin",
+        "Darwin original-parent process identities are required",
+    )
+    def test_bounded_process_terminates_setsid_child_with_clean_environment(
+        self,
+    ) -> None:
+        child_pid_path = self.root / "escaped-child.pid"
+        marker = self.root / "escaped-child-marker"
+        child = (
+            "import os,pathlib,sys,time;"
+            "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()));"
+            "time.sleep(0.8);"
+            "pathlib.Path(sys.argv[2]).write_text('escaped');"
+            "time.sleep(30)"
+        )
+        parent = (
+            "import subprocess,sys;"
+            "subprocess.Popen("
+            f"[sys.executable,'-c',{child!r},"
+            f"{str(child_pid_path)!r},{str(marker)!r}],"
+            "start_new_session=True,"
+            "env={'PATH':'/usr/bin:/bin'},"
+            "stdin=subprocess.DEVNULL,"
+            "stdout=subprocess.DEVNULL,"
+            "stderr=subprocess.DEVNULL)"
+        )
+        child_pid: int | None = None
+        try:
+            with self.assertRaisesRegex(
+                package_builder.PackageError,
+                "left detached descendants",
+            ):
+                package_builder.run_bounded_process(
+                    [sys.executable, "-c", parent],
+                    cwd=self.root,
+                    timeout=10,
+                    stdout_limit=1024,
+                    stderr_limit=1024,
+                )
+            if child_pid_path.exists():
+                child_pid = int(
+                    child_pid_path.read_text(encoding="utf-8")
+                )
+                status = subprocess.run(
+                    ["ps", "-o", "stat=", "-p", str(child_pid)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertTrue(
+                    status.returncode != 0
+                    or status.stdout.lstrip().startswith("Z")
+                )
+            time.sleep(1)
+            self.assertFalse(marker.exists())
+        finally:
+            if child_pid is None and child_pid_path.exists():
+                child_pid = int(
+                    child_pid_path.read_text(encoding="utf-8")
+                )
+            if child_pid is not None:
+                try:
+                    os.kill(child_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+
+    @unittest.skipUnless(
+        sys.platform == "darwin",
+        "Darwin exec-version process identities are required",
+    )
+    def test_bounded_process_tracks_exec_of_known_descendant(
+        self,
+    ) -> None:
+        child_pid_path = self.root / "exec-descendant.pid"
+        marker = self.root / "exec-descendant-marker"
+        leaf = (
+            "import os,pathlib,sys,time;"
+            "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()));"
+            "time.sleep(0.8);"
+            "pathlib.Path(sys.argv[2]).write_text('escaped');"
+            "time.sleep(30)"
+        )
+        after_exec = (
+            "import subprocess,sys;"
+            "subprocess.Popen("
+            f"[sys.executable,'-c',{leaf!r},"
+            f"{str(child_pid_path)!r},{str(marker)!r}],"
+            "start_new_session=True,"
+            "env={'PATH':'/usr/bin:/bin'},"
+            "stdin=subprocess.DEVNULL,"
+            "stdout=subprocess.DEVNULL,"
+            "stderr=subprocess.DEVNULL)"
+        )
+        tracked_child = (
+            "import os,sys,time;"
+            "time.sleep(0.25);"
+            "os.execve("
+            "sys.executable,"
+            f"[sys.executable,'-c',{after_exec!r}],"
+            "os.environ.copy())"
+        )
+        parent = (
+            "import subprocess,sys;"
+            "child=subprocess.Popen("
+            f"[sys.executable,'-c',{tracked_child!r}],"
+            "stdin=subprocess.DEVNULL,"
+            "stdout=subprocess.DEVNULL,"
+            "stderr=subprocess.DEVNULL);"
+            "child.wait()"
+        )
+        child_pid: int | None = None
+        try:
+            with self.assertRaisesRegex(
+                package_builder.PackageError,
+                "left detached descendants",
+            ):
+                package_builder.run_bounded_process(
+                    [sys.executable, "-c", parent],
+                    cwd=self.root,
+                    timeout=10,
+                    stdout_limit=1024,
+                    stderr_limit=1024,
+                )
+            time.sleep(1)
+            self.assertFalse(marker.exists())
+        finally:
+            if child_pid_path.exists():
+                child_pid = int(
+                    child_pid_path.read_text(encoding="utf-8")
+                )
+            if child_pid is not None:
+                try:
+                    os.kill(child_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
     def test_godot_snapshot_is_immutable_and_rejects_symlinks(self) -> None:
         original = thin_arm64_macho(b"verified Godot")

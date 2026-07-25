@@ -63,7 +63,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 512,
-      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)[A-Za-z0-9._+/-]+$"
+      "pattern": "^(?!/)(?!.*//)(?!.*(?:^|/)\\.\\.?(?:/|$))[A-Za-z0-9._+-]+(?:/[A-Za-z0-9._+-]+)*$"
     },
     "bindings": {
       "type": "object",
@@ -163,14 +163,29 @@
           "const": "."
         },
         "argv_template": {
-          "type": "array",
-          "minItems": 10,
-          "maxItems": 16,
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 512
-          }
+          "const": [
+            "{python}",
+            "-E",
+            "-s",
+            "-S",
+            "tests/codex/sprint11_multi_project.py",
+            "--godot",
+            "{godot}",
+            "--sidecar",
+            "{package_sidecar}",
+            "--package-operations",
+            "{package_operations}",
+            "--package-data-root",
+            "{package_data_root}",
+            "--expected-sidecar-sha256",
+            "{package_sidecar_sha256}",
+            "--expected-package-version",
+            "{package_version}",
+            "--timeout",
+            "{timeout}",
+            "--report",
+            "{report}"
+          ]
         },
         "command_sha256": {
           "$ref": "#/$defs/digest"

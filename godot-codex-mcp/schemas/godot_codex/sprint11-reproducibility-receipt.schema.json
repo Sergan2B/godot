@@ -32,17 +32,85 @@
       "type": "array",
       "minItems": 2,
       "maxItems": 2,
-      "items": {
-        "$ref": "#/$defs/command"
-      }
+      "prefixItems": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/command"
+            },
+            {
+              "properties": {
+                "id": {
+                  "const": "clean_rebuild_a"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/command"
+            },
+            {
+              "properties": {
+                "id": {
+                  "const": "clean_rebuild_b"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          ]
+        }
+      ],
+      "items": false
     },
     "outputs": {
       "type": "array",
       "minItems": 2,
       "maxItems": 2,
-      "items": {
-        "$ref": "#/$defs/output"
-      }
+      "prefixItems": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/output"
+            },
+            {
+              "properties": {
+                "id": {
+                  "const": "a"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/output"
+            },
+            {
+              "properties": {
+                "id": {
+                  "const": "b"
+                }
+              },
+              "required": [
+                "id"
+              ]
+            }
+          ]
+        }
+      ],
+      "items": false
     },
     "reproducibility": {
       "$ref": "#/$defs/reproducibility"
@@ -67,7 +135,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 512,
-      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?/)[A-Za-z0-9._+/-]+$"
+      "pattern": "^(?!/)(?!.*//)(?!.*(?:^|/)\\.\\.?(?:/|$))[A-Za-z0-9._+-]+(?:/[A-Za-z0-9._+-]+)*$"
     },
     "bindings": {
       "type": "object",
@@ -171,9 +239,81 @@
         "duration_ms": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 180000
+          "maximum": 1800000
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "clean_rebuild_a"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "argv_template": {
+                "const": [
+                  "{python}",
+                  "-E",
+                  "-s",
+                  "-S",
+                  "godot-codex-mcp/packaging/build_macos.py",
+                  "--repository-root",
+                  "{repository_root}",
+                  "--workspace",
+                  "{workspace}",
+                  "--output-dir",
+                  "{build_a}",
+                  "--source-commit",
+                  "{source_commit}",
+                  "--godot-prerequisite",
+                  "{godot}"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "clean_rebuild_b"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "argv_template": {
+                "const": [
+                  "{python}",
+                  "-E",
+                  "-s",
+                  "-S",
+                  "godot-codex-mcp/packaging/build_macos.py",
+                  "--repository-root",
+                  "{repository_root}",
+                  "--workspace",
+                  "{workspace}",
+                  "--output-dir",
+                  "{build_b}",
+                  "--source-commit",
+                  "{source_commit}",
+                  "--godot-prerequisite",
+                  "{godot}"
+                ]
+              }
+            }
+          }
+        }
+      ]
     },
     "output": {
       "type": "object",

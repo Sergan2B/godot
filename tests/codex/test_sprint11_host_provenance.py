@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import copy
 import contextlib
+import copy
 import io
 import json
 import os
-import stat
 import sys
 import tempfile
 import unittest
@@ -137,6 +136,35 @@ def measurements() -> list[dict[str, object]]:
 
 
 class HostProvenanceTests(unittest.TestCase):
+    def test_command_environment_preserves_only_valid_scope_markers(
+        self,
+    ) -> None:
+        marker = "GODOT_CODEX_PROCESS_SCOPE_" + "a" * 48
+        with mock.patch.dict(
+            os.environ,
+            {
+                marker: "1",
+                "SPRINT11_SENTINEL_SECRET": "secret",
+            },
+            clear=False,
+        ):
+            environment = provenance.command_environment()
+        self.assertEqual(environment[marker], "1")
+        self.assertNotIn("SPRINT11_SENTINEL_SECRET", environment)
+
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"GODOT_CODEX_PROCESS_SCOPE_invalid": "1"},
+                clear=False,
+            ),
+            self.assertRaisesRegex(
+                provenance.HostProvenanceError,
+                "process scope environment differs",
+            ),
+        ):
+            provenance.command_environment()
+
     def test_tree_digest_is_stable_and_content_mode_and_empty_directory_bound(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()

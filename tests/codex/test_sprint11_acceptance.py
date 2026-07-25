@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -790,6 +791,14 @@ class Sprint11AcceptanceTests(unittest.TestCase):
             "offline_subprocess.rs",
             acceptance.REQUIRED_SOURCE_PATHS,
         )
+        self.assertTrue(
+            all(
+                command.argv[1:4] == ("-E", "-s", "-S")
+                for group in acceptance.AUTOMATED_GATE_GROUPS
+                for command in group.commands
+                if command.argv[0] == "{python}"
+            )
+        )
 
     def test_automated_runner_rejects_timeout_and_failed_command(self) -> None:
         with self.assertRaises(acceptance.AcceptanceError):
@@ -839,6 +848,139 @@ class Sprint11AcceptanceTests(unittest.TestCase):
             result.stdout,
         )
 
+    @unittest.skipUnless(os.name == "posix", "POSIX process scope contract")
+    def test_gate_runner_preserves_primary_failure_during_cleanup(self) -> None:
+        real_popen = acceptance.subprocess.Popen
+        real_thread = acceptance.threading.Thread
+        real_close_scope = acceptance.process_scope.close_scope
+        gate_processes: list[subprocess.Popen[bytes]] = []
+        drain_threads: list[threading.Thread] = []
+
+        def recording_popen(*args: Any, **kwargs: Any) -> Any:
+            process = real_popen(*args, **kwargs)
+            argv = args[0] if args else kwargs["args"]
+            if (
+                len(argv) >= len(acceptance.process_scope.STOPPED_LAUNCHER)
+                and tuple(
+                    argv[: len(acceptance.process_scope.STOPPED_LAUNCHER)]
+                )
+                == acceptance.process_scope.STOPPED_LAUNCHER
+            ):
+                gate_processes.append(process)
+            return process
+
+        def recording_thread(*args: Any, **kwargs: Any) -> threading.Thread:
+            thread = real_thread(*args, **kwargs)
+            target = kwargs.get("target")
+            if getattr(target, "__name__", None) == "drain":
+                drain_threads.append(thread)
+            return thread
+
+        def close_then_fail(
+            scope: acceptance.process_scope.ProcessScope,
+        ) -> bool:
+            real_close_scope(scope)
+            raise RuntimeError("fixture cleanup failure")
+
+        with (
+            mock.patch.object(
+                acceptance.subprocess,
+                "Popen",
+                side_effect=recording_popen,
+            ),
+            mock.patch.object(
+                acceptance.threading,
+                "Thread",
+                side_effect=recording_thread,
+            ),
+            mock.patch.object(
+                acceptance.process_scope,
+                "close_scope",
+                side_effect=close_then_fail,
+            ),
+        ):
+            with self.assertRaisesRegex(
+                acceptance.AcceptanceError,
+                "timed out",
+            ) as raised:
+                acceptance._run_gate_command(
+                    acceptance.GateCommand(
+                        cwd=".",
+                        argv=(
+                            "{python}",
+                            "-E",
+                            "-s",
+                            "-S",
+                            "-c",
+                            "import time; time.sleep(2)",
+                        ),
+                    ),
+                    1,
+                )
+
+        self.assertTrue(
+            any(
+                "detached process scope could not be closed" in note
+                for note in getattr(raised.exception, "__notes__", ())
+            )
+        )
+        self.assertEqual(len(gate_processes), 1)
+        process = gate_processes[0]
+        self.assertIsNotNone(process.stdout)
+        self.assertIsNotNone(process.stderr)
+        self.assertTrue(process.stdout.closed)
+        self.assertTrue(process.stderr.closed)
+        self.assertEqual(len(drain_threads), 2)
+        self.assertTrue(all(not thread.is_alive() for thread in drain_threads))
+
+    @unittest.skipUnless(os.name == "posix", "POSIX process scope contract")
+    def test_gate_runner_aborts_when_scope_tracker_fails(self) -> None:
+        scope_module = acceptance.process_scope
+        real_process_table = scope_module._process_table
+        calls = 0
+
+        def fail_tracker(
+            *,
+            include_environment: bool = True,
+        ) -> dict[int, Any]:
+            nonlocal calls
+            calls += 1
+            if calls <= 2:
+                return real_process_table(
+                    include_environment=include_environment
+                )
+            raise scope_module.ProcessScopeError(
+                "fixture process table failure"
+            )
+
+        started = time.monotonic()
+        with (
+            mock.patch.object(
+                scope_module,
+                "_process_table",
+                side_effect=fail_tracker,
+            ),
+            self.assertRaisesRegex(
+                acceptance.AcceptanceError,
+                "process scope tracker failed",
+            ),
+        ):
+            acceptance._run_gate_command(
+                acceptance.GateCommand(
+                    cwd=".",
+                    argv=(
+                        "{python}",
+                        "-E",
+                        "-s",
+                        "-S",
+                        "-c",
+                        "import time; time.sleep(10)",
+                    ),
+                ),
+                5,
+            )
+        self.assertLess(time.monotonic() - started, 4)
+
     def test_gate_runner_ignores_path_stubs_and_scrubs_secrets(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             fake_bin = Path(directory)
@@ -884,6 +1026,38 @@ class Sprint11AcceptanceTests(unittest.TestCase):
             self.assertFalse(marker.exists())
             self.assertRegex(cargo.command_sha256, r"^sha256:[0-9a-f]{64}$")
             self.assertRegex(python.command_sha256, r"^sha256:[0-9a-f]{64}$")
+
+    @unittest.skipUnless(os.name == "posix", "POSIX process scope contract")
+    def test_gate_runner_rejects_a_detached_session(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="s11-gate-detached."
+        ) as temporary:
+            marker = Path(temporary) / "detached-survived"
+            child = (
+                "import pathlib,time;"
+                "time.sleep(0.8);"
+                f"pathlib.Path({str(marker)!r}).write_text('leak')"
+            )
+            parent = (
+                "import subprocess,sys;"
+                "subprocess.Popen("
+                f"[sys.executable,'-c',{child!r}],"
+                "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,"
+                "stderr=subprocess.DEVNULL,start_new_session=True)"
+            )
+            with self.assertRaisesRegex(
+                acceptance.AcceptanceError,
+                "detached descendants",
+            ):
+                acceptance._run_gate_command(
+                    acceptance.GateCommand(
+                        cwd=".",
+                        argv=("{python}", "-E", "-s", "-S", "-c", parent),
+                    ),
+                    5,
+                )
+            time.sleep(1.0)
+            self.assertFalse(marker.exists())
 
     @unittest.skipUnless(os.name == "posix", "Unix socket path contract")
     def test_gate_runner_uses_a_private_short_root_for_nested_sockets(

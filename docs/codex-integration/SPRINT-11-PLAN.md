@@ -923,6 +923,23 @@ its one configured root before opening index or discovery state. A selector,
 cursor, entity, transaction, report, runtime session, or editor session from
 another project fails binding checks and cannot cause fallback discovery.
 
+The package and acquisition runners apply bounded lifecycle tracking to the
+fixed, source-bound command graph used by the gates. Every package-owned layer
+that constructs a replacement environment must preserve the unrecorded
+process-scope markers; nested bounded runners retain outer markers and add
+their own. Process groups, marker inventory, and stable Darwin process
+identities fail the gate when an observed descendant survives timeout or
+normal completion.
+
+This lifecycle gate is not a security sandbox for arbitrary executables. It
+does not claim kernel-enforced containment of adversarial code that
+deliberately clears the marker and races an `exec`/`fork`/`exit` sequence
+between observations. Such a process is outside the frozen qualification
+graph. Adding a privileged or entitled macOS process supervisor belongs to
+the deferred release-grade security hardening scope. Acceptance item 15's
+process-cleanup proof applies to the reviewed package-owned graph and cannot
+be generalized into an unprivileged sandbox claim.
+
 ### 3.2. MCP v1 and connection state
 
 The final public MCP profile is:

@@ -50,6 +50,9 @@ SEGMENT_RE: Final = re.compile(r"[A-Za-z0-9._+@(),= -]{1,255}\Z")
 DIGEST_RE: Final = re.compile(r"sha256:[0-9a-f]{64}\Z")
 TOKEN_RE: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+:-]{0,127}\Z")
 CDHASH_RE: Final = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?\Z")
+PROCESS_SCOPE_ENV_RE: Final = re.compile(
+    r"GODOT_CODEX_PROCESS_SCOPE_[0-9a-f]{48}\Z"
+)
 
 
 class HostProvenanceError(RuntimeError):
@@ -441,6 +444,25 @@ class CommandResult:
 CommandRunner = Callable[[Sequence[str], float], CommandResult]
 
 
+def command_environment() -> dict[str, str]:
+    environment = {
+        "HOME": os.environ.get("HOME", ""),
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
+    for name, value in os.environ.items():
+        if not name.startswith("GODOT_CODEX_PROCESS_SCOPE_"):
+            continue
+        require(
+            PROCESS_SCOPE_ENV_RE.fullmatch(name) is not None
+            and value == "1",
+            "process scope environment differs",
+        )
+        environment[name] = value
+    return environment
+
+
 def run_bounded_command(argv: Sequence[str], timeout: float) -> CommandResult:
     require(argv and timeout > 0, "code-sign command differs")
     process: subprocess.Popen[bytes] | None = None
@@ -451,12 +473,7 @@ def run_bounded_command(argv: Sequence[str], timeout: float) -> CommandResult:
                 stdin=subprocess.DEVNULL,
                 stdout=stdout,
                 stderr=stderr,
-                env={
-                    "HOME": os.environ.get("HOME", ""),
-                    "LANG": "C",
-                    "LC_ALL": "C",
-                    "PATH": "/usr/bin:/bin",
-                },
+                env=command_environment(),
                 start_new_session=True,
             )
             try:

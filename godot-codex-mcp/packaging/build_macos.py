@@ -10,9 +10,11 @@ import gzip
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import secrets
+import select
 import shutil
 import signal
 import stat
@@ -21,10 +23,15 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import tomllib
-from dataclasses import dataclass
+import threading
+import time
+import unicodedata
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Final
+
+import tomllib
 
 PACKAGE_SCHEMA: Final = "godot-codex-package/1.0"
 DETACHED_SCHEMA: Final = "s11-package-manifest/1.0"
@@ -45,13 +52,27 @@ MAX_GODOT_PREREQUISITE_BYTES: Final = 384 * 1024 * 1024
 MAX_LICENSE_CHECK_OUTPUT_BYTES: Final = 4096
 MAX_SOURCE_FILES: Final = 8192
 MAX_SOURCE_BYTES: Final = 512 * 1024 * 1024
-MAX_SOURCE_ARCHIVE_BYTES: Final = 640 * 1024 * 1024
+MAX_SOURCE_BATCH_BYTES: Final = MAX_SOURCE_BYTES + MAX_SOURCE_FILES * 128
+MAX_BOUNDED_PROCESSES: Final = 65_536
 MAX_CARGO_OUTPUT_BYTES: Final = 1024 * 1024
 MAX_CARGO_BUILD_SECONDS: Final = 15 * 60
+DARWIN_SCOPE_SAMPLE_SECONDS: Final = 0.1
+DARWIN_EXEC_SETTLE_SECONDS: Final = 0.02
+DARWIN_UNIQUE_IDENTIFIER_FLAVOR: Final = 17
+DARWIN_STOP_HANDSHAKE_SECONDS: Final = 5.0
+DARWIN_STOPPED_LAUNCHER: Final = (
+    "/bin/sh",
+    "-c",
+    'kill -STOP "$$" || exit 125\nexec "$@"',
+    "godot-codex-bounded-process",
+)
 COMMIT_RE: Final = re.compile(r"[0-9a-f]{40}\Z")
 DIGEST_RE: Final = re.compile(r"[0-9a-f]{64}\Z")
 VERSION_RE: Final = re.compile(
     r"[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?\Z"
+)
+PROCESS_SCOPE_ENV_RE: Final = re.compile(
+    r"GODOT_CODEX_PROCESS_SCOPE_[0-9a-f]{48}\Z"
 )
 SOURCE_ARCHIVE_DIRECTORIES: Final = (
     PurePosixPath("godot-codex-mcp"),
@@ -115,6 +136,67 @@ class PackageFile:
         return self.content
 
 
+@dataclass(frozen=True)
+class SourceBlob:
+    path: PurePosixPath
+    mode: int
+    object_id: str
+    size: int
+
+
+@dataclass(frozen=True)
+class _DarwinProcessIdentity:
+    process_id: int
+    unique_id: int
+    parent_unique_id: int
+    id_version: int
+    original_parent_id_version: int
+
+
+@dataclass
+class _DarwinProcessScope:
+    root_process_id: int
+    root_unique_id: int
+    root_id_versions: set[int]
+    descendant_unique_ids: set[int]
+    descendant_id_versions: set[int]
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    stop: threading.Event = field(default_factory=threading.Event)
+    event_queue: Any | None = None
+    observer: threading.Thread | None = None
+    watched: dict[int, int] = field(default_factory=dict)
+    failures: list[BaseException] = field(default_factory=list)
+
+
+class _DarwinUniqueIdentifierInfo(ctypes.Structure):
+    _fields_ = [
+        ("executable_uuid", ctypes.c_ubyte * 16),
+        ("unique_id", ctypes.c_uint64),
+        ("parent_unique_id", ctypes.c_uint64),
+        ("id_version", ctypes.c_int32),
+        ("original_parent_id_version", ctypes.c_int32),
+        ("reserved_2", ctypes.c_uint64),
+        ("reserved_3", ctypes.c_uint64),
+    ]
+
+
+_DARWIN_LIBPROC: Any | None = None
+
+
+def _require_darwin_process_scope_bound(
+    scope: _DarwinProcessScope,
+) -> None:
+    if (
+        len(scope.root_id_versions) > MAX_BOUNDED_PROCESSES
+        or len(scope.descendant_unique_ids) > MAX_BOUNDED_PROCESSES
+        or len(scope.descendant_id_versions) > MAX_BOUNDED_PROCESSES
+        or len(scope.watched) > MAX_BOUNDED_PROCESSES
+    ):
+        raise PackageError(
+            "bounded subprocess exceeds its process bound"
+        )
+
+
 def canonical_json(value: object) -> bytes:
     return (
         json.dumps(
@@ -143,6 +225,18 @@ def sha256_file(path: Path) -> str:
     return hasher.hexdigest()
 
 
+def extend_process_scope_environment(
+    environment: dict[str, str],
+    inherited: Mapping[str, str],
+) -> None:
+    for name, value in inherited.items():
+        if not name.startswith("GODOT_CODEX_PROCESS_SCOPE_"):
+            continue
+        if PROCESS_SCOPE_ENV_RE.fullmatch(name) is None or value != "1":
+            raise PackageError("process scope environment is invalid")
+        environment[name] = value
+
+
 def minimal_toolchain_environment(
     source: dict[str, str] | None = None,
 ) -> dict[str, str]:
@@ -159,6 +253,7 @@ def minimal_toolchain_environment(
         ):
             raise PackageError("toolchain environment is invalid")
         environment[name] = value
+    extend_process_scope_environment(environment, inherited)
     if "PATH" not in environment:
         raise PackageError("toolchain environment lacks PATH")
     if "HOME" not in environment and not {
@@ -179,6 +274,446 @@ def minimal_toolchain_environment(
         }
     )
     return environment
+
+
+def _darwin_libproc() -> Any:
+    global _DARWIN_LIBPROC
+    if _DARWIN_LIBPROC is None:
+        try:
+            library = ctypes.CDLL(
+                "/usr/lib/libSystem.B.dylib",
+                use_errno=True,
+            )
+            library.proc_listallpids.argtypes = (
+                ctypes.c_void_p,
+                ctypes.c_int,
+            )
+            library.proc_listallpids.restype = ctypes.c_int
+            library.proc_pidinfo.argtypes = (
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_uint64,
+                ctypes.c_void_p,
+                ctypes.c_int,
+            )
+            library.proc_pidinfo.restype = ctypes.c_int
+        except (AttributeError, OSError) as error:
+            raise PackageError(
+                "Darwin process containment API is unavailable"
+            ) from error
+        _DARWIN_LIBPROC = library
+    return _DARWIN_LIBPROC
+
+
+def _darwin_process_identity(
+    process_id: int,
+    *,
+    required: bool,
+) -> _DarwinProcessIdentity | None:
+    library = _darwin_libproc()
+    identity = _DarwinUniqueIdentifierInfo()
+    copied = library.proc_pidinfo(
+        process_id,
+        DARWIN_UNIQUE_IDENTIFIER_FLAVOR,
+        0,
+        ctypes.byref(identity),
+        ctypes.sizeof(identity),
+    )
+    if copied == 0 and not required:
+        return None
+    if (
+        copied != ctypes.sizeof(identity)
+        or identity.unique_id <= 0
+        or identity.id_version <= 0
+        or identity.original_parent_id_version < 0
+    ):
+        raise PackageError("Darwin process identity differs")
+    return _DarwinProcessIdentity(
+        process_id=process_id,
+        unique_id=identity.unique_id,
+        parent_unique_id=identity.parent_unique_id,
+        id_version=identity.id_version,
+        original_parent_id_version=(
+            identity.original_parent_id_version
+        ),
+    )
+
+
+def _darwin_process_identities() -> tuple[_DarwinProcessIdentity, ...]:
+    library = _darwin_libproc()
+    reported = library.proc_listallpids(None, 0)
+    if not 0 < reported < MAX_BOUNDED_PROCESSES:
+        raise PackageError("Darwin process inventory differs")
+    capacity = min(reported + 1024, MAX_BOUNDED_PROCESSES)
+    process_ids = (ctypes.c_int32 * capacity)()
+    copied = library.proc_listallpids(
+        process_ids,
+        ctypes.sizeof(process_ids),
+    )
+    if copied <= 0 or copied >= capacity:
+        raise PackageError("Darwin process inventory differs")
+    result: list[_DarwinProcessIdentity] = []
+    seen: set[int] = set()
+    for process_id in process_ids[:copied]:
+        if process_id <= 0 or process_id in seen:
+            continue
+        seen.add(process_id)
+        identity = _darwin_process_identity(
+            process_id,
+            required=False,
+        )
+        if identity is not None:
+            result.append(identity)
+    if not result:
+        raise PackageError("Darwin process inventory is empty")
+    return tuple(result)
+
+
+def _prepare_darwin_process_scope(
+    process: subprocess.Popen[bytes],
+) -> _DarwinProcessScope:
+    deadline = time.monotonic() + DARWIN_STOP_HANDSHAKE_SECONDS
+    while True:
+        try:
+            waited_pid, status = os.waitpid(
+                process.pid,
+                os.WUNTRACED | os.WNOHANG,
+            )
+        except (ChildProcessError, OSError) as error:
+            raise PackageError(
+                "bounded subprocess handshake failed"
+            ) from error
+        if waited_pid == process.pid:
+            if not os.WIFSTOPPED(status):
+                process.returncode = os.waitstatus_to_exitcode(status)
+                raise PackageError(
+                    "bounded subprocess stopped before activation"
+                )
+            break
+        if time.monotonic() >= deadline:
+            raise PackageError("bounded subprocess handshake timed out")
+        time.sleep(0.005)
+    identity = _darwin_process_identity(process.pid, required=True)
+    if identity is None:
+        raise PackageError("bounded subprocess identity is unavailable")
+    scope = _DarwinProcessScope(
+        root_process_id=process.pid,
+        root_unique_id=identity.unique_id,
+        root_id_versions={identity.id_version},
+        descendant_unique_ids=set(),
+        descendant_id_versions=set(),
+    )
+    try:
+        scope.event_queue = select.kqueue()
+        with scope.lock:
+            _register_darwin_process_events(scope, (identity,))
+        observer = threading.Thread(
+            target=_track_darwin_process_scope,
+            args=(scope,),
+            name="godot-codex-bounded-process-scope",
+            daemon=True,
+        )
+        scope.observer = observer
+        observer.start()
+    except BaseException as error:
+        if scope.event_queue is not None:
+            scope.event_queue.close()
+            scope.event_queue = None
+        raise PackageError(
+            "bounded subprocess observer could not start"
+        ) from error
+    return scope
+
+
+def _continue_darwin_process_scope(
+    process: subprocess.Popen[bytes],
+    scope: _DarwinProcessScope,
+) -> None:
+    with scope.lock:
+        initial_id_versions = set(scope.root_id_versions)
+    try:
+        os.kill(process.pid, signal.SIGCONT)
+    except OSError as error:
+        raise PackageError(
+            "bounded subprocess could not continue"
+        ) from error
+    deadline = time.monotonic() + DARWIN_STOP_HANDSHAKE_SECONDS
+    changed_at: float | None = None
+    while time.monotonic() < deadline:
+        identity = _darwin_process_identity(
+            process.pid,
+            required=False,
+        )
+        if identity is None:
+            if changed_at is not None:
+                return
+            raise PackageError(
+                "bounded subprocess identity vanished during activation"
+            )
+        if identity.unique_id != scope.root_unique_id:
+            raise PackageError(
+                "bounded subprocess identity changed during activation"
+            )
+        with scope.lock:
+            scope.root_id_versions.add(identity.id_version)
+            _require_darwin_process_scope_bound(scope)
+        if identity.id_version not in initial_id_versions:
+            initial_id_versions.add(identity.id_version)
+            changed_at = time.monotonic()
+        if (
+            changed_at is not None
+            and time.monotonic() - changed_at
+            >= DARWIN_EXEC_SETTLE_SECONDS
+        ):
+            return
+        time.sleep(0.0005)
+    raise PackageError(
+        "bounded subprocess did not exec during activation"
+    )
+
+
+def _register_darwin_process_events(
+    scope: _DarwinProcessScope,
+    identities: tuple[_DarwinProcessIdentity, ...],
+) -> None:
+    if scope.event_queue is None:
+        return
+    known = {
+        scope.root_unique_id,
+        *scope.descendant_unique_ids,
+    }
+    for identity in identities:
+        if (
+            identity.unique_id not in known
+            or scope.watched.get(identity.process_id)
+            == identity.unique_id
+        ):
+            continue
+        event = select.kevent(
+            identity.process_id,
+            filter=select.KQ_FILTER_PROC,
+            flags=(
+                select.KQ_EV_ADD
+                | select.KQ_EV_ENABLE
+                | select.KQ_EV_CLEAR
+            ),
+            fflags=(
+                select.KQ_NOTE_FORK
+                | select.KQ_NOTE_EXEC
+                | select.KQ_NOTE_EXIT
+            ),
+        )
+        try:
+            scope.event_queue.control([event], 0, 0)
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        scope.watched[identity.process_id] = identity.unique_id
+        _require_darwin_process_scope_bound(scope)
+
+
+def _track_darwin_process_scope(
+    scope: _DarwinProcessScope,
+) -> None:
+    try:
+        while True:
+            if scope.event_queue is None:
+                raise PackageError(
+                    "bounded subprocess event queue is unavailable"
+                )
+            events = scope.event_queue.control(
+                None,
+                256,
+                DARWIN_SCOPE_SAMPLE_SECONDS,
+            )
+            _record_darwin_process_event_identities(scope, events)
+            _observe_darwin_process_scope(scope)
+            if scope.stop.is_set():
+                break
+    except BaseException as error:
+        with scope.lock:
+            scope.failures.append(error)
+        scope.stop.set()
+
+
+def _record_darwin_process_event_identities(
+    scope: _DarwinProcessScope,
+    events: list[Any],
+) -> None:
+    for event in events:
+        process_id = int(event.ident)
+        identity = _darwin_process_identity(
+            process_id,
+            required=False,
+        )
+        if identity is None:
+            continue
+        tracked = False
+        with scope.lock:
+            if identity.unique_id == scope.root_unique_id:
+                scope.root_id_versions.add(identity.id_version)
+                tracked = True
+            elif (
+                identity.unique_id
+                in scope.descendant_unique_ids
+            ):
+                scope.descendant_id_versions.add(
+                    identity.id_version
+                )
+                tracked = True
+            _require_darwin_process_scope_bound(scope)
+        if (
+            not tracked
+            or not int(event.fflags) & select.KQ_NOTE_EXEC
+        ):
+            continue
+        stable_since = time.monotonic()
+        while (
+            time.monotonic() - stable_since
+            < DARWIN_EXEC_SETTLE_SECONDS
+        ):
+            time.sleep(0.0005)
+            current = _darwin_process_identity(
+                process_id,
+                required=False,
+            )
+            if (
+                current is None
+                or current.unique_id != identity.unique_id
+            ):
+                break
+            if current.id_version == identity.id_version:
+                continue
+            identity = current
+            stable_since = time.monotonic()
+            with scope.lock:
+                if identity.unique_id == scope.root_unique_id:
+                    scope.root_id_versions.add(identity.id_version)
+                elif (
+                    identity.unique_id
+                    in scope.descendant_unique_ids
+                ):
+                    scope.descendant_id_versions.add(
+                        identity.id_version
+                    )
+                _require_darwin_process_scope_bound(scope)
+
+
+def _require_darwin_process_scope_healthy(
+    scope: _DarwinProcessScope,
+) -> None:
+    with scope.lock:
+        failure = scope.failures[0] if scope.failures else None
+    if failure is not None:
+        raise PackageError(
+            "bounded subprocess observer failed"
+        ) from failure
+
+
+def _stop_darwin_process_scope(
+    scope: _DarwinProcessScope,
+) -> None:
+    scope.stop.set()
+    if scope.observer is not None:
+        scope.observer.join(
+            timeout=DARWIN_SCOPE_SAMPLE_SECONDS + 2
+        )
+        if scope.observer.is_alive():
+            raise PackageError(
+                "bounded subprocess observer did not stop"
+            )
+    if scope.event_queue is not None:
+        scope.event_queue.close()
+        scope.event_queue = None
+    _require_darwin_process_scope_healthy(scope)
+
+
+def _observe_darwin_process_scope(
+    scope: _DarwinProcessScope,
+) -> dict[int, int]:
+    with scope.lock:
+        identities = _darwin_process_identities()
+        for identity in identities:
+            if identity.unique_id == scope.root_unique_id:
+                scope.root_id_versions.add(identity.id_version)
+        known = {
+            scope.root_unique_id,
+            *scope.descendant_unique_ids,
+        }
+        for identity in identities:
+            if identity.unique_id in scope.descendant_unique_ids:
+                scope.descendant_id_versions.add(identity.id_version)
+        known_id_versions = {
+            *scope.root_id_versions,
+            *scope.descendant_id_versions,
+        }
+        changed = True
+        while changed:
+            changed = False
+            for identity in identities:
+                if (
+                    identity.unique_id not in known
+                    and (
+                        identity.parent_unique_id in known
+                        or identity.original_parent_id_version
+                        in known_id_versions
+                    )
+                ):
+                    known.add(identity.unique_id)
+                    known_id_versions.add(identity.id_version)
+                    scope.descendant_unique_ids.add(
+                        identity.unique_id
+                    )
+                    scope.descendant_id_versions.add(
+                        identity.id_version
+                    )
+                    changed = True
+                    _require_darwin_process_scope_bound(scope)
+        _require_darwin_process_scope_bound(scope)
+        _register_darwin_process_events(scope, identities)
+        return {
+            identity.process_id: identity.unique_id
+            for identity in identities
+            if identity.unique_id in scope.descendant_unique_ids
+        }
+
+
+def _terminate_darwin_process_scope(
+    scope: _DarwinProcessScope,
+) -> bool:
+    observed = False
+    remaining: dict[int, int] = {}
+    for requested_signal, duration in (
+        (signal.SIGTERM, 1.0),
+        (signal.SIGKILL, 2.0),
+    ):
+        remaining = _observe_darwin_process_scope(scope)
+        observed = observed or bool(remaining)
+        for process_id, unique_id in sorted(remaining.items()):
+            identity = _darwin_process_identity(
+                process_id,
+                required=False,
+            )
+            if identity is None or identity.unique_id != unique_id:
+                continue
+            try:
+                os.kill(process_id, requested_signal)
+            except ProcessLookupError:
+                pass
+            except (OSError, PermissionError) as error:
+                raise PackageError(
+                    "detached subprocess could not be terminated"
+                ) from error
+        deadline = time.monotonic() + duration
+        while time.monotonic() < deadline:
+            remaining = _observe_darwin_process_scope(scope)
+            if not remaining:
+                return observed
+            time.sleep(0.01)
+        if not remaining:
+            return observed
+    if remaining:
+        raise PackageError("detached subprocess did not stop")
+    return observed
 
 
 def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
@@ -211,41 +746,337 @@ def run_bounded_process(
     command: list[str],
     *,
     cwd: Path,
-    timeout: int,
+    timeout: float,
     env: dict[str, str] | None = None,
+    stdin_data: bytes | None = None,
     stdout: Any = subprocess.PIPE,
     stderr: Any = subprocess.PIPE,
+    stdout_limit: int = MAX_CARGO_OUTPUT_BYTES,
+    stderr_limit: int = MAX_CARGO_OUTPUT_BYTES,
 ) -> subprocess.CompletedProcess[bytes]:
+    if (
+        not command
+        or not all(
+            isinstance(argument, str)
+            and argument
+            and "\0" not in argument
+            for argument in command
+        )
+        or not isinstance(timeout, (int, float))
+        or not math.isfinite(timeout)
+        or timeout <= 0
+        or not isinstance(stdout_limit, int)
+        or not isinstance(stderr_limit, int)
+        or not 0 <= stdout_limit <= MAX_SOURCE_BATCH_BYTES
+        or not 0 <= stderr_limit <= MAX_SOURCE_BATCH_BYTES
+    ):
+        raise PackageError("bounded subprocess limits differ")
+
+    def pipe_target(
+        value: Any,
+        *,
+        label: str,
+    ) -> tuple[Any, Any | None, bool]:
+        if value == subprocess.PIPE:
+            return subprocess.PIPE, None, True
+        if value == subprocess.DEVNULL:
+            return subprocess.DEVNULL, None, False
+        if not hasattr(value, "write") or not hasattr(value, "flush"):
+            raise PackageError(f"bounded subprocess {label} target differs")
+        return subprocess.PIPE, value, False
+
+    popen_stdout, stdout_sink, capture_stdout = pipe_target(
+        stdout,
+        label="stdout",
+    )
+    popen_stderr, stderr_sink, capture_stderr = pipe_target(
+        stderr,
+        label="stderr",
+    )
+    popen_command = (
+        [*DARWIN_STOPPED_LAUNCHER, *command]
+        if sys.platform == "darwin"
+        else command
+    )
     try:
         process = subprocess.Popen(
-            command,
+            popen_command,
             cwd=cwd,
             env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=stdout,
-            stderr=stderr,
+            stdin=(
+                subprocess.PIPE
+                if stdin_data is not None
+                else subprocess.DEVNULL
+            ),
+            stdout=popen_stdout,
+            stderr=popen_stderr,
             start_new_session=os.name == "posix",
         )
     except OSError as error:
         raise PackageError("bounded subprocess could not be started") from error
+
+    darwin_scope: _DarwinProcessScope | None = None
+    if sys.platform == "darwin":
+        try:
+            darwin_scope = _prepare_darwin_process_scope(process)
+        except PackageError as error:
+            failure = PackageError(
+                "bounded subprocess could not be contained"
+            )
+            failure.__cause__ = error
+            try:
+                _terminate_process_group(process)
+            except BaseException as cleanup_error:
+                failure.add_note(f"cleanup failure: {cleanup_error}")
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except (OSError, ValueError):
+                        pass
+            raise failure
+
+    exceeded = threading.Event()
+    failures: list[BaseException] = []
+    failure_lock = threading.Lock()
+    stdout_buffer = bytearray()
+    stderr_buffer = bytearray()
+    drain_threads: list[threading.Thread] = []
+    writer: threading.Thread | None = None
+
+    def drain(
+        stream: Any,
+        sink: Any | None,
+        capture: bytearray,
+        limit: int,
+    ) -> None:
+        observed = 0
+        try:
+            while chunk := stream.read(64 * 1024):
+                observed += len(chunk)
+                if observed > limit:
+                    exceeded.set()
+                    return
+                if sink is None:
+                    capture.extend(chunk)
+                else:
+                    sink.write(chunk)
+            if sink is not None:
+                sink.flush()
+        except BaseException as error:
+            with failure_lock:
+                failures.append(error)
+        finally:
+            try:
+                stream.close()
+            except OSError:
+                pass
+
     try:
-        process_stdout, process_stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired as error:
-        _terminate_process_group(process)
-        process.communicate()
-        raise PackageError("bounded subprocess timed out") from error
-    if os.name == "posix":
+        for stream, sink, capture, limit in (
+            (
+                process.stdout,
+                stdout_sink,
+                stdout_buffer,
+                stdout_limit,
+            ),
+            (
+                process.stderr,
+                stderr_sink,
+                stderr_buffer,
+                stderr_limit,
+            ),
+        ):
+            if stream is None:
+                continue
+            thread = threading.Thread(
+                target=drain,
+                args=(stream, sink, capture, limit),
+                daemon=True,
+            )
+            thread.start()
+            drain_threads.append(thread)
+
+        if stdin_data is not None:
+            if process.stdin is None:
+                raise PackageError("bounded subprocess stdin differs")
+
+            def write_stdin() -> None:
+                try:
+                    process.stdin.write(stdin_data)
+                    process.stdin.flush()
+                except BrokenPipeError:
+                    pass
+                except BaseException as error:
+                    with failure_lock:
+                        failures.append(error)
+                finally:
+                    try:
+                        process.stdin.close()
+                    except OSError:
+                        pass
+
+            writer = threading.Thread(target=write_stdin, daemon=True)
+            writer.start()
+
+        if darwin_scope is not None:
+            _continue_darwin_process_scope(process, darwin_scope)
+    except BaseException as error:
+        startup_failure = PackageError(
+            "bounded subprocess stream could not be started"
+        )
+        startup_failure.__cause__ = error
+        try:
+            _terminate_process_group(process)
+        except BaseException as cleanup_error:
+            startup_failure.add_note(f"cleanup failure: {cleanup_error}")
+        if darwin_scope is not None:
+            try:
+                _stop_darwin_process_scope(darwin_scope)
+            except BaseException as cleanup_error:
+                startup_failure.add_note(
+                    f"cleanup failure: {cleanup_error}"
+                )
+            try:
+                _terminate_darwin_process_scope(darwin_scope)
+            except BaseException as cleanup_error:
+                startup_failure.add_note(
+                    f"cleanup failure: {cleanup_error}"
+                )
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                try:
+                    stream.close()
+                except (OSError, ValueError):
+                    pass
+        for thread in drain_threads:
+            thread.join(timeout=2)
+        if any(thread.is_alive() for thread in drain_threads):
+            startup_failure.add_note(
+                "cleanup failure: bounded subprocess output did not stop"
+            )
+        raise startup_failure
+
+    deadline = time.monotonic() + timeout
+    next_scope_sample = time.monotonic()
+    primary_failure: PackageError | None = None
+    while process.poll() is None:
+        if exceeded.is_set():
+            primary_failure = PackageError(
+                "bounded subprocess output exceeds its byte bound"
+            )
+            break
+        with failure_lock:
+            if failures:
+                primary_failure = PackageError(
+                    "bounded subprocess stream failed"
+                )
+                break
+        if darwin_scope is not None:
+            try:
+                _require_darwin_process_scope_healthy(darwin_scope)
+            except PackageError as error:
+                primary_failure = PackageError(
+                    "bounded subprocess containment failed"
+                )
+                primary_failure.__cause__ = error
+                break
+        if (
+            darwin_scope is not None
+            and time.monotonic() >= next_scope_sample
+        ):
+            try:
+                _observe_darwin_process_scope(darwin_scope)
+            except PackageError as error:
+                primary_failure = PackageError(
+                    "bounded subprocess containment failed"
+                )
+                primary_failure.__cause__ = error
+                break
+            next_scope_sample = (
+                time.monotonic() + DARWIN_SCOPE_SAMPLE_SECONDS
+            )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            primary_failure = PackageError("bounded subprocess timed out")
+            break
+        time.sleep(min(remaining, 0.01))
+
+    if primary_failure is not None:
+        try:
+            _terminate_process_group(process)
+        except BaseException as cleanup_error:
+            primary_failure.add_note(f"cleanup failure: {cleanup_error}")
+    elif os.name == "posix" and darwin_scope is None:
         try:
             os.killpg(process.pid, 0)
         except ProcessLookupError:
             pass
         else:
             _terminate_process_group(process)
+
+    detached_descendants = False
+    if darwin_scope is not None:
+        try:
+            _stop_darwin_process_scope(darwin_scope)
+        except PackageError as cleanup_error:
+            if primary_failure is None:
+                primary_failure = PackageError(
+                    "bounded subprocess containment observer failed"
+                )
+                primary_failure.__cause__ = cleanup_error
+            else:
+                primary_failure.add_note(
+                    f"cleanup failure: {cleanup_error}"
+                )
+        try:
+            detached_descendants = _terminate_darwin_process_scope(
+                darwin_scope
+            )
+        except PackageError as cleanup_error:
+            if primary_failure is None:
+                primary_failure = PackageError(
+                    "bounded subprocess containment cleanup failed"
+                )
+                primary_failure.__cause__ = cleanup_error
+            else:
+                primary_failure.add_note(
+                    f"cleanup failure: {cleanup_error}"
+                )
+        if detached_descendants and primary_failure is None:
+            primary_failure = PackageError(
+                "bounded subprocess left detached descendants"
+            )
+
+    if writer is not None:
+        writer.join(timeout=2)
+    for thread in drain_threads:
+        thread.join(timeout=2)
+    if writer is not None and writer.is_alive():
+        primary_failure = primary_failure or PackageError(
+            "bounded subprocess stdin did not stop"
+        )
+    if any(thread.is_alive() for thread in drain_threads):
+        primary_failure = primary_failure or PackageError(
+            "bounded subprocess output did not stop"
+        )
+    with failure_lock:
+        if failures and primary_failure is None:
+            primary_failure = PackageError(
+                "bounded subprocess stream failed"
+            )
+    if exceeded.is_set() and primary_failure is None:
+        primary_failure = PackageError(
+            "bounded subprocess output exceeds its byte bound"
+        )
+    if primary_failure is not None:
+        raise primary_failure
+
     return subprocess.CompletedProcess(
         command,
         process.returncode,
-        process_stdout,
-        process_stderr,
+        bytes(stdout_buffer) if capture_stdout else None,
+        bytes(stderr_buffer) if capture_stderr else None,
     )
 
 
@@ -463,12 +1294,50 @@ def snapshot_additional_product_inputs(workspace: Path) -> dict[str, bytes]:
     return result
 
 
+def source_git_environment() -> dict[str, str]:
+    environment = {
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_LAZY_FETCH": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_TERMINAL_PROMPT": "0",
+        "HOME": "/var/empty",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "NO_COLOR": "1",
+        "PATH": "/usr/bin:/bin",
+        "TZ": "UTC",
+    }
+    extend_process_scope_environment(environment, os.environ)
+    return environment
+
+
+def source_git_command(repository_root: Path, *arguments: str) -> list[str]:
+    return [
+        "/usr/bin/git",
+        "--no-replace-objects",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "core.untrackedCache=false",
+        "-C",
+        str(repository_root),
+        *arguments,
+    ]
+
+
 def run_git(repository_root: Path, *arguments: str) -> bytes:
     try:
         result = run_bounded_process(
-            ["/usr/bin/git", "-C", str(repository_root), *arguments],
+            source_git_command(repository_root, *arguments),
             cwd=repository_root,
+            env=source_git_environment(),
             timeout=10,
+            stdout_limit=1024 * 1024,
+            stderr_limit=64 * 1024,
         )
     except PackageError as error:
         raise PackageError("source checkout could not be verified") from error
@@ -487,6 +1356,28 @@ def verify_source_checkout(repository_root: Path, source_commit: str) -> None:
         raise PackageError("source checkout root is invalid") from error
     if top_level != repository_root:
         raise PackageError("--repository-root must be the exact Git worktree root")
+    for overlay in (
+        "info/attributes",
+        "info/grafts",
+        "objects/info/alternates",
+    ):
+        raw_path = run_git(
+            repository_root,
+            "rev-parse",
+            "--git-path",
+            overlay,
+        )
+        try:
+            value = Path(raw_path.decode("utf-8").strip())
+            candidate = (
+                value
+                if value.is_absolute()
+                else repository_root / value
+            )
+        except UnicodeDecodeError as error:
+            raise PackageError("source Git overlay path is invalid") from error
+        if candidate.exists() or candidate.is_symlink():
+            raise PackageError("source checkout has an unsafe local Git overlay")
     head = run_git(repository_root, "rev-parse", "--verify", "HEAD").decode(
         "ascii", errors="strict"
     ).strip()
@@ -537,10 +1428,13 @@ def _run_git_to_temporary(
 ) -> None:
     try:
         result = run_bounded_process(
-            ["/usr/bin/git", "-C", str(repository_root), *arguments],
+            source_git_command(repository_root, *arguments),
             cwd=repository_root,
+            env=source_git_environment(),
             stdout=output,
             timeout=timeout,
+            stdout_limit=8 * 1024 * 1024,
+            stderr_limit=64 * 1024,
         )
     except PackageError as error:
         raise PackageError("source snapshot could not be created") from error
@@ -548,7 +1442,10 @@ def _run_git_to_temporary(
         raise PackageError("source snapshot could not be created")
 
 
-def _preflight_source_snapshot(repository_root: Path, source_commit: str) -> None:
+def _preflight_source_snapshot(
+    repository_root: Path,
+    source_commit: str,
+) -> tuple[SourceBlob, ...]:
     with tempfile.TemporaryFile() as listing:
         _run_git_to_temporary(
             repository_root,
@@ -564,33 +1461,56 @@ def _preflight_source_snapshot(repository_root: Path, source_commit: str) -> Non
             raise PackageError("source snapshot inventory exceeds its byte bound")
         listing.seek(0)
         records = listing.read().split(b"\0")
-    file_count = 0
+    entries: list[SourceBlob] = []
+    normalized_paths: set[str] = set()
     total_bytes = 0
     for record in records:
         if not record:
             continue
         try:
             metadata, raw_path = record.split(b"\t", 1)
-            mode, object_type, _object_id, raw_size = metadata.split(b" ", 3)
-            path = PurePosixPath(raw_path.decode("utf-8"))
+            mode, object_type, raw_object_id, raw_size = metadata.split(
+                b" ", 3
+            )
+            decoded_path = raw_path.decode("utf-8")
+            path = PurePosixPath(decoded_path)
+            object_id = raw_object_id.decode("ascii")
             entry_size = int(raw_size)
+            file_mode = int(mode, 8)
         except (UnicodeDecodeError, ValueError) as error:
             raise PackageError("source snapshot inventory is invalid") from error
         safe_archive_path(path)
+        normalized_path = unicodedata.normalize("NFC", decoded_path)
         if (
-            not _snapshot_path_allowed(path)
+            path.as_posix() != decoded_path
+            or normalized_path != decoded_path
+            or any(part.casefold() == ".git" for part in path.parts)
+            or not _snapshot_path_allowed(path)
             or object_type != b"blob"
             or mode not in {b"100644", b"100755"}
+            or COMMIT_RE.fullmatch(object_id) is None
             or entry_size < 0
             or entry_size > MAX_SINGLE_FILE_BYTES
         ):
             raise PackageError("source snapshot contains an unsafe tracked entry")
-        file_count += 1
+        collision_key = normalized_path.casefold()
+        if collision_key in normalized_paths:
+            raise PackageError("source snapshot paths collide")
+        normalized_paths.add(collision_key)
         total_bytes += entry_size
-        if file_count > MAX_SOURCE_FILES or total_bytes > MAX_SOURCE_BYTES:
+        if len(entries) >= MAX_SOURCE_FILES or total_bytes > MAX_SOURCE_BYTES:
             raise PackageError("source snapshot exceeds its aggregate bound")
-    if file_count == 0:
+        entries.append(
+            SourceBlob(
+                path=path,
+                mode=file_mode,
+                object_id=object_id,
+                size=entry_size,
+            )
+        )
+    if not entries:
         raise PackageError("source snapshot is empty")
+    return tuple(entries)
 
 
 def _ensure_owned_directory(root: Path, relative: PurePosixPath) -> Path:
@@ -696,72 +1616,83 @@ def write_owned_relative_file(
         os.close(current_descriptor)
 
 
+def _materialize_source_blobs(
+    repository_root: Path,
+    destination: Path,
+    entries: tuple[SourceBlob, ...],
+) -> None:
+    requests = b"".join(
+        entry.object_id.encode("ascii") + b"\n" for entry in entries
+    )
+    if not requests or len(requests) > MAX_SOURCE_FILES * 65:
+        raise PackageError("source blob request differs")
+    with tempfile.TemporaryFile() as batch:
+        try:
+            result = run_bounded_process(
+                source_git_command(
+                    repository_root,
+                    "cat-file",
+                    "--batch",
+                ),
+                cwd=repository_root,
+                env=source_git_environment(),
+                stdin_data=requests,
+                stdout=batch,
+                timeout=60,
+                stdout_limit=MAX_SOURCE_BATCH_BYTES,
+                stderr_limit=64 * 1024,
+            )
+        except PackageError as error:
+            raise PackageError(
+                "raw source blobs could not be materialized"
+            ) from error
+        stderr = result.stderr or b""
+        batch_size = os.fstat(batch.fileno()).st_size
+        if (
+            result.returncode != 0
+            or len(stderr) > 64 * 1024
+            or not 0 < batch_size <= MAX_SOURCE_BATCH_BYTES
+        ):
+            raise PackageError("raw source blob reader failed")
+        batch.seek(0)
+        for entry in entries:
+            expected_header = (
+                f"{entry.object_id} blob {entry.size}\n"
+            ).encode("ascii")
+            if batch.readline(257) != expected_header:
+                raise PackageError("raw source blob header differs")
+            content = batch.read(entry.size)
+            if len(content) != entry.size or batch.read(1) != b"\n":
+                raise PackageError("raw source blob framing differs")
+            digest = hashlib.sha1()
+            digest.update(f"blob {entry.size}\0".encode("ascii"))
+            digest.update(content)
+            if digest.hexdigest() != entry.object_id:
+                raise PackageError("raw source blob identity differs")
+            parent = _ensure_owned_directory(
+                destination,
+                PurePosixPath(*entry.path.parts[:-1]),
+            )
+            write_owned_file(
+                parent / entry.path.name,
+                content,
+                0o755 if entry.mode == 0o100755 else 0o644,
+            )
+        if batch.read(1):
+            raise PackageError("raw source blob reader returned trailing output")
+
+
 def snapshot_source_checkout(
     repository_root: Path,
     source_commit: str,
     destination: Path,
 ) -> None:
-    _preflight_source_snapshot(repository_root, source_commit)
+    entries = _preflight_source_snapshot(repository_root, source_commit)
     try:
         destination.mkdir(mode=0o700)
     except OSError as error:
         raise PackageError("private source snapshot could not be created") from error
-    with tempfile.TemporaryFile() as archive_file:
-        _run_git_to_temporary(
-            repository_root,
-            archive_file,
-            "archive",
-            "--format=tar",
-            source_commit,
-            "--",
-            *SOURCE_ARCHIVE_PATHS,
-            timeout=60,
-        )
-        archive_size = os.fstat(archive_file.fileno()).st_size
-        if not 0 < archive_size <= MAX_SOURCE_ARCHIVE_BYTES:
-            raise PackageError("source snapshot archive exceeds its byte bound")
-        archive_file.seek(0)
-        seen: set[str] = set()
-        total_bytes = 0
-        file_count = 0
-        try:
-            with tarfile.open(fileobj=archive_file, mode="r:") as archive:
-                for member in archive:
-                    path = PurePosixPath(member.name)
-                    safe_archive_path(path)
-                    name = path.as_posix()
-                    if name in seen or not _snapshot_path_allowed(path):
-                        raise PackageError("source snapshot archive path is invalid")
-                    seen.add(name)
-                    relative_parent = PurePosixPath(*path.parts[:-1])
-                    parent = _ensure_owned_directory(destination, relative_parent)
-                    target = parent / path.name
-                    if member.isdir():
-                        _ensure_owned_directory(destination, path)
-                        continue
-                    if (
-                        not member.isfile()
-                        or member.size < 0
-                        or member.size > MAX_SINGLE_FILE_BYTES
-                    ):
-                        raise PackageError("source snapshot archive entry is unsafe")
-                    stream = archive.extractfile(member)
-                    if stream is None:
-                        raise PackageError("source snapshot archive entry is unreadable")
-                    content = stream.read(member.size + 1)
-                    if len(content) != member.size:
-                        raise PackageError("source snapshot archive entry changed")
-                    file_count += 1
-                    total_bytes += len(content)
-                    if (
-                        file_count > MAX_SOURCE_FILES
-                        or total_bytes > MAX_SOURCE_BYTES
-                    ):
-                        raise PackageError("source snapshot exceeds its aggregate bound")
-                    mode = 0o755 if member.mode & 0o111 else 0o644
-                    write_owned_file(target, content, mode)
-        except (OSError, tarfile.TarError) as error:
-            raise PackageError("source snapshot archive is invalid") from error
+    _materialize_source_blobs(repository_root, destination, entries)
     required = (
         *SOURCE_ARCHIVE_FILES,
         PurePosixPath(".agents/skills/godot-editor/SKILL.md"),
@@ -807,6 +1738,8 @@ def verify_third_party_license_bundle(workspace: Path) -> bytes:
             cwd=workspace,
             env=minimal_toolchain_environment(),
             timeout=90,
+            stdout_limit=MAX_LICENSE_CHECK_OUTPUT_BYTES,
+            stderr_limit=MAX_LICENSE_CHECK_OUTPUT_BYTES,
         )
     except PackageError as error:
         raise PackageError(
@@ -1271,6 +2204,8 @@ def _bounded_tool_output(
             cwd=workspace,
             env=environment,
             timeout=10,
+            stdout_limit=16 * 1024,
+            stderr_limit=16 * 1024,
         )
     except PackageError as error:
         raise PackageError("Rust toolchain identity could not be read") from error
@@ -1363,6 +2298,8 @@ def build_release_binaries(
                 stdout=stdout,
                 stderr=stderr,
                 timeout=MAX_CARGO_BUILD_SECONDS,
+                stdout_limit=MAX_CARGO_OUTPUT_BYTES,
+                stderr_limit=MAX_CARGO_OUTPUT_BYTES,
             )
             stdout_size = os.fstat(stdout.fileno()).st_size
             stderr_size = os.fstat(stderr.fileno()).st_size
@@ -1433,6 +2370,8 @@ def verify_godot_prerequisite(
             [str(path), "--version"],
             cwd=path.parent,
             timeout=10,
+            stdout_limit=16 * 1024,
+            stderr_limit=16 * 1024,
         )
     except PackageError as error:
         raise PackageError("Godot prerequisite version could not be read") from error
@@ -1876,7 +2815,6 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
         else Path.cwd() / args.godot_prerequisite
     )
     verify_workspace_binding(repository_root, workspace_argument)
-    workspace = (repository_root / "godot-codex-mcp").resolve(strict=True)
     output_dir = resolve_new_output_destination(args.output_dir)
     verify_source_checkout(repository_root, args.source_commit)
     with tempfile.TemporaryDirectory(prefix="godot-codex-release-") as temporary:

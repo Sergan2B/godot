@@ -19,6 +19,11 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, cast
 
+try:
+    from tests.codex import sprint11_packaged_fixture as packaged_fixture
+except ModuleNotFoundError:  # Direct execution from tests/codex.
+    import sprint11_packaged_fixture as packaged_fixture
+
 from sprint2_live_smoke import MCP_PROTOCOL, LineProcess, McpClient
 from sprint5_script_semantics_live import (
     close_sidecar,
@@ -93,7 +98,7 @@ def default_sidecar() -> Path:
 
 def prepare_project(root: Path) -> Path:
     project = root / "project"
-    shutil.copytree(PROJECT_SOURCE, project, ignore=shutil.ignore_patterns(".godot"))
+    packaged_fixture.copy_project_fixture(PROJECT_SOURCE, project)
     return project
 
 
@@ -481,7 +486,7 @@ def run(
     platform_tag = target_platform()
     require(godot.is_file() and sidecar.is_file(), "Godot and release sidecar must be built")
     run_root = Path(tempfile.mkdtemp(prefix="s6.", dir="/tmp"))
-    project = prepare_project(run_root)
+    project = run_root / "project"
     log_path = run_root / "godot.log"
     editor: subprocess.Popen[str] | None = None
     editor_log: Any = None
@@ -489,6 +494,11 @@ def run(
     telemetry: dict[str, Any] | None = None
     primary_error = False
     try:
+        require(
+            prepare_project(run_root) == project,
+            "Sprint 6 fixture root differs",
+        )
+        packaged_fixture.configure_project_if_requested(project)
         editor, editor_log = start_sprint6_editor(godot, project, log_path)
         wait_for_editor_file(
             editor,
@@ -747,6 +757,7 @@ def main() -> int:
     parser.add_argument("--sidecar", type=Path, default=default_sidecar())
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--output", type=Path)
+    packaged_fixture.add_arguments(parser)
     parser.add_argument(
         "--additive-sprint11-registry",
         action="store_true",
@@ -754,6 +765,7 @@ def main() -> int:
     )
     arguments = parser.parse_args()
     try:
+        packaged_fixture.activate_from_arguments(arguments)
         report = run(
             arguments.godot.resolve(),
             arguments.sidecar.resolve(),
@@ -766,7 +778,13 @@ def main() -> int:
         else:
             print(text, end="")
         return 0
-    except (Sprint6LiveError, OSError, subprocess.SubprocessError, ValueError) as error:
+    except (
+        Sprint6LiveError,
+        packaged_fixture.PackagedFixtureError,
+        OSError,
+        subprocess.SubprocessError,
+        ValueError,
+    ) as error:
         print(f"Sprint 6 live smoke failed: {error}", file=sys.stderr)
         return 1
 

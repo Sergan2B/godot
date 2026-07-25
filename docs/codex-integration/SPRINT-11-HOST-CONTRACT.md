@@ -156,6 +156,14 @@ must compare that exact effective command. Until the packaged probes pass,
 C11-0 and write qualification remain open; a host without the required
 interaction is read-only.
 
+Package and acquisition subprocess cleanup is qualified only for the frozen,
+source-bound runner graph. Owned clean-environment boundaries preserve the
+unrecorded scope markers, and the runners fail closed on observed surviving
+descendants. This is lifecycle safety, not a kernel-enforced sandbox for an
+adversarial executable that deliberately clears those markers. A privileged
+or entitled macOS supervisor remains deferred release-grade hardening and is
+not implied by the External Codex Beta claim.
+
 ## 5. Reproducible probe commands
 
 ```sh

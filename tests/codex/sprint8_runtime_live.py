@@ -10,7 +10,6 @@ import hashlib
 import json
 import os
 import signal
-import shutil
 import struct
 import subprocess
 import tempfile
@@ -21,6 +20,11 @@ from typing import Any, cast
 
 from sprint2_live_smoke import MCP_PROTOCOL, LineProcess, McpClient, atomic_json
 from sprint5_script_semantics_live import close_sidecar
+
+try:
+    from tests.codex import sprint11_packaged_fixture as packaged_fixture
+except ModuleNotFoundError:  # Direct execution from tests/codex.
+    import sprint11_packaged_fixture as packaged_fixture
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPOSITORY_ROOT = SCRIPT_DIR.parent.parent
@@ -374,6 +378,37 @@ def terminate_process_group(process: subprocess.Popen[str]) -> None:
         process.wait(timeout=5)
 
 
+def editor_process_group_options() -> tuple[dict[str, Any], bool]:
+    """Keep packaged editors in the outer acquisition group for hard timeouts."""
+
+    if os.name == "nt":
+        return (
+            {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP},
+            True,
+        )
+    if packaged_fixture.provisioning_is_active():
+        return ({}, False)
+    return ({"start_new_session": True}, True)
+
+
+def terminate_editor(
+    process: subprocess.Popen[str],
+    *,
+    isolated_process_group: bool,
+) -> None:
+    if isolated_process_group:
+        terminate_process_group(process)
+        return
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
+
+
 def fixture_process_ids(project: Path) -> set[int]:
     """Return only processes whose argv targets this exact temporary fixture."""
     if os.name == "nt":
@@ -721,7 +756,8 @@ def run_live(
         dir=None if os.name == "nt" else "/tmp",
     ) as temporary:
         project = Path(temporary) / "p"
-        shutil.copytree(PROJECT_SOURCE, project, ignore=shutil.ignore_patterns(".godot"))
+        packaged_fixture.copy_project_fixture(PROJECT_SOURCE, project)
+        packaged_fixture.configure_project_if_requested(project)
         initial_source_snapshot = project_source_snapshot(project)
         log_path = Path(temporary) / "editor.log"
         log = log_path.open("w", encoding="utf-8")
@@ -731,13 +767,9 @@ def run_live(
         command = [str(godot), "--editor", "--path", str(project), "--no-header"]
         if headless:
             command.insert(2, "--headless")
-        process_group_options: dict[str, Any]
-        if os.name == "nt":
-            process_group_options = {
-                "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP,
-            }
-        else:
-            process_group_options = {"start_new_session": True}
+        process_group_options, editor_has_isolated_group = (
+            editor_process_group_options()
+        )
         editor = subprocess.Popen(
             command,
             cwd=REPOSITORY_ROOT,
@@ -1968,19 +2000,25 @@ def run_live(
                     try:
                         editor.wait(timeout=10)
                     except subprocess.TimeoutExpired:
-                        terminate_process_group(editor)
+                        terminate_editor(
+                            editor,
+                            isolated_process_group=editor_has_isolated_group,
+                        )
                 except Exception as error:
                     cleanup_errors.append(f"editor cleanup failed: {error}")
                     if editor.poll() is None:
                         try:
-                            terminate_process_group(editor)
+                            terminate_editor(
+                                editor,
+                                isolated_process_group=editor_has_isolated_group,
+                            )
                         except Exception as terminate_error:
                             cleanup_errors.append(
                                 f"editor process-group cleanup failed: {terminate_error}"
                             )
             # A normally closed or crashed editor can leave its game child alive;
             # the dedicated process group keeps this exact and unrelated-process safe.
-            if os.name != "nt":
+            if os.name != "nt" and editor_has_isolated_group:
                 try:
                     os.killpg(editor.pid, signal.SIGTERM)
                 except ProcessLookupError:
@@ -2029,12 +2067,14 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--output", type=Path)
+    packaged_fixture.add_arguments(parser)
     parser.add_argument(
         "--additive-sprint11-registry",
         action="store_true",
         help="require the exact additive Sprint 11 41-tool profile",
     )
     arguments = parser.parse_args()
+    packaged_fixture.activate_from_arguments(arguments)
     report = finalize_live_report(
         run_live(
             arguments.godot.resolve(),

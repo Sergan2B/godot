@@ -3370,6 +3370,8 @@ fn ensure_safe_parent(root: &Path, target: &Path, private: bool) -> Result<(), S
                 fs::create_dir(&current).map_err(|_| SetupError::AtomicWriteFailed)?;
                 if private || current.ends_with(".godot/codex") {
                     set_private_directory(&current).map_err(|_| SetupError::AtomicWriteFailed)?;
+                } else {
+                    set_public_directory(&current).map_err(|_| SetupError::AtomicWriteFailed)?;
                 }
             }
             Err(_) => return Err(SetupError::PathUnsafe),
@@ -3486,6 +3488,17 @@ fn set_private_directory(path: &Path) -> io::Result<()> {
 
 #[cfg(not(unix))]
 fn set_private_directory(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_public_directory(path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+}
+
+#[cfg(not(unix))]
+fn set_public_directory(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 

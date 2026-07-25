@@ -12,7 +12,6 @@ import os
 import platform
 import queue
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,6 +22,11 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, cast
 
 import transaction_fixture as oracle
+
+try:
+    from tests.codex import sprint11_packaged_fixture as packaged_fixture
+except ModuleNotFoundError:  # Direct execution from tests/codex.
+    import sprint11_packaged_fixture as packaged_fixture
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPOSITORY_ROOT = SCRIPT_DIR.parent.parent
@@ -573,11 +577,11 @@ class FixtureSession:
             dir=None if os.name == "nt" else "/tmp",
         )
         self.project_root = Path(self.temporary.name) / "project"
-        shutil.copytree(
+        packaged_fixture.copy_project_fixture(
             FIXTURE_ROOT,
             self.project_root,
-            ignore=shutil.ignore_patterns(".godot"),
         )
+        packaged_fixture.configure_project_if_requested(self.project_root)
         environment = os.environ.copy()
         environment["CODEX_S9_PREPARE_AUTOMATION"] = "1"
         environment["GODOT_CODEX_S9_MODEL_FREE_AUTOMATION"] = "1"
@@ -2678,6 +2682,7 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--report", type=Path)
     parser.add_argument("--timeout", type=float, default=45.0)
+    packaged_fixture.add_arguments(parser)
     parser.add_argument(
         "--operations",
         nargs="*",
@@ -2709,6 +2714,7 @@ def parse_arguments() -> argparse.Namespace:
 def main() -> int:
     global TOOL_NAMES, MUTATING_TOOLS
     arguments = parse_arguments()
+    packaged_fixture.activate_from_arguments(arguments)
     if arguments.additive_sprint10_registry:
         TOOL_NAMES = TOOL_NAMES | SPRINT10_TOOL_NAMES
         MUTATING_TOOLS = MUTATING_TOOLS | SPRINT10_MUTATING_TOOLS

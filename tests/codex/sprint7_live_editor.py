@@ -20,6 +20,11 @@ from typing import Any, cast
 from sprint2_live_smoke import MCP_PROTOCOL, LineProcess, McpClient, atomic_json
 from sprint5_script_semantics_live import close_sidecar, parse_telemetry
 
+try:
+    from tests.codex import sprint11_packaged_fixture as packaged_fixture
+except ModuleNotFoundError:  # Direct execution from tests/codex.
+    import sprint11_packaged_fixture as packaged_fixture
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPOSITORY_ROOT = SCRIPT_DIR.parent.parent
 PROJECT_SOURCE = SCRIPT_DIR / "fixtures" / "live_editor_project"
@@ -867,8 +872,9 @@ def run(
         )
     )
     project = run_root / "project"
-    shutil.copytree(PROJECT_SOURCE, project, ignore=shutil.ignore_patterns(".godot"))
     try:
+        packaged_fixture.copy_project_fixture(PROJECT_SOURCE, project)
+        packaged_fixture.configure_project_if_requested(project)
         first = run_session(
             godot,
             sidecar,
@@ -939,6 +945,7 @@ def main() -> int:
     parser.add_argument("--sidecar", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=120.0)
+    packaged_fixture.add_arguments(parser)
     parser.add_argument(
         "--additive-sprint11-registry",
         action="store_true",
@@ -946,6 +953,7 @@ def main() -> int:
     )
     arguments = parser.parse_args()
     try:
+        packaged_fixture.activate_from_arguments(arguments)
         report = run(
             arguments.godot.resolve(strict=True),
             arguments.sidecar.resolve(strict=True),
@@ -959,7 +967,13 @@ def main() -> int:
         )
         print(json.dumps({"status": report["status"], "output": str(arguments.output)}, sort_keys=True))
         return 0
-    except (LiveEditorError, OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
+    except (
+        LiveEditorError,
+        packaged_fixture.PackagedFixtureError,
+        OSError,
+        subprocess.SubprocessError,
+        json.JSONDecodeError,
+    ) as error:
         print(f"Sprint 7 live editor gate failed: {error}", file=sys.stderr)
         return 1
 

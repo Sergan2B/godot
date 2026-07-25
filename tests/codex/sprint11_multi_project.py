@@ -33,10 +33,12 @@ try:
     from tests.codex import sprint9_model_free_live as s9
     from tests.codex import sprint10_model_free_live as s10
     from tests.codex import sprint11_acquisition_paths as acquisition_paths
+    from tests.codex import sprint11_packaged_fixture as packaged_fixture
 except ModuleNotFoundError:  # Direct execution from tests/codex.
     import sprint9_model_free_live as s9
     import sprint10_model_free_live as s10
     import sprint11_acquisition_paths as acquisition_paths
+    import sprint11_packaged_fixture as packaged_fixture
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = SCRIPT_ROOT.parent.parent
@@ -539,7 +541,7 @@ class _PrivateFile:
     mode: int
 
     @classmethod
-    def capture(cls, path: Path, *, maximum: int) -> "_PrivateFile":
+    def capture(cls, path: Path, *, maximum: int) -> _PrivateFile:
         try:
             metadata = path.lstat()
             payload = acquisition_paths.read_regular_file(
@@ -2487,8 +2489,10 @@ def main() -> int:
     parser.add_argument("--expected-package-version", required=True)
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--report", type=Path)
+    packaged_fixture.add_arguments(parser)
     arguments = parser.parse_args()
     try:
+        packaged_fixture.activate_from_arguments(arguments)
         godot = arguments.godot.resolve(strict=True)
         sidecar = arguments.sidecar.resolve(strict=True)
         report = run_live(
@@ -2518,6 +2522,7 @@ def main() -> int:
         json.JSONDecodeError,
         s9.WorkflowError,
         acquisition_paths.AcquisitionPathError,
+        packaged_fixture.PackagedFixtureError,
     ) as error:
         print(f"Sprint 11 multi-project gate failed: {error}", file=sys.stderr)
         return 1

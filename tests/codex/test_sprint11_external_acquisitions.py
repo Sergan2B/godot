@@ -152,16 +152,25 @@ def host_measurement() -> dict[str, object]:
 
 
 class Sprint11ExternalAcquisitionTests(unittest.TestCase):
-    def test_multi_project_template_is_closed_and_uses_public_runner(self) -> None:
+    def test_git_environment_disables_lazy_fetch(self) -> None:
         self.assertEqual(
-            acquisitions.multi_command_template(),
-            (
+            acquisitions._git_environment()["GIT_NO_LAZY_FETCH"],
+            "1",
+        )
+
+    def test_multi_project_template_is_closed_and_uses_public_runner(self) -> None:
+        expected = (
                 "{python}",
+                *acquisitions.ISOLATED_PYTHON_FLAGS,
                 "tests/codex/sprint11_multi_project.py",
                 "--godot",
                 "{godot}",
                 "--sidecar",
                 "{package_sidecar}",
+                "--package-operations",
+                "{package_operations}",
+                "--package-data-root",
+                "{package_data_root}",
                 "--expected-sidecar-sha256",
                 "{package_sidecar_sha256}",
                 "--expected-package-version",
@@ -170,30 +179,83 @@ class Sprint11ExternalAcquisitionTests(unittest.TestCase):
                 "{timeout}",
                 "--report",
                 "{report}",
-            ),
+            )
+        self.assertEqual(acquisitions.multi_command_template(), expected)
+        schema = json.loads(
+            (
+                acquisitions.REPOSITORY_ROOT
+                / "godot-codex-mcp/schemas/godot_codex/"
+                "sprint11-multi-project-receipt.schema.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            schema["$defs"]["command"]["properties"]["argv_template"]["const"],
+            list(expected),
         )
 
     def test_reproducibility_templates_use_only_public_build_cli(self) -> None:
+        schema = json.loads(
+            (
+                acquisitions.REPOSITORY_ROOT
+                / acquisitions.REPRODUCIBILITY_SCHEMA_PATH
+            ).read_text(encoding="utf-8")
+        )
+        schema_oracles = schema["$defs"]["command"]["allOf"]
+        self.assertEqual(len(schema_oracles), 2)
         for build_id in ("a", "b"):
             template = acquisitions.reproducibility_command_template(build_id)
-            self.assertEqual(template[1], "godot-codex-mcp/packaging/build_macos.py")
+            self.assertEqual(
+                template[1:4],
+                acquisitions.ISOLATED_PYTHON_FLAGS,
+            )
+            self.assertEqual(
+                template[4],
+                "godot-codex-mcp/packaging/build_macos.py",
+            )
             self.assertEqual(template.count("--output-dir"), 1)
+            self.assertEqual(template.count("--repository-root"), 1)
+            self.assertIn("{repository_root}", template)
+            self.assertEqual(template.count("--workspace"), 1)
+            self.assertIn("{workspace}", template)
             self.assertIn(f"{{build_{build_id}}}", template)
             self.assertNotIn("-c", template)
             self.assertNotIn("-m", template)
+            oracle = schema_oracles[0 if build_id == "a" else 1]
+            self.assertEqual(
+                oracle["if"]["properties"]["id"]["const"],
+                f"clean_rebuild_{build_id}",
+            )
+            self.assertEqual(
+                oracle["then"]["properties"]["argv_template"]["const"],
+                list(template),
+            )
         with self.assertRaises(acquisitions.AcquisitionError):
             acquisitions.reproducibility_command_template("c")
 
     def test_host_provenance_template_is_closed_and_public(self) -> None:
         template = acquisitions.host_provenance_command_template()
-        self.assertEqual(template[1], acquisitions.HOST_RUNNER)
         self.assertEqual(
-            template[3],
+            template[1:4],
+            acquisitions.ISOLATED_PYTHON_FLAGS,
+        )
+        self.assertEqual(template[4], acquisitions.HOST_RUNNER)
+        self.assertEqual(
+            template[6],
             "{profile}",
         )
         self.assertEqual(template.count("--output"), 1)
         self.assertNotIn("-c", template)
         self.assertNotIn("-m", template)
+        schema = json.loads(
+            (
+                acquisitions.REPOSITORY_ROOT
+                / acquisitions.HOST_ACQUISITION_SCHEMA_PATH
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            schema["$defs"]["command"]["properties"]["argv_template"]["const"],
+            list(template),
+        )
 
     def test_execute_is_bounded_and_captures_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -227,6 +289,82 @@ class Sprint11ExternalAcquisitionTests(unittest.TestCase):
                     0.05,
                 )
 
+    def test_execute_preserves_primary_failure_during_scope_cleanup(
+        self,
+    ) -> None:
+        real_close_scope = acquisitions.process_scope.close_scope
+
+        def close_then_fail(
+            scope: acquisitions.process_scope.ProcessScope,
+        ) -> bool:
+            real_close_scope(scope)
+            raise acquisitions.process_scope.ProcessScopeError(
+                "fixture cleanup failure"
+            )
+
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            acquisitions.process_scope,
+            "close_scope",
+            side_effect=close_then_fail,
+        ):
+            with self.assertRaisesRegex(
+                acquisitions.AcquisitionError,
+                "timed out",
+            ) as raised:
+                acquisitions.execute(
+                    (
+                        sys.executable,
+                        "-c",
+                        "import time; time.sleep(30)",
+                    ),
+                    Path(directory),
+                    0.05,
+                )
+        self.assertTrue(
+            any(
+                "detached process scope could not be closed" in note
+                for note in getattr(raised.exception, "__notes__", ())
+            )
+        )
+
+    def test_execute_preserves_primary_failure_during_group_cleanup(
+        self,
+    ) -> None:
+        real_stop_group = acquisitions._stop_process_group
+
+        def stop_then_fail(
+            process: subprocess.Popen[bytes],
+        ) -> None:
+            real_stop_group(process)
+            raise acquisitions.AcquisitionError(
+                "synthetic group cleanup failure"
+            )
+
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            acquisitions,
+            "_stop_process_group",
+            side_effect=stop_then_fail,
+        ):
+            with self.assertRaisesRegex(
+                acquisitions.AcquisitionError,
+                "timed out",
+            ) as raised:
+                acquisitions.execute(
+                    (
+                        sys.executable,
+                        "-c",
+                        "import time; time.sleep(30)",
+                    ),
+                    Path(directory),
+                    0.05,
+                )
+        self.assertTrue(
+            any(
+                "synthetic group cleanup failure" in note
+                for note in getattr(raised.exception, "__notes__", ())
+            )
+        )
+
     def test_stop_group_treats_post_exit_eperm_as_reaped_on_macos(self) -> None:
         process = mock.Mock()
         process.pid = 4242
@@ -251,14 +389,16 @@ class Sprint11ExternalAcquisitionTests(unittest.TestCase):
         child = (
             "import subprocess,sys;"
             "subprocess.Popen([sys.executable,'-c',"
-            "'import time; time.sleep(30)']);"
+            "'import time; time.sleep(30)'],"
+            "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,"
+            "stderr=subprocess.DEVNULL,start_new_session=True);"
         )
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(
                 acquisitions.AcquisitionError,
                 (
-                    "left child processes|process group did not stop|"
-                    "process group cannot be terminated"
+                    "detached descendants escaped|left child processes|"
+                    "process group did not stop|process group cannot be terminated"
                 ),
             ):
                 acquisitions.execute(
@@ -559,6 +699,14 @@ class Sprint11ExternalAcquisitionTests(unittest.TestCase):
                 argv[argv.index("--expected-sidecar-sha256") + 1],
                 bindings["package_sidecar_sha256"],
             )
+            self.assertEqual(
+                Path(argv[argv.index("--package-operations") + 1]),
+                sidecar,
+            )
+            self.assertEqual(
+                Path(argv[argv.index("--package-data-root") + 1]),
+                artifact_root,
+            )
             output = Path(argv[argv.index("--report") + 1])
             output.write_bytes(acquisitions.canonical_json(report) + b"\n")
             return acquisitions.Execution(0, b'{"status":"passed"}\n', b"", 7)
@@ -573,6 +721,12 @@ class Sprint11ExternalAcquisitionTests(unittest.TestCase):
             artifact_root.mkdir()
             sidecar = artifact_root / "godot-codex-mcp"
             sidecar.write_bytes(b"sidecar")
+            bindings["package_sidecar_sha256"] = (
+                acquisitions.package_contract.sha256_file(sidecar)
+            )
+            report["artifacts"]["sidecar_sha256"] = bindings[
+                "package_sidecar_sha256"
+            ]
             manifest = root / "manifest.json"
             manifest.write_text(
                 '{"package_version":"1.2.3"}\n',
@@ -581,6 +735,20 @@ class Sprint11ExternalAcquisitionTests(unittest.TestCase):
             godot = root / "godot"
             godot.write_bytes(b"godot")
             output = root / "acquired"
+
+            @contextlib.contextmanager
+            def package_session(
+                _artifact_root: Path,
+                _manifest: Path,
+                _timeout: float,
+            ) -> Iterator[acquisitions.package_contract.InstalledPackage]:
+                yield acquisitions.package_contract.InstalledPackage(
+                    operations=sidecar,
+                    sidecar=sidecar,
+                    data_root=artifact_root,
+                    package_version="1.2.3",
+                )
+
             fixture = {
                 "path": "tests/codex/fixtures/transaction_prepare_project/project.godot",
                 "sha256": acquisitions.sha256_file(
@@ -618,6 +786,7 @@ class Sprint11ExternalAcquisitionTests(unittest.TestCase):
                     timeout=10,
                     executor=executor,
                     check_repository=False,
+                    package_session_factory=package_session,
                 )
             self.assertEqual(len(observed_argv), 1)
             self.assertEqual(receipt["bindings"]["package_version"], "1.2.3")
@@ -893,32 +1062,81 @@ class Sprint11ExternalAcquisitionTests(unittest.TestCase):
             godot.write_bytes(b"godot")
             build_root = external_root / "build"
             output = Path(repository_local) / "result"
+            raw_snapshot_root = external_root / "raw-source"
+            raw_runner = raw_snapshot_root / acquisitions.BUILD_RUNNER
+            raw_runner.parent.mkdir(parents=True)
+            shutil.copy2(
+                acquisitions.REPOSITORY_ROOT / acquisitions.BUILD_RUNNER,
+                raw_runner,
+            )
+
+            @contextlib.contextmanager
+            def raw_source_snapshot(
+                requested_commit: str,
+            ) -> Iterator[acquisitions.SourceSnapshot]:
+                self.assertEqual(requested_commit, source_commit)
+                self.assertFalse((raw_snapshot_root / ".git").exists())
+                yield acquisitions.SourceSnapshot(
+                    root=raw_snapshot_root,
+                    source_commit=source_commit,
+                    repository=acquisitions.REPOSITORY_ROOT,
+                )
 
             def executor(
                 argv: tuple[str, ...],
-                _cwd: Path,
-                _timeout: float,
+                command_cwd: Path,
+                command_timeout: float,
             ) -> acquisitions.Execution:
+                self.assertEqual(command_timeout, 181)
+                self.assertEqual(command_cwd, raw_snapshot_root)
+                self.assertFalse((command_cwd / ".git").exists())
+                self.assertEqual(
+                    Path(argv[argv.index("--repository-root") + 1]),
+                    acquisitions.REPOSITORY_ROOT,
+                )
+                self.assertEqual(
+                    Path(argv[argv.index("--workspace") + 1]),
+                    acquisitions.REPOSITORY_ROOT / "godot-codex-mcp",
+                )
+                self.assertTrue((command_cwd / acquisitions.BUILD_RUNNER).is_file())
                 destination = Path(argv[argv.index("--output-dir") + 1])
                 shutil.copytree(qualified, destination)
-                return acquisitions.Execution(0, b'{"status":"passed"}\n', b"", 2)
+                return acquisitions.Execution(
+                    0,
+                    b'{"status":"passed"}\n',
+                    b"",
+                    180_001,
+                )
+
+            def raw_runner_digest(
+                snapshot: acquisitions.SourceSnapshot,
+                relative: str,
+            ) -> str:
+                self.assertEqual(snapshot.root, raw_snapshot_root)
+                self.assertEqual(relative, acquisitions.BUILD_RUNNER)
+                return acquisitions.sha256_file(
+                    raw_snapshot_root / relative
+                )
 
             with (
                 mock.patch.object(
                     acquisitions,
                     "repository_head",
                     return_value=source_commit,
-                ),
-                mock.patch.object(acquisitions, "require_clean_checkout"),
+                ) as head,
+                mock.patch.object(
+                    acquisitions,
+                    "require_clean_checkout",
+                ) as clean,
                 mock.patch.object(
                     acquisitions,
                     "source_snapshot",
-                    side_effect=current_source_snapshot,
+                    side_effect=raw_source_snapshot,
                 ),
                 mock.patch.object(
                     acquisitions,
                     "_snapshot_file_digest",
-                    side_effect=current_runner_digest,
+                    side_effect=raw_runner_digest,
                 ),
             ):
                 receipt = acquisitions.acquire_reproducibility(
@@ -926,9 +1144,22 @@ class Sprint11ExternalAcquisitionTests(unittest.TestCase):
                     godot_prerequisite=godot,
                     build_root=build_root,
                     output_root=output,
-                    timeout=10,
+                    timeout=181,
                     executor=executor,
                 )
+            self.assertEqual(head.call_count, 4)
+            self.assertEqual(clean.call_count, 4)
+            self.assertEqual(clean.call_args_list[:3], [mock.call()] * 3)
+            final_clean = clean.call_args_list[3]
+            self.assertEqual(final_clean.args, ())
+            self.assertEqual(
+                set(final_clean.kwargs),
+                {"allowed_untracked_roots"},
+            )
+            self.assertEqual(
+                len(final_clean.kwargs["allowed_untracked_roots"]),
+                1,
+            )
             qualified_record = acquisitions._build_output_record(
                 qualified,
                 "qualified",
@@ -955,6 +1186,12 @@ class Sprint11ExternalAcquisitionTests(unittest.TestCase):
                     "qualified_build_provenance_sha256"
                 ],
                 qualified_record["build_provenance_sha256"],
+            )
+            self.assertTrue(
+                all(
+                    command["duration_ms"] == 180_001
+                    for command in receipt["commands"]
+                )
             )
 
     def test_reproducibility_rejects_equal_rebuilds_that_differ_from_qualified(

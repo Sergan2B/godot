@@ -14,6 +14,11 @@ from typing import Any, Mapping, cast
 
 import sprint9_model_free_live as s9
 
+try:
+    from tests.codex import sprint11_packaged_fixture as packaged_fixture
+except ModuleNotFoundError:  # Direct execution from tests/codex.
+    import sprint11_packaged_fixture as packaged_fixture
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPOSITORY_ROOT = SCRIPT_DIR.parent.parent
 CHANGE_SET_RE = re.compile(r"change-set:[0-9a-f]{32}\Z")
@@ -451,6 +456,7 @@ def main() -> int:
     parser.add_argument("--sidecar", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--report", type=Path)
+    packaged_fixture.add_arguments(parser)
     parser.add_argument(
         "--additive-sprint11-registry",
         action="store_true",
@@ -458,13 +464,14 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
+        packaged_fixture.activate_from_arguments(args)
         result = run_workflow(
             args.godot.resolve(),
             args.sidecar.resolve(),
             args.timeout,
             additive_sprint11_registry=args.additive_sprint11_registry,
         )
-    except (OSError, s9.WorkflowError) as error:
+    except (OSError, s9.WorkflowError, packaged_fixture.PackagedFixtureError) as error:
         print(f"Sprint 10 model-free workflow failed: {error}", file=s9.sys.stderr)
         return 1
     encoded = json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n"

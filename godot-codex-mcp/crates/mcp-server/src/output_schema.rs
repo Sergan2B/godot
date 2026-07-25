@@ -26,6 +26,12 @@ const MAX_SERIALIZED_STRUCTURED_CONTENT_BYTES: usize = 32 * 1_024 * 1_024;
 // Standard padded base64 needs at most four characters for every three bytes.
 const MAX_CAPTURE_IMAGE_BYTES: usize = 512 * 1_024;
 const MAX_CAPTURE_IMAGE_BASE64_CHARS: usize = MAX_CAPTURE_IMAGE_BYTES.div_ceil(3) * 4;
+const EDITOR_OBJECT_ID_PATTERN: &str = "^(?:node|object):[0-9a-f]{32}$";
+const EDITOR_NODE_ID_PATTERN: &str = "^node:[0-9a-f]{32}$";
+const RUNTIME_SESSION_ID_PATTERN: &str = "^runtime:[0-9a-f]{32}$";
+const RUNTIME_OBJECT_ID_PATTERN: &str = "^runtime-object:[A-Za-z0-9_-]{43}$";
+const RUNTIME_STACK_ID_PATTERN: &str = "^runtime-stack:[A-Za-z0-9_-]{43}$";
+const RUNTIME_DIAGNOSTIC_ID_PATTERN: &str = "^runtime-diagnostic:[A-Za-z0-9_-]{43}$";
 
 // This is the frozen vocabulary used by the fixed wire DTO projection. It is
 // deliberately broader than any one DTO because the live snapshot and saved
@@ -33,49 +39,56 @@ const MAX_CAPTURE_IMAGE_BASE64_CHARS: usize = MAX_CAPTURE_IMAGE_BYTES.div_ceil(3
 // project-defined dictionary fields below are excluded from this vocabulary
 // and receive the explicit dynamic-map profile instead.
 const FIXED_DTO_FIELDS: &str = "
-accepted action_name active active_generation_id active_script_id active_stack_id adapter_profile
+accepted action_count action_name active active_generation_id active_script_id active_stack_id adapter_profile
 adapter_statuses added_entities added_relations advertised_capabilities affected_closure
 affected_closure_only affected_entities age_seconds animation animation_reference_id animation_references
 animations applying_per_history approval_message_bytes approval_protocol_floor approval_timeout_ms
 architecture artifact_sha256 attached_script_entity_id attached_script_resource_id attributes authorities
 authority availability available base_generation_id base_scene_entity_id base_scene_id binds bridge
 bridge_capabilities bridge_current_minor bridge_major bridge_min_minor bridge_minor bridge_profiles build_id
-build_state byte_length byte_size cache cache_age_seconds cache_generation cache_revisions cache_schema
-can_redo can_undo capabilities capability_profile change_set_id changed_domains changed_entities check
+build_state built_in byte_length byte_size cache cache_age_seconds cache_generation cache_revisions cache_schema
+camera_2d camera_3d can_redo can_revert can_undo capabilities capability_profile caret_index change_set_id
+changed_domains changed_entities check
 checkpoint checks checksum child_count chunk_count clock_skew_ms code column committed_entities
 comparison_path compatibility compatibility_basis completed_at_ms completeness component components condition
 confidence configuration conflict_id conflicts connection_id connections container_items content
 content_bytes content_generation content_sha256 context coordinates created_at_ms creation_reason current
-current_operation_seq current_scene_id current_scene_revision current_scene_dirty data_base64url declaration
+current_action_index current_operation_seq current_scene_id current_scene_revision current_scene_dirty
+data_base64url declaration
 declaration_range declaration_scope declared_type declaring_node_entity_id declaring_node_id
 declaring_scene_entity_id declaring_scene_id defining_scene_id definition delete deleted_index_revision
 dependencies
-depth detail diagnostic diagnostic_code diagnostic_count diagnostic_id diagnostic_message_bytes diagnostics
-diagnostics_bytes digest dirty dirty_effect dirty_open_scripts dirty_scene_count dirty_script_count disk_comparison
-disk_value display_path document documentation_present documents domain domains edge_id edges editable editor
-editor_node_id editor_session_id editor_value eligible emitter_node_entity_id emitter_node_id
-enabled_capabilities end end_byte end_column
-end_line entities entity_count entity_id error event_seq event_type evidence evidence_digest evidence_id
+depth detail diagnostic diagnostic_code diagnostic_count diagnostic_id diagnostic_ids diagnostic_message_bytes
+diagnostics diagnostics_bytes digest dirty dirty_effect dirty_open_scripts dirty_scene_count dirty_script_count
+disk_comparison disk_content_sha256 disk_value display_path document documentation_present documents domain
+domains edge_id edges editable editor editor_content_sha256 editor_node_id editor_session_id editor_value
+eligible emitter_node_entity_id emitter_node_id empty enabled_capabilities encoded_bytes end end_byte end_column
+end_line entities entity_count entity_id entries error event_seq event_type evidence evidence_digest evidence_id
 evidence_range exact expected_added_entities expected_changed_entities expected_operation_seq
 expected_removed_entities expected_scene_revision expected_transaction_seq expires_at_ms fact_id fact_ids
-failed_migration_count field first_index_revision fixed_resource_count flags frame frames freshness
+failed_migration_count field first_index_revision first_output_seq fixed_resource_count flags frame frames
+freshness
 full_rebuild_count function generation generation_id godot godot_artifact_sha256 godot_build_id
-godot_source_commit godot_type group groups has_more hash_algorithm height histories history_id host_version id
+godot_source_commit godot_type group groups has_more has_object hash_algorithm height hint hint_string histories
+history_id history_ids host_version id
 ide_host_version idempotency_key identity_characters identity_input identity_scope identity_strength
 import_state incremental_commit_count index index_converged index_revision index_schema ingest_state
-insertion_index inspector_bytes_per_node inspector_object_id instance_chain instance_scene_entity_id
+insertion_index inspector_bytes_per_node inspector_object_id inspector_properties instance_chain
+instance_scene_entity_id
 instance_scene_id instance_scene_paths internal
 introduced introduced_errors introduced_warnings issued_at_ms journal_bytes journal_records
 keep_global_transform key kind language last_batch_checksum last_batch_id last_contiguous_runtime_event_seq
-last_index_revision last_operation_seq library limit limits_applied line live_converged live_coverage
-live_node_id live_only_nodes live_overlay mac major
+last_index_revision last_operation last_operation_seq last_output_seq library limit limits_applied line
+live_converged live_coverage live_node_id live_only_nodes live_overlay logical_size mac major
 match match_mode matched matrix_id max_bytes may_be_stale_for_editor may_have_committed mcp_protocol
-member_node_entity_id membership_id memory_only message message_digest method mime_type minor
+member_node_entity_id membership_id memory_only message message_digest message_truncated method mime_type minor
 mixer_node_entity_id modifiers
-mtime_after_ns mtime_before_ns mtime_ns name negotiated_bridge_protocol negotiated_protocol new_parent_node_id
-next_action next_cursor next_offset node node_entity_id node_id node_index node_occurrence_id node_path nodes
-nonce object_bytes observed observed_version offline_cached offset omitted_count omitted_counts omitted_reason
-open_script_ids operation operation_bytes operation_count operation_kind operation_seq operations origin
+mtime_after_ns mtime_before_ns mtime_ns name native_version negotiated_bridge_protocol negotiated_protocol
+new_parent_node_id next_action next_cursor next_offset node node_count node_entity_id node_id node_index
+node_occurrence_id node_path nodes nonce object_bytes object_id object_kind observed observed_version
+offline_cached offset omitted_before_first omitted_count omitted_counts omitted_reason open_scene_count
+open_scene_ids open_scenes open_scenes_truncated open_script_ids open_scripts_truncated operation
+operation_bytes operation_count operation_kind operation_seq operations origin
 origin_scene_id os
 outcome outgoing_relations overloaded overridden_property_id owned owner owner_node_entity_id owner_node_id
 owner_path owner_symbol_id ownership_paths package package_manifest_verified package_version page page_count
@@ -94,24 +107,29 @@ relations relative_node_path remediation_id remove_dependency_edge_ids remove_di
 remove_resource_entity_ids remove_source_document_entity_ids remove_tombstone_entity_ids removed_entities
 removed_relations repeat_count replacement replica_status report_digest report_id request_deadline_ms
 requires_form_elicitation requires_full_snapshot resolution resolved resolved_target_path resource
-resource_entity_id resource_revision
+resource_entity_id resource_path resource_revision
 resource_template_count resource_type resources result retain_through_index_revision retryable revision_vector
 retained_report_bytes
-revisions risk role rollback runtime runtime_diagnostic_id runtime_event_seq runtime_launch runtime_node_path
-runtime_object_id runtime_semantics_inferred runtime_session_id runtime_stack_id runtime_timeout_ms safe_message
+revisions risk role rollback root_node_id root_node_path runtime runtime_diagnostic_id runtime_event_seq
+runtime_launch runtime_node_path
+runtime_object_id runtime_semantics_inferred runtime_session_id runtime_stack_id runtime_state runtime_timeout_ms
+safe_message
 save_effect
-retained_for_comparison save_scope saved_state scene scene_attachments scene_entity_id
-scene_graph_revision scene_id scene_path scene_unique_id
-scene_revision scene_revisions scenes schema schema_version schemas scope screenshot_available script
+retained_for_comparison save_scope saved_state scale scene scene_attachments scene_entity_id
+scene_graph_revision scene_id scene_nodes scene_path scene_type scene_unique_id
+scene_revision scene_revisions scenes schema schema_version schemas scope screenshot_available
+screenshot_omitted_reason script
 script_graph_revision script_id script_path script_ref script_resource_id scripts selected selected_node_ids
-selection_count selections selector semantic semantic_digest severity sha256 signal signature size_after
-size_before snapshot_bytes snapshot_checksum snapshot_chunk_bytes snapshot_id snapshot_timeout_ms
+selected_nodes selection_count selections selections_truncated selector semantic semantic_digest severity sha256
+signal signature size size_after size_before snapshot_bytes snapshot_checksum snapshot_chunk_bytes snapshot_id
+snapshot_timeout_ms
 snapshot_window_bytes negotiated_snapshot_chunk_bytes total_inspector_bytes source source_commit source_complete
 source_documents source_entity_id
 source_hashes_verified source_hint source_kind source_kinds source_resource_entity_id source_text_included stack
 stack_frames stack_kind stacks stacks_bytes start start_byte start_column start_line started_at_ms state
 static_cache status status_bytes string_characters structural_nodes subject subject_entity_id summary supported
-supports_form_elicitation suppressed_disk_nodes surface surface_observed surfaces symbol symbol_id symbols target
+supports_form_elicitation suppressed_disk_nodes surface surface_observed surfaces symbol symbol_id symbols
+tab_index target
 target_comparison_path target_display_path target_entity_id target_kind target_node_entity_id target_path
 target_uid terminal_reason timestamp_ms title tombstones tool_count total total_matches total_relations
 track_index transaction_id transaction_journal transaction_journal_schema transaction_seq transactions
@@ -849,11 +867,71 @@ fn bounded_definitions() -> Map<String, Value> {
                 "items": {"$ref": format!("#/$defs/FixedValue{previous}")}
             }),
         );
-        let mut project_defined_properties = Map::new();
+        let mut fixed_properties = Map::new();
         for field in PROJECT_DEFINED_DICTIONARY_FIELDS {
-            project_defined_properties
-                .insert((*field).to_owned(), json!({"$ref": "#/$defs/BoundedValue"}));
+            fixed_properties.insert((*field).to_owned(), json!({"$ref": "#/$defs/BoundedValue"}));
         }
+        // The Inspector never publishes a native Godot ObjectID. Both the
+        // Inspector entity and the editor-summary alias carry the same hashed
+        // live-node/opaque-object identity. The summary alias is nullable when
+        // no object is inspected, but neither field may fall back to a numeric
+        // native handle.
+        let editor_object_id = json!({
+            "type": "string",
+            "pattern": EDITOR_OBJECT_ID_PATTERN,
+            "maxLength": 39
+        });
+        let editor_node_id = json!({
+            "type": "string",
+            "pattern": EDITOR_NODE_ID_PATTERN,
+            "maxLength": 37
+        });
+        fixed_properties.insert(
+            "entity_id".to_owned(),
+            json!({"$ref": "#/$defs/BoundedString"}),
+        );
+        fixed_properties.insert("object_id".to_owned(), editor_object_id.clone());
+        fixed_properties.insert("editor_node_id".to_owned(), editor_node_id.clone());
+        fixed_properties.insert("live_node_id".to_owned(), editor_node_id.clone());
+        fixed_properties.insert(
+            "selected_node_ids".to_owned(),
+            json!({
+                "type": "array",
+                "maxItems": MAX_BOUNDED_COLLECTION_ITEMS,
+                "items": editor_node_id
+            }),
+        );
+        fixed_properties.insert(
+            "inspector_object_id".to_owned(),
+            json!({
+                "anyOf": [
+                    editor_object_id,
+                    {"type": "null"}
+                ]
+            }),
+        );
+        // Runtime handles are Bridge-issued opaque identities, never native
+        // ObjectIDs. Keep every occurrence on the exact producer contract so
+        // numeric handles, wrong prefixes, and truncated digests cannot cross
+        // the central MCP output boundary.
+        let runtime_object_id = opaque_runtime_id_schema(RUNTIME_OBJECT_ID_PATTERN, 58);
+        let runtime_stack_id = opaque_runtime_id_schema(RUNTIME_STACK_ID_PATTERN, 57);
+        let runtime_session_id = opaque_runtime_id_schema(RUNTIME_SESSION_ID_PATTERN, 40);
+        fixed_properties.insert("runtime_object_id".to_owned(), runtime_object_id.clone());
+        fixed_properties.insert(
+            "parent_runtime_object_id".to_owned(),
+            nullable_schema(runtime_object_id),
+        );
+        fixed_properties.insert(
+            "runtime_diagnostic_id".to_owned(),
+            opaque_runtime_id_schema(RUNTIME_DIAGNOSTIC_ID_PATTERN, 62),
+        );
+        fixed_properties.insert(
+            "runtime_session_id".to_owned(),
+            nullable_schema(runtime_session_id),
+        );
+        fixed_properties.insert("runtime_stack_id".to_owned(), runtime_stack_id.clone());
+        fixed_properties.insert("active_stack_id".to_owned(), runtime_stack_id);
         let fixed_patterns = Map::from_iter([(
             fixed_field_pattern.clone(),
             json!({"$ref": format!("#/$defs/FixedValue{previous}")}),
@@ -864,8 +942,95 @@ fn bounded_definitions() -> Map<String, Value> {
                 "type": "object",
                 "additionalProperties": false,
                 "maxProperties": MAX_BOUNDED_COLLECTION_ITEMS,
-                "properties": project_defined_properties,
+                "properties": fixed_properties,
                 "patternProperties": fixed_patterns,
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": {"kind": {"const": "runtime_state"}},
+                            "required": ["kind"]
+                        },
+                        "then": {
+                            "required": ["entity_id", "runtime_session_id"],
+                            "properties": {
+                                "entity_id": {
+                                    "type": "string",
+                                    "pattern": RUNTIME_SESSION_ID_PATTERN,
+                                    "maxLength": 40
+                                },
+                                "runtime_session_id": {
+                                    "type": "string",
+                                    "pattern": RUNTIME_SESSION_ID_PATTERN,
+                                    "maxLength": 40
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {"kind": {"const": "node"}},
+                            "required": ["kind"]
+                        },
+                        "then": {
+                            "required": ["entity_id"],
+                            "properties": {
+                                "entity_id": {
+                                    "type": "string",
+                                    "pattern": EDITOR_NODE_ID_PATTERN,
+                                    "maxLength": 37
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {"kind": {"const": "runtime_node"}},
+                            "required": ["kind"]
+                        },
+                        "then": {
+                            "required": ["entity_id", "runtime_object_id"],
+                            "properties": {
+                                "entity_id": {
+                                    "type": "string",
+                                    "pattern": RUNTIME_OBJECT_ID_PATTERN,
+                                    "maxLength": 58
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {"kind": {"const": "runtime_stack"}},
+                            "required": ["kind"]
+                        },
+                        "then": {
+                            "required": ["entity_id", "runtime_stack_id"],
+                            "properties": {
+                                "entity_id": {
+                                    "type": "string",
+                                    "pattern": RUNTIME_STACK_ID_PATTERN,
+                                    "maxLength": 57
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "if": {
+                            "properties": {"kind": {"const": "runtime_diagnostic"}},
+                            "required": ["kind"]
+                        },
+                        "then": {
+                            "required": ["entity_id", "runtime_diagnostic_id"],
+                            "properties": {
+                                "entity_id": {
+                                    "type": "string",
+                                    "pattern": RUNTIME_DIAGNOSTIC_ID_PATTERN,
+                                    "maxLength": 62
+                                }
+                            }
+                        }
+                    }
+                ],
                 "x-godot-codex-fixed-dto": true
             }),
         );
@@ -890,7 +1055,11 @@ fn bounded_definitions() -> Map<String, Value> {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-                "runtime_session_id": {"type": "string", "maxLength": 128},
+                "runtime_session_id": {
+                    "type": "string",
+                    "pattern": RUNTIME_SESSION_ID_PATTERN,
+                    "maxLength": 40
+                },
                 "runtime_event_seq": {"type": "integer", "minimum": 0, "maximum": 9007199254740991_u64},
                 "state": {"type": "string", "maxLength": 64},
                 "editor_session_id": {"type": "string", "maxLength": 128},
@@ -1147,7 +1316,36 @@ enum TopLevelFieldKind {
     ErrorOrNull,
 }
 
+fn opaque_runtime_id_schema(pattern: &str, max_length: usize) -> Value {
+    json!({
+        "type": "string",
+        "pattern": pattern,
+        "maxLength": max_length
+    })
+}
+
+fn nullable_schema(schema: Value) -> Value {
+    json!({
+        "anyOf": [
+            schema,
+            {"type": "null"}
+        ]
+    })
+}
+
 fn field_schema(tool_name: &str, field: &str) -> Value {
+    match field {
+        "runtime_object_id" => {
+            return opaque_runtime_id_schema(RUNTIME_OBJECT_ID_PATTERN, 58);
+        }
+        "runtime_session_id" => {
+            return opaque_runtime_id_schema(RUNTIME_SESSION_ID_PATTERN, 40);
+        }
+        "active_stack_id" => {
+            return nullable_schema(opaque_runtime_id_schema(RUNTIME_STACK_ID_PATTERN, 57));
+        }
+        _ => {}
+    }
     match top_level_field_kind(tool_name, field) {
         TopLevelFieldKind::Boolean => json!({"type": "boolean"}),
         TopLevelFieldKind::Integer => {
@@ -1587,6 +1785,97 @@ pub(super) fn matches_top_level_contract(tool_name: &str, result: &CallToolResul
     validators
         .get(tool_name)
         .is_some_and(|validator| validator.is_valid(&Value::Object(object.clone())))
+        && runtime_entity_aliases_are_consistent(tool_name, object)
+        && runtime_projected_ids_are_safe(tool_name, object)
+}
+
+fn runtime_entity_aliases_are_consistent(tool_name: &str, result: &Map<String, Value>) -> bool {
+    if result.contains_key("error") {
+        return true;
+    }
+    match tool_name {
+        "godot_get_runtime_tree" => {
+            result
+                .get("nodes")
+                .and_then(Value::as_array)
+                .is_some_and(|nodes| {
+                    nodes.iter().all(|node| {
+                        runtime_entity_alias_is_consistent(
+                            node,
+                            "runtime_node",
+                            "runtime_object_id",
+                        )
+                    })
+                })
+        }
+        "godot_get_stack_trace" => result.get("stack").is_some_and(|stack| {
+            runtime_entity_alias_is_consistent(stack, "runtime_stack", "runtime_stack_id")
+        }),
+        "godot_get_diagnostics" if result.contains_key("active_stack_id") => result
+            .get("diagnostics")
+            .and_then(Value::as_array)
+            .is_some_and(|diagnostics| {
+                diagnostics.iter().all(|diagnostic| {
+                    runtime_entity_alias_is_consistent(
+                        diagnostic,
+                        "runtime_diagnostic",
+                        "runtime_diagnostic_id",
+                    )
+                })
+            }),
+        "godot_get_editor_state" => result
+            .get("runtime")
+            .and_then(|runtime| runtime.get("runtime_state"))
+            .is_none_or(|state| {
+                runtime_entity_alias_is_consistent(state, "runtime_state", "runtime_session_id")
+            }),
+        _ => true,
+    }
+}
+
+fn runtime_entity_alias_is_consistent(value: &Value, kind: &str, id_field: &str) -> bool {
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    object.get("kind").and_then(Value::as_str) == Some(kind)
+        && object
+            .get("entity_id")
+            .and_then(Value::as_str)
+            .zip(object.get(id_field).and_then(Value::as_str))
+            .is_some_and(|(entity_id, opaque_id)| entity_id == opaque_id)
+}
+
+fn runtime_projected_ids_are_safe(tool_name: &str, result: &Map<String, Value>) -> bool {
+    if result.contains_key("error") {
+        return true;
+    }
+    if tool_name != "godot_inspect_runtime_object" {
+        return true;
+    }
+    result
+        .get("properties")
+        .and_then(Value::as_array)
+        .is_some_and(|properties| {
+            properties.iter().all(|property| {
+                let Some(projected) = property.get("value").and_then(Value::as_object) else {
+                    return false;
+                };
+                projected.get("runtime_object_id").is_none_or(|identity| {
+                    identity
+                        .as_str()
+                        .is_some_and(|value| valid_runtime_opaque_id(value, "runtime-object:"))
+                })
+            })
+        })
+}
+
+fn valid_runtime_opaque_id(value: &str, prefix: &str) -> bool {
+    value.strip_prefix(prefix).is_some_and(|suffix| {
+        suffix.len() == 43
+            && suffix
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    })
 }
 
 fn invalid_tool_result(message: &str) -> CallToolResult {
@@ -1736,6 +2025,12 @@ mod tests {
     }
 
     fn minimal_field_value(tool_name: &str, field: &str) -> Value {
+        if field == "runtime_object_id" {
+            return json!(format!("runtime-object:{}", "a".repeat(43)));
+        }
+        if field == "runtime_session_id" {
+            return json!(format!("runtime:{}", "a".repeat(32)));
+        }
         match top_level_field_kind(tool_name, field) {
             TopLevelFieldKind::Boolean => json!(false),
             TopLevelFieldKind::Integer => json!(0),
@@ -2030,6 +2325,18 @@ mod tests {
                 },
                 "mode": "always_ask",
             })),
+            CallToolResult::structured_error(json!({
+                "error": {
+                    "code": "stale_runtime",
+                    "message": "runtime coordinate changed",
+                    "retryable": true,
+                    "current": {
+                        "runtime_session_id": "424242",
+                        "runtime_event_seq": 2,
+                        "state": "running"
+                    }
+                }
+            })),
         ] {
             let normalized = normalize_tool_result("godot_reset_confirmation_policy", result);
             assert_eq!(normalized.is_error, Some(true));
@@ -2040,6 +2347,34 @@ mod tests {
                     .and_then(|value| value.pointer("/error/code")),
                 Some(&json!("invalid_tool_result"))
             );
+        }
+    }
+
+    #[test]
+    fn runtime_alias_guards_preserve_valid_error_envelopes() {
+        for tool_name in [
+            "godot_get_editor_state",
+            "godot_get_runtime_tree",
+            "godot_inspect_runtime_object",
+            "godot_get_diagnostics",
+            "godot_get_stack_trace",
+        ] {
+            let error = json!({
+                "error": {
+                    "code": "runtime_unavailable",
+                    "message": "The runtime is unavailable.",
+                    "retryable": true,
+                    "status": "offline_cached"
+                }
+            });
+            let result = CallToolResult::structured_error(error.clone());
+            assert!(
+                matches_top_level_contract(tool_name, &result),
+                "{tool_name} rejected its valid error envelope"
+            );
+            let normalized = normalize_tool_result(tool_name, result);
+            assert_eq!(normalized.structured_content, Some(error), "{tool_name}");
+            assert_eq!(normalized.is_error, Some(true), "{tool_name}");
         }
     }
 
@@ -2123,7 +2458,12 @@ mod tests {
             "godot_get_runtime_tree",
             0,
             "nodes",
-            json!({"runtime_object_id": "runtime-object:fixture", "name": "Player"}),
+            json!({
+                "kind": "runtime_node",
+                "entity_id": format!("runtime-object:{}", "a".repeat(43)),
+                "runtime_object_id": format!("runtime-object:{}", "a".repeat(43)),
+                "name": "Player"
+            }),
         );
         assert_unknown_array_item_field_rejected(
             "godot_inspect_runtime_object",
@@ -2135,7 +2475,12 @@ mod tests {
             "godot_get_stack_trace",
             0,
             "stack",
-            json!({"runtime_stack_id": "runtime-stack:fixture", "frames": []}),
+            json!({
+                "kind": "runtime_stack",
+                "entity_id": format!("runtime-stack:{}", "b".repeat(43)),
+                "runtime_stack_id": format!("runtime-stack:{}", "b".repeat(43)),
+                "frames": []
+            }),
         );
 
         // The screenshot metadata DTO is intentionally flat. Its equivalent
@@ -2144,6 +2489,475 @@ mod tests {
         assert_valid_normalized("godot_capture_viewport", capture.clone());
         capture["injected_unknown_key"] = json!(true);
         assert_invalid_normalized("godot_capture_viewport", capture);
+    }
+
+    #[test]
+    fn live_editor_state_accepts_bounded_open_scene_and_runtime_snapshot_fields() {
+        let mut result = minimal_success("godot_get_editor_state", 0);
+        result["limits_applied"] = json!({
+            "snapshot_chunk_bytes": 262_144,
+            "negotiated_snapshot_chunk_bytes": 524_288,
+            "variant_depth": 8,
+            "container_items": 256,
+            "identity_characters": 1_024,
+            "projected_value_bytes": 65_536,
+            "inspector_bytes_per_node": 262_144,
+            "total_inspector_bytes": 4_194_304,
+            "open_scenes": 64,
+            "scene_nodes": 8_192,
+            "selected_nodes": 256,
+            "inspector_properties": 512,
+            "truncated": false
+        });
+        result["editor"] = json!({
+            "kind": "editor_state",
+            "entity_id": "editor-state:fixture",
+            "project_id": "project:fixture",
+            "editor_session_id": "editor:fixture",
+            "current_scene_id": "scene:fixture",
+            "current_scene_dirty": false,
+            "open_scene_count": 1,
+            "open_scene_ids": ["scene:fixture"],
+            "open_scenes_truncated": false,
+            "selected_node_ids": [],
+            "selection_count": 0,
+            "projected_selection_count": 0,
+            "inspector_object_id": null,
+            "revisions": {
+                "event_seq": 1,
+                "scene_revisions": {"scene:fixture": 1}
+            }
+        });
+        result["entities"] = json!([
+            result["editor"].clone(),
+            {
+                "kind": "scene",
+                "entity_id": "scene:fixture",
+                "tab_index": 0,
+                "scene_type": "2d",
+                "root_node_path": ".",
+                "root_node_id": "node:root",
+                "node_count": 1
+            },
+            {
+                "kind": "inspector_state",
+                "entity_id": "inspector:fixture",
+                "has_object": true,
+                "object_kind": "node",
+                "object_id": format!("node:{}", "1".repeat(32)),
+                "resource_path": null,
+                "properties": [{
+                    "name": "position",
+                    "variant_type": "Vector2",
+                    "editable": true,
+                    "read_only": false,
+                    "can_revert": false,
+                    "hint": 0,
+                    "hint_string": "",
+                    "value": {"type": "vector2", "value": [0.0, 0.0]}
+                }]
+            },
+            {
+                "kind": "script_state",
+                "entity_id": "script-state:fixture",
+                "open_scripts_truncated": false
+            },
+            {
+                "kind": "script_tab",
+                "entity_id": "script-tab:fixture",
+                "tab_index": 0,
+                "built_in": false,
+                "disk_content_sha256": "sha256:fixture",
+                "editor_content_sha256": "sha256:fixture",
+                "selections": [{"caret_index": 0, "empty": true}],
+                "selections_truncated": false
+            },
+            {
+                "kind": "history_state",
+                "entity_id": "history-state:fixture",
+                "history_ids": ["history:fixture"]
+            },
+            {
+                "kind": "editor_history",
+                "entity_id": "history:fixture",
+                "native_version": 1,
+                "action_count": 1,
+                "current_action_index": 0,
+                "last_operation": "create_node"
+            },
+            {
+                "kind": "diagnostic_state",
+                "entity_id": "diagnostics:fixture",
+                "diagnostic_ids": ["diagnostic:fixture"],
+                "encoded_bytes": 128,
+                "first_output_seq": 1,
+                "last_output_seq": 1,
+                "omitted_before_first": false
+            },
+            {
+                "kind": "editor_diagnostic",
+                "entity_id": "diagnostic:fixture",
+                "message_truncated": false
+            },
+            {
+                "kind": "viewport_state",
+                "entity_id": "viewport:fixture",
+                "logical_size": "(1280, 720)",
+                "scale": 2.0,
+                "camera_2d": {
+                    "type": "dictionary",
+                    "reference_id": "ref:1",
+                    "entries": [{"key": "zoom", "value": 1.0}],
+                    "size": 1
+                },
+                "camera_3d": {
+                    "type": "dictionary",
+                    "reference_id": "ref:2",
+                    "entries": [{"key": "fov", "value": 70.0}],
+                    "size": 1
+                },
+                "screenshot_available": false,
+                "screenshot_omitted_reason": "deferred_to_runtime"
+            }
+        ]);
+        result["runtime"] = crate::runtime_overlay::RuntimeOverlay::unavailable().summary();
+        assert_valid_normalized("godot_get_editor_state", result.clone());
+
+        result["runtime"] = json!({
+            "schema_version": "runtime-summary/1.0",
+            "status": "ready",
+            "freshness": "current",
+            "runtime_session_id": format!("runtime:{}", "4".repeat(32)),
+            "runtime_event_seq": 1,
+            "state": "running",
+            "runtime_state": {
+                "kind": "runtime_state",
+                "entity_id": format!("runtime:{}", "4".repeat(32)),
+                "runtime_session_id": format!("runtime:{}", "4".repeat(32)),
+                "runtime_event_seq": 1,
+                "state": "running",
+                "origin": "mcp",
+                "target": "project"
+            },
+            "tree_nodes": 1,
+            "diagnostics": 0,
+            "stacks": 0,
+            "truncated": false,
+            "omitted_counts": {},
+            "requires_full_snapshot": false,
+            "evidence": []
+        });
+        let editor_node_id = format!("node:{}", "3".repeat(32));
+        result["editor"]["selected_node_ids"] = json!([editor_node_id]);
+        result["entities"]
+            .as_array_mut()
+            .expect("live entities fixture")
+            .push(json!({
+                "kind": "node",
+                "entity_id": editor_node_id,
+                "scene_id": "scene:fixture",
+                "node_path": ".",
+                "name": "Root",
+                "godot_type": "Node"
+            }));
+        assert_valid_normalized("godot_get_editor_state", result.clone());
+
+        for valid_identity in [
+            json!(format!("node:{}", "2".repeat(32))),
+            json!(format!("object:{}", "b".repeat(32))),
+            Value::Null,
+        ] {
+            let mut valid_alias = result.clone();
+            valid_alias["editor"]["inspector_object_id"] = valid_identity;
+            assert_valid_normalized("godot_get_editor_state", valid_alias);
+        }
+        for invalid_identity in [
+            json!(42),
+            json!("node:1234"),
+            json!(format!("object:{}", "A".repeat(32))),
+        ] {
+            let mut invalid_alias = result.clone();
+            invalid_alias["editor"]["inspector_object_id"] = invalid_identity;
+            assert_invalid_normalized("godot_get_editor_state", invalid_alias);
+        }
+        let mut invalid_runtime_session = result.clone();
+        invalid_runtime_session["runtime"]["runtime_session_id"] = json!("runtime:fixture");
+        assert_invalid_normalized("godot_get_editor_state", invalid_runtime_session);
+        let mut invalid_runtime_state_alias = result.clone();
+        invalid_runtime_state_alias["runtime"]["runtime_state"]["entity_id"] =
+            json!(format!("runtime:{}", "5".repeat(32)));
+        assert_invalid_normalized("godot_get_editor_state", invalid_runtime_state_alias);
+        let mut invalid_runtime_state_session = result.clone();
+        invalid_runtime_state_session["runtime"]["runtime_state"]["runtime_session_id"] =
+            Value::Null;
+        assert_invalid_normalized("godot_get_editor_state", invalid_runtime_state_session);
+        for invalid_node_identity in [json!(42), json!("424242"), json!("node:short")] {
+            let mut invalid_selection = result.clone();
+            invalid_selection["editor"]["selected_node_ids"] =
+                json!([invalid_node_identity.clone()]);
+            assert_invalid_normalized("godot_get_editor_state", invalid_selection);
+
+            let mut invalid_entity = result.clone();
+            invalid_entity["entities"]
+                .as_array_mut()
+                .expect("live entities fixture")
+                .last_mut()
+                .expect("live node fixture")["entity_id"] = invalid_node_identity;
+            assert_invalid_normalized("godot_get_editor_state", invalid_entity);
+        }
+
+        let mut unexpected_editor = result.clone();
+        unexpected_editor["editor"]
+            .as_object_mut()
+            .expect("live editor fixture")
+            .insert("injected_unknown_key".to_owned(), json!(true));
+        assert_invalid_normalized("godot_get_editor_state", unexpected_editor);
+
+        result["limits_applied"]
+            .as_object_mut()
+            .expect("live limits fixture")
+            .insert("injected_unknown_key".to_owned(), json!(1));
+        assert_invalid_normalized("godot_get_editor_state", result);
+    }
+
+    #[test]
+    fn inspector_object_identity_rejects_native_numeric_handles() {
+        let mut result = minimal_success("godot_get_inspector_state", 0);
+        let inspector = json!({
+            "kind": "inspector_state",
+            "entity_id": "inspector:fixture",
+            "has_object": true,
+            "object_kind": "object",
+            "object_id": format!("object:{}", "a".repeat(32)),
+            "godot_type": "EditorSelection"
+        });
+        result["entities"] = json!([inspector.clone()]);
+        result["inspector"] = inspector;
+        assert_valid_normalized("godot_get_inspector_state", result.clone());
+
+        for invalid_identity in [
+            json!(42),
+            Value::Null,
+            json!("object:1234"),
+            json!(format!("node:{}", "A".repeat(32))),
+        ] {
+            let mut invalid = result.clone();
+            invalid["inspector"]["object_id"] = invalid_identity;
+            assert_invalid_normalized("godot_get_inspector_state", invalid);
+        }
+    }
+
+    #[test]
+    fn runtime_opaque_id_family_rejects_native_and_malformed_handles() {
+        let runtime_object_id = format!("runtime-object:{}", "a".repeat(43));
+        let parent_runtime_object_id = format!("runtime-object:{}", "b".repeat(43));
+        let runtime_stack_id = format!("runtime-stack:{}", "c".repeat(43));
+        let runtime_diagnostic_id = format!("runtime-diagnostic:{}", "d".repeat(43));
+
+        let mut tree = minimal_success("godot_get_runtime_tree", 0);
+        tree["nodes"] = json!([{
+            "kind": "runtime_node",
+            "entity_id": runtime_object_id,
+            "runtime_object_id": runtime_object_id,
+            "parent_runtime_object_id": parent_runtime_object_id,
+            "name": "Player",
+            "godot_type": "Node2D",
+            "runtime_node_path": "/root/Player",
+            "depth": 1,
+            "child_count": 0,
+            "visibility": {"available": true, "visible": true, "visible_in_tree": true},
+            "source_hint": {
+                "editor_node_id": format!("node:{}", "1".repeat(32)),
+                "confidence": "runtime_confirmed"
+            }
+        }]);
+        assert_valid_normalized("godot_get_runtime_tree", tree.clone());
+        for invalid_session in [json!(42), Value::Null, json!("runtime:fixture")] {
+            let mut invalid = tree.clone();
+            invalid["runtime_session_id"] = invalid_session;
+            assert_invalid_normalized("godot_get_runtime_tree", invalid);
+        }
+
+        let mut root = tree.clone();
+        root["nodes"][0]["parent_runtime_object_id"] = Value::Null;
+        assert_valid_normalized("godot_get_runtime_tree", root);
+
+        for invalid_identity in [
+            json!(42),
+            Value::Null,
+            json!("runtime-object:short"),
+            json!(format!("runtime-stack:{}", "a".repeat(43))),
+            json!(format!("runtime-object:{}", "+".repeat(43))),
+        ] {
+            let mut invalid = tree.clone();
+            invalid["nodes"][0]["runtime_object_id"] = invalid_identity;
+            assert_invalid_normalized("godot_get_runtime_tree", invalid);
+        }
+
+        let mut inspect = minimal_success("godot_inspect_runtime_object", 0);
+        inspect["runtime_object_id"] = json!(format!("runtime-object:{}", "e".repeat(43)));
+        inspect["properties"] = json!([{
+            "name": "target",
+            "value": {
+                "type": "object_reference",
+                "runtime_object_id": format!("runtime-object:{}", "f".repeat(43))
+            }
+        }]);
+        assert_valid_normalized("godot_inspect_runtime_object", inspect.clone());
+        let mut dynamic_kind_collision = inspect.clone();
+        dynamic_kind_collision["properties"][0]["value"] = json!({
+            "kind": "runtime_node",
+            "entity_id": "project-defined-player",
+            "project_custom_key": true
+        });
+        assert_valid_normalized("godot_inspect_runtime_object", dynamic_kind_collision);
+        let mut dynamic_id_collision = inspect.clone();
+        dynamic_id_collision["properties"][0]["value"] = json!({
+            "type": "dictionary",
+            "value": {"runtime_object_id": 7}
+        });
+        assert_valid_normalized("godot_inspect_runtime_object", dynamic_id_collision);
+        for pointer in [
+            "/runtime_object_id",
+            "/properties/0/value/runtime_object_id",
+        ] {
+            for invalid_identity in [
+                json!(7),
+                Value::Null,
+                json!("runtime-object:short"),
+                json!(format!("runtime-stack:{}", "e".repeat(43))),
+            ] {
+                let mut invalid = inspect.clone();
+                *invalid
+                    .pointer_mut(pointer)
+                    .expect("runtime object identity fixture") = invalid_identity;
+                assert_invalid_normalized("godot_inspect_runtime_object", invalid);
+            }
+        }
+
+        for invalid_parent in [
+            json!(7),
+            json!("runtime-object:short"),
+            json!(format!("runtime-stack:{}", "b".repeat(43))),
+        ] {
+            let mut invalid = tree.clone();
+            invalid["nodes"][0]["parent_runtime_object_id"] = invalid_parent;
+            assert_invalid_normalized("godot_get_runtime_tree", invalid);
+        }
+        for invalid_editor_node in [json!(7), json!("424242"), json!("node:short")] {
+            let mut invalid = tree.clone();
+            invalid["nodes"][0]["source_hint"]["editor_node_id"] = invalid_editor_node;
+            assert_invalid_normalized("godot_get_runtime_tree", invalid);
+        }
+
+        for invalid_alias in [
+            json!(7),
+            json!(format!("runtime-object:{}", "9".repeat(43))),
+            json!(format!("runtime-stack:{}", "a".repeat(43))),
+        ] {
+            let mut invalid = tree.clone();
+            invalid["nodes"][0]["entity_id"] = invalid_alias;
+            assert_invalid_normalized("godot_get_runtime_tree", invalid);
+        }
+        for invalid_kind in [Value::Null, json!("node")] {
+            let mut invalid = tree.clone();
+            invalid["nodes"][0]["kind"] = invalid_kind;
+            assert_invalid_normalized("godot_get_runtime_tree", invalid);
+        }
+        let mut missing_kind = tree.clone();
+        missing_kind["nodes"][0]
+            .as_object_mut()
+            .expect("runtime node fixture")
+            .remove("kind");
+        assert_invalid_normalized("godot_get_runtime_tree", missing_kind);
+
+        let mut stack = minimal_success("godot_get_stack_trace", 0);
+        stack["stack"] = json!({
+            "kind": "runtime_stack",
+            "entity_id": runtime_stack_id,
+            "runtime_stack_id": runtime_stack_id,
+            "runtime_event_seq": 1,
+            "stack_kind": "diagnostic",
+            "frames": [],
+            "truncated": false
+        });
+        assert_valid_normalized("godot_get_stack_trace", stack.clone());
+        for invalid_identity in [
+            json!(7),
+            Value::Null,
+            json!(format!("runtime-object:{}", "c".repeat(43))),
+        ] {
+            let mut invalid = stack.clone();
+            invalid["stack"]["runtime_stack_id"] = invalid_identity;
+            assert_invalid_normalized("godot_get_stack_trace", invalid);
+        }
+        let mut invalid_stack_alias = stack.clone();
+        invalid_stack_alias["stack"]["entity_id"] =
+            json!(format!("runtime-stack:{}", "9".repeat(43)));
+        assert_invalid_normalized("godot_get_stack_trace", invalid_stack_alias);
+        for invalid_kind in [Value::Null, json!("stack")] {
+            let mut invalid = stack.clone();
+            invalid["stack"]["kind"] = invalid_kind;
+            assert_invalid_normalized("godot_get_stack_trace", invalid);
+        }
+
+        let mut diagnostics = minimal_success("godot_get_diagnostics", 1);
+        diagnostics["active_stack_id"] = json!(format!("runtime-stack:{}", "e".repeat(43)));
+        diagnostics["diagnostics"] = json!([{
+            "kind": "runtime_diagnostic",
+            "entity_id": runtime_diagnostic_id,
+            "runtime_diagnostic_id": runtime_diagnostic_id,
+            "severity": "error",
+            "source": "script",
+            "message": "fixture",
+            "repeat_count": 1,
+            "runtime_event_seq": 1,
+            "runtime_stack_id": format!("runtime-stack:{}", "f".repeat(43)),
+            "redacted": false
+        }]);
+        assert_valid_normalized("godot_get_diagnostics", diagnostics.clone());
+        let mut no_active_stack = diagnostics.clone();
+        no_active_stack["active_stack_id"] = Value::Null;
+        assert_valid_normalized("godot_get_diagnostics", no_active_stack);
+        for invalid_identity in [
+            json!(7),
+            json!("runtime-diagnostic:short"),
+            json!(format!("runtime-stack:{}", "d".repeat(43))),
+        ] {
+            let mut invalid = diagnostics.clone();
+            invalid["diagnostics"][0]["runtime_diagnostic_id"] = invalid_identity;
+            assert_invalid_normalized("godot_get_diagnostics", invalid);
+        }
+        for invalid_stack in [
+            json!(7),
+            json!("runtime-stack:short"),
+            json!(format!("runtime-object:{}", "f".repeat(43))),
+        ] {
+            let mut invalid = diagnostics.clone();
+            invalid["diagnostics"][0]["runtime_stack_id"] = invalid_stack;
+            assert_invalid_normalized("godot_get_diagnostics", invalid);
+        }
+        for invalid_active_stack in [
+            json!(7),
+            json!("runtime-stack:short"),
+            json!(format!("runtime-object:{}", "e".repeat(43))),
+        ] {
+            let mut invalid = diagnostics.clone();
+            invalid["active_stack_id"] = invalid_active_stack;
+            assert_invalid_normalized("godot_get_diagnostics", invalid);
+        }
+        let mut invalid_diagnostic_alias = diagnostics;
+        invalid_diagnostic_alias["diagnostics"][0]["entity_id"] =
+            json!(format!("runtime-diagnostic:{}", "9".repeat(43)));
+        assert_invalid_normalized("godot_get_diagnostics", invalid_diagnostic_alias);
+        let mut invalid_diagnostic_kind = minimal_success("godot_get_diagnostics", 1);
+        invalid_diagnostic_kind["active_stack_id"] = Value::Null;
+        invalid_diagnostic_kind["diagnostics"] = json!([{
+            "kind": "editor_diagnostic",
+            "entity_id": runtime_diagnostic_id,
+            "runtime_diagnostic_id": runtime_diagnostic_id
+        }]);
+        assert_invalid_normalized("godot_get_diagnostics", invalid_diagnostic_kind);
     }
 
     #[test]
