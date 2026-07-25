@@ -9,9 +9,9 @@
     }
   },
   "godot": {
-    "source_commit": "11785494ee4ac0a1e53cbefac59d713703b82e17",
-    "build_id": "4.8.dev.codex.11785494e",
-    "artifact_sha256": "907001ec5c88b11173795859f9cb3c859b6ac4b5bc862da9ace92b6dd016f401",
+    "source_commit": "506f7f084c0bfd62a78788b6b947e1142eaafed5",
+    "build_id": "4.8.dev.codex.506f7f084",
+    "artifact_sha256": "157a265d49f72c0b6974340046379549ad74aab6e5a70e3cc6e239bf6be7102e",
     "target": {
       "os": "macos",
       "architecture": "arm64"
