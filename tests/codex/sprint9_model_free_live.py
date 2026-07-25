@@ -2440,39 +2440,128 @@ def run_corrupt_journal_recovery(
     }
 
 
-def run_restart_after_journal_ack_gate(timeout: float) -> dict[str, Any]:
-    started = time.monotonic()
-    result = subprocess.run(
-        [
-            "cargo",
-            "test",
-            "-p",
-            "godot-codex-transactions",
-            "--locked",
-            "--offline",
-            "tests::restart_after_bridge_response_before_journal_ack_reconciles_without_apply_replay",
-            "--",
-            "--exact",
-        ],
-        cwd=REPOSITORY_ROOT / "godot-codex-mcp",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        timeout=max(timeout, 60.0),
-        check=False,
-    )
-    require(
-        result.returncode == 0
-        and "1 passed" in result.stdout
-        and "0 failed" in result.stdout,
-        "after-Bridge-response journal reconciliation gate failed",
-    )
+def run_restart_after_journal_ack_recovery(
+    *,
+    godot: Path,
+    sidecar: Path,
+    timeout: float,
+) -> dict[str, Any]:
+    session = FixtureSession(godot=godot, sidecar=sidecar, timeout=timeout)
+    with session:
+        require(session.project_root is not None, "fixture project is unavailable")
+        require(session.client is not None, "MCP client is unavailable")
+        before_source = oracle.source_fingerprint(session.project_root)
+        before, _, _ = read_coordinates(session.client, timeout)
+        prepared, error, _ = session.client.tool(
+            "godot_prepare_create_node",
+            operation_arguments("create_node", before),
+        )
+        require(not error, f"journal-ack prepare failed: {prepared}")
+        journal_path = session.project_root / JOURNAL_PATH
+        pre_apply_journal = oracle.strict_json(journal_path)
+        prepared_record = next(
+            (
+                copy.deepcopy(item)
+                for item in cast(list[Any], pre_apply_journal.get("records", []))
+                if isinstance(item, dict)
+                and item.get("transaction_id") == prepared["transaction_id"]
+            ),
+            None,
+        )
+        require(
+            isinstance(prepared_record, dict),
+            "journal-ack prepared record is missing",
+        )
+        session.client.expect_approval(prepared)
+        committed, error, _ = session.client.tool(
+            "godot_apply_transaction",
+            {
+                "transaction_id": prepared["transaction_id"],
+                "preview_digest": prepared["preview_digest"],
+                "expected_scene_revision": prepared["scene_revision"],
+                "expected_operation_seq": prepared["operation_seq"],
+            },
+        )
+        expectation = session.client.clear_approval()
+        require(
+            not error
+            and committed.get("state") == "committed"
+            and expectation is not None
+            and expectation.calls == 1,
+            f"journal-ack baseline apply failed: {committed}",
+        )
+        require(session.sidecar_process is not None, "sidecar process is unavailable")
+        session.sidecar_process.stop()
+
+        # Recreate the last durable pre-ack journal image while retaining the
+        # real committed Bridge status. This is the exact response-loss
+        # boundary a restarted packaged sidecar must reconcile without apply.
+        prepared_record["state"] = "applying"
+        prepared_record["apply_dispatched"] = True
+        prepared_record["updated_at_ms"] = max(
+            int(prepared_record["created_at_ms"]),
+            int(prepared_record["updated_at_ms"]) + 1,
+        )
+        prepared_record["undo_eligible"] = False
+        prepared_record.pop("receipt_hash", None)
+        prepared_record.pop("safe_error", None)
+        pre_apply_journal["journal_revision"] = (
+            int(pre_apply_journal["journal_revision"]) + 1
+        )
+        pre_apply_journal["records"] = [prepared_record]
+        temporary = journal_path.with_suffix(".json.journal-ack.tmp")
+        temporary.write_text(
+            json.dumps(
+                pre_apply_journal,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        temporary.chmod(0o600)
+        temporary.replace(journal_path)
+
+        client = session.start_sidecar()
+        recovered, _ = wait_status(
+            client,
+            str(prepared["transaction_id"]),
+            "committed",
+            timeout,
+        )
+        after, _, _ = read_coordinates(client, timeout)
+        require(
+            int(after["operation_seq"]) == int(before["operation_seq"]) + 1
+            and int(after["action_count"]) == int(before["action_count"]) + 1,
+            "journal-ack recovery did not retain exactly one native action",
+        )
+        replayed, replay_error, _ = client.tool(
+            "godot_apply_transaction",
+            {
+                "transaction_id": prepared["transaction_id"],
+                "preview_digest": prepared["preview_digest"],
+                "expected_scene_revision": recovered["current_scene_revision"],
+                "expected_operation_seq": recovered["current_operation_seq"],
+            },
+        )
+        require(
+            replay_error
+            and replayed.get("error", {}).get("code")
+            == "transaction_apply_replay_forbidden"
+            and client.elicitation_total == 0,
+            f"journal-ack recovery allowed apply replay: {replayed}",
+        )
+        oracle.assert_source_unchanged(
+            before_source,
+            oracle.source_fingerprint(session.project_root),
+        )
+    require(session.cleanup_ok, "journal-ack recovery left a child process")
     return {
-        "coverage": "deterministic_rust_fault_gate",
+        "coverage": "packaged_live_fault_injection",
         "apply_dispatched_durable": True,
         "status_reconciled": "committed",
         "automatic_replay": False,
-        "duration_ms": round((time.monotonic() - started) * 1_000, 3),
+        "transaction_native_actions": 1,
+        "source_unchanged": True,
     }
 
 
@@ -2627,7 +2716,9 @@ def validate_fault_matrix(
             ("status_reconciled", "committed"),
             ("apply_dispatched_durable", True),
             ("automatic_replay", False),
-            ("coverage", "deterministic_rust_fault_gate"),
+            ("coverage", "packaged_live_fault_injection"),
+            ("transaction_native_actions", 1),
+            ("source_unchanged", True),
         ),
         "editor_crash_before_commit": (
             ("pre_state_restored", True),
@@ -2871,7 +2962,11 @@ def main() -> int:
         ):
             faults[
                 "restart_after_bridge_response_before_journal_ack"
-            ] = run_restart_after_journal_ack_gate(arguments.timeout)
+            ] = run_restart_after_journal_ack_recovery(
+                godot=godot,
+                sidecar=sidecar,
+                timeout=arguments.timeout,
+            )
     validate_fault_matrix(faults, selected_faults)
     transaction_hashes = [item["transaction_sha256"] for item in operations]
     require(
