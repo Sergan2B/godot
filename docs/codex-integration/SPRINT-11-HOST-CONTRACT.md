@@ -98,7 +98,7 @@ any Markdown/JSON drift.
 | MCP protocol | `2025-11-25`; form-compatible floor `2025-06-18` | candidate |
 | Bridge | RPC `1.8` exact profile | candidate |
 | Godot × Codex package | workspace `0.1.0` at baseline | final package coordinate pending |
-| Godot Bridge prerequisite | `bin/godot.macos.editor.dev.arm64`, `4.8.dev.codex.b225f77ac`, `sha256:1bb7641df7dde23e6dbd638d40cf2ad0de4d09f34e08614a19be3e93879d4371` | exact local candidate; detached package binding pending |
+| Godot Bridge prerequisite | `bin/godot.macos.editor.dev.arm64`, `4.8.dev.codex.11785494e`, `sha256:907001ec5c88b11173795859f9cb3c859b6ac4b5bc862da9ace92b6dd016f401` | exact local candidate; detached package binding pending |
 
 The current App-bundled CLI reports `tool_call_mcp_elicitation` as stable.
 Real stdio probes through `tests/codex/sprint11_approval_host_probe.py`
