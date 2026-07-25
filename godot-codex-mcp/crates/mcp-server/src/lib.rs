@@ -89,12 +89,26 @@ const MAX_SCRIPT_DIAGNOSTICS: usize = 200;
 const MAX_SAFE_RUNTIME_SEQUENCE: u64 = 9_007_199_254_740_991;
 const EDITOR_SUMMARY_MAX_BYTES: usize = 4096;
 
-fn has_live_bridge_authority(health: &ConnectionHealth) -> bool {
-    matches!(
+fn has_tool_domain_authority(health: &ConnectionHealth, domain: AvailabilityDomain) -> bool {
+    let lifecycle_allows_live_probe = matches!(
         health.status,
         ConnectionStatus::Ready | ConnectionStatus::Syncing
-    ) && health.bridge.condition == godot_codex_product::BridgeCondition::Ready
-        && health.components.editor == ComponentCondition::Ready
+    );
+    if !lifecycle_allows_live_probe {
+        return false;
+    }
+    match domain {
+        AvailabilityDomain::Editor => {
+            health.bridge.condition == godot_codex_product::BridgeCondition::Ready
+                && health.components.editor == ComponentCondition::Ready
+        }
+        AvailabilityDomain::Runtime => matches!(
+            health.bridge.condition,
+            godot_codex_product::BridgeCondition::Ready
+                | godot_codex_product::BridgeCondition::DiscoveryStale
+                | godot_codex_product::BridgeCondition::Syncing
+        ),
+    }
 }
 const PROJECT_SUMMARY_URI: &str = "godot://project/summary";
 const EDITOR_SUMMARY_URI: &str = "godot://editor/summary";
@@ -637,7 +651,7 @@ impl GodotMcpServer {
         domain: output_schema::AvailabilityDomain,
     ) -> Option<CallToolResult> {
         let health = self.connection_status();
-        if has_live_bridge_authority(&health) {
+        if has_tool_domain_authority(&health, domain) {
             return None;
         }
         let offline = matches!(
@@ -9575,22 +9589,6 @@ mod tests {
         assert_wire_forbidden_matrix(unavailable_server(None), "connecting", "bridge_connecting")
             .await;
 
-        let syncing = canonical_ready_replica();
-        syncing.invalidate("Godot bridge discovery became stale");
-        assert_wire_forbidden_matrix(
-            GodotMcpServer::with_all_indexes_and_project_root(
-                syncing,
-                ResourceIndexReader::new(),
-                SceneIndexReader::new(),
-                ScriptIndexReader::new(),
-                PathBuf::from("fixture-project"),
-            )
-            .with_product_startup_observation(ready_product_startup()),
-            "syncing",
-            "bridge_discovery_stale",
-        )
-        .await;
-
         assert_wire_forbidden_matrix(
             GodotMcpServer::new(SnapshotReplicator::new())
                 .with_product_startup_observation(config_missing_product_startup()),
@@ -9611,10 +9609,52 @@ mod tests {
         health.diagnostic =
             ProductDiagnostic::new(DiagnosticCode::StaticCacheRebuilding, None, None);
 
-        assert!(has_live_bridge_authority(&health));
+        assert!(has_tool_domain_authority(
+            &health,
+            AvailabilityDomain::Editor
+        ));
+        assert!(has_tool_domain_authority(
+            &health,
+            AvailabilityDomain::Runtime
+        ));
 
         health.bridge.condition = BridgeCondition::ProjectBindingMismatch;
-        assert!(!has_live_bridge_authority(&health));
+        assert!(!has_tool_domain_authority(
+            &health,
+            AvailabilityDomain::Editor
+        ));
+        assert!(!has_tool_domain_authority(
+            &health,
+            AvailabilityDomain::Runtime
+        ));
+    }
+
+    #[test]
+    fn stale_semantic_replica_blocks_editor_reads_but_allows_runtime_reauthentication() {
+        let syncing = canonical_ready_replica();
+        syncing.invalidate("runtime launch requires a fresh semantic snapshot");
+        let server = GodotMcpServer::with_all_indexes_and_project_root(
+            syncing,
+            ResourceIndexReader::new(),
+            SceneIndexReader::new(),
+            ScriptIndexReader::new(),
+            PathBuf::from("fixture-project"),
+        )
+        .with_product_startup_observation(ready_product_startup());
+        let health = server.connection_status();
+
+        assert_eq!(health.status, ConnectionStatus::Syncing);
+        assert_eq!(health.diagnostic.code, DiagnosticCode::BridgeDiscoveryStale);
+        assert!(
+            server
+                .unavailable_error(AvailabilityDomain::Editor)
+                .is_some()
+        );
+        assert!(
+            server
+                .unavailable_error(AvailabilityDomain::Runtime)
+                .is_none()
+        );
     }
 
     #[test]
