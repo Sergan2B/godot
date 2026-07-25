@@ -39,7 +39,7 @@ const RUNTIME_DIAGNOSTIC_ID_PATTERN: &str = "^runtime-diagnostic:[A-Za-z0-9_-]{4
 // project-defined dictionary fields below are excluded from this vocabulary
 // and receive the explicit dynamic-map profile instead.
 const FIXED_DTO_FIELDS: &str = "
-accepted action_count action_name active active_generation_id active_script_id active_stack_id adapter_profile
+accepted action_count action_name active active_generation_id active_script_id active_stack_id adapter_profile alias
 adapter_statuses added_entities added_relations advertised_capabilities affected_closure
 affected_closure_only affected_entities age_seconds animation animation_reference_id animation_references
 animations applying_per_history approval_message_bytes approval_protocol_floor approval_timeout_ms
@@ -61,7 +61,7 @@ dependencies
 depth detail diagnostic diagnostic_code diagnostic_count diagnostic_id diagnostic_ids diagnostic_message_bytes
 diagnostics diagnostics_bytes digest dirty dirty_effect dirty_open_scripts dirty_scene_count dirty_script_count
 disk_comparison disk_content_sha256 disk_value display_path document documentation_present documents domain
-domains edge_id edges editable editor editor_content_sha256 editor_node_id editor_session_id editor_value
+domains edge_id edges edit_count editable editor editor_content_sha256 editor_node_id editor_session_id editor_value
 eligible emitter_node_entity_id emitter_node_id emitter_node_path empty enabled_capabilities encoded_bytes end end_byte end_column
 end_line entities entity_count entity_id entries error event_seq event_type evidence evidence_digest evidence_id
 evidence_range exact expected_added_entities expected_changed_entities expected_operation_seq
@@ -87,9 +87,9 @@ mtime_after_ns mtime_before_ns mtime_ns name native_version negotiated_bridge_pr
 new_parent_node_id next_action next_cursor next_offset node node_count node_entity_id node_id node_index
 node_occurrence_id node_path nodes nonce object_bytes object_id object_kind observed observed_version
 offline_cached offset omitted_before_first omitted_count omitted_counts omitted_reason open_scene_count
-open_scene_ids open_scenes open_scenes_truncated open_script_ids open_scripts_truncated operation
+open_scene_ids open_scenes open_scenes_truncated open_script_ids open_scripts_truncated operation operation_digest
 operation_bytes operation_count operation_kind operation_seq operations origin
-origin_scene_id os
+origin_scene_id original_order os
 outcome outgoing_relations overloaded overridden_property_id owned owner owner_node_entity_id owner_node_id
 owner_path owner_symbol_id ownership_paths package package_manifest_verified package_version page page_count
 parent_generation_id
@@ -99,15 +99,15 @@ preconditions predicate prepared_records prepared_ttl_ms preview preview_bytes p
 preview_payload_json previous_state primary persistent_content profile profile_id project_context
 project_context_truncated
 project_id project_revision project_scope projected_selection_count projected_value_bytes properties
-properties_coverage properties_truncated property property_id protocols qualification qualified_key
+properties_coverage properties_truncated property property_count property_id protocols qualification qualified_key
 qualified_name quarantine_count
 query range read_only reader_max_minor reader_min_minor reason reasons receipt receipt_hash receipt_ttl_ms
 receiver_node_entity_id receiver_node_id recovery redacted reference_id references registry relation relation_id
 relations relative_node_path remediation_id remove_dependency_edge_ids remove_diagnostic_ids
 remove_resource_entity_ids remove_source_document_entity_ids remove_tombstone_entity_ids removed_entities
-removed_relations repeat_count replacement replica_status report_digest report_id request_deadline_ms
+removed_relations repeat_count replacement replica_status report_digest report_id request_deadline_ms request_digest
 requires_form_elicitation requires_full_snapshot resolution resolved resolved_target_path resource
-resource_entity_id resource_path resource_revision
+resolved_path resource_class resource_entity_id resource_path resource_revision
 resource_template_count resource_type resources result retain_through_index_revision retryable revision_vector
 retained_report_bytes
 revisions risk role rollback root_node_id root_node_path runtime runtime_diagnostic_id runtime_event_seq
@@ -3031,6 +3031,60 @@ mod tests {
             "preview",
             json!({"operation_count": 1, "summary": "Atomic scene update"}),
         );
+        let mut compound_with_alias = minimal_success("godot_prepare_change_set", 0);
+        compound_with_alias["preview"] = json!({
+            "schema_version": "canonical-change-set-preview/1.0",
+            "change_set_id": format!("change-set:{}", "a".repeat(32)),
+            "request_digest": format!("sha256:{}", "b".repeat(64)),
+            "operations": [
+                {
+                    "kind": "create_node",
+                    "alias": "alias:created",
+                    "parent_node_id": format!("node:{}", "c".repeat(32)),
+                    "godot_type": "Node",
+                    "name": "Created",
+                    "operation_digest": format!("sha256:{}", "d".repeat(64)),
+                },
+                {
+                    "kind": "create_resource",
+                    "alias": "alias:resource",
+                    "path": "res://created.tres",
+                    "resource_class": "Resource",
+                    "property_count": 1,
+                    "operation_digest": format!("sha256:{}", "e".repeat(64)),
+                },
+                {
+                    "kind": "update_resource",
+                    "resource": format!("godot:resource:uid:v1:{}", "A".repeat(43)),
+                    "resolved_path": "res://existing.tres",
+                    "property_count": 1,
+                    "operation_digest": format!("sha256:{}", "f".repeat(64)),
+                },
+                {
+                    "kind": "update_gdscript",
+                    "path": "res://fixture.gd",
+                    "edit_count": 1,
+                    "operation_digest": format!("sha256:{}", "g".repeat(64)),
+                },
+            ],
+            "original_order": [0, 1, 2, 3],
+            "preconditions": ["coordinates remain unchanged"],
+            "save_scope": [],
+            "validation_policy": {
+                "rollback": "on_required_failure",
+                "warnings": "allow",
+                "runtime": "skip",
+            },
+            "risk": "destructive",
+            "created_at_ms": 1_000,
+            "expires_at_ms": 301_000,
+        });
+        assert_valid_normalized("godot_prepare_change_set", compound_with_alias.clone());
+        compound_with_alias["preview"]["operations"][0]
+            .as_object_mut()
+            .expect("compound preview operation is an object")
+            .insert("alias_shadow".to_owned(), json!("alias:injected"));
+        assert_invalid_normalized("godot_prepare_change_set", compound_with_alias);
         assert_unknown_object_field_rejected(
             "godot_get_transaction_status",
             0,
