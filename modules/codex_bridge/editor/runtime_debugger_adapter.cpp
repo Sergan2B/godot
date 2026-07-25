@@ -1133,6 +1133,18 @@ void RuntimeDebuggerAdapter::_on_stopped(int p_session_id) {
 	if (p_session_id != active_debugger_session || runtime_session_id.is_empty() || _is_terminal()) {
 		return;
 	}
+	// ScriptEditorDebugger emits stop_requested before stopped, but callbacks
+	// run in connection order. EditorDebuggerNode can synchronously stop the
+	// session before this later plugin receives stop_requested. Classify on the
+	// deferred queue so the complete signal emission establishes whether the
+	// game requested a normal quit.
+	callable_mp(this, &RuntimeDebuggerAdapter::_finalize_debugger_stop).call_deferred(p_session_id, runtime_session_id);
+}
+
+void RuntimeDebuggerAdapter::_finalize_debugger_stop(int p_session_id, const String &p_runtime_session_id) {
+	if (!transport || !revisions || p_session_id != active_debugger_session || p_runtime_session_id != runtime_session_id || runtime_session_id.is_empty() || _is_terminal()) {
+		return;
+	}
 	const bool editor_playing = EditorRunBar::get_singleton() && EditorRunBar::get_singleton()->is_playing();
 	const String stopped_state = RuntimeLifecyclePolicy::classify_debugger_stop(state, editor_playing, normal_quit_requested);
 	if (stopped_state == "disconnected") {

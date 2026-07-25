@@ -148,6 +148,7 @@ private:
 
 	void _on_started(int p_session_id);
 	void _on_stopped(int p_session_id);
+	void _finalize_debugger_stop(int p_session_id, const String &p_runtime_session_id);
 	void _on_editor_stop_requested();
 	void _on_stop_requested(int p_session_id);
 	void _on_breaked(bool p_really_did, bool p_can_debug, const String &p_message, bool p_has_stackdump, int p_session_id);
