@@ -88,6 +88,14 @@ const MAX_TOTAL_RESULTS: usize = 250_000;
 const MAX_SCRIPT_DIAGNOSTICS: usize = 200;
 const MAX_SAFE_RUNTIME_SEQUENCE: u64 = 9_007_199_254_740_991;
 const EDITOR_SUMMARY_MAX_BYTES: usize = 4096;
+
+fn has_live_bridge_authority(health: &ConnectionHealth) -> bool {
+    matches!(
+        health.status,
+        ConnectionStatus::Ready | ConnectionStatus::Syncing
+    ) && health.bridge.condition == godot_codex_product::BridgeCondition::Ready
+        && health.components.editor == ComponentCondition::Ready
+}
 const PROJECT_SUMMARY_URI: &str = "godot://project/summary";
 const EDITOR_SUMMARY_URI: &str = "godot://editor/summary";
 const RUNTIME_SUMMARY_URI: &str = "godot://runtime/summary";
@@ -629,9 +637,7 @@ impl GodotMcpServer {
         domain: output_schema::AvailabilityDomain,
     ) -> Option<CallToolResult> {
         let health = self.connection_status();
-        if health.status == ConnectionStatus::Ready
-            && health.components.editor == ComponentCondition::Ready
-        {
+        if has_live_bridge_authority(&health) {
             return None;
         }
         let offline = matches!(
@@ -7409,9 +7415,10 @@ mod tests {
     };
     use godot_codex_operations::BridgeProbeObservation;
     use godot_codex_product::{
-        ConfigurationCondition, Diagnostic as ProductDiagnostic, DiagnosticCode,
-        FIXED_RESOURCE_URIS, FULL_BETA_TOOLS, PackageCondition, ProductCompatibilityBasis,
-        ProductStartupObservation, RESOURCE_TEMPLATE_URIS, embedded_compatibility_matrix,
+        BridgeCondition, CacheCondition, ConfigurationCondition, Diagnostic as ProductDiagnostic,
+        DiagnosticCode, FIXED_RESOURCE_URIS, FULL_BETA_TOOLS, PackageCondition,
+        ProductCompatibilityBasis, ProductStartupObservation, RESOURCE_TEMPLATE_URIS,
+        embedded_compatibility_matrix,
     };
     use godot_codex_resource_indexer::{
         ResourceIndexCoordinator, ResourceIndexReader, SceneIndexReader, ScriptIndexReader,
@@ -9591,6 +9598,23 @@ mod tests {
             "project_config_missing",
         )
         .await;
+    }
+
+    #[test]
+    fn static_cache_rebuild_does_not_revoke_live_bridge_authority() {
+        let server = indexed_server_fixture(false, true, true, true);
+        let mut health = server.connection_status();
+        assert_eq!(health.status, ConnectionStatus::Ready);
+
+        health.status = ConnectionStatus::Syncing;
+        health.static_cache.condition = CacheCondition::Rebuilding;
+        health.diagnostic =
+            ProductDiagnostic::new(DiagnosticCode::StaticCacheRebuilding, None, None);
+
+        assert!(has_live_bridge_authority(&health));
+
+        health.bridge.condition = BridgeCondition::ProjectBindingMismatch;
+        assert!(!has_live_bridge_authority(&health));
     }
 
     #[test]

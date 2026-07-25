@@ -69,7 +69,7 @@ struct IndexProjection {
     generation_id: Option<String>,
     revisions: Option<CacheRevisions>,
     project_id: Option<String>,
-    binding_mismatch: bool,
+    project_binding_mismatch: bool,
 }
 
 pub(crate) fn connection_health(observation: ServerConnectionObservation) -> ConnectionHealth {
@@ -80,7 +80,7 @@ pub(crate) fn connection_health(observation: ServerConnectionObservation) -> Con
         BridgeCondition::VersionIncompatible
             | BridgeCondition::AuthenticationFailed
             | BridgeCondition::ProjectBindingMismatch
-    ) && (index.binding_mismatch
+    ) && (index.project_binding_mismatch
         || matches!(
             &observation.replica,
             ReplicaObservation::Ready { project_id }
@@ -232,11 +232,18 @@ fn index_projection(observation: &ServerConnectionObservation) -> IndexProjectio
         })
         .collect::<Vec<_>>();
     let all_current = coordinates.len() == observations.len();
-    let binding_mismatch = all_current
+    let project_binding_mismatch = all_current
+        && coordinates.first().is_some_and(|expected| {
+            coordinates
+                .iter()
+                .skip(1)
+                .any(|candidate| candidate.project_id != expected.project_id)
+        });
+    let coordinate_skew = all_current
+        && !project_binding_mismatch
         && (coordinates.first().is_some_and(|expected| {
             coordinates.iter().skip(1).any(|candidate| {
-                candidate.project_id != expected.project_id
-                    || candidate.generation_id != expected.generation_id
+                candidate.generation_id != expected.generation_id
                     || candidate.index_revision != expected.index_revision
                     || candidate.resource_revision != expected.resource_revision
             })
@@ -250,7 +257,7 @@ fn index_projection(observation: &ServerConnectionObservation) -> IndexProjectio
                     .iter()
                     .map(|coordinates| coordinates.script_graph_revision),
             ) > 1);
-    if all_current && !binding_mismatch {
+    if all_current && !project_binding_mismatch && !coordinate_skew {
         let current = coordinates[0];
         return IndexProjection {
             condition: CacheCondition::OnlineCurrent,
@@ -274,15 +281,17 @@ fn index_projection(observation: &ServerConnectionObservation) -> IndexProjectio
                     .unwrap_or_default(),
             }),
             project_id: Some(current.project_id.clone()),
-            binding_mismatch: false,
+            project_binding_mismatch: false,
         };
     }
-    let condition = if binding_mismatch
+    let condition = if project_binding_mismatch
         || observations
             .iter()
             .any(|status| matches!(status, IndexObservation::Degraded))
     {
         CacheCondition::Unavailable
+    } else if coordinate_skew {
+        CacheCondition::Rebuilding
     } else if observations.iter().any(|status| {
         matches!(
             status,
@@ -303,7 +312,7 @@ fn index_projection(observation: &ServerConnectionObservation) -> IndexProjectio
         generation_id: None,
         revisions: None,
         project_id: None,
-        binding_mismatch,
+        project_binding_mismatch,
     }
 }
 
@@ -553,6 +562,26 @@ mod tests {
             health.diagnostic.code,
             DiagnosticCode::ProjectBindingMismatch
         );
+        assert!(health.static_cache.revisions.is_none());
+    }
+
+    #[test]
+    fn transient_index_coordinate_skew_is_rebuilding_not_project_mismatch() {
+        let mut observation = ready_observation();
+        let mut rebuilding = coordinates(&format!("project:sha256:{}", "1".repeat(64)));
+        rebuilding.generation_id = format!("generation:sha256:{}", "3".repeat(64));
+        rebuilding.index_revision += 1;
+        observation.scene_index = IndexObservation::Current(rebuilding);
+
+        let health = connection_health(observation);
+        assert_eq!(health.status, ConnectionStatus::Syncing);
+        assert_eq!(
+            health.diagnostic.code,
+            DiagnosticCode::StaticCacheRebuilding
+        );
+        assert_eq!(health.bridge.condition, BridgeCondition::Ready);
+        assert_eq!(health.components.editor, ComponentCondition::Ready);
+        assert_eq!(health.static_cache.condition, CacheCondition::Rebuilding);
         assert!(health.static_cache.revisions.is_none());
     }
 
