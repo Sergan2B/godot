@@ -126,6 +126,158 @@ def valid_report() -> dict[str, Any]:
 
 
 class Sprint11MultiProjectContractTests(unittest.TestCase):
+    def test_connection_status_waits_for_bounded_cache_convergence(self) -> None:
+        project_id = "project:sha256:" + "a" * 64
+        project_scope = "a" * 64
+        rebuilding = {
+            "status": "syncing",
+            "project_scope": project_scope,
+            "package_version": "0.1.0",
+            "bridge": {
+                "condition": "ready",
+                "negotiated_protocol": "1.8",
+            },
+            "static_cache": {
+                "condition": "rebuilding",
+                "schema": "1.3",
+                "generation": None,
+                "revisions": None,
+            },
+            "components": {
+                "editor": "ready",
+                "transactions": "ready",
+            },
+        }
+        ready = copy.deepcopy(rebuilding)
+        ready["status"] = "ready"
+        ready["static_cache"] = {
+            "condition": "online_current",
+            "schema": "1.3",
+            "generation": "generation:fixture",
+            "revisions": {"resource_revision": 1},
+        }
+
+        class StatusClient:
+            def __init__(self, responses: list[dict[str, Any]]) -> None:
+                self.responses = responses
+                self.calls = 0
+
+            def tool(
+                self,
+                _name: str,
+                _arguments: dict[str, Any],
+            ) -> tuple[dict[str, Any], bool, float]:
+                response = self.responses[min(self.calls, len(self.responses) - 1)]
+                self.calls += 1
+                return copy.deepcopy(response), False, 0.0
+
+        client = StatusClient([rebuilding, ready])
+        self.assertEqual(
+            multi._connection_status(client, project_id, 1.0),
+            ready,
+        )
+        self.assertEqual(client.calls, 2)
+
+        never_ready = StatusClient([rebuilding])
+        with self.assertRaisesRegex(
+            multi.s9.WorkflowError,
+            "project-scoped connection/cache/version status differs",
+        ):
+            multi._connection_status(never_ready, project_id, 0.01)
+
+    def test_transaction_status_waits_for_exact_terminal_projection(self) -> None:
+        transaction_id = "change-set:" + "b" * 32
+        committed = {
+            "change_set_id": transaction_id,
+            "state": "committed",
+        }
+        undone = {
+            "change_set_id": transaction_id,
+            "state": "undone",
+        }
+
+        class StatusClient:
+            def __init__(self, responses: list[dict[str, Any]]) -> None:
+                self.responses = responses
+                self.calls = 0
+
+            def tool(
+                self,
+                _name: str,
+                _arguments: dict[str, Any],
+            ) -> tuple[dict[str, Any], bool, float]:
+                response = self.responses[min(self.calls, len(self.responses) - 1)]
+                self.calls += 1
+                return copy.deepcopy(response), False, 0.0
+
+        client = StatusClient([committed, undone])
+        self.assertEqual(
+            multi._transaction_status(
+                client,
+                transaction_id,
+                expected_state="undone",
+                timeout=1.0,
+                context="unit",
+            ),
+            undone,
+        )
+        self.assertEqual(client.calls, 2)
+
+        never_undone = StatusClient([committed])
+        with self.assertRaisesRegex(
+            multi.s9.WorkflowError,
+            "transaction status differs",
+        ):
+            multi._transaction_status(
+                never_undone,
+                transaction_id,
+                expected_state="undone",
+                timeout=0.01,
+                context="unit",
+            )
+
+    def test_foreign_error_waits_only_through_retryable_transport_state(
+        self,
+    ) -> None:
+        class StatusClient:
+            def __init__(self, responses: list[dict[str, Any]]) -> None:
+                self.responses = responses
+                self.calls = 0
+
+            def tool(
+                self,
+                _name: str,
+                _arguments: dict[str, Any],
+            ) -> tuple[dict[str, Any], bool, float]:
+                response = self.responses[min(self.calls, len(self.responses) - 1)]
+                self.calls += 1
+                return copy.deepcopy(response), True, 0.0
+
+        retryable = {
+            "error": {
+                "code": "runtime_unavailable",
+                "retryable": True,
+            }
+        }
+        expected = {
+            "error": {
+                "code": "transaction_not_found",
+                "retryable": False,
+            }
+        }
+        client = StatusClient([retryable, expected])
+        self.assertEqual(
+            multi._foreign_error(
+                client,
+                "godot_get_transaction_status",
+                {"transaction_id": "change-set:" + "f" * 32},
+                kind="transaction_id",
+                timeout=1.0,
+            )["error_code"],
+            "transaction_not_found",
+        )
+        self.assertEqual(client.calls, 2)
+
     def test_source_and_artifact_hashing_reject_symlinks(self) -> None:
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
             root = Path(directory)

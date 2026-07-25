@@ -270,10 +270,14 @@ def _isolation_case(
         and observed_code in ISOLATION_CASE_EXPECTATIONS[case_id],
         f"isolation case {case_id} outcome differs",
     )
+    proof_fields_match = set(proofs) == ISOLATION_PROOF_FIELDS
+    failed_proofs = sorted(
+        name for name, value in proofs.items() if value is not True
+    )
     s9.require(
-        set(proofs) == ISOLATION_PROOF_FIELDS
-        and all(value is True for value in proofs.values()),
-        f"isolation case {case_id} proof differs",
+        proof_fields_match and not failed_proofs,
+        f"isolation case {case_id} proof differs "
+        f"(fields_match={proof_fields_match}, failed={failed_proofs})",
     )
     return {
         "case_id": case_id,
@@ -450,31 +454,40 @@ def _read(client: s9.ModelFreeMcpClient, timeout: float) -> dict[str, Any]:
 def _connection_status(
     client: s9.ModelFreeMcpClient,
     expected_project_id: str,
+    timeout: float,
 ) -> dict[str, Any]:
-    status, is_error, _ = client.tool("godot_get_connection_status", {})
     project_scope = expected_project_id.removeprefix("project:sha256:")
-    bridge = status.get("bridge")
-    cache = status.get("static_cache")
-    components = status.get("components")
-    s9.require(
-        not is_error
-        and status.get("status") == "ready"
-        and status.get("project_scope") == project_scope
-        and isinstance(status.get("package_version"), str)
-        and bool(status["package_version"])
-        and isinstance(bridge, dict)
-        and bridge.get("condition") == "ready"
-        and bridge.get("negotiated_protocol") == "1.8"
-        and isinstance(cache, dict)
-        and cache.get("condition") == "online_current"
-        and cache.get("schema") == "1.3"
-        and isinstance(cache.get("generation"), str)
-        and isinstance(cache.get("revisions"), dict)
-        and isinstance(components, dict)
-        and components.get("editor") == "ready"
-        and components.get("transactions") == "ready",
-        f"project-scoped connection/cache/version status differs: {status}",
-    )
+    deadline = time.monotonic() + timeout
+    status: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        status, is_error, _ = client.tool("godot_get_connection_status", {})
+        bridge = status.get("bridge")
+        cache = status.get("static_cache")
+        components = status.get("components")
+        if (
+            not is_error
+            and status.get("status") == "ready"
+            and status.get("project_scope") == project_scope
+            and isinstance(status.get("package_version"), str)
+            and bool(status["package_version"])
+            and isinstance(bridge, dict)
+            and bridge.get("condition") == "ready"
+            and bridge.get("negotiated_protocol") == "1.8"
+            and isinstance(cache, dict)
+            and cache.get("condition") == "online_current"
+            and cache.get("schema") == "1.3"
+            and isinstance(cache.get("generation"), str)
+            and isinstance(cache.get("revisions"), dict)
+            and isinstance(components, dict)
+            and components.get("editor") == "ready"
+            and components.get("transactions") == "ready"
+        ):
+            break
+        time.sleep(0.05)
+    else:
+        raise s9.WorkflowError(
+            f"project-scoped connection/cache/version status differs: {status}"
+        )
     encoded = json.dumps(status, sort_keys=True, separators=(",", ":"))
     s9.require(
         expected_project_id not in encoded
@@ -667,7 +680,7 @@ def _wait_fault_status(
 def _fault_probe_evidence(
     client: s10.Sprint10McpClient,
     *,
-    local_node_name: str,
+    local_project_id: str,
     foreign_node_name: str,
     foreign_project_id: str,
     foreign_transaction_id: str,
@@ -703,7 +716,24 @@ def _fault_probe_evidence(
     no_foreign_data = (
         foreign_project_id not in graph_text
         and foreign_node_name not in graph_text
-        and (graph_error or local_node_name in graph_text)
+        and (
+            graph_error
+            or graph.get("project_id") == local_project_id
+        )
+    )
+    s9.require(
+        no_fallback and no_foreign_data,
+        "fault probe isolation projection differs "
+        f"(code={code}, "
+        f"status_contains_foreign_project="
+        f"{foreign_project_id in encoded_status}, "
+        f"status_contains_foreign_node={foreign_node_name in encoded_status}, "
+        f"graph_error={graph_error}, "
+        f"graph_contains_foreign_project={foreign_project_id in graph_text}, "
+        f"graph_contains_foreign_node={foreign_node_name in graph_text}, "
+        f"graph_local_project_match="
+        f"{graph.get('project_id') == local_project_id}, "
+        f"graph_fields={sorted(graph)})",
     )
     foreign_status, status_error, _ = client.tool(
         "godot_get_transaction_status",
@@ -825,6 +855,8 @@ def _assert_committed_workflow(
         client,
         cast(str, prepared["change_set_id"]),
         expected_state="committed",
+        timeout=timeout,
+        context="private_fault_committed",
         report_id=cast(str, workflow["report_id"]),
     )
     return current
@@ -936,7 +968,12 @@ def _run_private_binding_fault(
                 probe_results.append(
                     _fault_probe_evidence(
                         probe,
-                        local_node_name=cast(str, local_workflow["node_name"]),
+                        local_project_id=cast(
+                            str,
+                            cast(Mapping[str, Any], local_workflow["after"])[
+                                "project_id"
+                            ],
+                        ),
                         foreign_node_name=cast(
                             str,
                             foreign_workflow["node_name"],
@@ -1285,16 +1322,33 @@ def _foreign_error(
     arguments: Mapping[str, Any],
     *,
     kind: str,
+    timeout: float,
 ) -> dict[str, Any]:
-    content, is_error, _ = client.tool(tool, arguments)
-    error = content.get("error")
     expected = FOREIGN_EXPECTATIONS[kind]
-    s9.require(
-        is_error
-        and isinstance(error, dict)
-        and error.get("code") == expected,
-        f"foreign {kind} did not fail closed as {expected}: {content}",
-    )
+    deadline = time.monotonic() + timeout
+    content: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        content, is_error, _ = client.tool(tool, arguments)
+        error = content.get("error")
+        if (
+            is_error
+            and isinstance(error, dict)
+            and error.get("code") == expected
+        ):
+            break
+        if (
+            not is_error
+            or not isinstance(error, dict)
+            or error.get("retryable") is not True
+        ):
+            raise s9.WorkflowError(
+                f"foreign {kind} did not fail closed as {expected}: {content}"
+            )
+        time.sleep(0.05)
+    else:
+        raise s9.WorkflowError(
+            f"foreign {kind} did not converge to {expected}: {content}"
+        )
     return {
         "kind": kind,
         "error_code": expected,
@@ -1306,6 +1360,7 @@ def _foreign_error(
 def _foreign_approval_error(
     client: s10.Sprint10McpClient,
     foreign_workflow: Mapping[str, Any],
+    timeout: float,
 ) -> dict[str, Any]:
     prepared = cast(Mapping[str, Any], foreign_workflow["prepared"])
     before = cast(Mapping[str, Any], foreign_workflow["before"])
@@ -1320,6 +1375,7 @@ def _foreign_approval_error(
             "expected_operation_seq": before["operation_seq"],
         },
         kind="approval_binding",
+        timeout=timeout,
     )
     s9.require(
         client.approval is None
@@ -1334,23 +1390,39 @@ def _transaction_status(
     transaction_id: str,
     *,
     expected_state: str,
+    timeout: float,
+    context: str,
     report_id: str | None = None,
 ) -> dict[str, Any]:
-    status, is_error, _ = client.tool(
-        "godot_get_transaction_status",
-        {"transaction_id": transaction_id},
+    deadline = time.monotonic() + timeout
+    status: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        status, is_error, _ = client.tool(
+            "godot_get_transaction_status",
+            {"transaction_id": transaction_id},
+        )
+        if (
+            not is_error
+            and status.get("change_set_id") == transaction_id
+            and status.get("state") == expected_state
+            and (
+                report_id is None
+                or status.get("validation_report_id") == report_id
+            )
+        ):
+            return status
+        time.sleep(0.05)
+    raise s9.WorkflowError(
+        f"{context} transaction status differs "
+        f"(expected_transaction_id={transaction_id}, "
+        f"expected_state={expected_state}, expected_report_id={report_id}, "
+        f"is_error={is_error}, "
+        f"change_set_id_match={status.get('change_set_id') == transaction_id}, "
+        f"state_match={status.get('state') == expected_state}, "
+        f"report_id_match="
+        f"{report_id is None or status.get('validation_report_id') == report_id}): "
+        f"{status}"
     )
-    s9.require(
-        not is_error
-        and status.get("transaction_id") == transaction_id
-        and status.get("state") == expected_state
-        and (
-            report_id is None
-            or status.get("validation_report_id") == report_id
-        ),
-        f"transaction status differs: {status}",
-    )
-    return status
 
 
 def _undo_workflow(
@@ -1385,6 +1457,13 @@ def _undo_workflow(
     s9.require(
         workflow["node_name"] not in cast(set[str], restored["node_paths"]),
         "targeted Undo readback differs",
+    )
+    _transaction_status(
+        client,
+        transaction_id,
+        expected_state="undone",
+        timeout=timeout,
+        context="targeted_undo",
     )
     return restored
 
@@ -1462,6 +1541,8 @@ def _run_editor_restart_case(
         client_b,
         cast(str, prepared_b["change_set_id"]),
         expected_state="undone",
+        timeout=timeout,
+        context="editor_restart_sibling",
     )
     b_preserved = all(
         during_b[field] == before_b[field] == after_b[field]
@@ -1537,6 +1618,7 @@ def _run_cache_rebuild_case(
         status = _connection_status(
             client_a,
             cast(str, before_a["project_id"]),
+            timeout,
         )
         rebuilt = (
             cache.is_dir()
@@ -1551,11 +1633,15 @@ def _run_cache_rebuild_case(
             client_a,
             cast(str, prepared_a["change_set_id"]),
             expected_state="undone",
+            timeout=timeout,
+            context="cache_rebuild_target",
         )
         _transaction_status(
             client_b,
             cast(str, prepared_b["change_set_id"]),
             expected_state="undone",
+            timeout=timeout,
+            context="cache_rebuild_sibling",
         )
     finally:
         if held.exists():
@@ -1914,10 +2000,12 @@ def run_live(
                 lambda: _connection_status(
                     client_a,
                     cast(str, coordinates_a["project_id"]),
+                    timeout,
                 ),
                 lambda: _connection_status(
                     client_b,
                     cast(str, coordinates_b["project_id"]),
+                    timeout,
                 ),
             )
             discovery_a, discovery_b = _parallel(
@@ -1997,6 +2085,8 @@ def run_live(
                 client_b,
                 transaction_ids["b"],
                 expected_state="committed",
+                timeout=timeout,
+                context="pre_fault_sibling",
                 report_id=report_ids["b"],
             )
 
@@ -2097,19 +2187,22 @@ def run_live(
                     "godot_prepare_create_node",
                     foreign_project_arguments,
                     kind="project_id",
+                    timeout=timeout,
                 ),
                 _foreign_error(
                     client_a,
                     "godot_get_transaction_status",
                     {"transaction_id": transaction_ids["b"]},
                     kind="transaction_id",
+                    timeout=timeout,
                 ),
-                _foreign_approval_error(client_a, workflow_b),
+                _foreign_approval_error(client_a, workflow_b, timeout),
                 _foreign_error(
                     client_a,
                     "godot_get_validation_report",
                     {"report_id": report_ids["b"], "page": 0},
                     kind="validation_report_id",
+                    timeout=timeout,
                 ),
                 _foreign_error(
                     client_a,
@@ -2119,6 +2212,7 @@ def run_live(
                         "limit": 200,
                     },
                     kind="runtime_session_id",
+                    timeout=timeout,
                 ),
                 _foreign_error(
                     client_a,
@@ -2129,6 +2223,7 @@ def run_live(
                         "cursor": cursor_b,
                     },
                     kind="cursor",
+                    timeout=timeout,
                 ),
             ]
 
@@ -2153,6 +2248,8 @@ def run_live(
                 client_b,
                 transaction_ids["b"],
                 expected_state="committed",
+                timeout=timeout,
+                context="sidecar_fault_sibling",
                 report_id=report_ids["b"],
             )
             report_b_during = _validation_report(
@@ -2203,6 +2300,8 @@ def run_live(
                 client_b,
                 transaction_ids["b"],
                 expected_state="committed",
+                timeout=timeout,
+                context="sidecar_reconnect_sibling",
                 report_id=report_ids["b"],
             )
             report_b_after = _validation_report(

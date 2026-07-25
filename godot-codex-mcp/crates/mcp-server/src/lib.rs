@@ -1161,7 +1161,7 @@ impl GodotMcpServer {
                 }
                 transaction_result(status)
             }
-            Err(error) => runtime_bridge_error(error),
+            Err(error) => transaction_bridge_error(error),
         }
     }
 
@@ -1202,7 +1202,7 @@ impl GodotMcpServer {
         };
         let status = match client.get_change_set_status(&input.transaction_id).await {
             Ok(status) => status,
-            Err(error) => return runtime_bridge_error(error),
+            Err(error) => return transaction_bridge_error(error),
         };
         let Some(baseline) = self.ensure_change_set_baseline(&client, &status).await else {
             return structured_error(
@@ -1345,7 +1345,7 @@ impl GodotMcpServer {
 
         let last_status = match client.get_change_set_status(&input.transaction_id).await {
             Ok(status) => status,
-            Err(error) => return runtime_bridge_error(error),
+            Err(error) => return transaction_bridge_error(error),
         };
         if last_status.get("preview_digest").and_then(Value::as_str)
             != Some(input.preview_digest.as_str())
@@ -5939,6 +5939,23 @@ fn runtime_bridge_error(error: BridgeError) -> CallToolResult {
     }
 }
 
+fn transaction_bridge_error(error: BridgeError) -> CallToolResult {
+    if matches!(
+        &error,
+        BridgeError::Rpc {
+            code,
+            ..
+        } if code == "change_set_not_found"
+    ) {
+        return structured_error(
+            "transaction_not_found",
+            "The transaction was not found in this editor session.",
+            false,
+        );
+    }
+    runtime_bridge_error(error)
+}
+
 fn runtime_bridge_debug_line(error: &BridgeError, validation_stage: &str) -> String {
     let failure = error.failure_class();
     format!(
@@ -10193,6 +10210,26 @@ mod tests {
                 }),
             }),
         );
+    }
+
+    #[test]
+    fn compound_not_found_projects_to_public_transaction_error() {
+        let projected = transaction_bridge_error(BridgeError::Rpc {
+            code: "change_set_not_found".to_owned(),
+            message: "private bridge detail /Users/private/project".to_owned(),
+            retryable: false,
+            data: json!({
+                "change_set_id": format!("change-set:{}", "a".repeat(32)),
+                "native_handle": 42,
+            }),
+        });
+        let error = &structured_content(&projected).unwrap()["error"];
+        assert_eq!(error["code"], "transaction_not_found");
+        assert_eq!(error["retryable"], false);
+        let serialized = serde_json::to_string(error).unwrap();
+        assert!(!serialized.contains("/Users/"));
+        assert!(!serialized.contains("change-set:"));
+        assert!(!serialized.contains("native_handle"));
     }
 
     #[test]
