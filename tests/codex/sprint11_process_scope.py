@@ -42,6 +42,8 @@ TRACKER_JOIN_SECONDS: Final = 6.0
 TERMINATE_SECONDS: Final = 2.0
 STOP_HANDSHAKE_SECONDS: Final = 5.0
 DARWIN_EXEC_SETTLE_SECONDS: Final = 0.02
+FORK_QUIESCENCE_SECONDS: Final = 0.1
+FORK_QUIESCENCE_SAMPLE_SECONDS: Final = 0.01
 STOPPED_LAUNCHER: Final = (
     "/bin/sh",
     "-c",
@@ -617,6 +619,7 @@ def _record_event_identities(
         return
     for event in events:
         process_id = int(event.ident)
+        event_flags = int(event.fflags)
         (
             unique_id,
             _parent_unique_id,
@@ -632,7 +635,7 @@ def _record_event_identities(
                 _require_scope_bound_locked(scope)
         if (
             not tracked
-            or not int(event.fflags) & select.KQ_NOTE_EXEC
+            or not event_flags & select.KQ_NOTE_EXEC
         ):
             continue
         stable_since = time.monotonic()
@@ -740,8 +743,21 @@ def _terminate_scope_identities(scope: ProcessScope) -> bool:
         _sample_scope(scope, table=table)
     except ProcessScopeError:
         pass
-    observed = _alive_scoped_processes(scope, table)
-    remaining = set(observed)
+    remaining = _alive_scoped_processes(scope, table)
+    observed = bool(remaining)
+    if not remaining:
+        deadline = time.monotonic() + FORK_QUIESCENCE_SECONDS
+        while time.monotonic() < deadline:
+            time.sleep(FORK_QUIESCENCE_SAMPLE_SECONDS)
+            table = _process_table()
+            try:
+                _sample_scope(scope, table=table)
+            except ProcessScopeError:
+                pass
+            remaining = _alive_scoped_processes(scope, table)
+            if remaining:
+                observed = True
+                break
     for requested_signal, duration in (
         (signal.SIGTERM, TERMINATE_SECONDS / 2),
         (signal.SIGKILL, TERMINATE_SECONDS),
@@ -780,7 +796,7 @@ def _terminate_scope_identities(scope: ProcessScope) -> bool:
             break
     if remaining:
         raise ProcessScopeError("escaped process scope did not stop")
-    return bool(observed)
+    return observed
 
 
 def close_scope(scope: ProcessScope) -> bool:
@@ -789,15 +805,36 @@ def close_scope(scope: ProcessScope) -> bool:
     if scope.marker_key is None:
         return False
     scope.stop.set()
+    observed = False
+    primary_error: ProcessScopeError | None = None
+    try:
+        observed = _terminate_scope_identities(scope)
+    except ProcessScopeError as error:
+        primary_error = error
     if scope.tracker is not None:
         scope.tracker.join(timeout=TRACKER_JOIN_SECONDS)
         if scope.tracker.is_alive():
-            raise ProcessScopeError("process scope tracker did not stop")
+            tracker_error = ProcessScopeError(
+                "process scope tracker did not stop"
+            )
+            if primary_error is None:
+                primary_error = tracker_error
+            else:
+                primary_error.add_note(str(tracker_error))
     if scope.event_queue is not None:
         scope.event_queue.close()
         scope.event_queue = None
-    observed = _terminate_scope_identities(scope)
     with scope.lock:
-        if scope.failures:
-            raise ProcessScopeError("process scope tracker failed") from scope.failures[0]
+        tracker_failure = scope.failures[0] if scope.failures else None
+    if tracker_failure is not None:
+        tracker_error = ProcessScopeError(
+            "process scope tracker failed"
+        )
+        tracker_error.__cause__ = tracker_failure
+        if primary_error is None:
+            primary_error = tracker_error
+        else:
+            primary_error.add_note(str(tracker_error))
+    if primary_error is not None:
+        raise primary_error
     return observed

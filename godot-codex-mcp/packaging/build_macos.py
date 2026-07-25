@@ -58,6 +58,8 @@ MAX_CARGO_OUTPUT_BYTES: Final = 1024 * 1024
 MAX_CARGO_BUILD_SECONDS: Final = 15 * 60
 DARWIN_SCOPE_SAMPLE_SECONDS: Final = 0.1
 DARWIN_EXEC_SETTLE_SECONDS: Final = 0.02
+DARWIN_FORK_QUIESCENCE_SECONDS: Final = 0.1
+DARWIN_FORK_QUIESCENCE_SAMPLE_SECONDS: Final = 0.01
 DARWIN_UNIQUE_IDENTIFIER_FLAVOR: Final = 17
 DARWIN_STOP_HANDSHAKE_SECONDS: Final = 5.0
 DARWIN_STOPPED_LAUNCHER: Final = (
@@ -541,6 +543,7 @@ def _record_darwin_process_event_identities(
 ) -> None:
     for event in events:
         process_id = int(event.ident)
+        event_flags = int(event.fflags)
         identity = _darwin_process_identity(
             process_id,
             required=False,
@@ -563,7 +566,7 @@ def _record_darwin_process_event_identities(
             _require_darwin_process_scope_bound(scope)
         if (
             not tracked
-            or not int(event.fflags) & select.KQ_NOTE_EXEC
+            or not event_flags & select.KQ_NOTE_EXEC
         ):
             continue
         stable_since = time.monotonic()
@@ -681,13 +684,23 @@ def _terminate_darwin_process_scope(
     scope: _DarwinProcessScope,
 ) -> bool:
     observed = False
-    remaining: dict[int, int] = {}
+    remaining = _observe_darwin_process_scope(scope)
+    observed = bool(remaining)
+    if not remaining:
+        deadline = time.monotonic() + DARWIN_FORK_QUIESCENCE_SECONDS
+        while time.monotonic() < deadline:
+            time.sleep(DARWIN_FORK_QUIESCENCE_SAMPLE_SECONDS)
+            remaining = _observe_darwin_process_scope(scope)
+            if remaining:
+                observed = True
+                break
     for requested_signal, duration in (
         (signal.SIGTERM, 1.0),
         (signal.SIGKILL, 2.0),
     ):
-        remaining = _observe_darwin_process_scope(scope)
-        observed = observed or bool(remaining)
+        if not remaining:
+            remaining = _observe_darwin_process_scope(scope)
+            observed = observed or bool(remaining)
         for process_id, unique_id in sorted(remaining.items()):
             identity = _darwin_process_identity(
                 process_id,
@@ -932,13 +945,13 @@ def run_bounded_process(
             startup_failure.add_note(f"cleanup failure: {cleanup_error}")
         if darwin_scope is not None:
             try:
-                _stop_darwin_process_scope(darwin_scope)
+                _terminate_darwin_process_scope(darwin_scope)
             except BaseException as cleanup_error:
                 startup_failure.add_note(
                     f"cleanup failure: {cleanup_error}"
                 )
             try:
-                _terminate_darwin_process_scope(darwin_scope)
+                _stop_darwin_process_scope(darwin_scope)
             except BaseException as cleanup_error:
                 startup_failure.add_note(
                     f"cleanup failure: {cleanup_error}"
@@ -1018,18 +1031,6 @@ def run_bounded_process(
     detached_descendants = False
     if darwin_scope is not None:
         try:
-            _stop_darwin_process_scope(darwin_scope)
-        except PackageError as cleanup_error:
-            if primary_failure is None:
-                primary_failure = PackageError(
-                    "bounded subprocess containment observer failed"
-                )
-                primary_failure.__cause__ = cleanup_error
-            else:
-                primary_failure.add_note(
-                    f"cleanup failure: {cleanup_error}"
-                )
-        try:
             detached_descendants = _terminate_darwin_process_scope(
                 darwin_scope
             )
@@ -1037,6 +1038,18 @@ def run_bounded_process(
             if primary_failure is None:
                 primary_failure = PackageError(
                     "bounded subprocess containment cleanup failed"
+                )
+                primary_failure.__cause__ = cleanup_error
+            else:
+                primary_failure.add_note(
+                    f"cleanup failure: {cleanup_error}"
+                )
+        try:
+            _stop_darwin_process_scope(darwin_scope)
+        except PackageError as cleanup_error:
+            if primary_failure is None:
+                primary_failure = PackageError(
+                    "bounded subprocess containment observer failed"
                 )
                 primary_failure.__cause__ = cleanup_error
             else:

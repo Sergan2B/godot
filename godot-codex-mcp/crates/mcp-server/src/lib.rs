@@ -9858,8 +9858,26 @@ mod tests {
                 cursor: None,
             })),
         );
-
         let scripts = indexed_script_server();
+        let signal_usages = scripts.godot_find_usages(Parameters(FindUsagesInput {
+            target: FindUsagesTargetInput::Signal {
+                scene: "uid://scene".to_owned(),
+                emitter_node_path: ".".to_owned(),
+                signal: "ready".to_owned(),
+            },
+            source_kinds: Vec::new(),
+            confidence: vec![SemanticConfidenceInput::Exact],
+            scope: FindUsagesScopeInput::Project,
+            limit: 50,
+            cursor: None,
+        }));
+        assert_ne!(
+            signal_usages.is_error,
+            Some(true),
+            "signal usage fixture must resolve: {:?}",
+            signal_usages.structured_content
+        );
+        assert_tool_result_contract("godot_find_usages", signal_usages);
         assert_tool_result_contract(
             "godot_search_symbols",
             scripts.godot_search_symbols(Parameters(SearchSymbolsInput {
@@ -10196,6 +10214,11 @@ mod tests {
             cursor: None,
         }));
         assert_ne!(result.is_error, Some(true));
+        assert!(
+            output_schema::matches_top_level_contract("godot_find_usages", &result),
+            "partial find-usages result must match its output schema: {:?}",
+            result.structured_content
+        );
         let result = structured_content(&result).expect("partial usage response");
         assert_eq!(result["scene_graph_revision"], Value::Null);
         assert_eq!(result["script_graph_revision"], Value::Null);

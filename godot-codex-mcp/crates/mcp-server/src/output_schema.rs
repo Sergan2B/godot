@@ -62,7 +62,7 @@ depth detail diagnostic diagnostic_code diagnostic_count diagnostic_id diagnosti
 diagnostics diagnostics_bytes digest dirty dirty_effect dirty_open_scripts dirty_scene_count dirty_script_count
 disk_comparison disk_content_sha256 disk_value display_path document documentation_present documents domain
 domains edge_id edges editable editor editor_content_sha256 editor_node_id editor_session_id editor_value
-eligible emitter_node_entity_id emitter_node_id empty enabled_capabilities encoded_bytes end end_byte end_column
+eligible emitter_node_entity_id emitter_node_id emitter_node_path empty enabled_capabilities encoded_bytes end end_byte end_column
 end_line entities entity_count entity_id entries error event_seq event_type evidence evidence_digest evidence_id
 evidence_range exact expected_added_entities expected_changed_entities expected_operation_seq
 expected_removed_entities expected_scene_revision expected_transaction_seq expires_at_ms fact_id fact_ids
@@ -1527,8 +1527,11 @@ fn top_level_field_kind(tool_name: &str, field: &str) -> TopLevelFieldKind {
         | "validation_report_id" => StringField,
         "outcome" => NullableString,
         "error" => ErrorOrNull,
-        "capabilities_used" | "partial_reasons" | "source_kinds" | "confidence"
-        | "allowed_scopes" => StringArray,
+        "partial_reasons" => match tool_name {
+            "godot_find_usages" => ObjectArray,
+            _ => StringArray,
+        },
+        "capabilities_used" | "source_kinds" | "confidence" | "allowed_scopes" => StringArray,
         "diagnostics"
         | "entities"
         | "facts"
