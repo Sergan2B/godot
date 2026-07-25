@@ -1736,7 +1736,8 @@ fn normalize_tool_result(tool_name: &str, mut result: CallToolResult) -> CallToo
             );
         }
     };
-    if !matches_top_level_contract(tool_name, &result) {
+    if let Some(failure) = top_level_contract_failure(tool_name, &result) {
+        eprintln!("[godot-codex-output] tool={tool_name} contract_failure={failure}");
         return invalid_tool_result(
             "The tool result did not match its recursively closed output contract.",
         );
@@ -1756,40 +1757,60 @@ fn normalize_tool_result(tool_name: &str, mut result: CallToolResult) -> CallToo
     result
 }
 
+#[cfg(test)]
 pub(super) fn matches_top_level_contract(tool_name: &str, result: &CallToolResult) -> bool {
+    top_level_contract_failure(tool_name, result).is_none()
+}
+
+fn top_level_contract_failure(tool_name: &str, result: &CallToolResult) -> Option<String> {
     let Some(object) = result
         .structured_content
         .as_ref()
         .and_then(Value::as_object)
     else {
-        return false;
+        return Some("structured_content_type".to_owned());
     };
     let has_error_envelope = object.len() == 1 && object.contains_key("error");
     if (result.is_error == Some(true)) != has_error_envelope {
-        return false;
+        return Some("error_envelope".to_owned());
     }
 
     static VALIDATORS: LazyLock<Mutex<BTreeMap<String, jsonschema::Validator>>> =
         LazyLock::new(|| Mutex::new(BTreeMap::new()));
     let Ok(mut validators) = VALIDATORS.lock() else {
-        return false;
+        return Some("validator_lock".to_owned());
     };
     if !validators.contains_key(tool_name) {
         let Some(schema) = output_schema(tool_name) else {
-            return false;
+            return Some("unknown_tool".to_owned());
         };
         let Ok(validator) =
             jsonschema::draft202012::options().build(&Value::Object(schema.as_ref().clone()))
         else {
-            return false;
+            return Some("schema_compile".to_owned());
         };
         validators.insert(tool_name.to_owned(), validator);
     }
-    validators
-        .get(tool_name)
-        .is_some_and(|validator| validator.is_valid(&Value::Object(object.clone())))
-        && runtime_entity_aliases_are_consistent(tool_name, object)
-        && runtime_projected_ids_are_safe(tool_name, object)
+    let Some(validator) = validators.get(tool_name) else {
+        return Some("validator_missing".to_owned());
+    };
+    let value = Value::Object(object.clone());
+    let schema_failures = validator
+        .iter_errors(&value)
+        .take(4)
+        .map(|error| error.schema_path().as_str().to_owned())
+        .collect::<BTreeSet<_>>();
+    if !schema_failures.is_empty() {
+        let bounded = schema_failures.into_iter().collect::<Vec<_>>().join(",");
+        return Some(format!("schema:{bounded}").chars().take(512).collect());
+    }
+    if !runtime_entity_aliases_are_consistent(tool_name, object) {
+        return Some("runtime_entity_alias".to_owned());
+    }
+    if !runtime_projected_ids_are_safe(tool_name, object) {
+        return Some("runtime_projected_id".to_owned());
+    }
+    None
 }
 
 fn runtime_entity_aliases_are_consistent(tool_name: &str, result: &Map<String, Value>) -> bool {

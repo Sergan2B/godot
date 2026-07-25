@@ -10154,6 +10154,24 @@ mod tests {
             assert!(!serialized.contains("top-secret"));
             assert!(!serialized.contains("native_handle"));
         }
+
+        assert_tool_result_contract(
+            "godot_get_runtime_tree",
+            runtime_bridge_error(BridgeError::Invalid("bounded transport fixture".to_owned())),
+        );
+        assert_tool_result_contract(
+            "godot_get_runtime_tree",
+            runtime_bridge_error(BridgeError::Rpc {
+                code: "runtime_request_timeout".to_owned(),
+                message: "bounded runtime fixture".to_owned(),
+                retryable: true,
+                data: json!({
+                    "runtime_session_id": format!("runtime:{}", "a".repeat(32)),
+                    "runtime_event_seq": 99,
+                    "state": "running",
+                }),
+            }),
+        );
     }
 
     #[test]
