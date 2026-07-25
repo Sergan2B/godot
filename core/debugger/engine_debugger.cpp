@@ -177,7 +177,12 @@ void EngineDebugger::deinitialize() {
 			}
 		}
 
-		// Flush any remaining message
+		// Orderly engine shutdown is distinct from a peer loss or crash.
+		// Queue the terminal marker before the final transport flush so editor
+		// observers do not have to infer the cause from process timing.
+		singleton->send_message("request_quit", Array());
+
+		// Flush any remaining messages.
 		singleton->poll_events(false);
 
 		memdelete(singleton);

@@ -166,6 +166,8 @@ private:
 	EditorExpressionEvaluator *expression_evaluator = nullptr;
 
 	ProcessID remote_pid = 0;
+	// Retained across stop() for stopped observers and reset by start().
+	bool remote_quit_requested = false;
 	bool move_to_foreground = true;
 	bool can_request_idle_draw = false;
 
@@ -342,6 +344,7 @@ public:
 	bool is_debuggable() const { return threads_debugged.size() > 0 && threads_debugged[debugging_thread_id].can_debug; }
 	bool is_session_active() { return peer.is_valid() && peer->is_peer_connected(); }
 	int get_remote_pid() const { return remote_pid; }
+	bool was_remote_quit_requested() const { return remote_quit_requested; }
 
 	bool is_move_to_foreground() const;
 	void set_move_to_foreground(const bool &p_move_to_foreground);

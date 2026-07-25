@@ -1130,14 +1130,17 @@ void RuntimeDebuggerAdapter::_on_started(int p_session_id) {
 }
 
 void RuntimeDebuggerAdapter::_on_stopped(int p_session_id) {
-	if (p_session_id != active_debugger_session || runtime_session_id.is_empty() || _is_terminal()) {
+	if (p_session_id != active_debugger_session || runtime_session_id.is_empty()) {
 		return;
 	}
-	// ScriptEditorDebugger emits stop_requested before stopped, but callbacks
-	// run in connection order. EditorDebuggerNode can synchronously stop the
-	// session before this later plugin receives stop_requested. Classify on the
-	// deferred queue so the complete signal emission establishes whether the
-	// game requested a normal quit.
+	ScriptEditorDebugger *debugger = _get_debugger(p_session_id);
+	normal_quit_requested = normal_quit_requested || (debugger && debugger->was_remote_quit_requested());
+	if (_is_terminal()) {
+		return;
+	}
+	// Let the complete signal emission and final debugger flush settle before
+	// terminal classification. ScriptEditorDebugger retains the request_quit
+	// marker emitted by orderly engine shutdown until the next session starts.
 	callable_mp(this, &RuntimeDebuggerAdapter::_finalize_debugger_stop).call_deferred(p_session_id, runtime_session_id);
 }
 
@@ -1145,7 +1148,10 @@ void RuntimeDebuggerAdapter::_finalize_debugger_stop(int p_session_id, const Str
 	if (!transport || !revisions || p_session_id != active_debugger_session || p_runtime_session_id != runtime_session_id || runtime_session_id.is_empty() || _is_terminal()) {
 		return;
 	}
-	const bool editor_playing = EditorRunBar::get_singleton() && EditorRunBar::get_singleton()->is_playing();
+	ScriptEditorDebugger *debugger = _get_debugger(p_session_id);
+	normal_quit_requested = normal_quit_requested || (debugger && debugger->was_remote_quit_requested());
+	EditorRunBar *run_bar = EditorRunBar::get_singleton();
+	const bool editor_playing = run_bar && run_bar->is_playing();
 	const String stopped_state = RuntimeLifecyclePolicy::classify_debugger_stop(state, editor_playing, normal_quit_requested);
 	if (stopped_state == "disconnected") {
 		disconnected_since_usec = OS::get_singleton()->get_ticks_usec();
@@ -1165,6 +1171,11 @@ void RuntimeDebuggerAdapter::_finalize_debugger_stop(int p_session_id, const Str
 	if (pending_run) {
 		transport->complete_request_error(pending_run, "runtime_start_failed", "The game stopped before the debugger became ready.", true, _safe_coordinates());
 		pending_run = 0;
+	}
+	if (stopped_normally && run_bar && run_bar->is_playing()) {
+		internal_forced_stop = true;
+		run_bar->stop_playing();
+		internal_forced_stop = false;
 	}
 }
 
@@ -1411,6 +1422,8 @@ void RuntimeDebuggerAdapter::process() {
 	if (!transport || !revisions) {
 		return;
 	}
+	ScriptEditorDebugger *debugger = _get_active_debugger();
+	normal_quit_requested = normal_quit_requested || (debugger && debugger->was_remote_quit_requested());
 	EditorRunBar *run_bar = EditorRunBar::get_singleton();
 	const bool playing = run_bar && run_bar->is_playing();
 	if (playing && (runtime_session_id.is_empty() || _is_terminal())) {

@@ -74,6 +74,10 @@ void RemoteDebuggerPeerTCP::close() {
 	if (thread.is_started()) {
 		thread.wait_to_finish();
 	}
+	// The polling thread can observe `running == false` before it drains the
+	// final messages queued by an orderly EngineDebugger shutdown. Finish one
+	// non-blocking drain on the owning thread before closing the socket.
+	_write_out();
 	tcp_client->disconnect_from_host();
 	out_buf.clear();
 	in_buf.clear();

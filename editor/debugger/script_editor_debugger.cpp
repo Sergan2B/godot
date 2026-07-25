@@ -930,6 +930,7 @@ void ScriptEditorDebugger::_msg_servers_profile_total(uint64_t p_thread_id, cons
 }
 
 void ScriptEditorDebugger::_msg_request_quit(uint64_t p_thread_id, const Array &p_data) {
+	remote_quit_requested = true;
 	emit_signal(SNAME("stop_requested"));
 	_stop_and_notify();
 }
@@ -1289,6 +1290,7 @@ String ScriptEditorDebugger::_format_frame_text(const ScriptLanguage::StackInfo 
 void ScriptEditorDebugger::start(Ref<RemoteDebuggerPeer> p_peer) {
 	_clear_errors_list();
 	stop();
+	remote_quit_requested = false;
 
 	profiler->set_enabled(true, true);
 	visual_profiler->set_enabled(true);

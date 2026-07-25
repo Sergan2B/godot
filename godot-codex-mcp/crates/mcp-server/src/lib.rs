@@ -607,6 +607,19 @@ impl std::fmt::Debug for GodotMcpServer {
 
 impl output_schema::ToolAvailabilityGuard for GodotMcpServer {
     fn unavailable_tool_result(&self, tool_name: &str) -> Option<CallToolResult> {
+        // Diagnostics is the one mixed editor/runtime tool. During a stale
+        // semantic replica window the router must admit the request so the
+        // deserialized scope can apply its exact domain guard: editor reads
+        // still fail closed, while runtime reads can reauthenticate directly
+        // against the live Bridge.
+        if tool_name == "godot_get_diagnostics" {
+            let health = self.connection_status();
+            if has_tool_domain_authority(&health, AvailabilityDomain::Editor)
+                || has_tool_domain_authority(&health, AvailabilityDomain::Runtime)
+            {
+                return None;
+            }
+        }
         output_schema::availability_domain(tool_name)
             .and_then(|domain| self.unavailable_error(domain))
     }
@@ -9654,6 +9667,14 @@ mod tests {
             server
                 .unavailable_error(AvailabilityDomain::Runtime)
                 .is_none()
+        );
+        assert!(
+            output_schema::ToolAvailabilityGuard::unavailable_tool_result(
+                &server,
+                "godot_get_diagnostics",
+            )
+            .is_none(),
+            "the mixed-scope router guard must defer to the diagnostics scope"
         );
     }
 
