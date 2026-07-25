@@ -125,7 +125,7 @@ signal signature size size_after size_before snapshot_bytes snapshot_checksum sn
 snapshot_timeout_ms
 snapshot_window_bytes negotiated_snapshot_chunk_bytes total_inspector_bytes source source_commit source_complete
 source_documents source_entity_id
-source_hashes_verified source_hint source_kind source_kinds source_resource_entity_id source_text_included stack
+source_hashes_verified source_hint source_kind source_kinds source_mapping source_resource_entity_id source_text_included stack
 stack_frames stack_kind stacks stacks_bytes start start_byte start_column start_line started_at_ms state
 static_cache status status_bytes string_characters structural_nodes subject subject_entity_id summary supported
 supports_form_elicitation suppressed_disk_nodes surface surface_observed surfaces symbol symbol_id symbols
@@ -2791,8 +2791,17 @@ mod tests {
             "child_count": 0,
             "visibility": {"available": true, "visible": true, "visible_in_tree": true},
             "source_hint": {
+                "scene_path": "res://main.tscn",
+                "relative_node_path": "Player",
+                "instance_scene_paths": []
+            },
+            "source_mapping": {
                 "editor_node_id": format!("node:{}", "1".repeat(32)),
-                "confidence": "runtime_confirmed"
+                "confidence": "runtime_confirmed",
+                "evidence": [{
+                    "source": "runtime_debugger_tree",
+                    "runtime_object_id": runtime_object_id
+                }]
             }
         }]);
         assert_valid_normalized("godot_get_runtime_tree", tree.clone());
@@ -2870,7 +2879,7 @@ mod tests {
         }
         for invalid_editor_node in [json!(7), json!("424242"), json!("node:short")] {
             let mut invalid = tree.clone();
-            invalid["nodes"][0]["source_hint"]["editor_node_id"] = invalid_editor_node;
+            invalid["nodes"][0]["source_mapping"]["editor_node_id"] = invalid_editor_node;
             assert_invalid_normalized("godot_get_runtime_tree", invalid);
         }
 
