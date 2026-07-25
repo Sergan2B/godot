@@ -153,6 +153,63 @@ def raw_metadata(provenance_sha256: str) -> dict[str, Any]:
     }
 
 
+def detached_package_manifest(
+    *,
+    internal_manifest_sha256: str = digest("c"),
+    mcp_binary_sha256: str = digest("9"),
+) -> dict[str, Any]:
+    bindings = metadata()["bindings"]
+    return {
+        "schema_version": "s11-package-manifest/1.0",
+        "source_commit": bindings["package_source_commit"],
+        "package_version": "0.1.0",
+        "compatibility_matrix_sha256": bindings[
+            "compatibility_matrix_sha256"
+        ],
+        "registry_sha256": bindings["registry_sha256"],
+        "third_party_licenses_sha256": digest("d"),
+        "archive": {},
+        "build_provenance": {},
+        "godot_prerequisite": {
+            "sha256": bindings["godot_artifact_sha256"],
+        },
+        "contents": [
+            {
+                "path": "package-manifest.json",
+                "sha256": internal_manifest_sha256,
+                "bytes": 1,
+                "mode": "0644",
+            },
+            {
+                "path": "bin/godot-codex-mcp",
+                "sha256": mcp_binary_sha256,
+                "bytes": 1,
+                "mode": "0755",
+            },
+        ],
+    }
+
+
+def write_metadata_inputs(
+    root: Path,
+    *,
+    receipt_bytes: bytes,
+    detached_manifest: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], bytes]:
+    package = detached_manifest or detached_package_manifest()
+    package_bytes = recorder.canonical_json(package)
+    (root / recorder.HOST_PROVENANCE_NAME).write_bytes(receipt_bytes)
+    (root / recorder.DETACHED_PACKAGE_MANIFEST_NAME).write_bytes(
+        package_bytes
+    )
+    raw = raw_metadata(recorder.sha256_bytes(receipt_bytes))
+    raw["bindings"]["package_manifest_sha256"] = recorder.sha256_bytes(
+        package_bytes
+    )
+    raw["bindings"]["mcp_binary_sha256"] = package["contents"][1]["sha256"]
+    return raw, package_bytes
+
+
 def line(value: Any) -> bytes:
     return recorder.canonical_json(value) + b"\n"
 
@@ -183,10 +240,23 @@ class Sprint11SurfaceRecorderTests(unittest.TestCase):
             )
             bound = metadata()
             bound["bindings"]["package_manifest_sha256"] = (
-                recorder.sha256_bytes(manifest)
+                digest("f")
             )
             bound["bindings"]["mcp_binary_sha256"] = recorder.sha256_bytes(
                 executable.read_bytes()
+            )
+            bound["_package_content_bindings"] = {
+                "package_version": "0.1.0",
+                "internal_manifest_sha256": recorder.sha256_bytes(manifest),
+                "mcp_binary_sha256": recorder.sha256_bytes(
+                    executable.read_bytes()
+                ),
+            }
+            self.assertNotEqual(
+                bound["bindings"]["package_manifest_sha256"],
+                bound["_package_content_bindings"][
+                    "internal_manifest_sha256"
+                ],
             )
             command, descriptor = recorder._qualifying_command(
                 [str(executable), "--project-root", str(project)],
@@ -569,12 +639,11 @@ class Sprint11SurfaceRecorderTests(unittest.TestCase):
             path = root / "metadata.json"
             receipt = host_provenance_receipt()
             receipt_bytes = recorder.canonical_json(receipt)
-            (root / recorder.HOST_PROVENANCE_NAME).write_bytes(receipt_bytes)
-            path.write_bytes(
-                recorder.canonical_json(
-                    raw_metadata(recorder.sha256_bytes(receipt_bytes))
-                )
+            raw, package_bytes = write_metadata_inputs(
+                root,
+                receipt_bytes=receipt_bytes,
             )
+            path.write_bytes(recorder.canonical_json(raw))
             loaded = recorder.load_metadata(path)
             self.assertEqual(loaded["surface"], "cli")
             self.assertEqual(
@@ -585,8 +654,18 @@ class Sprint11SurfaceRecorderTests(unittest.TestCase):
                 loaded["bindings"]["host_provenance_sha256"],
                 recorder.sha256_bytes(receipt_bytes),
             )
+            self.assertEqual(
+                loaded["bindings"]["package_manifest_sha256"],
+                recorder.sha256_bytes(package_bytes),
+            )
+            self.assertEqual(
+                loaded["_package_content_bindings"][
+                    "internal_manifest_sha256"
+                ],
+                digest("c"),
+            )
 
-            changed = raw_metadata(recorder.sha256_bytes(receipt_bytes))
+            changed = dict(raw)
             changed["host"] = {"build": "/Users/private/build"}
             path.write_bytes(recorder.canonical_json(changed))
             with self.assertRaises(recorder.RecorderError):
@@ -599,11 +678,67 @@ class Sprint11SurfaceRecorderTests(unittest.TestCase):
             receipt = host_provenance_receipt()
             receipt_bytes = recorder.canonical_json(receipt)
             expected_digest = recorder.sha256_bytes(receipt_bytes)
+            raw, _package_bytes = write_metadata_inputs(
+                root,
+                receipt_bytes=receipt_bytes,
+            )
             (root / recorder.HOST_PROVENANCE_NAME).write_bytes(
                 receipt_bytes + b" "
             )
-            path.write_bytes(
-                recorder.canonical_json(raw_metadata(expected_digest))
+            raw["host_provenance"]["sha256"] = expected_digest
+            path.write_bytes(recorder.canonical_json(raw))
+            with self.assertRaisesRegex(
+                recorder.RecorderError,
+                "digest differs",
+            ):
+                recorder.load_metadata(path)
+
+    def test_detached_manifest_binds_internal_manifest_separately(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "metadata.json"
+            receipt_bytes = recorder.canonical_json(
+                host_provenance_receipt()
+            )
+            raw, package_bytes = write_metadata_inputs(
+                root,
+                receipt_bytes=receipt_bytes,
+            )
+            path.write_bytes(recorder.canonical_json(raw))
+
+            loaded = recorder.load_metadata(path)
+            self.assertEqual(
+                loaded["bindings"]["package_manifest_sha256"],
+                recorder.sha256_bytes(package_bytes),
+            )
+            self.assertEqual(
+                loaded["_package_content_bindings"][
+                    "internal_manifest_sha256"
+                ],
+                digest("c"),
+            )
+
+            changed = detached_package_manifest(
+                internal_manifest_sha256=digest("e")
+            )
+            changed_bytes = recorder.canonical_json(changed)
+            (root / recorder.DETACHED_PACKAGE_MANIFEST_NAME).write_bytes(
+                changed_bytes
+            )
+            raw["bindings"]["package_manifest_sha256"] = (
+                recorder.sha256_bytes(changed_bytes)
+            )
+            path.write_bytes(recorder.canonical_json(raw))
+            changed_loaded = recorder.load_metadata(path)
+            self.assertEqual(
+                changed_loaded["_package_content_bindings"][
+                    "internal_manifest_sha256"
+                ],
+                digest("e"),
+            )
+
+            (root / recorder.DETACHED_PACKAGE_MANIFEST_NAME).write_bytes(
+                changed_bytes + b" "
             )
             with self.assertRaisesRegex(
                 recorder.RecorderError,

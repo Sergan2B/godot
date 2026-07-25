@@ -707,6 +707,11 @@ version, registry hash, and revision timeline. Evidence binds the exact
 recorder journal path and full-file SHA-256; the trace repeats that digest and
 binds an ordered event hash-chain and event count. The validator recomputes all
 three and rejects a trace whose journal surface/host/package bindings differ.
+The exact detached `sprint11-package-manifest.json` is placed beside recorder
+metadata and supplies the source/package binding used by final evidence. Its
+content records independently bind the different installed
+`package-manifest.json`, ownership marker, `VERSION`, and MCP executable; the
+recorder rejects a detached/internal manifest digest substitution.
 The recorder labels this artifact `surface_transport_capture`: stdio bytes do
 not by themselves prove that the claimed App/CLI/IDE process owned stdin.
 

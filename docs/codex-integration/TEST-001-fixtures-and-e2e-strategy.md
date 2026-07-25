@@ -222,6 +222,15 @@ recomputes the chain and requires exact surface, host, package, fixture,
 registry, prompt, MCP, and Godot equality between trace and journal. A trace
 without its exact journal cannot qualify.
 
+Recorder metadata binds the exact detached
+`sprint11-package-manifest.json`, supplied as a regular file beside the
+metadata. The recorder validates that detached manifest against the source,
+matrix, registry, Godot, and MCP bindings, then separately verifies the
+installed `package-manifest.json`, `VERSION`, ownership marker, and MCP
+executable against the detached manifest's content records. The detached and
+installed manifests have intentionally different SHA-256 values; substituting
+one digest for the other or rebuilding either file invalidates the capture.
+
 Neither the recorder nor a model-authored trace can prove that stdin belonged
 to the claimed App, CLI, or IDE session. Recorder output is therefore labelled
 `surface_transport_capture`, not `real_surface`. Qualification additionally

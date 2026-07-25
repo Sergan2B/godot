@@ -56,6 +56,7 @@ HOST_PROFILE_PATH = (
     / "host-coordinate-profile.v1.json"
 )
 HOST_PROVENANCE_NAME = "measurement.json"
+DETACHED_PACKAGE_MANIFEST_NAME = "sprint11-package-manifest.json"
 
 DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}\Z")
@@ -228,6 +229,112 @@ def _validated_host_provenance(
     }
 
 
+def _validated_detached_package_manifest(
+    metadata_path: Path,
+    *,
+    bindings: Mapping[str, Any],
+) -> dict[str, Any]:
+    manifest_path = metadata_path.parent / DETACHED_PACKAGE_MANIFEST_NAME
+    try:
+        payload = acquisition_paths.read_regular_file(
+            manifest_path,
+            maximum=MAX_PACKAGE_MANIFEST_BYTES,
+        )
+    except acquisition_paths.AcquisitionPathError as error:
+        raise RecorderError("detached package manifest is unavailable") from error
+    expected_digest = _digest(
+        bindings.get("package_manifest_sha256"),
+        label="detached package manifest",
+    )
+    if sha256_bytes(payload) != expected_digest:
+        raise RecorderError("detached package manifest digest differs")
+    manifest = _strict_json(
+        payload,
+        label="detached package manifest",
+        maximum=MAX_PACKAGE_MANIFEST_BYTES,
+    )
+    if set(manifest) != {
+        "archive",
+        "build_provenance",
+        "compatibility_matrix_sha256",
+        "contents",
+        "godot_prerequisite",
+        "package_version",
+        "registry_sha256",
+        "schema_version",
+        "source_commit",
+        "third_party_licenses_sha256",
+    }:
+        raise RecorderError("detached package manifest fields differ")
+    if (
+        manifest["schema_version"] != "s11-package-manifest/1.0"
+        or manifest["source_commit"] != bindings.get("package_source_commit")
+        or manifest["compatibility_matrix_sha256"]
+        != bindings.get("compatibility_matrix_sha256")
+        or manifest["registry_sha256"] != bindings.get("registry_sha256")
+    ):
+        raise RecorderError("detached package manifest binding differs")
+    package_version = manifest["package_version"]
+    if (
+        not isinstance(package_version, str)
+        or re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z.+-]{0,127}", package_version)
+        is None
+    ):
+        raise RecorderError("detached package version differs")
+    prerequisite = manifest["godot_prerequisite"]
+    if (
+        not isinstance(prerequisite, dict)
+        or prerequisite.get("sha256") != bindings.get("godot_artifact_sha256")
+    ):
+        raise RecorderError("detached Godot prerequisite binding differs")
+    contents = manifest["contents"]
+    if not isinstance(contents, list) or not 2 <= len(contents) <= 256:
+        raise RecorderError("detached package contents differ")
+    records: dict[str, dict[str, Any]] = {}
+    for item in contents:
+        if not isinstance(item, dict) or set(item) != {
+            "bytes",
+            "mode",
+            "path",
+            "sha256",
+        }:
+            raise RecorderError("detached package content record differs")
+        path = item["path"]
+        if (
+            not isinstance(path, str)
+            or not path
+            or path.startswith("/")
+            or ".." in Path(path).parts
+            or path in records
+            or len(path.encode("utf-8")) > 512
+        ):
+            raise RecorderError("detached package content path differs")
+        _digest(item["sha256"], label="detached package content")
+        if (
+            not isinstance(item["bytes"], int)
+            or isinstance(item["bytes"], bool)
+            or not 0 <= item["bytes"] <= MAX_EXECUTABLE_BYTES
+            or item["mode"] not in {"0644", "0755"}
+        ):
+            raise RecorderError("detached package content metadata differs")
+        records[path] = item
+    internal_manifest = records.get("package-manifest.json")
+    mcp_executable = records.get("bin/godot-codex-mcp")
+    if (
+        internal_manifest is None
+        or internal_manifest["mode"] != "0644"
+        or mcp_executable is None
+        or mcp_executable["mode"] != "0755"
+        or mcp_executable["sha256"] != bindings.get("mcp_binary_sha256")
+    ):
+        raise RecorderError("detached package executable binding differs")
+    return {
+        "package_version": package_version,
+        "internal_manifest_sha256": internal_manifest["sha256"],
+        "mcp_binary_sha256": mcp_executable["sha256"],
+    }
+
+
 def load_metadata(path: Path) -> dict[str, Any]:
     try:
         document = _strict_json(
@@ -284,6 +391,10 @@ def load_metadata(path: Path) -> dict[str, Any]:
         != measured["host_coordinate_profile_sha256"]
     ):
         raise RecorderError("metadata host profile binding differs")
+    package_content_bindings = _validated_detached_package_manifest(
+        path,
+        bindings=raw_bindings,
+    )
     bindings = {**raw_bindings, **measured}
     controls = document["host_controls"]
     if not isinstance(controls, dict) or set(controls) != {
@@ -318,6 +429,7 @@ def load_metadata(path: Path) -> dict[str, Any]:
         "host": host,
         "bindings": bindings,
         "host_controls": controls,
+        "_package_content_bindings": package_content_bindings,
     }
 
 
@@ -879,11 +991,17 @@ def _qualifying_command(
     )
     manifest_sha256 = sha256_bytes(manifest)
     bindings = metadata.get("bindings")
+    package_content_bindings = metadata.get("_package_content_bindings")
     if (
         not isinstance(bindings, Mapping)
-        or manifest_sha256 != bindings.get("package_manifest_sha256")
+        or not isinstance(package_content_bindings, Mapping)
+        or manifest_sha256
+        != package_content_bindings.get("internal_manifest_sha256")
+        or version_text != package_content_bindings.get("package_version")
+        or bindings.get("mcp_binary_sha256")
+        != package_content_bindings.get("mcp_binary_sha256")
     ):
-        raise RecorderError("package manifest binding differs")
+        raise RecorderError("installed package content binding differs")
     ownership = _regular_file_bytes(
         package_root / ".godot-codex-owned",
         label="package ownership marker",
