@@ -3,7 +3,7 @@
   "profile_id": "external-codex-beta-macos-arm64-hosts-v1",
   "compatibility_matrix": {
     "path": "godot-codex-mcp/product/compatibility-matrix.v1.json",
-    "sha256": "sha256:8f776a5ccf7314464d765d5d84db22005d5e8dbaf6edad3ce12147949b3bdd3d"
+    "sha256": "sha256:b669768c03939e5cdee29a1b83d0f0078f8ff91f79b15edc7c180ba8482adda8"
   },
   "server_instructions": {
     "path": "godot-codex-mcp/product/server-instructions.v1.txt",
@@ -16,19 +16,19 @@
       "host_name": "codex-desktop",
       "host_identifier": "com.openai.codex",
       "host_artifact_kind": "macos_bundle_executable",
-      "host_version": "26.721.31836",
-      "host_build": "5828",
+      "host_version": "26.721.41059",
+      "host_build": "5848",
       "host_commit": null,
-      "host_artifact_sha256": "sha256:1e69df41e05969f1487dfdc9f72a600ef3b7627a7f8ee9d481cb8f88400eda45",
+      "host_artifact_sha256": "sha256:d7bd5eacb7f59c42240e6c5dc62eebdeca9d09a0b59ed4c3ac3e2b55ef8d9336",
       "host_metadata_sha256": null,
       "host_code_signature": {
         "mode": "deep_strict",
         "identifier": "com.openai.codex",
         "team_id": "2DC432GLL2",
-        "cdhash": "56572d4c92d53f0c09776d3654f86432716ca2f5"
+        "cdhash": "753af97d4310c3c393348bdc0f28794e51b096ed"
       },
       "client_version": "0.146.0-alpha.3.1",
-      "client_artifact_sha256": "sha256:a2b6198fd61327f54542716bd96e588c5b10789522fee4bbacaeff1aa7836efb",
+      "client_artifact_sha256": "sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223",
       "client_code_signature": {
         "mode": "strict",
         "identifier": "codex",
@@ -50,7 +50,7 @@
       "host_version": "0.146.0-alpha.3.1",
       "host_build": "0.146.0-alpha.3.1",
       "host_commit": null,
-      "host_artifact_sha256": "sha256:a2b6198fd61327f54542716bd96e588c5b10789522fee4bbacaeff1aa7836efb",
+      "host_artifact_sha256": "sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223",
       "host_metadata_sha256": null,
       "host_code_signature": {
         "mode": "strict",
@@ -59,7 +59,7 @@
         "cdhash": "b81d53d6df5ab26ce419cf2637a859d8c7f1f56e"
       },
       "client_version": "0.146.0-alpha.3.1",
-      "client_artifact_sha256": "sha256:a2b6198fd61327f54542716bd96e588c5b10789522fee4bbacaeff1aa7836efb",
+      "client_artifact_sha256": "sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223",
       "client_code_signature": {
         "mode": "strict",
         "identifier": "codex",

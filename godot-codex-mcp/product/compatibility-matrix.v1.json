@@ -249,7 +249,7 @@
   "surfaces": [
     {
       "surface": "app",
-      "host_version": "26.721.31836",
+      "host_version": "26.721.41059",
       "ide_host_version": null,
       "target": {
         "os": "macos",

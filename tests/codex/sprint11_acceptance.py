@@ -2319,24 +2319,24 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         "host_name": "codex-desktop",
         "host_identifier": "com.openai.codex",
         "host_artifact_kind": "macos_bundle_executable",
-        "host_version": "26.721.31836",
-        "host_build": "5828",
+        "host_version": "26.721.41059",
+        "host_build": "5848",
         "host_commit": None,
         "host_artifact_sha256": (
-            "sha256:1e69df41e05969f1487dfdc9f72a600e"
-            "f3b7627a7f8ee9d481cb8f88400eda45"
+            "sha256:d7bd5eacb7f59c42240e6c5dc62eebd"
+            "eca9d09a0b59ed4c3ac3e2b55ef8d9336"
         ),
         "host_metadata_sha256": None,
         "host_code_signature": {
             "mode": "deep_strict",
             "identifier": "com.openai.codex",
             "team_id": "2DC432GLL2",
-            "cdhash": "56572d4c92d53f0c09776d3654f86432716ca2f5",
+            "cdhash": "753af97d4310c3c393348bdc0f28794e51b096ed",
         },
         "client_version": "0.146.0-alpha.3.1",
         "client_artifact_sha256": (
-            "sha256:a2b6198fd61327f54542716bd96e588c"
-            "5b10789522fee4bbacaeff1aa7836efb"
+            "sha256:6d8be49e49751554df16572369e636cbe"
+            "02c84b208cad3dc35528c846eeca223"
         ),
         "client_code_signature": {
             "mode": "strict",
@@ -2358,8 +2358,8 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         "host_build": "0.146.0-alpha.3.1",
         "host_commit": None,
         "host_artifact_sha256": (
-            "sha256:a2b6198fd61327f54542716bd96e588c"
-            "5b10789522fee4bbacaeff1aa7836efb"
+            "sha256:6d8be49e49751554df16572369e636cbe"
+            "02c84b208cad3dc35528c846eeca223"
         ),
         "host_metadata_sha256": None,
         "host_code_signature": {
@@ -2370,8 +2370,8 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         },
         "client_version": "0.146.0-alpha.3.1",
         "client_artifact_sha256": (
-            "sha256:a2b6198fd61327f54542716bd96e588c"
-            "5b10789522fee4bbacaeff1aa7836efb"
+            "sha256:6d8be49e49751554df16572369e636cbe"
+            "02c84b208cad3dc35528c846eeca223"
         ),
         "client_code_signature": {
             "mode": "strict",

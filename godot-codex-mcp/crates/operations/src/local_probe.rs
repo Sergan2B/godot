@@ -1570,7 +1570,7 @@ mod tests {
             "#!/bin/sh\n\
              case \"$2\" in\n\
                CFBundleIdentifier) printf '%s\\n' 'com.openai.codex' ;;\n\
-               CFBundleShortVersionString) printf '%s\\n' '26.721.31836' ;;\n\
+               CFBundleShortVersionString) printf '%s\\n' '26.721.41059' ;;\n\
                *) exit 2 ;;\n\
              esac\n",
         );
@@ -1597,7 +1597,7 @@ mod tests {
             ProbeDeadline::new(programs.total_timeout),
         )
         .unwrap();
-        assert_eq!(observed.host_version, "26.721.31836");
+        assert_eq!(observed.host_version, "26.721.41059");
         assert_eq!(observed.effective_project_config, Some(true));
         assert_eq!(observed.restart_required, None);
         assert_eq!(observed.supports_form_elicitation, Some(true));
