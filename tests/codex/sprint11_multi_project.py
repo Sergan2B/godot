@@ -451,6 +451,37 @@ def _read(client: s9.ModelFreeMcpClient, timeout: float) -> dict[str, Any]:
     return coordinates
 
 
+def _quiescent_read(
+    client: s9.ModelFreeMcpClient,
+    timeout: float,
+) -> dict[str, Any]:
+    fields = (
+        "project_id",
+        "editor_session_id",
+        "scene_id",
+        "scene_revision",
+        "operation_seq",
+        "action_count",
+    )
+    deadline = time.monotonic() + timeout
+    stable_since = 0.0
+    previous: tuple[Any, ...] | None = None
+    latest: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        latest = _read(client, min(timeout, 5.0))
+        projection = tuple(latest[field] for field in fields)
+        now = time.monotonic()
+        if projection != previous:
+            previous = projection
+            stable_since = now
+        elif now - stable_since >= 0.25:
+            return latest
+        time.sleep(0.05)
+    raise s9.WorkflowError(
+        f"editor coordinates did not become quiescent: {latest}"
+    )
+
+
 def _connection_status(
     client: s9.ModelFreeMcpClient,
     expected_project_id: str,
@@ -914,9 +945,6 @@ def _run_private_binding_fault(
     restored = False
     modified: set[str] = set()
     try:
-        session_a.sidecar_process.stop()
-        if "b" in affected:
-            session_b.sidecar_process.stop()
         if case_id == "copied_discovery":
             modified.add("a_discovery")
             _replace_private_file(
@@ -1006,23 +1034,18 @@ def _run_private_binding_fault(
             for name in modified:
                 snapshots[name].restore()
 
-    client_a = cast(s10.Sprint10McpClient, session_a.start_sidecar())
-    if "b" in affected:
-        client_b = cast(s10.Sprint10McpClient, session_b.start_sidecar())
     _assert_committed_workflow(client_a, workflow_a, timeout)
     _assert_committed_workflow(client_b, workflow_b, timeout)
     after_approvals = {
         "a": client_a.elicitation_total,
         "b": client_b.elicitation_total,
     }
-    # Restarted MCP clients have fresh counters; the fault probes themselves
-    # must have observed zero elicitations, while the already committed
-    # workflows are proven by their unchanged transaction/readback state.
+    # Fault probes use independent MCP processes. The two healthy project
+    # clients stay connected, retain their bounded validation reports, and
+    # must observe neither a new approval nor any state change.
     approvals_isolated = (
         all(result[2] for result in probe_results)
-        and after_approvals["a"] == 0
-        and after_approvals["b"]
-        == (0 if "b" in affected else before_approvals["b"])
+        and after_approvals == before_approvals
     )
     s9.require(
         probe_results
@@ -1488,8 +1511,10 @@ def _run_editor_restart_case(
     workflow_b: Mapping[str, Any],
     timeout: float,
 ) -> tuple[dict[str, Any], s10.Sprint10McpClient]:
-    before_a = _read(client_a, timeout)
-    before_b = _read(client_b, timeout)
+    before_a, before_b = _parallel(
+        lambda: _quiescent_read(client_a, timeout),
+        lambda: _quiescent_read(client_b, timeout),
+    )
     approvals = (client_a.elicitation_total, client_b.elicitation_total)
     old_editor = cast(str, before_a["editor_session_id"])
     session_a.stop_editor(graceful=False)
@@ -1544,16 +1569,24 @@ def _run_editor_restart_case(
         timeout=timeout,
         context="editor_restart_sibling",
     )
-    b_preserved = all(
-        during_b[field] == before_b[field] == after_b[field]
-        for field in (
-            "project_id",
-            "editor_session_id",
-            "scene_id",
-            "scene_revision",
-            "operation_seq",
-            "action_count",
-        )
+    sibling_fields = (
+        "project_id",
+        "editor_session_id",
+        "scene_id",
+        "scene_revision",
+        "operation_seq",
+        "action_count",
+    )
+    changed_sibling_fields = [
+        field
+        for field in sibling_fields
+        if not during_b[field] == before_b[field] == after_b[field]
+    ]
+    b_preserved = not changed_sibling_fields
+    s9.require(
+        b_preserved,
+        "editor restart changed sibling coordinates "
+        f"(fields={changed_sibling_fields})",
     )
     a_bound = (
         new_editor != old_editor
@@ -1599,8 +1632,10 @@ def _run_cache_rebuild_case(
         and session_a.sidecar_process is not None,
         "cache rebuild fixture is incomplete",
     )
-    before_a = _read(client_a, timeout)
-    before_b = _read(client_b, timeout)
+    before_a, before_b = _parallel(
+        lambda: _quiescent_read(client_a, timeout),
+        lambda: _quiescent_read(client_b, timeout),
+    )
     approvals = (client_a.elicitation_total, client_b.elicitation_total)
     cache = session_a.project_root / ".godot/codex/index"
     held = session_a.project_root / ".godot/codex/.s11-index-held"
@@ -1629,12 +1664,29 @@ def _run_cache_rebuild_case(
         during_b = _read(client_b, timeout)
         prepared_a = cast(Mapping[str, Any], workflow_a["prepared"])
         prepared_b = cast(Mapping[str, Any], workflow_b["prepared"])
-        _transaction_status(
-            client_a,
-            cast(str, prepared_a["change_set_id"]),
-            expected_state="undone",
-            timeout=timeout,
-            context="cache_rebuild_target",
+        target_status, target_error, _ = client_a.tool(
+            "godot_get_transaction_status",
+            {"transaction_id": prepared_a["change_set_id"]},
+        )
+        target_code = (
+            target_status.get("error", {}).get("code")
+            if isinstance(target_status.get("error"), dict)
+            else None
+        )
+        target_transaction_closed = (
+            not target_error and target_status.get("state") == "undone"
+        ) or (
+            target_error
+            and target_code
+            in {
+                "transaction_not_found",
+                "transaction_expired",
+                "stale_editor_session",
+            }
+        )
+        s9.require(
+            target_transaction_closed,
+            f"cache rebuild resurrected target transaction: {target_status}",
         )
         _transaction_status(
             client_b,
@@ -1681,7 +1733,7 @@ def _run_cache_rebuild_case(
             no_cross_project_data=a_bound and b_preserved,
             no_cross_project_mutation=b_preserved,
             no_cross_project_approval=approval_preserved,
-            no_cross_project_transaction=True,
+            no_cross_project_transaction=target_transaction_closed,
             cleanup=not held.exists(),
         ),
         client_a,
@@ -2431,7 +2483,7 @@ def run_live(
                 "multi-project probes changed project-content bytes",
             )
             sibling_status_preserved = all(
-                status.get("transaction_id") == transaction_ids["b"]
+                status.get("change_set_id") == transaction_ids["b"]
                 and status.get("state") == "committed"
                 and status.get("validation_report_id") == report_ids["b"]
                 and status.get("preview_digest")
