@@ -2691,6 +2691,11 @@ def parse_arguments() -> argparse.Namespace:
     )
     parser.add_argument("--skip-negatives", action="store_true")
     parser.add_argument("--skip-approval-timeout", action="store_true")
+    parser.add_argument(
+        "--only-approval-timeout",
+        action="store_true",
+        help="run only the real 120-second approval timeout negative",
+    )
     parser.add_argument("--skip-faults", action="store_true")
     parser.add_argument(
         "--additive-sprint10-registry",
@@ -2714,6 +2719,13 @@ def parse_arguments() -> argparse.Namespace:
 def main() -> int:
     global TOOL_NAMES, MUTATING_TOOLS
     arguments = parse_arguments()
+    require(
+        not (
+            arguments.only_approval_timeout
+            and (arguments.skip_negatives or arguments.skip_approval_timeout)
+        ),
+        "approval-timeout-only mode conflicts with a skip flag",
+    )
     packaged_fixture.activate_from_arguments(arguments)
     if arguments.additive_sprint10_registry:
         TOOL_NAMES = TOOL_NAMES | SPRINT10_TOOL_NAMES
@@ -2740,53 +2752,67 @@ def main() -> int:
     negatives: dict[str, Any] = {}
     if not arguments.skip_negatives:
         print("[S9 model-free] idempotency and approval negatives...", flush=True)
-        negatives["idempotency"] = run_idempotency_negative(
-            godot=godot,
-            sidecar=sidecar,
-            timeout=arguments.timeout,
-        )
-        negatives["committed_replay"] = run_committed_replay_negative(
-            godot=godot,
-            sidecar=sidecar,
-            timeout=arguments.timeout,
-        )
-        negatives["expired_preview"] = run_expired_preview_negative(
-            godot=godot,
-            sidecar=sidecar,
-            timeout=arguments.timeout,
-        )
-        negatives["approval"] = [
-            run_approval_negative(
-                "confirm_false",
-                "approval_invalid",
+        if arguments.only_approval_timeout:
+            negatives["approval"] = [
+                run_approval_negative(
+                    "timeout",
+                    "approval_timeout",
+                    godot=godot,
+                    sidecar=sidecar,
+                    timeout=arguments.timeout,
+                )
+            ]
+        else:
+            negatives["idempotency"] = run_idempotency_negative(
                 godot=godot,
                 sidecar=sidecar,
                 timeout=arguments.timeout,
-            ),
-            run_approval_negative(
-                "decline",
-                "approval_declined",
+            )
+            negatives["committed_replay"] = run_committed_replay_negative(
                 godot=godot,
                 sidecar=sidecar,
                 timeout=arguments.timeout,
-            ),
-            run_approval_negative(
-                "cancel",
-                "approval_cancelled",
+            )
+            negatives["expired_preview"] = run_expired_preview_negative(
                 godot=godot,
                 sidecar=sidecar,
                 timeout=arguments.timeout,
-            ),
-            run_approval_negative(
-                "unsupported",
-                "approval_host_unsupported",
-                godot=godot,
-                sidecar=sidecar,
-                timeout=arguments.timeout,
-                supports_form=False,
-            ),
-        ]
-        if not arguments.skip_approval_timeout:
+            )
+            negatives["approval"] = [
+                run_approval_negative(
+                    "confirm_false",
+                    "approval_invalid",
+                    godot=godot,
+                    sidecar=sidecar,
+                    timeout=arguments.timeout,
+                ),
+                run_approval_negative(
+                    "decline",
+                    "approval_declined",
+                    godot=godot,
+                    sidecar=sidecar,
+                    timeout=arguments.timeout,
+                ),
+                run_approval_negative(
+                    "cancel",
+                    "approval_cancelled",
+                    godot=godot,
+                    sidecar=sidecar,
+                    timeout=arguments.timeout,
+                ),
+                run_approval_negative(
+                    "unsupported",
+                    "approval_host_unsupported",
+                    godot=godot,
+                    sidecar=sidecar,
+                    timeout=arguments.timeout,
+                    supports_form=False,
+                ),
+            ]
+        if (
+            not arguments.only_approval_timeout
+            and not arguments.skip_approval_timeout
+        ):
             negatives["approval"].append(
                 run_approval_negative(
                     "timeout",

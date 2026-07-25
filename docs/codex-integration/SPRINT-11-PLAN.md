@@ -1258,13 +1258,14 @@ package and Godot prerequisite:
 ```
 
 It runs Sprint 6, Sprint 7, Sprint 8, two Sprint 9 operation shards, one
-Sprint 9 negative shard, two Sprint 9 fault shards, and Sprint 10. Every
+fast-negative shard, one approval-timeout shard, two Sprint 9 fault shards,
+and Sprint 10. Every
 command uses the packaged `bin/godot-codex-mcp`, binds its report to the
 package sidecar and Godot hashes, and opts into the additive 41-tool Sprint 11
 registry. Default Sprint 6–10 runner profiles preserve their original exact
 registry assertions. No Sprint 9 child may exceed 180 seconds.
 
-The acquisition publishes its nine reports and
+The acquisition publishes its ten reports and
 `s11-packaged-regression-receipt/1.0` receipt atomically. The final validator
 loads those committed artifacts from the evidence source commit, recomputes
 their hashes, checks exact runner/fixture/package bindings and aggregate

@@ -141,14 +141,15 @@ automated gates and then consumes the source-bound candidate evidence:
 ```
 
 This is a separate acquisition profile, not part of the short automated
-preflight. It runs nine package-live commands: Sprint 6, Sprint 7, Sprint 8,
-two Sprint 9 operation shards, one Sprint 9 negative shard, two Sprint 9
-fault shards, and Sprint 10. Every command opts into the additive Sprint 11
-registry while the unqualified Sprint 6–10 runners retain their original
-exact registry gates by default. The acquisition refuses a changed runner or
-fixture, a `HEAD` different from the package source, a mismatched package
-sidecar/Godot prerequisite, an oversized report, incomplete shard coverage,
-or a child exceeding 180 seconds. It publishes reports plus one closed
+preflight. It runs ten package-live commands: Sprint 6, Sprint 7, Sprint 8,
+two Sprint 9 operation shards, one fast-negative shard, one approval-timeout
+shard, two Sprint 9 fault shards, and Sprint 10. Every command opts into the
+additive Sprint 11 registry while the unqualified Sprint 6–10 runners retain
+their original exact registry gates by default. The acquisition refuses a
+changed runner or fixture, a `HEAD` different from the package source, a
+mismatched package sidecar/Godot prerequisite, an oversized report,
+incomplete shard coverage, or a child exceeding 180 seconds. It publishes
+reports plus one closed
 `s11-packaged-regression-receipt/1.0` receipt atomically.
 
 The exact detached manifest bytes, receipt, and reports are committed with the

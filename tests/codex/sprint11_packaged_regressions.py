@@ -1807,6 +1807,18 @@ def canonical_command_specs() -> tuple[CommandSpec, ...]:
                 *common_s9,
                 "--operations",
                 "--skip-faults",
+                "--skip-approval-timeout",
+            ),
+        ),
+        CommandSpec(
+            "s9_approval_timeout",
+            "tests/codex/sprint9_model_free_live.py",
+            "sprint9-approval-timeout.json",
+            (
+                *common_s9,
+                "--operations",
+                "--skip-faults",
+                "--only-approval-timeout",
             ),
         ),
         CommandSpec(
@@ -2123,8 +2135,22 @@ def validate_live_report(
                 and set(negatives)
                 == {"approval", "committed_replay", "expired_preview", "idempotency"}
                 and decisions
-                == {"confirm_false", "decline", "cancel", "unsupported", "timeout"},
+                == {"confirm_false", "decline", "cancel", "unsupported"},
                 "Sprint 9 negative matrix differs",
+            )
+        elif command_id == "s9_approval_timeout":
+            approval = negatives.get("approval")
+            decisions = {
+                item.get("decision")
+                for item in approval
+                if isinstance(item, dict)
+            } if isinstance(approval, list) else set()
+            require(
+                not operations
+                and not faults
+                and set(negatives) == {"approval"}
+                and decisions == {"timeout"},
+                "Sprint 9 approval timeout shard differs",
             )
         elif command_id == "s9_faults_a":
             require(
@@ -2196,7 +2222,16 @@ def validate_aggregate_reports(reports: Mapping[str, Mapping[str, Any]]) -> None
     for command_id in ("s9_faults_a", "s9_faults_b"):
         fault_names.extend(cast(dict[str, Any], reports[command_id]["faults"]))
     negatives = cast(dict[str, Any], reports["s9_negatives"]["negatives"])
-    approval = cast(list[dict[str, Any]], negatives["approval"])
+    approval = [
+        *cast(list[dict[str, Any]], negatives["approval"]),
+        *cast(
+            list[dict[str, Any]],
+            cast(
+                dict[str, Any],
+                reports["s9_approval_timeout"]["negatives"],
+            )["approval"],
+        ),
+    ]
     negative_names = {
         "idempotency",
         "committed_replay",

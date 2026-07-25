@@ -269,9 +269,12 @@ def synthetic_report(
                         "decline",
                         "cancel",
                         "unsupported",
-                        "timeout",
                     )
                 ],
+            }
+        elif command_id == "s9_approval_timeout":
+            negatives = {
+                "approval": [{"decision": "timeout"}],
             }
         elif command_id == "s9_faults_a":
             faults = {
@@ -339,8 +342,8 @@ class FakeRepository:
 class Sprint11PackagedRegressionTests(unittest.TestCase):
     def test_command_matrix_is_exact_bounded_and_package_scoped(self) -> None:
         specs = packaged.canonical_command_specs()
-        self.assertEqual(len(specs), 9)
-        self.assertEqual(len({item.command_id for item in specs}), 9)
+        self.assertEqual(len(specs), 10)
+        self.assertEqual(len({item.command_id for item in specs}), 10)
         for spec in specs:
             template = spec.argv_template()
             self.assertEqual(
@@ -355,10 +358,18 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
             self.assertIn("--additive-sprint11-registry", template)
             self.assertNotIn("target/release/godot-codex-mcp", " ".join(template))
         s9 = [item for item in specs if item.command_id.startswith("s9_")]
-        self.assertEqual(len(s9), 5)
+        self.assertEqual(len(s9), 6)
         self.assertTrue(
             all("--additive-sprint10-registry" in item.arguments for item in s9)
         )
+        negatives = next(
+            item for item in specs if item.command_id == "s9_negatives"
+        )
+        approval_timeout = next(
+            item for item in specs if item.command_id == "s9_approval_timeout"
+        )
+        self.assertIn("--skip-approval-timeout", negatives.arguments)
+        self.assertIn("--only-approval-timeout", approval_timeout.arguments)
 
     def test_python_runner_flags_ignore_ambient_site_customization(self) -> None:
         with tempfile.TemporaryDirectory(prefix="s11-python-isolation.") as temporary:
@@ -1803,7 +1814,7 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
         try:
             self.assertEqual(receipt["capture_kind"], "real_package_live")
             self.assertEqual(receipt["coverage"]["sprints"], [6, 7, 8, 9, 10])
-            self.assertEqual(len(receipt["commands"]), 9)
+            self.assertEqual(len(receipt["commands"]), 10)
             self.assertTrue((output_root / "receipt.json").is_file())
             self.assertTrue(
                 all(
@@ -1871,7 +1882,7 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
                 registry_sha256=bindings["registry_sha256"],
                 godot_artifact_sha256=bindings["godot_artifact_sha256"],
             )
-            self.assertEqual(len(paths), 9)
+            self.assertEqual(len(paths), 10)
 
             changed = copy.deepcopy(rebound)
             changed["bindings"]["package_sidecar_sha256"] = (
