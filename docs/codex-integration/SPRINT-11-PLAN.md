@@ -453,9 +453,12 @@ The TOML editor atomically merges only
   `<data-root>/versions/<exact-package-version>` and package ownership and
   checksums verify; an explicitly supplied unpacked package uses its canonical
   sibling `bin/godot-codex-mcp`;
-- an installed sidecar derives that same data root from its canonical
-  `versions/<exact-package-version>/bin` executable path, so App/CLI/IDE
-  launch does not depend on forwarding installer shell variables;
+- installed layouts include the exact owned
+  `env = { GODOT_CODEX_DATA_ROOT = "<data-root>" }` projection. Codex hosts
+  forward this per-server value even when they intentionally do not preserve
+  an installer shell environment. The sidecar also derives the same root from
+  a canonical `versions/<exact-package-version>/bin` executable as a bounded
+  non-host fallback;
 - `args = ["--project-root", "."]`;
 - `cwd = "<canonical-project-root>"` because the qualification-candidate Codex
   `0.146.0-alpha.3.1` host resolves MCP `cwd` from the task root in practice;
@@ -465,6 +468,9 @@ The TOML editor atomically merges only
 - bounded startup/tool timeouts appropriate for validation;
 - the exact generated tool allowlist;
 - `default_tools_approval_mode = "writes"` for `full-beta`.
+
+Setup preview redacts the command, project root, and package data root while
+the private plan and receipt remain digest-bound to their exact values.
 
 Read-only excludes run controls and all mutation/approval/policy tools.
 Full-beta includes all 41 tools while retaining host and semantic

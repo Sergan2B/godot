@@ -36,6 +36,7 @@ pub(crate) enum LauncherError {
 pub(crate) struct LauncherResolution {
     command: PathBuf,
     package_root: PathBuf,
+    installed_data_root: Option<PathBuf>,
     path_digest: String,
     file_digest: String,
 }
@@ -51,6 +52,10 @@ impl LauncherResolution {
 
     pub(crate) fn package_root(&self) -> &Path {
         &self.package_root
+    }
+
+    pub(crate) fn installed_data_root(&self) -> Option<&Path> {
+        self.installed_data_root.as_deref()
     }
 
     pub(crate) fn path_digest(&self) -> &str {
@@ -130,6 +135,7 @@ fn resolve_unpacked_launcher(package_root: &Path) -> Result<LauncherResolution, 
     Ok(LauncherResolution {
         command,
         package_root,
+        installed_data_root: None,
         path_digest,
         file_digest,
     })
@@ -224,6 +230,7 @@ fn resolve_installed_launcher_at(
         file_digest,
         command,
         package_root: exact_target,
+        installed_data_root: Some(data_root.to_path_buf()),
     })
 }
 
@@ -537,6 +544,7 @@ mod tests {
             resolved.command(),
             data_root.join("current").join(SIDECAR_RELATIVE)
         );
+        assert_eq!(resolved.installed_data_root(), Some(data_root.as_path()));
 
         fs::remove_file(data_root.join("current")).unwrap();
         let wrong = data_root.join("versions/0.0.0");

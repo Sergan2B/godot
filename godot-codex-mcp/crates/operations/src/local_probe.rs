@@ -106,12 +106,20 @@ pub(crate) fn collect_local_observations(
     registry: &RegistryProfile,
     godot_spec: Option<&GodotProbeSpec>,
     programs: &LocalProbePrograms,
-    expected_launcher: &Path,
+    expected_config: (&Path, Option<&Path>),
 ) -> DoctorProbeObservations {
+    let (expected_launcher, expected_data_root) = expected_config;
     let deadline = ProbeDeadline::new(programs.total_timeout);
     let selected = selection.explicit().or(programs.auto_surface);
     let host = selected.and_then(|surface| {
-        probe_host(project_root, surface, programs, expected_launcher, deadline)
+        probe_host(
+            project_root,
+            surface,
+            programs,
+            expected_launcher,
+            expected_data_root,
+            deadline,
+        )
     });
     let host_form = host
         .as_ref()
@@ -280,6 +288,7 @@ fn probe_host(
     surface: SurfaceKind,
     programs: &LocalProbePrograms,
     expected_launcher: &Path,
+    expected_data_root: Option<&Path>,
     deadline: ProbeDeadline,
 ) -> Option<HostProbeObservation> {
     match surface {
@@ -295,7 +304,13 @@ fn probe_host(
                 host_version,
                 ide_host_version: None,
                 effective_project_config: deadline.slice(programs.command_timeout).map(|timeout| {
-                    effective_codex_config(executable, project_root, expected_launcher, timeout)
+                    effective_codex_config(
+                        executable,
+                        project_root,
+                        expected_launcher,
+                        expected_data_root,
+                        timeout,
+                    )
                 }),
                 restart_required: Some(false),
                 supports_form_elicitation: deadline
@@ -328,7 +343,13 @@ fn probe_host(
                 host_version,
                 ide_host_version: None,
                 effective_project_config: deadline.slice(programs.command_timeout).map(|timeout| {
-                    effective_codex_config(&executable, project_root, expected_launcher, timeout)
+                    effective_codex_config(
+                        &executable,
+                        project_root,
+                        expected_launcher,
+                        expected_data_root,
+                        timeout,
+                    )
                 }),
                 // No supported local API exposes whether an already-running
                 // desktop process has reloaded the project layer.
@@ -386,7 +407,13 @@ fn probe_host(
                 .and_then(|path| safe_executable(&path));
             let effective = extension_codex.as_ref().and_then(|executable| {
                 deadline.slice(programs.command_timeout).map(|timeout| {
-                    effective_codex_config(executable, project_root, expected_launcher, timeout)
+                    effective_codex_config(
+                        executable,
+                        project_root,
+                        expected_launcher,
+                        expected_data_root,
+                        timeout,
+                    )
                 })
             });
             let form = extension_codex.as_ref().and_then(|executable| {
@@ -478,6 +505,7 @@ fn effective_codex_config(
     executable: &Path,
     project_root: &Path,
     expected_launcher: &Path,
+    expected_data_root: Option<&Path>,
     timeout: Duration,
 ) -> bool {
     let Some(output) = run_bounded(
@@ -496,12 +524,15 @@ fn effective_codex_config(
     output.status.success()
         && serde_json::from_slice::<Value>(&output.stdout)
             .ok()
-            .is_some_and(|value| effective_config_value(&value, expected_launcher, project_root))
+            .is_some_and(|value| {
+                effective_config_value(&value, expected_launcher, expected_data_root, project_root)
+            })
 }
 
 fn effective_config_value(
     value: &Value,
     expected_launcher: &Path,
+    expected_data_root: Option<&Path>,
     expected_project_root: &Path,
 ) -> bool {
     let Some(object) = value.as_object() else {
@@ -519,6 +550,18 @@ fn effective_config_value(
     let Some(expected_launcher) = expected_launcher.to_str() else {
         return false;
     };
+    let exact_environment = match expected_data_root.and_then(Path::to_str) {
+        Some(expected) => transport
+            .get("env")
+            .and_then(Value::as_object)
+            .is_some_and(|env| {
+                env.len() == 1
+                    && env.get("GODOT_CODEX_DATA_ROOT").and_then(Value::as_str) == Some(expected)
+            }),
+        None => transport.get("env").is_none_or(|env| {
+            env.is_null() || env.as_object().is_some_and(serde_json::Map::is_empty)
+        }),
+    };
     object.get("name").and_then(Value::as_str) == Some("godot_editor")
         && object.get("enabled").and_then(Value::as_bool) == Some(true)
         && object.get("startup_timeout_sec").and_then(Value::as_f64) == Some(10.0)
@@ -527,6 +570,7 @@ fn effective_config_value(
         && transport.get("command").and_then(Value::as_str) == Some(expected_launcher)
         && string_array(transport.get("args")) == Some(vec!["--project-root", "."])
         && transport.get("cwd").and_then(Value::as_str) == expected_project_root.to_str()
+        && exact_environment
         && exact_tools
 }
 
@@ -1441,6 +1485,7 @@ mod tests {
             SurfaceKind::Cli,
             &programs,
             Path::new(TEST_LAUNCHER),
+            None,
             ProbeDeadline::new(programs.total_timeout),
         )
         .unwrap();
@@ -1523,6 +1568,7 @@ mod tests {
             SurfaceKind::Ide,
             &programs,
             Path::new(TEST_LAUNCHER),
+            None,
             ProbeDeadline::new(programs.total_timeout),
         )
         .unwrap();
@@ -1598,6 +1644,7 @@ mod tests {
             SurfaceKind::App,
             &programs,
             Path::new(TEST_LAUNCHER),
+            None,
             ProbeDeadline::new(programs.total_timeout),
         )
         .unwrap();
@@ -1796,7 +1843,7 @@ mod tests {
             &registry,
             None,
             &programs,
-            Path::new(TEST_LAUNCHER),
+            (Path::new(TEST_LAUNCHER), None),
         );
         assert!(started.elapsed() < Duration::from_secs(2));
         assert!(observed.host.is_none());
@@ -1927,6 +1974,21 @@ for raw in sys.stdin:
         assert!(effective_config_value(
             &value,
             Path::new(TEST_LAUNCHER),
+            None,
+            Path::new("/project/root")
+        ));
+        let mut with_environment = value.clone();
+        with_environment["transport"]["env"] = json!({"GODOT_CODEX_DATA_ROOT": "/package"});
+        assert!(effective_config_value(
+            &with_environment,
+            Path::new(TEST_LAUNCHER),
+            Some(Path::new("/package")),
+            Path::new("/project/root")
+        ));
+        assert!(!effective_config_value(
+            &with_environment,
+            Path::new(TEST_LAUNCHER),
+            None,
             Path::new("/project/root")
         ));
         let mut wrong = value;
@@ -1934,6 +1996,7 @@ for raw in sys.stdin:
         assert!(!effective_config_value(
             &wrong,
             Path::new(TEST_LAUNCHER),
+            None,
             Path::new("/project/root")
         ));
         let basename = json!({
@@ -1952,6 +2015,7 @@ for raw in sys.stdin:
         assert!(!effective_config_value(
             &basename,
             Path::new(TEST_LAUNCHER),
+            None,
             Path::new("/project/root")
         ));
     }

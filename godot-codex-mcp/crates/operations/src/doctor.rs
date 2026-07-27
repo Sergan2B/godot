@@ -480,11 +480,17 @@ fn run_doctor_inner(
             &registry,
             godot_spec.as_ref(),
             &programs,
-            startup
-                .launcher
-                .as_ref()
-                .map(LauncherResolution::command)
-                .unwrap_or_else(|| Path::new("")),
+            (
+                startup
+                    .launcher
+                    .as_ref()
+                    .map(LauncherResolution::command)
+                    .unwrap_or_else(|| Path::new("")),
+                startup
+                    .launcher
+                    .as_ref()
+                    .and_then(LauncherResolution::installed_data_root),
+            ),
         );
         &local_probes
     };
@@ -727,7 +733,7 @@ fn inspect_product_startup(
                 let Some(launcher) = launcher.as_ref() else {
                     return ConfigurationCondition::Invalid;
                 };
-                match check_config(root, launcher.command()) {
+                match check_config(root, launcher.command(), launcher.installed_data_root()) {
                     Ok(()) => ConfigurationCondition::Ready,
                     Err(DiagnosticCode::ProjectConfigMissing) => ConfigurationCondition::Missing,
                     Err(DiagnosticCode::ProjectConfigNotEffective) => {
@@ -1017,7 +1023,11 @@ fn canonical_project_root(path: &Path) -> Option<PathBuf> {
     (canonical.is_dir() && canonical.join("project.godot").is_file()).then_some(canonical)
 }
 
-fn check_config(project_root: &Path, expected_launcher: &Path) -> Result<(), DiagnosticCode> {
+fn check_config(
+    project_root: &Path,
+    expected_launcher: &Path,
+    expected_data_root: Option<&Path>,
+) -> Result<(), DiagnosticCode> {
     let path = project_root.join(".codex/config.toml");
     if !path.exists() {
         return Err(DiagnosticCode::ProjectConfigMissing);
@@ -1042,6 +1052,7 @@ fn check_config(project_root: &Path, expected_launcher: &Path) -> Result<(), Dia
     if table.get("command").and_then(|item| item.as_str()) != Some(expected_launcher)
         || string_array(table.get("args")) != Some(vec!["--project-root", "."])
         || table.get("cwd").and_then(|item| item.as_str()) != project_root.to_str()
+        || config_data_root(table.get("env")) != expected_data_root.and_then(Path::to_str)
         || table.get("required").and_then(|item| item.as_bool()) != Some(true)
         || table
             .get("startup_timeout_sec")
@@ -1066,11 +1077,20 @@ fn check_config(project_root: &Path, expected_launcher: &Path) -> Result<(), Dia
     if !exact_profile {
         return Err(DiagnosticCode::ProjectConfigInvalid);
     }
-    let expected_keys = if approval.is_some() { 8 } else { 7 };
+    let expected_keys =
+        if approval.is_some() { 8 } else { 7 } + usize::from(expected_data_root.is_some());
     if table.len() != expected_keys {
         return Err(DiagnosticCode::ProjectConfigInvalid);
     }
     Ok(())
+}
+
+fn config_data_root(item: Option<&toml_edit::Item>) -> Option<&str> {
+    item?
+        .as_value()?
+        .as_inline_table()?
+        .get("GODOT_CODEX_DATA_ROOT")?
+        .as_str()
 }
 
 fn string_array(item: Option<&toml_edit::Item>) -> Option<Vec<&str>> {
@@ -2174,21 +2194,47 @@ mod tests {
         let package = fake_package();
         let launcher = package.path().join("bin/godot-codex-mcp");
         write_config(temp.path(), READ_ONLY_TOOLS, false, &launcher);
-        assert_eq!(check_config(temp.path(), &launcher), Ok(()));
+        assert_eq!(check_config(temp.path(), &launcher, None), Ok(()));
         write_config(
             temp.path(),
             godot_codex_product::FULL_BETA_TOOLS,
             true,
             &launcher,
         );
-        assert_eq!(check_config(temp.path(), &launcher), Ok(()));
+        assert_eq!(check_config(temp.path(), &launcher, None), Ok(()));
+        write_config(temp.path(), READ_ONLY_TOOLS, false, &launcher);
+        let path = temp.path().join(".codex/config.toml");
+        let data_root = temp.path().join("installed-data");
+        let with_environment = fs::read_to_string(&path).unwrap().replacen(
+            "required = true",
+            &format!(
+                "env = {{ GODOT_CODEX_DATA_ROOT = {:?} }}\nrequired = true",
+                data_root.to_str().unwrap()
+            ),
+            1,
+        );
+        fs::write(&path, with_environment).unwrap();
+        assert_eq!(
+            check_config(temp.path(), &launcher, Some(&data_root)),
+            Ok(())
+        );
+        assert_eq!(
+            check_config(temp.path(), &launcher, None),
+            Err(DiagnosticCode::ProjectConfigInvalid)
+        );
+        write_config(
+            temp.path(),
+            godot_codex_product::FULL_BETA_TOOLS,
+            true,
+            &launcher,
+        );
         let path = temp.path().join(".codex/config.toml");
         let changed = fs::read_to_string(&path)
             .unwrap()
             .replace(temp.path().to_str().unwrap(), ".");
         fs::write(&path, changed).unwrap();
         assert_eq!(
-            check_config(temp.path(), &launcher),
+            check_config(temp.path(), &launcher, None),
             Err(DiagnosticCode::ProjectConfigInvalid)
         );
         write_config(temp.path(), READ_ONLY_TOOLS, false, &launcher);
@@ -2197,7 +2243,7 @@ mod tests {
             .replace(launcher.to_str().unwrap(), "godot-codex-mcp");
         fs::write(&path, basename).unwrap();
         assert_eq!(
-            check_config(temp.path(), &launcher),
+            check_config(temp.path(), &launcher, None),
             Err(DiagnosticCode::ProjectConfigInvalid)
         );
     }

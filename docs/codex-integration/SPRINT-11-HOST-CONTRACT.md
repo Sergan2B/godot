@@ -62,8 +62,9 @@ The checked contract establishes:
   launcher was observed resolving its `cwd` from the task root; setup
   therefore uses an absolute, canonical project-root `cwd`;
 - the official IDE extension identifier is `openai.chatgpt`;
-- MCP stdio configuration supports command, args, cwd, required state,
-  enabled/disabled tools, timeouts, and approval modes;
+- MCP stdio configuration supports command, args, cwd, explicit per-server
+  environment, required state, enabled/disabled tools, timeouts, and approval
+  modes;
 - app-server exposes `mcpServer/elicitation/request`, accept/decline/cancel
   results, `serverRequest/resolved`, and the
   `mcpServerOpenaiFormElicitation` initialization capability.
@@ -155,7 +156,10 @@ human usability remain pending. Root/cwd semantics, effective non-empty
 project config, and packaged launcher execution also remain pending. The
 launcher decision is fixed: setup must write the verified absolute
 `<data-root>/current/bin/godot-codex-mcp`, never a PATH basename, and doctor
-must compare that exact effective command. Until the packaged probes pass,
+must compare that exact effective command plus the owned
+`GODOT_CODEX_DATA_ROOT=<data-root>` server environment. The explicit
+per-server value is required because Codex hosts do not promise to forward an
+installer shell environment to MCP children. Until the packaged probes pass,
 C11-0 and write qualification remain open; a host without the required
 interaction is read-only.
 

@@ -1736,6 +1736,7 @@ fn plan_config(
         launcher
             .command_text()
             .map_err(|_| SetupError::PackageInvalid)?,
+        launcher.installed_data_root(),
         &ownership_marker,
         root,
     )?;
@@ -1807,7 +1808,13 @@ fn plan_repair_config(
         let item = config_table_item(&document).ok_or(SetupError::OwnershipConflict)?;
         if config_ownership_marker(stanza).as_deref()
             != Some(receipt.config_ownership_marker.as_str())
-            || !repairable_config_shape(item, receipt, launcher_command, root)
+            || !repairable_config_shape(
+                item,
+                receipt,
+                launcher_command,
+                launcher.installed_data_root(),
+                root,
+            )
         {
             return Err(SetupError::OwnershipConflict);
         }
@@ -1816,6 +1823,7 @@ fn plan_repair_config(
     let desired_item = desired_config_item(
         receipt.profile,
         launcher_command,
+        launcher.installed_data_root(),
         &receipt.config_ownership_marker,
         root,
     )?;
@@ -1858,6 +1866,7 @@ fn repairable_config_shape(
     item: &Item,
     receipt: &SetupReceipt,
     expected_command: &str,
+    expected_data_root: Option<&Path>,
     expected_root: &Path,
 ) -> bool {
     let Some(table) = item.as_table() else {
@@ -1875,7 +1884,7 @@ fn repairable_config_shape(
     let expected_key_count = match receipt.profile {
         SetupProfile::ReadOnly => base_keys.len(),
         SetupProfile::FullBeta => base_keys.len() + 1,
-    };
+    } + usize::from(expected_data_root.is_some());
     if table.len() != expected_key_count || base_keys.iter().any(|key| !table.contains_key(key)) {
         return false;
     }
@@ -1899,6 +1908,7 @@ fn repairable_config_shape(
         .is_some_and(|tools| tools.iter().all(|value| value.as_str().is_some()));
     if !args_are_exact
         || table.get("cwd").and_then(Item::as_str) != expected_root.to_str()
+        || config_data_root(table) != expected_data_root.and_then(Path::to_str)
         || table.get("required").and_then(Item::as_bool).is_none()
         || table
             .get("startup_timeout_sec")
@@ -2138,6 +2148,7 @@ fn preview_change(change: &PlannedChange) -> Result<SetupChange, SetupError> {
 fn desired_config_item(
     profile: SetupProfile,
     launcher: &str,
+    installed_data_root: Option<&Path>,
     ownership_marker: &str,
     project_root: &Path,
 ) -> Result<Item, SetupError> {
@@ -2153,6 +2164,15 @@ fn desired_config_item(
     let mut source = format!(
         "[mcp_servers.godot_editor]\n{CONFIG_OWNERSHIP_PREFIX}{ownership_marker}\ncommand = \"/package/launcher\"\nargs = [\"--project-root\", \".\"]\ncwd = \"/project/root\"\nrequired = true\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\n"
     );
+    if let Some(data_root) = installed_data_root {
+        let data_root = data_root.to_str().ok_or(SetupError::PathUnsafe)?;
+        if !Path::new(data_root).is_absolute() {
+            return Err(SetupError::PathUnsafe);
+        }
+        source.push_str("env = { GODOT_CODEX_DATA_ROOT = ");
+        source.push_str(&toml_edit::Value::from(data_root).to_string());
+        source.push_str(" }\n");
+    }
     if profile == SetupProfile::FullBeta {
         source.push_str("default_tools_approval_mode = \"writes\"\n");
     }
@@ -2173,6 +2193,15 @@ fn desired_config_item(
         .and_then(|item| item.get("godot_editor"))
         .cloned()
         .ok_or(SetupError::ConfigInvalid)
+}
+
+fn config_data_root(table: &Table) -> Option<&str> {
+    table
+        .get("env")?
+        .as_value()?
+        .as_inline_table()?
+        .get("GODOT_CODEX_DATA_ROOT")?
+        .as_str()
 }
 
 fn config_table_item(document: &DocumentMut) -> Option<&Item> {
@@ -3034,6 +3063,11 @@ fn redact_launcher_from_stanza(value: &str) -> String {
                 }
                 "cwd" => {
                     redacted.push_str("cwd = \"<project-root>\"\n");
+                    continue;
+                }
+                "env" => {
+                    redacted
+                        .push_str("env = { GODOT_CODEX_DATA_ROOT = \"<package-data-root>\" }\n");
                     continue;
                 }
                 _ => {}
@@ -4026,6 +4060,30 @@ mod tests {
     }
 
     #[test]
+    fn installed_config_carries_and_redacts_the_exact_data_root() {
+        let item = desired_config_item(
+            SetupProfile::ReadOnly,
+            "/private/package/current/bin/godot-codex-mcp",
+            Some(Path::new("/private/package")),
+            &format!("sha256:{}", "a".repeat(64)),
+            Path::new("/private/project"),
+        )
+        .unwrap();
+        let table = item.as_table().unwrap();
+        assert_eq!(config_data_root(table), Some("/private/package"));
+        let mut document = DocumentMut::new();
+        install_config_table(&mut document, item).unwrap();
+        let stanza = config_table_stanza(&document.to_string())
+            .unwrap()
+            .unwrap()
+            .to_owned();
+        let redacted = redact_launcher_from_stanza(&stanza);
+        assert!(redacted.contains("GODOT_CODEX_DATA_ROOT = \"<package-data-root>\""));
+        assert!(!redacted.contains("/private/package"));
+        assert!(!redacted.contains("/private/project"));
+    }
+
+    #[test]
     fn unrelated_commented_toml_is_preserved_without_preview_leak() {
         let project = project();
         let store = TempDir::new().unwrap();
@@ -4423,6 +4481,7 @@ mod tests {
         let item = desired_config_item(
             SetupProfile::ReadOnly,
             "/package/launcher",
+            None,
             &format!("sha256:{}", "a".repeat(64)),
             project.path(),
         )
