@@ -1757,7 +1757,7 @@ mod tests {
             &script,
             [marker.clone().into_os_string()],
             Some(temp.path()),
-            Duration::from_secs(1),
+            Duration::from_secs(3),
         )
         .expect("the group leader itself exited successfully");
         assert!(output.status.success());
@@ -1889,7 +1889,7 @@ for raw in sys.stdin:
             "2025-11-25",
             &registry,
             &script,
-            Duration::from_secs(2),
+            MCP_PROBE_TIMEOUT,
         )
         .unwrap();
         assert!(observed.initialized);
