@@ -77,7 +77,7 @@ pub(crate) fn resolve_launcher(
         fs::canonicalize(std::env::current_exe().map_err(|_| LauncherError::Unavailable)?)
             .map_err(|_| LauncherError::Unavailable)?;
     let installed_data_root = if package_directory.is_none() {
-        Some(data_root()?)
+        Some(data_root(&executable)?)
     } else {
         None
     };
@@ -135,13 +135,16 @@ fn resolve_unpacked_launcher(package_root: &Path) -> Result<LauncherResolution, 
     })
 }
 
-fn data_root() -> Result<PathBuf, LauncherError> {
+fn data_root(executable: &Path) -> Result<PathBuf, LauncherError> {
     if let Some(root) = std::env::var_os("GODOT_CODEX_DATA_ROOT").filter(|value| !value.is_empty())
     {
         let root = PathBuf::from(root);
         return safe_absolute_path(&root)
             .then_some(root)
             .ok_or(LauncherError::Unsafe);
+    }
+    if let Some(root) = installed_data_root_from_executable(executable) {
+        return Ok(root);
     }
     if !cfg!(target_os = "macos") {
         return Err(LauncherError::Unavailable);
@@ -154,6 +157,18 @@ fn data_root() -> Result<PathBuf, LauncherError> {
     safe_absolute_path(&root)
         .then_some(root)
         .ok_or(LauncherError::Unsafe)
+}
+
+fn installed_data_root_from_executable(executable: &Path) -> Option<PathBuf> {
+    let bin = executable.parent()?;
+    let version = bin.parent()?;
+    let versions = version.parent()?;
+    let root = versions.parent()?.to_path_buf();
+    (bin.file_name()?.to_str()? == "bin"
+        && version.file_name()?.to_str()? == PRODUCT_VERSION
+        && versions.file_name()?.to_str()? == "versions"
+        && safe_absolute_path(&root))
+    .then_some(root)
 }
 
 fn resolve_installed_launcher_at(
@@ -530,6 +545,24 @@ mod tests {
         assert_eq!(
             resolve_launcher_from(None, &target.join("bin/godot-codex"), Some(&data_root),).err(),
             Some(LauncherError::InvalidPackage)
+        );
+    }
+
+    #[test]
+    fn installed_data_root_is_derived_from_the_exact_versioned_executable() {
+        let executable = Path::new("/private/custom/GodotCodex")
+            .join("versions")
+            .join(PRODUCT_VERSION)
+            .join("bin/godot-codex-mcp");
+        assert_eq!(
+            installed_data_root_from_executable(&executable),
+            Some(PathBuf::from("/private/custom/GodotCodex"))
+        );
+        assert_eq!(
+            installed_data_root_from_executable(Path::new(
+                "/private/custom/GodotCodex/current/bin/godot-codex-mcp"
+            )),
+            None
         );
     }
 }

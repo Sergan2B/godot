@@ -453,10 +453,14 @@ The TOML editor atomically merges only
   `<data-root>/versions/<exact-package-version>` and package ownership and
   checksums verify; an explicitly supplied unpacked package uses its canonical
   sibling `bin/godot-codex-mcp`;
+- an installed sidecar derives that same data root from its canonical
+  `versions/<exact-package-version>/bin` executable path, so App/CLI/IDE
+  launch does not depend on forwarding installer shell variables;
 - `args = ["--project-root", "."]`;
-- `cwd = ".."` because project-config-relative paths resolve from the owning
-  `.codex` directory, so this starts the server at the repository root even
-  when the task starts in a nested directory;
+- `cwd = "<canonical-project-root>"` because the qualification-candidate Codex
+  `0.146.0-alpha.3.1` host resolves MCP `cwd` from the task root in practice;
+  the absolute, setup-bound root removes config/task-relative ambiguity and
+  keeps `--project-root .` exact even when a task starts in a nested directory;
 - `required = true`;
 - bounded startup/tool timeouts appropriate for validation;
 - the exact generated tool allowlist;

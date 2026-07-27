@@ -496,10 +496,14 @@ fn effective_codex_config(
     output.status.success()
         && serde_json::from_slice::<Value>(&output.stdout)
             .ok()
-            .is_some_and(|value| effective_config_value(&value, expected_launcher))
+            .is_some_and(|value| effective_config_value(&value, expected_launcher, project_root))
 }
 
-fn effective_config_value(value: &Value, expected_launcher: &Path) -> bool {
+fn effective_config_value(
+    value: &Value,
+    expected_launcher: &Path,
+    expected_project_root: &Path,
+) -> bool {
     let Some(object) = value.as_object() else {
         return false;
     };
@@ -522,7 +526,7 @@ fn effective_config_value(value: &Value, expected_launcher: &Path) -> bool {
         && transport.get("type").and_then(Value::as_str) == Some("stdio")
         && transport.get("command").and_then(Value::as_str) == Some(expected_launcher)
         && string_array(transport.get("args")) == Some(vec!["--project-root", "."])
-        && transport.get("cwd").and_then(Value::as_str) == Some("..")
+        && transport.get("cwd").and_then(Value::as_str) == expected_project_root.to_str()
         && exact_tools
 }
 
@@ -1400,7 +1404,7 @@ mod tests {
                 "type": "stdio",
                 "command": TEST_LAUNCHER,
                 "args": ["--project-root", "."],
-                "cwd": ".."
+                "cwd": temp.path()
             },
             "enabled_tools": tools,
             "startup_timeout_sec": 10.0,
@@ -1470,7 +1474,7 @@ mod tests {
                 "type": "stdio",
                 "command": TEST_LAUNCHER,
                 "args": ["--project-root", "."],
-                "cwd": ".."
+                "cwd": temp.path()
             },
             "enabled_tools": tools,
             "startup_timeout_sec": 10.0,
@@ -1545,7 +1549,7 @@ mod tests {
                 "type": "stdio",
                 "command": TEST_LAUNCHER,
                 "args": ["--project-root", "."],
-                "cwd": ".."
+                "cwd": temp.path()
             },
             "enabled_tools": tools,
             "startup_timeout_sec": 10.0,
@@ -1914,16 +1918,24 @@ for raw in sys.stdin:
                 "type": "stdio",
                 "command": TEST_LAUNCHER,
                 "args": ["--project-root", "."],
-                "cwd": ".."
+                "cwd": "/project/root"
             },
             "enabled_tools": tools,
             "startup_timeout_sec": 10.0,
             "tool_timeout_sec": 60.0
         });
-        assert!(effective_config_value(&value, Path::new(TEST_LAUNCHER)));
+        assert!(effective_config_value(
+            &value,
+            Path::new(TEST_LAUNCHER),
+            Path::new("/project/root")
+        ));
         let mut wrong = value;
         wrong["transport"]["cwd"] = Value::String(".".to_owned());
-        assert!(!effective_config_value(&wrong, Path::new(TEST_LAUNCHER)));
+        assert!(!effective_config_value(
+            &wrong,
+            Path::new(TEST_LAUNCHER),
+            Path::new("/project/root")
+        ));
         let basename = json!({
             "name": "godot_editor",
             "enabled": true,
@@ -1931,13 +1943,17 @@ for raw in sys.stdin:
                 "type": "stdio",
                 "command": "godot-codex-mcp",
                 "args": ["--project-root", "."],
-                "cwd": ".."
+                "cwd": "/project/root"
             },
             "enabled_tools": READ_ONLY_TOOLS,
             "startup_timeout_sec": 10.0,
             "tool_timeout_sec": 60.0
         });
-        assert!(!effective_config_value(&basename, Path::new(TEST_LAUNCHER)));
+        assert!(!effective_config_value(
+            &basename,
+            Path::new(TEST_LAUNCHER),
+            Path::new("/project/root")
+        ));
     }
 
     #[test]

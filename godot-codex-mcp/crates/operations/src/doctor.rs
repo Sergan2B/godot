@@ -1041,7 +1041,7 @@ fn check_config(project_root: &Path, expected_launcher: &Path) -> Result<(), Dia
         .ok_or(DiagnosticCode::ProjectConfigInvalid)?;
     if table.get("command").and_then(|item| item.as_str()) != Some(expected_launcher)
         || string_array(table.get("args")) != Some(vec!["--project-root", "."])
-        || table.get("cwd").and_then(|item| item.as_str()) != Some("..")
+        || table.get("cwd").and_then(|item| item.as_str()) != project_root.to_str()
         || table.get("required").and_then(|item| item.as_bool()) != Some(true)
         || table
             .get("startup_timeout_sec")
@@ -1878,8 +1878,9 @@ mod tests {
         fs::write(
             root.join(".codex/config.toml"),
             format!(
-                "[mcp_servers.godot_editor]\ncommand = {:?}\nargs = [\"--project-root\", \".\"]\ncwd = \"..\"\nrequired = true\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\nenabled_tools = [\n{enabled}]\n{approval}",
-                launcher.to_str().unwrap()
+                "[mcp_servers.godot_editor]\ncommand = {:?}\nargs = [\"--project-root\", \".\"]\ncwd = {:?}\nrequired = true\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\nenabled_tools = [\n{enabled}]\n{approval}",
+                launcher.to_str().unwrap(),
+                root.to_str().unwrap(),
             ),
         )
         .unwrap();
@@ -2184,7 +2185,7 @@ mod tests {
         let path = temp.path().join(".codex/config.toml");
         let changed = fs::read_to_string(&path)
             .unwrap()
-            .replace("cwd = \"..\"", "cwd = \".\"");
+            .replace(temp.path().to_str().unwrap(), ".");
         fs::write(&path, changed).unwrap();
         assert_eq!(
             check_config(temp.path(), &launcher),

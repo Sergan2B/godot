@@ -57,7 +57,10 @@ The checked contract establishes:
 
 - App, CLI, and IDE share the Codex configuration layers;
 - project `.codex/config.toml` is loaded only for a trusted project;
-- relative project-config paths resolve from the owning `.codex` directory;
+- ordinary relative project-config paths resolve from the owning `.codex`
+  directory, but the qualification-candidate Codex `0.146.0-alpha.3.1` MCP
+  launcher was observed resolving its `cwd` from the task root; setup
+  therefore uses an absolute, canonical project-root `cwd`;
 - the official IDE extension identifier is `openai.chatgpt`;
 - MCP stdio configuration supports command, args, cwd, required state,
   enabled/disabled tools, timeouts, and approval modes;

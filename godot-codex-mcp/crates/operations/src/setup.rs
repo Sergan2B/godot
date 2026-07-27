@@ -1737,6 +1737,7 @@ fn plan_config(
             .command_text()
             .map_err(|_| SetupError::PackageInvalid)?,
         &ownership_marker,
+        root,
     )?;
     install_config_table(&mut document, desired_item)?;
     let desired = document.to_string();
@@ -1806,7 +1807,7 @@ fn plan_repair_config(
         let item = config_table_item(&document).ok_or(SetupError::OwnershipConflict)?;
         if config_ownership_marker(stanza).as_deref()
             != Some(receipt.config_ownership_marker.as_str())
-            || !repairable_config_shape(item, receipt, launcher_command)
+            || !repairable_config_shape(item, receipt, launcher_command, root)
         {
             return Err(SetupError::OwnershipConflict);
         }
@@ -1816,6 +1817,7 @@ fn plan_repair_config(
         receipt.profile,
         launcher_command,
         &receipt.config_ownership_marker,
+        root,
     )?;
     install_config_table(&mut document, desired_item)?;
     let desired = document.to_string();
@@ -1852,7 +1854,12 @@ fn plan_repair_config(
     ))
 }
 
-fn repairable_config_shape(item: &Item, receipt: &SetupReceipt, expected_command: &str) -> bool {
+fn repairable_config_shape(
+    item: &Item,
+    receipt: &SetupReceipt,
+    expected_command: &str,
+    expected_root: &Path,
+) -> bool {
     let Some(table) = item.as_table() else {
         return false;
     };
@@ -1891,7 +1898,7 @@ fn repairable_config_shape(item: &Item, receipt: &SetupReceipt, expected_command
         .and_then(Item::as_array)
         .is_some_and(|tools| tools.iter().all(|value| value.as_str().is_some()));
     if !args_are_exact
-        || table.get("cwd").and_then(Item::as_str) != Some("..")
+        || table.get("cwd").and_then(Item::as_str) != expected_root.to_str()
         || table.get("required").and_then(Item::as_bool).is_none()
         || table
             .get("startup_timeout_sec")
@@ -2132,14 +2139,19 @@ fn desired_config_item(
     profile: SetupProfile,
     launcher: &str,
     ownership_marker: &str,
+    project_root: &Path,
 ) -> Result<Item, SetupError> {
     parse_digest(ownership_marker).map_err(|_| SetupError::ReceiptInvalid)?;
+    let project_root = project_root.to_str().ok_or(SetupError::PathUnsafe)?;
+    if !Path::new(project_root).is_absolute() {
+        return Err(SetupError::PathUnsafe);
+    }
     let tools = match profile {
         SetupProfile::ReadOnly => READ_ONLY_TOOLS,
         SetupProfile::FullBeta => FULL_BETA_TOOLS,
     };
     let mut source = format!(
-        "[mcp_servers.godot_editor]\n{CONFIG_OWNERSHIP_PREFIX}{ownership_marker}\ncommand = \"/package/launcher\"\nargs = [\"--project-root\", \".\"]\ncwd = \"..\"\nrequired = true\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\n"
+        "[mcp_servers.godot_editor]\n{CONFIG_OWNERSHIP_PREFIX}{ownership_marker}\ncommand = \"/package/launcher\"\nargs = [\"--project-root\", \".\"]\ncwd = \"/project/root\"\nrequired = true\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\n"
     );
     if profile == SetupProfile::FullBeta {
         source.push_str("default_tools_approval_mode = \"writes\"\n");
@@ -2155,6 +2167,7 @@ fn desired_config_item(
         .parse::<DocumentMut>()
         .map_err(|_| SetupError::ConfigInvalid)?;
     document["mcp_servers"]["godot_editor"]["command"] = toml_edit::value(launcher);
+    document["mcp_servers"]["godot_editor"]["cwd"] = toml_edit::value(project_root);
     document
         .get("mcp_servers")
         .and_then(|item| item.get("godot_editor"))
@@ -3013,15 +3026,21 @@ fn config_ownership_marker(stanza: &str) -> Option<String> {
 fn redact_launcher_from_stanza(value: &str) -> String {
     let mut redacted = String::with_capacity(value.len().min(4096));
     for line in value.lines() {
-        if line
-            .split_once('=')
-            .is_some_and(|(key, _)| key.trim() == "command")
-        {
-            redacted.push_str("command = \"<package-launcher>\"\n");
-        } else {
-            redacted.push_str(line);
-            redacted.push('\n');
+        if let Some((key, _)) = line.split_once('=') {
+            match key.trim() {
+                "command" => {
+                    redacted.push_str("command = \"<package-launcher>\"\n");
+                    continue;
+                }
+                "cwd" => {
+                    redacted.push_str("cwd = \"<project-root>\"\n");
+                    continue;
+                }
+                _ => {}
+            }
         }
+        redacted.push_str(line);
+        redacted.push('\n');
     }
     redacted
 }
@@ -3977,7 +3996,8 @@ mod tests {
                 table["command"].as_str().map(Path::new),
                 Some(expected_launcher.as_path())
             );
-            assert_eq!(table["cwd"].as_str(), Some(".."));
+            let canonical_root = fs::canonicalize(project.path()).unwrap();
+            assert_eq!(table["cwd"].as_str(), canonical_root.to_str());
             let args = table["args"]
                 .as_array()
                 .unwrap()
@@ -4404,6 +4424,7 @@ mod tests {
             SetupProfile::ReadOnly,
             "/package/launcher",
             &format!("sha256:{}", "a".repeat(64)),
+            project.path(),
         )
         .unwrap();
         let mut document = DocumentMut::new();
