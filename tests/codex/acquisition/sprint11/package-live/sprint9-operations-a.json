@@ -1,11 +1,11 @@
 {
   "artifacts": {
     "godot_sha256": "sha256:157a265d49f72c0b6974340046379549ad74aab6e5a70e3cc6e239bf6be7102e",
-    "sidecar_sha256": "sha256:a37bd081d3f52c5cb09b232831e091b516d67963e9e4ba95f6845860730c1e49"
+    "sidecar_sha256": "sha256:bd56b5461400107a87ff1093f127e755501a1ca924c4eb4865b9d701ded19f44"
   },
   "bridge_frame": {
     "budget_usec": 2000,
-    "max_elapsed_usec": 888,
+    "max_elapsed_usec": 641,
     "over_budget_count": 0
   },
   "cleanup": true,
@@ -14,33 +14,33 @@
   "faults": {},
   "latency_ms": {
     "apply": {
-      "max": 151.929,
-      "p50": 149.693,
-      "p95": 151.929,
+      "max": 148.562,
+      "p50": 130.06,
+      "p95": 148.562,
       "scenario_count": 4
     },
     "prepare": {
-      "max": 52.409,
-      "p50": 50.264,
-      "p95": 52.409,
+      "max": 54.055,
+      "p50": 45.74,
+      "p95": 54.055,
       "scenario_count": 4
     },
     "read": {
-      "max": 1.255,
-      "p50": 1.094,
-      "p95": 1.255,
+      "max": 1.187,
+      "p50": 1.098,
+      "p95": 1.187,
       "scenario_count": 4
     },
     "status": {
-      "max": 52.501,
-      "p50": 46.513,
-      "p95": 52.501,
+      "max": 64.853,
+      "p50": 45.895,
+      "p95": 64.853,
       "scenario_count": 4
     },
     "undo": {
-      "max": 80.739,
-      "p50": 79.673,
-      "p95": 80.739,
+      "max": 75.872,
+      "p50": 73.893,
+      "p95": 75.872,
       "scenario_count": 4
     }
   },
@@ -53,41 +53,41 @@
       "elicitation_count": 1,
       "frame_telemetry": {
         "budget_usec": 2000,
-        "frame_max_elapsed_usec": 7330,
-        "max_elapsed_usec": 708,
+        "frame_max_elapsed_usec": 6353,
+        "max_elapsed_usec": 547,
         "over_budget_count": 0
       },
       "intervening_action": true,
       "latency_ms": {
         "apply": {
           "count": 1,
-          "max": 151.597,
-          "p50": 151.597,
-          "p95": 151.597
+          "max": 148.562,
+          "p50": 148.562,
+          "p95": 148.562
         },
         "prepare": {
           "count": 1,
-          "max": 48.906,
-          "p50": 48.906,
-          "p95": 48.906
+          "max": 48.823,
+          "p50": 48.823,
+          "p95": 48.823
         },
         "read": {
-          "count": 288,
-          "max": 15.131,
-          "p50": 0.411,
-          "p95": 1.094
+          "count": 294,
+          "max": 15.326,
+          "p50": 0.403,
+          "p95": 1.187
         },
         "status": {
           "count": 7,
-          "max": 52.501,
-          "p50": 41.259,
-          "p95": 52.501
+          "max": 45.895,
+          "p50": 32.626,
+          "p95": 45.895
         },
         "undo": {
           "count": 3,
-          "max": 80.739,
-          "p50": 74.398,
-          "p95": 80.739
+          "max": 73.893,
+          "p50": 67.865,
+          "p95": 73.893
         }
       },
       "native_actions": 2,
@@ -96,48 +96,48 @@
       "oracle_cycle": true,
       "source_unchanged": true,
       "transaction_native_actions": 1,
-      "transaction_sha256": "sha256:645022c4c20ffe20b8371827d7d45e33ad4627d78940d0f3e32f43647aab6d6b"
+      "transaction_sha256": "sha256:faf6e430fa2059477847ee9076652fac34ce6d76ed2b989d236ca451e1cf732d"
     },
     {
       "cleanup": true,
       "elicitation_count": 1,
       "frame_telemetry": {
         "budget_usec": 2000,
-        "frame_max_elapsed_usec": 7130,
-        "max_elapsed_usec": 724,
+        "frame_max_elapsed_usec": 5268,
+        "max_elapsed_usec": 564,
         "over_budget_count": 0
       },
       "intervening_action": true,
       "latency_ms": {
         "apply": {
           "count": 1,
-          "max": 145.943,
-          "p50": 145.943,
-          "p95": 145.943
+          "max": 145.438,
+          "p50": 145.438,
+          "p95": 145.438
         },
         "prepare": {
           "count": 1,
-          "max": 50.264,
-          "p50": 50.264,
-          "p95": 50.264
+          "max": 54.055,
+          "p50": 54.055,
+          "p95": 54.055
         },
         "read": {
-          "count": 282,
-          "max": 15.988,
-          "p50": 0.402,
-          "p95": 1.093
+          "count": 297,
+          "max": 15.032,
+          "p50": 0.354,
+          "p95": 1.102
         },
         "status": {
           "count": 7,
-          "max": 46.513,
-          "p50": 42.143,
-          "p95": 46.513
+          "max": 59.089,
+          "p50": 35.618,
+          "p95": 59.089
         },
         "undo": {
           "count": 3,
-          "max": 80.205,
-          "p50": 71.81,
-          "p95": 80.205
+          "max": 74.901,
+          "p50": 69.08,
+          "p95": 74.901
         }
       },
       "native_actions": 2,
@@ -146,48 +146,48 @@
       "oracle_cycle": true,
       "source_unchanged": true,
       "transaction_native_actions": 1,
-      "transaction_sha256": "sha256:de9905c731e93f57a1487df7f77565f3133996201ba398295dec53ff100537d2"
+      "transaction_sha256": "sha256:37d9338c242e0d3fa39037bbbbeae9eb382cc0f0ad6e9c50f793357b22215a87"
     },
     {
       "cleanup": true,
       "elicitation_count": 1,
       "frame_telemetry": {
         "budget_usec": 2000,
-        "frame_max_elapsed_usec": 7477,
-        "max_elapsed_usec": 888,
+        "frame_max_elapsed_usec": 4566,
+        "max_elapsed_usec": 548,
         "over_budget_count": 0
       },
       "intervening_action": true,
       "latency_ms": {
         "apply": {
           "count": 1,
-          "max": 151.929,
-          "p50": 151.929,
-          "p95": 151.929
+          "max": 130.06,
+          "p50": 130.06,
+          "p95": 130.06
         },
         "prepare": {
           "count": 1,
-          "max": 52.409,
-          "p50": 52.409,
-          "p95": 52.409
+          "max": 43.269,
+          "p50": 43.269,
+          "p95": 43.269
         },
         "read": {
-          "count": 291,
-          "max": 15.247,
-          "p50": 0.446,
-          "p95": 1.255
+          "count": 297,
+          "max": 7.172,
+          "p50": 0.377,
+          "p95": 1.034
         },
         "status": {
           "count": 7,
-          "max": 46.611,
-          "p50": 35.708,
-          "p95": 46.611
+          "max": 64.853,
+          "p50": 35.41,
+          "p95": 64.853
         },
         "undo": {
           "count": 3,
-          "max": 79.673,
-          "p50": 65.951,
-          "p95": 79.673
+          "max": 75.872,
+          "p50": 67.652,
+          "p95": 75.872
         }
       },
       "native_actions": 2,
@@ -196,48 +196,48 @@
       "oracle_cycle": true,
       "source_unchanged": true,
       "transaction_native_actions": 1,
-      "transaction_sha256": "sha256:17f6286ecbab69160d493344ca8629afd746e7bfb08b4dc3cd28ec3504a2c584"
+      "transaction_sha256": "sha256:111c4faef586aa15b842bfa1eacc50c258b1ed99f0073c6317574865f88ce64c"
     },
     {
       "cleanup": true,
       "elicitation_count": 1,
       "frame_telemetry": {
         "budget_usec": 2000,
-        "frame_max_elapsed_usec": 6199,
-        "max_elapsed_usec": 434,
+        "frame_max_elapsed_usec": 3638,
+        "max_elapsed_usec": 641,
         "over_budget_count": 0
       },
       "intervening_action": false,
       "latency_ms": {
         "apply": {
           "count": 1,
-          "max": 149.693,
-          "p50": 149.693,
-          "p95": 149.693
+          "max": 128.78,
+          "p50": 128.78,
+          "p95": 128.78
         },
         "prepare": {
           "count": 1,
-          "max": 50.471,
-          "p50": 50.471,
-          "p95": 50.471
+          "max": 45.74,
+          "p50": 45.74,
+          "p95": 45.74
         },
         "read": {
-          "count": 96,
-          "max": 14.732,
-          "p50": 0.412,
-          "p95": 1.233
+          "count": 102,
+          "max": 7.723,
+          "p50": 0.402,
+          "p95": 1.098
         },
         "status": {
           "count": 2,
-          "max": 44.183,
-          "p50": 35.422,
-          "p95": 44.183
+          "max": 43.673,
+          "p50": 35.93,
+          "p95": 43.673
         },
         "undo": {
           "count": 1,
-          "max": 79.136,
-          "p50": 79.136,
-          "p95": 79.136
+          "max": 68.426,
+          "p50": 68.426,
+          "p95": 68.426
         }
       },
       "native_actions": 1,
@@ -246,7 +246,7 @@
       "oracle_cycle": true,
       "source_unchanged": true,
       "transaction_native_actions": 1,
-      "transaction_sha256": "sha256:571f25d33b307c5af7067fb8dbef639f2be18566048ef21e2e8ca3391be904dd"
+      "transaction_sha256": "sha256:1fff32d86ef499f8a36dc75e63cfa167d7c65b490646499cca233adc48fcaa7b"
     }
   ],
   "platform": "macos-arm64",
