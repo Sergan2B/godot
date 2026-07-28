@@ -34,12 +34,12 @@ use thiserror::Error;
 use unicode_normalization::UnicodeNormalization;
 
 pub use coordinator::{
-    CoordinatorError, ResourceIndexCoordinator, ResourceIndexReadError, ResourceIndexReader,
-    ResourceIndexStaleReason, ResourceIndexStatus, SceneIndexReadError, SceneIndexReader,
-    SceneIndexStaleReason, SceneIndexStatus, ScriptIndexReadError, ScriptIndexReader,
-    ScriptIndexStaleReason, ScriptIndexStatus, SemanticIndexFreshness, SemanticIndexReadError,
-    SemanticIndexReader, SemanticIndexSnapshot, SemanticPartialCode, SemanticPartialDomain,
-    SemanticPartialReason,
+    CoordinatorError, ProjectSessionState, ResourceIndexCoordinator, ResourceIndexReadError,
+    ResourceIndexReader, ResourceIndexStaleReason, ResourceIndexStatus, SceneIndexReadError,
+    SceneIndexReader, SceneIndexStaleReason, SceneIndexStatus, ScriptIndexReadError,
+    ScriptIndexReader, ScriptIndexStaleReason, ScriptIndexStatus, SemanticIndexFreshness,
+    SemanticIndexReadError, SemanticIndexReader, SemanticIndexSnapshot, SemanticPartialCode,
+    SemanticPartialDomain, SemanticPartialReason,
 };
 pub use offline::{
     OfflineAuthorityError, OfflineAuthorityManifest, OfflineAuthorityVerification,

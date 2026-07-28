@@ -1,12 +1,14 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use godot_codex_bridge_client::run_bridge_sync;
-use godot_codex_mcp_server::GodotMcpServer;
-use godot_codex_resource_indexer::ResourceIndexCoordinator;
+use godot_codex_mcp_server::{GodotMcpServer, TransactionCoordinatorSlot};
+use godot_codex_resource_indexer::{ProjectSessionState, ResourceIndexCoordinator};
 use godot_codex_semantic_model::SnapshotReplicator;
 use godot_codex_transactions::{TransactionCoordinator, run_transaction_events};
 use rmcp::ServiceExt;
+use tokio::sync::watch;
 
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
@@ -15,6 +17,126 @@ enum Command {
         doctor_probe: bool,
     },
     Version,
+}
+
+async fn run_transaction_service(
+    project_root: PathBuf,
+    slot: TransactionCoordinatorSlot,
+    mut project_session: watch::Receiver<ProjectSessionState>,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    let mut retry = Duration::from_millis(200);
+    loop {
+        if *shutdown.borrow() {
+            slot.publish_unavailable();
+            return;
+        }
+        let project_session_state = *project_session.borrow();
+        match project_session_state {
+            ProjectSessionState::Busy => {
+                slot.publish_project_session_busy();
+                tokio::select! {
+                    changed = project_session.changed() => {
+                        if changed.is_err() {
+                            slot.publish_unavailable();
+                            return;
+                        }
+                    }
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            slot.publish_unavailable();
+                            return;
+                        }
+                    }
+                }
+            }
+            ProjectSessionState::Acquiring => {
+                slot.publish_acquiring();
+                tokio::select! {
+                    changed = project_session.changed() => {
+                        if changed.is_err() {
+                            slot.publish_unavailable();
+                            return;
+                        }
+                    }
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            slot.publish_unavailable();
+                            return;
+                        }
+                    }
+                }
+            }
+            ProjectSessionState::Owner => {
+                slot.publish_acquiring();
+                match TransactionCoordinator::open(&project_root) {
+                    Ok(coordinator) => {
+                        if coordinator.journal_recovered_corruption() {
+                            eprintln!(
+                                "godot-codex-mcp: quarantined an invalid transaction journal; recovery index rebuilt"
+                            );
+                        }
+                        slot.publish_ready(coordinator.clone());
+                        retry = Duration::from_millis(200);
+                        let (event_shutdown_sender, event_shutdown) = watch::channel(false);
+                        let events = run_transaction_events(
+                            project_root.clone(),
+                            coordinator,
+                            event_shutdown,
+                        );
+                        tokio::pin!(events);
+                        tokio::select! {
+                            () = &mut events => {
+                                slot.publish_unavailable();
+                            }
+                            changed = project_session.changed() => {
+                                let _ = event_shutdown_sender.send(true);
+                                events.await;
+                                slot.publish_unavailable();
+                                if changed.is_err() {
+                                    return;
+                                }
+                            }
+                            changed = shutdown.changed() => {
+                                let _ = event_shutdown_sender.send(true);
+                                events.await;
+                                slot.publish_unavailable();
+                                if changed.is_err() || *shutdown.borrow() {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        if error.is_project_session_busy() {
+                            slot.publish_project_session_busy();
+                        } else {
+                            slot.publish_unavailable();
+                            eprintln!(
+                                "godot-codex-mcp: transaction coordinator unavailable; diagnostic tools remain active"
+                            );
+                        }
+                        tokio::select! {
+                            changed = project_session.changed() => {
+                                if changed.is_err() {
+                                    slot.publish_unavailable();
+                                    return;
+                                }
+                            }
+                            changed = shutdown.changed() => {
+                                if changed.is_err() || *shutdown.borrow() {
+                                    slot.publish_unavailable();
+                                    return;
+                                }
+                            }
+                            () = tokio::time::sleep(retry) => {}
+                        }
+                        retry = (retry * 2).min(Duration::from_secs(5));
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn command_from_args(arguments: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
@@ -81,61 +203,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let replicator = SnapshotReplicator::new();
     let (resource_coordinator, resource_index_reader, scene_index_reader, script_index_reader) =
         ResourceIndexCoordinator::new_semantic(&project_root)?;
+    let project_session = resource_coordinator.subscribe_project_session();
     // Offline authority and the exact project-bound store are opened before
     // any Bridge discovery/connect attempt can publish live state.
     let bridge_task = tokio::spawn(run_bridge_sync(project_root.clone(), replicator.clone()));
     let (shutdown_sender, shutdown_receiver) = tokio::sync::watch::channel(false);
     let resource_task = tokio::spawn(resource_coordinator.run(shutdown_receiver));
-    let transaction_coordinator = match TransactionCoordinator::open(&project_root) {
-        Ok(coordinator) => {
-            if coordinator.journal_recovered_corruption() {
-                eprintln!(
-                    "godot-codex-mcp: quarantined an invalid transaction journal; recovery index rebuilt"
-                );
-            }
-            Some(coordinator)
-        }
-        Err(_) => {
-            eprintln!(
-                "godot-codex-mcp: transaction coordinator unavailable; diagnostic tools remain active"
-            );
-            None
-        }
-    };
-    let transaction_task = transaction_coordinator.as_ref().map(|coordinator| {
-        tokio::spawn(run_transaction_events(
-            project_root.clone(),
-            coordinator.clone(),
-            shutdown_sender.subscribe(),
-        ))
-    });
-    let server = if let Some(coordinator) = transaction_coordinator {
-        GodotMcpServer::with_all_indexes_and_project_services(
-            replicator,
-            resource_index_reader,
-            scene_index_reader,
-            script_index_reader,
-            project_root,
-            coordinator,
-        )
-    } else {
-        GodotMcpServer::with_all_indexes_and_project_root(
-            replicator,
-            resource_index_reader,
-            scene_index_reader,
-            script_index_reader,
-            project_root,
-        )
-    }
+    let transaction_coordinator = TransactionCoordinatorSlot::acquiring();
+    let transaction_task = tokio::spawn(run_transaction_service(
+        project_root.clone(),
+        transaction_coordinator.clone(),
+        project_session,
+        shutdown_sender.subscribe(),
+    ));
+    let server = GodotMcpServer::with_all_indexes_and_project_slot(
+        replicator,
+        resource_index_reader,
+        scene_index_reader,
+        script_index_reader,
+        project_root,
+        transaction_coordinator,
+    )
     .with_product_startup_observation(product_startup)
     .serve(rmcp::transport::stdio())
     .await?;
     server.waiting().await?;
     let _ = shutdown_sender.send(true);
     let _ = resource_task.await;
-    if let Some(transaction_task) = transaction_task {
-        let _ = transaction_task.await;
-    }
+    let _ = transaction_task.await;
     bridge_task.abort();
     Ok(())
 }

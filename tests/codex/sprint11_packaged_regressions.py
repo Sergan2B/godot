@@ -35,9 +35,11 @@ from typing import Any, Final, cast
 try:
     from tests.codex import sprint11_acquisition_paths as acquisition_paths
     from tests.codex import sprint11_process_scope as process_scope
+    from tests.codex import sprint11_same_project as same_project
 except ModuleNotFoundError:  # Direct execution from tests/codex.
     import sprint11_acquisition_paths as acquisition_paths
     import sprint11_process_scope as process_scope
+    import sprint11_same_project as same_project
 
 SCRIPT_DIR: Final = Path(__file__).resolve().parent
 REPOSITORY_ROOT: Final = SCRIPT_DIR.parent.parent
@@ -1860,6 +1862,20 @@ def canonical_command_specs() -> tuple[CommandSpec, ...]:
                 "{timeout}",
             ),
         ),
+        CommandSpec(
+            "s11_same_project",
+            "tests/codex/sprint11_same_project.py",
+            "sprint11-same-project.json",
+            (
+                "--additive-sprint11-registry",
+                "--expected-sidecar-sha256",
+                "{expected_sidecar_sha256}",
+                "--expected-package-version",
+                "{expected_package_version}",
+                "--timeout",
+                "{timeout}",
+            ),
+        ),
     )
 
 
@@ -1872,6 +1888,7 @@ def expand_argv(
     data_root: Path,
     report_root: Path,
     timeout: float,
+    package_version: str,
 ) -> tuple[str, ...]:
     substitutions = {
         "{python}": sys.executable,
@@ -1879,6 +1896,8 @@ def expand_argv(
         "{package_sidecar}": str(sidecar),
         "{package_operations}": str(operations),
         "{package_data_root}": str(data_root),
+        "{expected_sidecar_sha256}": sha256_file(sidecar),
+        "{expected_package_version}": package_version,
         "{timeout}": str(timeout),
     }
     prefix = "{report_root}/"
@@ -2203,6 +2222,14 @@ def validate_live_report(
             and validation["checks"],
             "Sprint 10 validation proof differs",
         )
+        return
+    if command_id == "s11_same_project":
+        try:
+            same_project.validate_report(report)
+        except same_project.s9.WorkflowError as error:
+            raise PackagedRegressionError(
+                "Sprint 11 same-project report differs"
+            ) from error
         return
     raise PackagedRegressionError("unknown package-live command")
 
@@ -2545,6 +2572,7 @@ def acquire(
                         data_root=installed.data_root,
                         report_root=staging,
                         timeout=timeout,
+                        package_version=installed.package_version,
                     )
                     execution = executor(spec, argv, snapshot.root, timeout)
                     require(

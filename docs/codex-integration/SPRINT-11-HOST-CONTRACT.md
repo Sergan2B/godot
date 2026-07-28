@@ -101,7 +101,7 @@ any Markdown/JSON drift.
 | Extension Codex CLI | `bin/macos-aarch64/codex`, `0.146.0-alpha.3`, `sha256:5ab45f8f9819c120bede3743f896e70da47ffe920b48d9a04cc25ecc9e2dd757`, team `2DC432GLL2` | candidate embedded client |
 | MCP protocol | `2025-11-25`; form-compatible floor `2025-06-18` | candidate |
 | Bridge | RPC `1.8` exact profile | candidate |
-| Godot × Codex package | workspace `0.1.0` at baseline | final package coordinate pending |
+| Godot × Codex package | workspace `0.1.1` | same-project lease contention fixed and package coordinate frozen |
 | Godot Bridge prerequisite | `bin/godot.macos.editor.dev.arm64`, `4.8.dev.codex.506f7f084`, `sha256:157a265d49f72c0b6974340046379549ad74aab6e5a70e3cc6e239bf6be7102e` | exact local candidate; detached package binding pending |
 
 The current App-bundled CLI reports `tool_call_mcp_elicitation` as stable.

@@ -328,6 +328,37 @@ def synthetic_report(
             },
             "cleanup": {"processes_stopped": True},
         }
+    if command_id == "s11_same_project":
+        return {
+            "schema_version": "s11-same-project-live/1.0",
+            "status": "passed",
+            "platform": "macos-arm64",
+            "protocol": "2025-11-25",
+            "bridge_rpc": "1.8",
+            "package_version": "0.1.1",
+            "artifacts": artifacts,
+            "registry": {
+                "tools": 41,
+                "digest": "sha256:" + "6" * 64,
+            },
+            "assertions": {
+                "exactly_one_owner": True,
+                "busy_not_syncing": True,
+                "busy_projection_fail_closed": True,
+                "diagnostic_only_standby": True,
+                "graceful_takeover": True,
+                "crash_takeover": True,
+                "transaction_coordinator_follows_index_lease": True,
+            },
+            "source_unchanged": True,
+            "cleanup": {
+                "editor_stopped": True,
+                "owner_stopped": True,
+                "standby_stopped": True,
+                "successor_stopped": True,
+            },
+            "redaction": True,
+        }
     raise AssertionError(command_id)
 
 
@@ -342,8 +373,8 @@ class FakeRepository:
 class Sprint11PackagedRegressionTests(unittest.TestCase):
     def test_command_matrix_is_exact_bounded_and_package_scoped(self) -> None:
         specs = packaged.canonical_command_specs()
-        self.assertEqual(len(specs), 10)
-        self.assertEqual(len({item.command_id for item in specs}), 10)
+        self.assertEqual(len(specs), 11)
+        self.assertEqual(len({item.command_id for item in specs}), 11)
         for spec in specs:
             template = spec.argv_template()
             self.assertEqual(
@@ -1814,7 +1845,7 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
         try:
             self.assertEqual(receipt["capture_kind"], "real_package_live")
             self.assertEqual(receipt["coverage"]["sprints"], [6, 7, 8, 9, 10])
-            self.assertEqual(len(receipt["commands"]), 10)
+            self.assertEqual(len(receipt["commands"]), 11)
             self.assertTrue((output_root / "receipt.json").is_file())
             self.assertTrue(
                 all(
@@ -1882,7 +1913,7 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
                 registry_sha256=bindings["registry_sha256"],
                 godot_artifact_sha256=bindings["godot_artifact_sha256"],
             )
-            self.assertEqual(len(paths), 10)
+            self.assertEqual(len(paths), 11)
 
             changed = copy.deepcopy(rebound)
             changed["bindings"]["package_sidecar_sha256"] = (

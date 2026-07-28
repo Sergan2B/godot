@@ -30,6 +30,12 @@ editor transactions, automatic validation, and connection health.
 - `godot-codex-mcp` owns process lifecycle and stdio transport.
 - `godot-codex` owns model-free `setup`, `doctor`, and package operations.
 
+For multiple Codex tasks opened on the same project, the `index.lock` holder
+is the only full-access owner. Standbys expose only connection diagnostics with
+`project_session_busy` and automatically take over after the owner exits. The
+transaction coordinator is activated from the same lease, preventing split
+index/transaction ownership.
+
 ## Build and test
 
 ```sh

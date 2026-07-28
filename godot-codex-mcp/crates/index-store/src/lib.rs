@@ -1776,6 +1776,9 @@ fn update_field(hasher: &mut Sha256, value: &str) {
 mod tests {
     use std::fs;
     use std::process::{Command, Stdio};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Barrier, mpsc};
+    use std::thread;
     use std::time::{Duration, Instant};
 
     use super::*;
@@ -2640,6 +2643,7 @@ mod tests {
         let base = generation();
         let mut store = SegmentStore::open(temp.path(), &base.project_id).expect("store");
         store.activate(&base, None).expect("activate base");
+        assert!(SegmentStore::writer_lease_busy(temp.path()).expect("busy probe"));
         assert!(matches!(
             SegmentStore::open(temp.path(), &base.project_id),
             Err(StoreError::StoreBusy)
@@ -2661,6 +2665,59 @@ mod tests {
             store.active_generation().expect("active").generation_id,
             "generation-1"
         );
+        drop(store);
+        assert!(!SegmentStore::writer_lease_busy(temp.path()).expect("released probe"));
+    }
+
+    #[test]
+    fn simultaneous_same_project_open_elects_exactly_one_owner() {
+        let temp = TempDir::new().expect("temp");
+        let project_root = temp.path().to_path_buf();
+        let project_id = generation().project_id;
+        let start = Arc::new(Barrier::new(3));
+        let release = Arc::new(AtomicBool::new(false));
+        let (sender, receiver) = mpsc::channel();
+        let workers = (0..2)
+            .map(|_| {
+                let project_root = project_root.clone();
+                let project_id = project_id.clone();
+                let start = start.clone();
+                let release = release.clone();
+                let sender = sender.clone();
+                thread::spawn(move || {
+                    start.wait();
+                    match SegmentStore::open(&project_root, &project_id) {
+                        Ok(_owner) => {
+                            sender.send("owner").expect("send owner");
+                            while !release.load(Ordering::Acquire) {
+                                thread::yield_now();
+                            }
+                        }
+                        Err(StoreError::StoreBusy) => {
+                            sender.send("busy").expect("send busy");
+                        }
+                        Err(error) => panic!("unexpected open error: {error}"),
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        drop(sender);
+
+        start.wait();
+        let mut outcomes = vec![
+            receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("first outcome"),
+            receiver
+                .recv_timeout(Duration::from_secs(5))
+                .expect("second outcome"),
+        ];
+        outcomes.sort_unstable();
+        release.store(true, Ordering::Release);
+        for worker in workers {
+            worker.join().expect("worker");
+        }
+        assert_eq!(outcomes, ["busy", "owner"]);
     }
 
     #[test]

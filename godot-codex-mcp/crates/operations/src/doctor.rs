@@ -563,10 +563,15 @@ fn run_doctor_inner(
     }
 
     let project_id = project_id_for_path(&canonical_root).ok();
-    match project_id
-        .as_deref()
-        .map(|project_id| SegmentStore::read_generation(&canonical_root, project_id))
-    {
+    let generation =
+        project_id.as_deref().map(|project_id| {
+            match SegmentStore::writer_lease_busy(&canonical_root) {
+                Ok(true) => Err(StoreError::StoreBusy),
+                Ok(false) => SegmentStore::read_generation(&canonical_root, project_id),
+                Err(error) => Err(error),
+            }
+        });
+    match generation {
         Some(Ok(generation))
             if format!(
                 "{}.{}",
@@ -607,7 +612,17 @@ fn run_doctor_inner(
                 Some(&matrix.schemas.index),
             ));
         }
-        Some(Err(StoreError::StoreBusy | StoreError::Cancelled)) => {
+        Some(Err(StoreError::StoreBusy)) => {
+            exit_code = exit_code.max(1);
+            checks.push(DoctorCheck::from_code(
+                "cache.integrity",
+                DoctorCheckStatus::Warn,
+                DiagnosticCode::ProjectSessionBusy,
+                None,
+                Some(&matrix.schemas.index),
+            ));
+        }
+        Some(Err(StoreError::Cancelled)) => {
             exit_code = exit_code.max(1);
             checks.push(DoctorCheck::from_code(
                 "cache.integrity",
@@ -2330,6 +2345,33 @@ mod tests {
                 && check.status == DoctorCheckStatus::Fail
         }));
         assert_eq!(report.exit_code, 2);
+    }
+
+    #[test]
+    fn doctor_reports_same_project_owner_as_busy_instead_of_rebuilding() {
+        let temp = project();
+        let package = fake_package();
+        write_config(
+            temp.path(),
+            READ_ONLY_TOOLS,
+            false,
+            &package.path().join("bin/godot-codex-mcp"),
+        );
+        let project_id = project_id_for_path(temp.path()).unwrap();
+        let _owner = SegmentStore::open(temp.path(), &project_id).unwrap();
+        let mut options = DoctorOptions::new(temp.path());
+        options.package_directory = Some(package.path().to_path_buf());
+
+        let report = run_doctor_with_probes(&options, &matching_probes(temp.path()));
+        assert!(report.checks.iter().any(|check| {
+            check.check_id == "cache.integrity"
+                && check.code == DiagnosticCode::ProjectSessionBusy
+                && check.status == DoctorCheckStatus::Warn
+        }));
+        assert!(!report.checks.iter().any(|check| {
+            check.check_id == "cache.integrity"
+                && check.code == DiagnosticCode::StaticCacheRebuilding
+        }));
     }
 
     #[test]

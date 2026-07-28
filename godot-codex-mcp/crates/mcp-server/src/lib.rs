@@ -9,7 +9,7 @@ mod transaction_tools;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
@@ -88,6 +88,110 @@ const MAX_TOTAL_RESULTS: usize = 250_000;
 const MAX_SCRIPT_DIAGNOSTICS: usize = 200;
 const MAX_SAFE_RUNTIME_SEQUENCE: u64 = 9_007_199_254_740_991;
 const EDITOR_SUMMARY_MAX_BYTES: usize = 4096;
+
+/// Dynamic transaction availability coupled to the canonical index writer lease.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransactionCoordinatorCondition {
+    Acquiring,
+    ProjectSessionBusy,
+    Ready,
+    Unavailable,
+}
+
+enum TransactionCoordinatorSlotState {
+    Acquiring,
+    ProjectSessionBusy,
+    Ready(Arc<TransactionCoordinator>),
+    Unavailable,
+}
+
+/// Cloneable slot populated only while this sidecar owns the project session.
+#[derive(Clone)]
+pub struct TransactionCoordinatorSlot {
+    state: Arc<RwLock<TransactionCoordinatorSlotState>>,
+}
+
+impl Default for TransactionCoordinatorSlot {
+    fn default() -> Self {
+        Self::unavailable()
+    }
+}
+
+impl TransactionCoordinatorSlot {
+    #[must_use]
+    pub fn acquiring() -> Self {
+        Self {
+            state: Arc::new(RwLock::new(TransactionCoordinatorSlotState::Acquiring)),
+        }
+    }
+
+    #[must_use]
+    pub fn unavailable() -> Self {
+        Self {
+            state: Arc::new(RwLock::new(TransactionCoordinatorSlotState::Unavailable)),
+        }
+    }
+
+    #[must_use]
+    pub fn ready(coordinator: Arc<TransactionCoordinator>) -> Self {
+        Self {
+            state: Arc::new(RwLock::new(TransactionCoordinatorSlotState::Ready(
+                coordinator,
+            ))),
+        }
+    }
+
+    #[must_use]
+    pub fn condition(&self) -> TransactionCoordinatorCondition {
+        self.state.read().map_or(
+            TransactionCoordinatorCondition::Unavailable,
+            |state| match &*state {
+                TransactionCoordinatorSlotState::Acquiring => {
+                    TransactionCoordinatorCondition::Acquiring
+                }
+                TransactionCoordinatorSlotState::ProjectSessionBusy => {
+                    TransactionCoordinatorCondition::ProjectSessionBusy
+                }
+                TransactionCoordinatorSlotState::Ready(_) => TransactionCoordinatorCondition::Ready,
+                TransactionCoordinatorSlotState::Unavailable => {
+                    TransactionCoordinatorCondition::Unavailable
+                }
+            },
+        )
+    }
+
+    #[must_use]
+    pub fn coordinator(&self) -> Option<Arc<TransactionCoordinator>> {
+        self.state.read().ok().and_then(|state| match &*state {
+            TransactionCoordinatorSlotState::Ready(coordinator) => Some(coordinator.clone()),
+            TransactionCoordinatorSlotState::Acquiring
+            | TransactionCoordinatorSlotState::ProjectSessionBusy
+            | TransactionCoordinatorSlotState::Unavailable => None,
+        })
+    }
+
+    pub fn publish_acquiring(&self) {
+        self.replace(TransactionCoordinatorSlotState::Acquiring);
+    }
+
+    pub fn publish_project_session_busy(&self) {
+        self.replace(TransactionCoordinatorSlotState::ProjectSessionBusy);
+    }
+
+    pub fn publish_ready(&self, coordinator: Arc<TransactionCoordinator>) {
+        self.replace(TransactionCoordinatorSlotState::Ready(coordinator));
+    }
+
+    pub fn publish_unavailable(&self) {
+        self.replace(TransactionCoordinatorSlotState::Unavailable);
+    }
+
+    fn replace(&self, state: TransactionCoordinatorSlotState) {
+        if let Ok(mut current) = self.state.write() {
+            *current = state;
+        }
+    }
+}
 
 fn has_tool_domain_authority(health: &ConnectionHealth, domain: AvailabilityDomain) -> bool {
     let lifecycle_allows_live_probe = matches!(
@@ -581,7 +685,7 @@ pub struct GodotMcpServer {
     runtime_overlay: RuntimeOverlay,
     project_root: Option<PathBuf>,
     product_startup: ProductStartupObservation,
-    transaction_coordinator: Option<Arc<TransactionCoordinator>>,
+    transaction_coordinator: TransactionCoordinatorSlot,
     validation_coordinator: Arc<tokio::sync::Mutex<ValidationCoordinator>>,
     confirmation_policy: ConfirmationPolicyStore,
     change_set_baselines: Arc<tokio::sync::Mutex<BTreeMap<String, PreparedChangeSetBaseline>>>,
@@ -599,7 +703,7 @@ impl std::fmt::Debug for GodotMcpServer {
             .field("runtime_summary", &self.runtime_overlay.summary())
             .field(
                 "transaction_coordinator_available",
-                &self.transaction_coordinator.is_some(),
+                &self.transaction_coordinator.condition(),
             )
             .finish_non_exhaustive()
     }
@@ -607,6 +711,11 @@ impl std::fmt::Debug for GodotMcpServer {
 
 impl output_schema::ToolAvailabilityGuard for GodotMcpServer {
     fn unavailable_tool_result(&self, tool_name: &str) -> Option<CallToolResult> {
+        if tool_name != "godot_get_connection_status"
+            && self.connection_status().status == ConnectionStatus::ProjectSessionBusy
+        {
+            return self.unavailable_error(AvailabilityDomain::Editor);
+        }
         // Diagnostics is the one mixed editor/runtime tool. During a stale
         // semantic replica window the router must admit the request so the
         // deserialized scope can apply its exact domain guard: editor reads
@@ -919,7 +1028,7 @@ impl GodotMcpServer {
             script_index,
             RuntimeOverlay::unavailable(),
             None,
-            None,
+            TransactionCoordinatorSlot::unavailable(),
         )
     }
 
@@ -937,7 +1046,7 @@ impl GodotMcpServer {
             script_index,
             RuntimeOverlay::for_project(project_root.clone()),
             Some(project_root),
-            None,
+            TransactionCoordinatorSlot::unavailable(),
         )
     }
 
@@ -956,7 +1065,26 @@ impl GodotMcpServer {
             script_index,
             RuntimeOverlay::for_project(project_root.clone()),
             Some(project_root),
-            Some(transaction_coordinator),
+            TransactionCoordinatorSlot::ready(transaction_coordinator),
+        )
+    }
+
+    pub fn with_all_indexes_and_project_slot(
+        replicator: SnapshotReplicator,
+        resource_index: ResourceIndexReader,
+        scene_index: SceneIndexReader,
+        script_index: ScriptIndexReader,
+        project_root: PathBuf,
+        transaction_coordinator: TransactionCoordinatorSlot,
+    ) -> Self {
+        Self::with_all_indexes_and_runtime(
+            replicator,
+            resource_index,
+            scene_index,
+            script_index,
+            RuntimeOverlay::for_project(project_root.clone()),
+            Some(project_root),
+            transaction_coordinator,
         )
     }
 
@@ -967,7 +1095,7 @@ impl GodotMcpServer {
         script_index: ScriptIndexReader,
         runtime_overlay: RuntimeOverlay,
         project_root: Option<PathBuf>,
-        transaction_coordinator: Option<Arc<TransactionCoordinator>>,
+        transaction_coordinator: TransactionCoordinatorSlot,
     ) -> Self {
         let semantic_index = SemanticIndexReader::new(
             resource_index.clone(),
@@ -1049,6 +1177,7 @@ impl GodotMcpServer {
             &scene_status,
             &script_status,
         );
+        let transaction_coordinator = self.transaction_coordinator.coordinator();
         connection_health(ServerConnectionObservation {
             product: self.product_startup.clone(),
             replica,
@@ -1058,9 +1187,10 @@ impl GodotMcpServer {
             script_index: script_index_observation(script_status),
             static_cache_verified,
             runtime,
-            transactions_available: self.transaction_coordinator.is_some(),
-            transaction_recovery_degraded: self
-                .transaction_coordinator
+            transactions_available: transaction_coordinator.is_some(),
+            project_session_busy: self.transaction_coordinator.condition()
+                == TransactionCoordinatorCondition::ProjectSessionBusy,
+            transaction_recovery_degraded: transaction_coordinator
                 .as_ref()
                 .is_some_and(|coordinator| coordinator.journal_recovered_corruption()),
             cache_age_seconds,
@@ -1071,7 +1201,7 @@ impl GodotMcpServer {
         if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
             return error;
         }
-        let Some(coordinator) = &self.transaction_coordinator else {
+        let Some(coordinator) = self.transaction_coordinator.coordinator() else {
             return coordinator_unavailable();
         };
         match coordinator.prepare(command).await {
@@ -1084,7 +1214,7 @@ impl GodotMcpServer {
         if let Some(error) = self.unavailable_error(AvailabilityDomain::Editor) {
             return error;
         }
-        let Some(coordinator) = &self.transaction_coordinator else {
+        let Some(coordinator) = self.transaction_coordinator.coordinator() else {
             return coordinator_unavailable();
         };
         match coordinator.status(transaction_id).await {
@@ -3603,6 +3733,7 @@ fn mark_summary_freshness(text: &str, offline_cached: bool) -> Result<String, Mc
 fn resource_index_observation(status: ResourceIndexStatus) -> IndexObservation {
     match status {
         ResourceIndexStatus::ProjectNotBound => IndexObservation::Offline,
+        ResourceIndexStatus::ProjectSessionBusy => IndexObservation::ProjectSessionBusy,
         ResourceIndexStatus::NotReady => IndexObservation::Syncing,
         ResourceIndexStatus::Current {
             project_id,
@@ -3692,6 +3823,7 @@ fn resource_checkpoint(
 fn scene_index_observation(status: SceneIndexStatus) -> IndexObservation {
     match status {
         SceneIndexStatus::ProjectNotBound => IndexObservation::Offline,
+        SceneIndexStatus::ProjectSessionBusy => IndexObservation::ProjectSessionBusy,
         SceneIndexStatus::NotReady => IndexObservation::Syncing,
         SceneIndexStatus::Current {
             project_id,
@@ -3731,6 +3863,7 @@ fn scene_index_observation(status: SceneIndexStatus) -> IndexObservation {
 fn script_index_observation(status: ScriptIndexStatus) -> IndexObservation {
     match status {
         ScriptIndexStatus::ProjectNotBound => IndexObservation::Offline,
+        ScriptIndexStatus::ProjectSessionBusy => IndexObservation::ProjectSessionBusy,
         ScriptIndexStatus::NotReady => IndexObservation::Syncing,
         ScriptIndexStatus::Current {
             project_id,
@@ -4183,6 +4316,7 @@ fn partial_reason_view(reason: &SemanticPartialReason) -> Value {
     };
     let code = match reason.code {
         SemanticPartialCode::ProjectNotBound => "project_not_bound",
+        SemanticPartialCode::ProjectSessionBusy => "project_session_busy",
         SemanticPartialCode::NotReady => "not_ready",
         SemanticPartialCode::NotCurrent => "not_current",
         SemanticPartialCode::CapabilityUnavailable => "capability_unavailable",
@@ -4195,6 +4329,11 @@ fn semantic_index_error(error: SemanticIndexReadError) -> CallToolResult {
         SemanticIndexReadError::ProjectNotBound => structured_error(
             "project_not_bound",
             "no project is bound to the semantic index",
+            true,
+        ),
+        SemanticIndexReadError::ProjectSessionBusy => structured_error(
+            "project_session_busy",
+            "another Codex task owns this project's Godot session",
             true,
         ),
         SemanticIndexReadError::NotReady => structured_error(
@@ -4308,6 +4447,7 @@ fn summary_not_found(message: &'static str) -> McpError {
 fn summary_index_error(error: SemanticIndexReadError) -> McpError {
     let code = match error {
         SemanticIndexReadError::ProjectNotBound => "project_not_bound",
+        SemanticIndexReadError::ProjectSessionBusy => "project_session_busy",
         SemanticIndexReadError::NotReady => "index_not_ready",
         SemanticIndexReadError::NotCurrent | SemanticIndexReadError::TornGeneration => {
             "index_not_current"
@@ -5715,6 +5855,11 @@ fn resource_index_error(error: ResourceIndexReadError) -> CallToolResult {
         ResourceIndexReadError::ProjectNotBound => {
             structured_error("project_not_bound", "Godot project is not bound", true)
         }
+        ResourceIndexReadError::ProjectSessionBusy => structured_error(
+            "project_session_busy",
+            "another Codex task owns this project's Godot session",
+            true,
+        ),
         ResourceIndexReadError::NotReady => structured_error(
             "index_not_ready",
             "resource index has no committed generation",
@@ -5738,6 +5883,11 @@ fn scene_index_error(error: SceneIndexReadError) -> CallToolResult {
         SceneIndexReadError::ProjectNotBound => {
             structured_error("project_not_bound", "Godot project is not bound", true)
         }
+        SceneIndexReadError::ProjectSessionBusy => structured_error(
+            "project_session_busy",
+            "another Codex task owns this project's Godot session",
+            true,
+        ),
         SceneIndexReadError::NotReady => structured_error(
             "index_not_ready",
             "scene index has no committed generation",
@@ -5761,6 +5911,11 @@ fn script_index_error(error: ScriptIndexReadError) -> CallToolResult {
         ScriptIndexReadError::ProjectNotBound => {
             structured_error("project_not_bound", "Godot project is not bound", true)
         }
+        ScriptIndexReadError::ProjectSessionBusy => structured_error(
+            "project_session_busy",
+            "another Codex task owns this project's Godot session",
+            true,
+        ),
         ScriptIndexReadError::NotReady => structured_error(
             "index_not_ready",
             "script index has no committed generation",
@@ -7294,7 +7449,7 @@ impl GodotMcpServer {
         if input.transaction_id.starts_with("change-set:") {
             return self.apply_compound_change_set(input, context).await;
         }
-        let Some(coordinator) = &self.transaction_coordinator else {
+        let Some(coordinator) = self.transaction_coordinator.coordinator() else {
             return coordinator_unavailable();
         };
         let approval = McpApprovalProvider::new(context);
@@ -7377,7 +7532,7 @@ impl GodotMcpServer {
                 Err(error) => runtime_bridge_error(error),
             };
         }
-        let Some(coordinator) = &self.transaction_coordinator else {
+        let Some(coordinator) = self.transaction_coordinator.coordinator() else {
             return coordinator_unavailable();
         };
         match coordinator
@@ -7616,6 +7771,34 @@ mod tests {
         replicator.push_chunk(chunk).unwrap();
         replicator.end(end).unwrap();
         replicator
+    }
+
+    #[test]
+    fn transaction_slot_transitions_without_reconstructing_the_server() {
+        let project = TempDir::new().unwrap();
+        fs::write(project.path().join("project.godot"), b"[application]\n").unwrap();
+        let slot = TransactionCoordinatorSlot::acquiring();
+        assert_eq!(slot.condition(), TransactionCoordinatorCondition::Acquiring);
+        assert!(slot.coordinator().is_none());
+
+        slot.publish_project_session_busy();
+        assert_eq!(
+            slot.condition(),
+            TransactionCoordinatorCondition::ProjectSessionBusy
+        );
+        assert!(slot.coordinator().is_none());
+
+        let coordinator = TransactionCoordinator::open(project.path()).unwrap();
+        slot.publish_ready(coordinator.clone());
+        assert_eq!(slot.condition(), TransactionCoordinatorCondition::Ready);
+        assert!(Arc::ptr_eq(&slot.coordinator().unwrap(), &coordinator));
+
+        slot.publish_unavailable();
+        assert_eq!(
+            slot.condition(),
+            TransactionCoordinatorCondition::Unavailable
+        );
+        assert!(slot.coordinator().is_none());
     }
 
     #[test]
@@ -9502,9 +9685,13 @@ mod tests {
         );
 
         for tool_name in FULL_BETA_TOOLS {
-            let Some(domain) = output_schema::availability_domain(tool_name) else {
+            if *tool_name == "godot_get_connection_status" {
                 continue;
-            };
+            }
+            let domain = output_schema::availability_domain(tool_name);
+            if domain.is_none() && expected_status != "project_session_busy" {
+                continue;
+            }
             // The router-level guard executes before input deserialization.
             // Empty arguments therefore exercise every prohibited route
             // without maintaining a second copy of 33 input fixtures.
@@ -9518,7 +9705,7 @@ mod tests {
                 .as_ref()
                 .unwrap_or_else(|| panic!("{tool_name} returned no structured error"));
             let expected_code = if matches!(expected_status, "offline_cached" | "offline_empty") {
-                match domain {
+                match domain.expect("offline forbidden tool has an availability domain") {
                     AvailabilityDomain::Editor => "editor_offline",
                     AvailabilityDomain::Runtime => "runtime_unavailable",
                 }
@@ -9618,6 +9805,10 @@ mod tests {
         .await;
         assert_wire_forbidden_matrix(unavailable_server(None), "connecting", "bridge_connecting")
             .await;
+
+        let busy = unavailable_server(None);
+        busy.transaction_coordinator.publish_project_session_busy();
+        assert_wire_forbidden_matrix(busy, "project_session_busy", "project_session_busy").await;
 
         assert_wire_forbidden_matrix(
             GodotMcpServer::new(SnapshotReplicator::new())
@@ -10485,7 +10676,7 @@ mod tests {
         assert_eq!(&resource_value, tool_value);
         assert_eq!(
             resource_value["schema_version"],
-            "godot-connection-status/1.0"
+            "godot-connection-status/1.1"
         );
         assert_eq!(resource_value["status"], "ready");
         assert_eq!(
@@ -10498,6 +10689,24 @@ mod tests {
         let tool_text_value: Value =
             serde_json::from_str(&text_content.text).expect("connection status tool text JSON");
         assert_eq!(tool_text_value, *tool_value);
+
+        let busy_server = unavailable_server(None);
+        busy_server
+            .transaction_coordinator
+            .publish_project_session_busy();
+        let busy_connection = busy_server
+            .read_summary_resource(CONNECTION_STATUS_URI)
+            .expect("busy connection status");
+        let ResourceContents::TextResourceContents { text, .. } = &busy_connection.contents[0]
+        else {
+            panic!("busy connection status must be text");
+        };
+        let busy_value: Value = serde_json::from_str(text).expect("busy connection status JSON");
+        assert_eq!(busy_value["status"], "project_session_busy");
+        assert_eq!(
+            busy_value.pointer("/diagnostic/code"),
+            Some(&json!("project_session_busy"))
+        );
 
         let scene_id = "godot:scene:uid:v1:testscene";
         let uri = format!(

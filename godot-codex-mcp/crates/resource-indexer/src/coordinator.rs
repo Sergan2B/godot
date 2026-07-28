@@ -31,6 +31,14 @@ const CATALOG_RETRY_INTERVAL: Duration = Duration::from_millis(10);
 const RETRY_MIN: Duration = Duration::from_millis(200);
 const RETRY_MAX: Duration = Duration::from_secs(5);
 
+/// Process-local observation of the canonical `index.lock` project lease.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProjectSessionState {
+    Acquiring,
+    Owner,
+    Busy,
+}
+
 /// Safe public reason why a committed generation cannot be served as current.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ResourceIndexStaleReason {
@@ -45,6 +53,7 @@ pub enum ResourceIndexStaleReason {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResourceIndexStatus {
     ProjectNotBound,
+    ProjectSessionBusy,
     NotReady,
     Current {
         project_id: String,
@@ -73,6 +82,8 @@ pub enum ResourceIndexStatus {
 pub enum ResourceIndexReadError {
     #[error("project_not_bound")]
     ProjectNotBound,
+    #[error("project_session_busy")]
+    ProjectSessionBusy,
     #[error("index_not_ready")]
     NotReady,
     #[error("index_not_current")]
@@ -96,6 +107,7 @@ pub enum SceneIndexStaleReason {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SceneIndexStatus {
     ProjectNotBound,
+    ProjectSessionBusy,
     NotReady,
     Current {
         project_id: String,
@@ -124,6 +136,8 @@ pub enum SceneIndexStatus {
 pub enum SceneIndexReadError {
     #[error("project_not_bound")]
     ProjectNotBound,
+    #[error("project_session_busy")]
+    ProjectSessionBusy,
     #[error("index_not_ready")]
     NotReady,
     #[error("index_not_current")]
@@ -149,6 +163,7 @@ pub enum ScriptIndexStaleReason {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ScriptIndexStatus {
     ProjectNotBound,
+    ProjectSessionBusy,
     NotReady,
     Current {
         project_id: String,
@@ -179,6 +194,8 @@ pub enum ScriptIndexStatus {
 pub enum ScriptIndexReadError {
     #[error("project_not_bound")]
     ProjectNotBound,
+    #[error("project_session_busy")]
+    ProjectSessionBusy,
     #[error("index_not_ready")]
     NotReady,
     #[error("index_not_current")]
@@ -198,6 +215,7 @@ pub enum SemanticPartialDomain {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SemanticPartialCode {
     ProjectNotBound,
+    ProjectSessionBusy,
     NotReady,
     NotCurrent,
     CapabilityUnavailable,
@@ -215,6 +233,8 @@ pub struct SemanticPartialReason {
 pub enum SemanticIndexReadError {
     #[error("project_not_bound")]
     ProjectNotBound,
+    #[error("project_session_busy")]
+    ProjectSessionBusy,
     #[error("index_not_ready")]
     NotReady,
     #[error("index_not_current")]
@@ -407,6 +427,7 @@ fn ensure_same_generation(
 fn map_resource_error(error: ResourceIndexReadError) -> SemanticIndexReadError {
     match error {
         ResourceIndexReadError::ProjectNotBound => SemanticIndexReadError::ProjectNotBound,
+        ResourceIndexReadError::ProjectSessionBusy => SemanticIndexReadError::ProjectSessionBusy,
         ResourceIndexReadError::NotReady => SemanticIndexReadError::NotReady,
         ResourceIndexReadError::NotCurrent => SemanticIndexReadError::NotCurrent,
         ResourceIndexReadError::CapabilityUnavailable => {
@@ -418,6 +439,7 @@ fn map_resource_error(error: ResourceIndexReadError) -> SemanticIndexReadError {
 fn map_scene_partial(error: SceneIndexReadError) -> SemanticPartialCode {
     match error {
         SceneIndexReadError::ProjectNotBound => SemanticPartialCode::ProjectNotBound,
+        SceneIndexReadError::ProjectSessionBusy => SemanticPartialCode::ProjectSessionBusy,
         SceneIndexReadError::NotReady => SemanticPartialCode::NotReady,
         SceneIndexReadError::NotCurrent => SemanticPartialCode::NotCurrent,
         SceneIndexReadError::CapabilityUnavailable => SemanticPartialCode::CapabilityUnavailable,
@@ -427,6 +449,7 @@ fn map_scene_partial(error: SceneIndexReadError) -> SemanticPartialCode {
 fn map_script_partial(error: ScriptIndexReadError) -> SemanticPartialCode {
     match error {
         ScriptIndexReadError::ProjectNotBound => SemanticPartialCode::ProjectNotBound,
+        ScriptIndexReadError::ProjectSessionBusy => SemanticPartialCode::ProjectSessionBusy,
         ScriptIndexReadError::NotReady => SemanticPartialCode::NotReady,
         ScriptIndexReadError::NotCurrent => SemanticPartialCode::NotCurrent,
         ScriptIndexReadError::CapabilityUnavailable => SemanticPartialCode::CapabilityUnavailable,
@@ -494,6 +517,9 @@ impl ScriptIndexReader {
         let (generation_id, index_revision, script_graph_revision) = match &state.status {
             ScriptIndexStatus::ProjectNotBound => {
                 return Err(ScriptIndexReadError::ProjectNotBound);
+            }
+            ScriptIndexStatus::ProjectSessionBusy => {
+                return Err(ScriptIndexReadError::ProjectSessionBusy);
             }
             ScriptIndexStatus::NotReady => return Err(ScriptIndexReadError::NotReady),
             ScriptIndexStatus::NotCurrent { .. } => {
@@ -644,6 +670,9 @@ impl SceneIndexReader {
             .map_err(|_| SceneIndexReadError::NotCurrent)?;
         let (generation_id, index_revision, scene_graph_revision) = match &state.status {
             SceneIndexStatus::ProjectNotBound => return Err(SceneIndexReadError::ProjectNotBound),
+            SceneIndexStatus::ProjectSessionBusy => {
+                return Err(SceneIndexReadError::ProjectSessionBusy);
+            }
             SceneIndexStatus::NotReady => return Err(SceneIndexReadError::NotReady),
             SceneIndexStatus::NotCurrent { .. } => return Err(SceneIndexReadError::NotCurrent),
             SceneIndexStatus::CapabilityUnavailable => {
@@ -792,6 +821,9 @@ impl ResourceIndexReader {
             ResourceIndexStatus::ProjectNotBound => {
                 return Err(ResourceIndexReadError::ProjectNotBound);
             }
+            ResourceIndexStatus::ProjectSessionBusy => {
+                return Err(ResourceIndexReadError::ProjectSessionBusy);
+            }
             ResourceIndexStatus::NotReady => return Err(ResourceIndexReadError::NotReady),
             ResourceIndexStatus::NotCurrent { .. } => {
                 return Err(ResourceIndexReadError::NotCurrent);
@@ -915,6 +947,7 @@ pub struct ResourceIndexCoordinator {
     project_root: PathBuf,
     expected_project_id: String,
     store: Option<SegmentStore>,
+    project_session: watch::Sender<ProjectSessionState>,
     offline_authority_generation: Option<String>,
     online_activation_pending: bool,
     normalizer: ResourceNormalizer,
@@ -961,8 +994,10 @@ impl ResourceIndexCoordinator {
             .map_err(|_| IndexerError::UnsafeResourcePath)?;
         let mut store = None;
         let mut offline_authority_generation = None;
+        let (project_session, _) = watch::channel(ProjectSessionState::Acquiring);
         match SegmentStore::open(&project_root, &expected_project_id) {
             Ok(opened) => {
+                project_session.send_replace(ProjectSessionState::Owner);
                 let has_generation = opened.active_generation().is_ok();
                 let has_scene_generation = opened
                     .active_generation()
@@ -988,6 +1023,12 @@ impl ResourceIndexCoordinator {
                 }
                 store = Some(opened);
             }
+            Err(StoreError::StoreBusy) => {
+                project_session.send_replace(ProjectSessionState::Busy);
+                reader.set_status(ResourceIndexStatus::ProjectSessionBusy);
+                scene_reader.set_status(SceneIndexStatus::ProjectSessionBusy);
+                script_reader.set_status(ScriptIndexStatus::ProjectSessionBusy);
+            }
             Err(StoreError::NotReady) => {}
             Err(_) => {
                 reader.set_status(ResourceIndexStatus::NotCurrent {
@@ -1006,6 +1047,7 @@ impl ResourceIndexCoordinator {
                 project_root,
                 expected_project_id,
                 store,
+                project_session,
                 offline_authority_generation,
                 online_activation_pending: false,
                 normalizer,
@@ -1026,11 +1068,54 @@ impl ResourceIndexCoordinator {
         ))
     }
 
+    /// Subscribes to canonical same-project lease ownership transitions.
+    #[must_use]
+    pub fn subscribe_project_session(&self) -> watch::Receiver<ProjectSessionState> {
+        self.project_session.subscribe()
+    }
+
     /// Runs until shutdown. Only an independently verified source manifest can
     /// retain a persisted generation as offline-current.
     pub async fn run(mut self, mut shutdown: watch::Receiver<bool>) {
         let mut retry = RETRY_MIN;
         while !*shutdown.borrow() {
+            if self.store.is_none() {
+                match self.open_store(&self.expected_project_id) {
+                    Ok(opened) => {
+                        self.project_session
+                            .send_replace(ProjectSessionState::Owner);
+                        self.store = Some(opened);
+                        retry = RETRY_MIN;
+                    }
+                    Err(CoordinatorError::Store(StoreError::StoreBusy)) => {
+                        self.project_session.send_replace(ProjectSessionState::Busy);
+                        self.reader
+                            .set_status(ResourceIndexStatus::ProjectSessionBusy);
+                        self.scene_reader
+                            .set_status(SceneIndexStatus::ProjectSessionBusy);
+                        self.script_reader
+                            .set_status(ScriptIndexStatus::ProjectSessionBusy);
+                        if wait_or_shutdown(retry, &mut shutdown).await {
+                            break;
+                        }
+                        retry = (retry * 2).min(RETRY_MAX);
+                        continue;
+                    }
+                    Err(error) => {
+                        self.project_session
+                            .send_replace(ProjectSessionState::Acquiring);
+                        eprintln!("[godot-codex-index] open failed: {}", error.safe_code());
+                        self.reader.set_status(ResourceIndexStatus::NotReady);
+                        self.scene_reader.set_status(SceneIndexStatus::NotReady);
+                        self.script_reader.set_status(ScriptIndexStatus::NotReady);
+                        if wait_or_shutdown(retry, &mut shutdown).await {
+                            break;
+                        }
+                        retry = (retry * 2).min(RETRY_MAX);
+                        continue;
+                    }
+                }
+            }
             let connect = BridgeClient::connect(&self.project_root);
             let client = tokio::select! {
                 result = connect => match result {
@@ -1045,7 +1130,6 @@ impl ResourceIndexCoordinator {
                 },
                 _ = shutdown.changed() => break,
             };
-            retry = RETRY_MIN;
             if !client.negotiated_profile().resource_graph_available {
                 self.reader
                     .set_status(ResourceIndexStatus::CapabilityUnavailable);
@@ -1074,22 +1158,6 @@ impl ResourceIndexCoordinator {
                     .set_status(ScriptIndexStatus::ProjectNotBound);
                 break;
             }
-            if self.store.is_none() {
-                match self.open_store(client.project_id()) {
-                    Ok(opened) => self.store = Some(opened),
-                    Err(error) => {
-                        eprintln!("[godot-codex-index] open failed: {}", error.safe_code());
-                        self.reader.set_status(ResourceIndexStatus::NotReady);
-                        self.scene_reader.set_status(SceneIndexStatus::NotReady);
-                        self.script_reader.set_status(ScriptIndexStatus::NotReady);
-                        if wait_or_shutdown(retry, &mut shutdown).await {
-                            break;
-                        }
-                        retry = (retry * 2).min(RETRY_MAX);
-                        continue;
-                    }
-                }
-            }
             let mut client = client;
             let mut store = self.store.take().expect("store opened");
             let result = tokio::select! {
@@ -1109,6 +1177,8 @@ impl ResourceIndexCoordinator {
                 retry = (retry * 2).min(RETRY_MAX);
             }
         }
+        self.project_session
+            .send_replace(ProjectSessionState::Acquiring);
         self.mark_disconnected();
     }
 
@@ -1860,6 +1930,15 @@ impl ResourceIndexCoordinator {
     }
 
     fn mark_disconnected(&mut self) {
+        if *self.project_session.borrow() == ProjectSessionState::Busy {
+            self.reader
+                .set_status(ResourceIndexStatus::ProjectSessionBusy);
+            self.scene_reader
+                .set_status(SceneIndexStatus::ProjectSessionBusy);
+            self.script_reader
+                .set_status(ScriptIndexStatus::ProjectSessionBusy);
+            return;
+        }
         let verified_offline = self.store.as_ref().is_some_and(|store| {
             store.active_generation().is_ok_and(|generation| {
                 load_verified_offline_authority(
@@ -2516,6 +2595,40 @@ mod tests {
     }
 
     #[test]
+    fn same_project_contention_is_explicit_and_lock_release_allows_takeover() {
+        let project = offline_project();
+        let (project_id, _) = install_complete_store(&project);
+        let (owner, _, _, _) = ResourceIndexCoordinator::new_semantic(project.path()).unwrap();
+        assert_eq!(
+            *owner.subscribe_project_session().borrow(),
+            ProjectSessionState::Owner
+        );
+
+        let (standby, resource, scene, script) =
+            ResourceIndexCoordinator::new_semantic(project.path()).unwrap();
+        assert_eq!(
+            *standby.subscribe_project_session().borrow(),
+            ProjectSessionState::Busy
+        );
+        assert_eq!(
+            resource.pin_current().err(),
+            Some(ResourceIndexReadError::ProjectSessionBusy)
+        );
+        assert_eq!(
+            scene.pin_current().err(),
+            Some(SceneIndexReadError::ProjectSessionBusy)
+        );
+        assert_eq!(
+            script.pin_current().err(),
+            Some(ScriptIndexReadError::ProjectSessionBusy)
+        );
+
+        drop(owner);
+        let takeover = standby.open_store(&project_id).unwrap();
+        assert_eq!(takeover.active_generation().unwrap().project_id, project_id);
+    }
+
+    #[test]
     fn missing_or_corrupt_authority_and_store_never_become_current() {
         let missing = offline_project();
         let (_, _) = install_complete_store(&missing);
@@ -2665,6 +2778,11 @@ mod tests {
             reader.pin_current().err(),
             Some(ResourceIndexReadError::NotReady)
         );
+        reader.set_status(ResourceIndexStatus::ProjectSessionBusy);
+        assert_eq!(
+            reader.pin_current().err(),
+            Some(ResourceIndexReadError::ProjectSessionBusy)
+        );
         reader.set_status(ResourceIndexStatus::NotCurrent {
             reason: ResourceIndexStaleReason::JournalGap,
         });
@@ -2688,6 +2806,11 @@ mod tests {
             scene_reader.pin_current().err(),
             Some(SceneIndexReadError::NotReady)
         );
+        scene_reader.set_status(SceneIndexStatus::ProjectSessionBusy);
+        assert_eq!(
+            scene_reader.pin_current().err(),
+            Some(SceneIndexReadError::ProjectSessionBusy)
+        );
         scene_reader.set_status(SceneIndexStatus::NotCurrent {
             reason: SceneIndexStaleReason::ResourceChanged,
         });
@@ -2710,6 +2833,11 @@ mod tests {
         assert_eq!(
             script_reader.pin_current().err(),
             Some(ScriptIndexReadError::NotReady)
+        );
+        script_reader.set_status(ScriptIndexStatus::ProjectSessionBusy);
+        assert_eq!(
+            script_reader.pin_current().err(),
+            Some(ScriptIndexReadError::ProjectSessionBusy)
         );
         script_reader.set_status(ScriptIndexStatus::NotCurrent {
             reason: ScriptIndexStaleReason::JournalGap,

@@ -167,6 +167,8 @@ Call `godot_get_connection_status` or read
 - `ready`: compatible Bridge, live editor snapshot, and current cache are
   proven for this project.
 - `syncing`/`connecting`: wait or follow the returned remediation.
+- `project_session_busy`: another Codex task owns this project session. Close
+  that task or wait for it to finish; this task takes over automatically.
 - `offline_cached`: only source-hash-verified saved semantics are current.
 - `offline_empty`: no safe static generation is available.
 - `misconfigured`, `incompatible`, or `auth_failed`: stop and run doctor.

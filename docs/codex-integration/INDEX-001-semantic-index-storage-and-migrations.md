@@ -377,12 +377,18 @@ Readers prefer the portable name and may fall back only to a legacy raw-ID artif
 whose ID contains ASCII alphanumerics, `:`, `-`, or `_`; path separators and other
 unsafe legacy names are never resolved.
 
-One writer holds `.godot/codex/index.lock`; a competing writer receives `store_busy`.
-Data and indexes are written as new files and flushed before their staging manifest is
-renamed into `generations/`. Activation writes a new uniquely named commit marker only
-after the generation manifest and header are durable. Readers choose the latest valid
-marker, verify the manifest digest and every referenced segment, and therefore observe
-only the complete old or complete new generation. Retention keeps the active and one
+One writer holds `.godot/codex/index.lock`; a competing writer receives
+`store_busy`. The sidecar promotes this exact condition to
+`project_session_busy`, remains diagnostic-only, and retries the canonical
+lease with bounded backoff. When the owner exits, the operating system releases
+the lease and one standby automatically takes ownership. The transaction
+journal coordinator starts only for that owner, so index and transaction write
+authority cannot split between tasks. Data and indexes are written as new files
+and flushed before their staging manifest is renamed into `generations/`.
+Activation writes a new uniquely named commit marker only after the generation
+manifest and header are durable. Readers choose the latest valid marker, verify
+the manifest digest and every referenced segment, and therefore observe only
+the complete old or complete new generation. Retention keeps the active and one
 retired generation and removes unreferenced immutable segments.
 
 Startup ignores incomplete staging state. A corrupt marker, manifest, segment, lookup,

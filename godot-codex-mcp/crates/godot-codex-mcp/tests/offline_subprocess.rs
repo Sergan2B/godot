@@ -33,6 +33,76 @@ const OWNER_NAME: &str = ".godot-codex-owned";
 const THIRD_PARTY_LICENSES: &[u8] = include_bytes!("../../../product/THIRD_PARTY_LICENSES.txt");
 
 #[test]
+fn same_project_sidecars_report_busy_and_take_over_after_exit_or_crash() {
+    let project = offline_project();
+    let data_root = installed_package();
+    install_offline_generation(project.path());
+    write_project_config(project.path(), data_root.path());
+    let expected_sources = source_digests(project.path());
+
+    let mut owner = McpProcess::start(project.path(), data_root.path());
+    owner.initialize();
+    owner.wait_for_status("offline_cached", "editor_offline");
+
+    let mut standby = McpProcess::start(project.path(), data_root.path());
+    standby.initialize();
+    let standby_status_started = Instant::now();
+    let busy = standby.call_tool("godot_get_connection_status", json!({}));
+    assert_eq!(busy["status"], "project_session_busy");
+    assert_eq!(
+        busy.pointer("/diagnostic/code"),
+        Some(&json!("project_session_busy"))
+    );
+    assert!(
+        standby_status_started.elapsed() <= Duration::from_secs(5),
+        "standby did not report project_session_busy within five seconds"
+    );
+    assert_eq!(
+        busy.pointer("/static_cache/condition"),
+        Some(&json!("unavailable"))
+    );
+    assert_eq!(
+        busy.pointer("/components/runtime"),
+        Some(&json!("unavailable"))
+    );
+    assert_eq!(
+        busy.pointer("/components/transactions"),
+        Some(&json!("unavailable"))
+    );
+    assert_eq!(
+        busy.get("next_action"),
+        Some(&json!(
+            "Close the other Codex task for this project, or wait for it to finish."
+        ))
+    );
+    let blocked = standby.call_tool(
+        "godot_get_resource_dependencies",
+        json!({"resource": "res://a.tres", "limit": 10}),
+    );
+    assert_eq!(
+        blocked.pointer("/error/code"),
+        Some(&json!("project_session_busy"))
+    );
+    assert_eq!(
+        blocked.pointer("/error/status"),
+        Some(&json!("project_session_busy"))
+    );
+
+    owner.finish();
+    standby.wait_for_status("offline_cached", "editor_offline");
+
+    let mut crash_standby = McpProcess::start(project.path(), data_root.path());
+    crash_standby.initialize();
+    let crash_busy = crash_standby.call_tool("godot_get_connection_status", json!({}));
+    assert_eq!(crash_busy["status"], "project_session_busy");
+    standby.kill_for_test();
+    crash_standby.wait_for_status("offline_cached", "editor_offline");
+    crash_standby.finish();
+
+    assert_eq!(source_digests(project.path()), expected_sources);
+}
+
+#[test]
 fn production_sidecar_serves_only_verified_disk_cache_and_fails_closed() {
     let project = offline_project();
     let data_root = installed_package();
@@ -335,6 +405,16 @@ impl McpProcess {
             stderr.len() < 256 * 1024,
             "production sidecar stderr exceeded its bound"
         );
+    }
+
+    fn kill_for_test(mut self) {
+        self.stdin.take();
+        if let Some(mut child) = self.child.take() {
+            child.kill().unwrap();
+            let _ = child.wait();
+        }
+        self.stdout_thread.take().unwrap().join().unwrap();
+        self.stderr_thread.take().unwrap().join().unwrap();
     }
 
     fn stop_for_failure(&mut self) -> (Option<ExitStatus>, Vec<u8>) {

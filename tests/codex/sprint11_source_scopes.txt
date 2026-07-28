@@ -35,6 +35,7 @@ tests/codex/sprint11_multi_project.py
 tests/codex/sprint11_packaged_fixture.py
 tests/codex/sprint11_packaged_regressions.py
 tests/codex/sprint11_process_scope.py
+tests/codex/sprint11_same_project.py
 tests/codex/sprint11_source_scopes.txt
 tests/codex/sprint11_surface_recorder.py
 tests/codex/sprint6_semantic_context_live.py
@@ -53,6 +54,7 @@ tests/codex/test_sprint11_multi_project.py
 tests/codex/test_sprint11_package.py
 tests/codex/test_sprint11_package_source_boundary.py
 tests/codex/test_sprint11_packaged_regressions.py
+tests/codex/test_sprint11_same_project.py
 tests/codex/test_sprint11_surface_recorder.py
 tests/codex/tests/sprint11_evidence_contract.rs
 tests/codex/usability

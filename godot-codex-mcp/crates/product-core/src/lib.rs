@@ -38,7 +38,7 @@ pub use registry::{
 pub const COMPATIBILITY_MATRIX_SCHEMA: &str = "godot-codex-compatibility-matrix/1.0";
 
 /// Version of the bounded connection-status projection.
-pub const CONNECTION_STATUS_SCHEMA: &str = "godot-connection-status/1.0";
+pub const CONNECTION_STATUS_SCHEMA: &str = "godot-connection-status/1.1";
 
 /// Serialization ceiling for the product-core connection projection.
 pub const CONNECTION_STATUS_MAX_BYTES: usize = 4_096;

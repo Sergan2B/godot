@@ -550,12 +550,25 @@ impl TransactionError {
         self
     }
 
-    fn journal(_error: &JournalError) -> Self {
-        Self::new(
-            "transaction_coordinator_unavailable",
-            "The transaction recovery journal is unavailable.",
-            true,
-        )
+    fn journal(error: &JournalError) -> Self {
+        if matches!(error, JournalError::Locked) {
+            Self::new(
+                "project_session_busy",
+                "Another Codex task owns this project's Godot session.",
+                true,
+            )
+        } else {
+            Self::new(
+                "transaction_coordinator_unavailable",
+                "The transaction recovery journal is unavailable.",
+                true,
+            )
+        }
+    }
+
+    #[must_use]
+    pub fn is_project_session_busy(&self) -> bool {
+        self.code == "project_session_busy"
     }
 
     fn bridge(error: &BridgeError) -> Self {

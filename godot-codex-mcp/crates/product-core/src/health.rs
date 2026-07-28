@@ -107,6 +107,7 @@ pub enum ConnectionStatus {
     Ready,
     Connecting,
     Syncing,
+    ProjectSessionBusy,
     OfflineCached,
     OfflineEmpty,
     Incompatible,
@@ -150,6 +151,7 @@ pub struct ConnectionObservation {
     pub cache_age_seconds: Option<u64>,
     pub recovery: RecoveryCondition,
     pub overloaded: bool,
+    pub project_session_busy: bool,
     pub editor: ComponentCondition,
     pub runtime: ComponentCondition,
     pub transactions: ComponentCondition,
@@ -250,6 +252,11 @@ impl ConnectionHealth {
         let (status, code) = classify(&observation);
         let diagnostic = Diagnostic::new(code, None, None);
         let remediation_id = diagnostic.remediation_id;
+        let cache = if observation.project_session_busy {
+            CacheCondition::Unavailable
+        } else {
+            observation.cache
+        };
         Self {
             schema_version: CONNECTION_STATUS_SCHEMA.to_owned(),
             status,
@@ -265,26 +272,48 @@ impl ConnectionHealth {
                 capabilities: bounded_capabilities(observation.bridge_capabilities),
             },
             static_cache: StaticCacheProjection {
-                condition: observation.cache,
-                schema: observation.cache_schema.as_deref().map(safe_coordinate),
-                generation: observation.cache_generation.as_deref().map(safe_coordinate),
+                condition: cache,
+                schema: (!matches!(cache, CacheCondition::Unknown | CacheCondition::Unavailable))
+                    .then(|| observation.cache_schema.as_deref().map(safe_coordinate))
+                    .flatten(),
+                generation: matches!(
+                    cache,
+                    CacheCondition::OnlineCurrent | CacheCondition::VerifiedCurrent
+                )
+                .then(|| observation.cache_generation.as_deref().map(safe_coordinate))
+                .flatten(),
                 revisions: matches!(
-                    observation.cache,
+                    cache,
                     CacheCondition::OnlineCurrent | CacheCondition::VerifiedCurrent
                 )
                 .then_some(observation.cache_revisions)
                 .flatten(),
                 source_hashes_verified: observation.source_hashes_verified
-                    && observation.cache == CacheCondition::VerifiedCurrent,
-                age_seconds: observation
-                    .cache_age_seconds
-                    .map(|age| age.min(MAX_CACHE_AGE_SECONDS)),
+                    && cache == CacheCondition::VerifiedCurrent,
+                age_seconds: (!matches!(
+                    cache,
+                    CacheCondition::Unknown | CacheCondition::Unavailable
+                ))
+                .then(|| {
+                    observation
+                        .cache_age_seconds
+                        .map(|age| age.min(MAX_CACHE_AGE_SECONDS))
+                })
+                .flatten(),
             },
             recovery: observation.recovery,
             components: ConnectionComponents {
                 editor: observation.editor,
-                runtime: observation.runtime,
-                transactions: observation.transactions,
+                runtime: if observation.project_session_busy {
+                    ComponentCondition::Unavailable
+                } else {
+                    observation.runtime
+                },
+                transactions: if observation.project_session_busy {
+                    ComponentCondition::Unavailable
+                } else {
+                    observation.transactions
+                },
             },
             diagnostic,
             remediation_id,
@@ -371,6 +400,12 @@ fn classify(observation: &ConnectionObservation) -> (ConnectionStatus, Diagnosti
         return (
             ConnectionStatus::Incompatible,
             DiagnosticCode::StaticCacheCorrupt,
+        );
+    }
+    if observation.project_session_busy {
+        return (
+            ConnectionStatus::ProjectSessionBusy,
+            DiagnosticCode::ProjectSessionBusy,
         );
     }
     if observation.overloaded {
@@ -565,6 +600,9 @@ fn remediation_action(remediation: RemediationId) -> &'static str {
         RemediationId::StartMatchingEditor => "Start the matching Godot editor project.",
         RemediationId::OpenExactProject => "Open the exact configured Godot project.",
         RemediationId::RestartCodexSurface => "Restart the current Codex surface.",
+        RemediationId::WaitForProjectSession => {
+            "Close the other Codex task for this project, or wait for it to finish."
+        }
         RemediationId::WaitForFullSync => "Wait for the project sync to complete.",
         RemediationId::RunGodotCodexDoctor => "Run godot-codex doctor for this project.",
         RemediationId::RepairProjectConfig => "Repair the project-scoped Codex configuration.",
@@ -625,6 +663,7 @@ mod tests {
             cache_age_seconds: Some(7),
             recovery: RecoveryCondition::None,
             overloaded: false,
+            project_session_busy: false,
             editor: ComponentCondition::Ready,
             runtime: ComponentCondition::Ready,
             transactions: ComponentCondition::Ready,
@@ -657,6 +696,37 @@ mod tests {
         assert_eq!(health.limits_applied.max_bytes, CONNECTION_STATUS_MAX_BYTES);
         assert!(!health.limits_applied.truncated);
         assert_eq!(health.evidence.len(), 1);
+    }
+
+    #[test]
+    fn project_session_contention_is_explicit_and_fail_closed() {
+        let mut value = observation();
+        value.project_session_busy = true;
+        let health = ConnectionHealth::reduce(value);
+        assert_eq!(health.schema_version, "godot-connection-status/1.1");
+        assert_eq!(health.status, ConnectionStatus::ProjectSessionBusy);
+        assert_eq!(health.diagnostic.code, DiagnosticCode::ProjectSessionBusy);
+        assert_eq!(
+            health.remediation_id,
+            Some(RemediationId::WaitForProjectSession)
+        );
+        assert_eq!(
+            health.next_action.as_deref(),
+            Some("Close the other Codex task for this project, or wait for it to finish.")
+        );
+        assert_eq!(health.bridge.condition, BridgeCondition::Ready);
+        assert_eq!(health.components.editor, ComponentCondition::Ready);
+        assert_eq!(health.static_cache.condition, CacheCondition::Unavailable);
+        assert!(health.static_cache.schema.is_none());
+        assert!(health.static_cache.generation.is_none());
+        assert!(health.static_cache.revisions.is_none());
+        assert!(!health.static_cache.source_hashes_verified);
+        assert!(health.static_cache.age_seconds.is_none());
+        assert_eq!(health.components.runtime, ComponentCondition::Unavailable);
+        assert_eq!(
+            health.components.transactions,
+            ComponentCondition::Unavailable
+        );
     }
 
     #[test]

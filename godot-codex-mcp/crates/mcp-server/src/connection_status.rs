@@ -27,6 +27,7 @@ pub(crate) struct IndexCoordinates {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum IndexObservation {
     Current(IndexCoordinates),
+    ProjectSessionBusy,
     Degraded,
     Syncing,
     Offline,
@@ -59,6 +60,7 @@ pub(crate) struct ServerConnectionObservation {
     pub static_cache_verified: bool,
     pub runtime: ComponentCondition,
     pub transactions_available: bool,
+    pub project_session_busy: bool,
     pub transaction_recovery_degraded: bool,
     pub cache_age_seconds: Option<u64>,
 }
@@ -70,10 +72,12 @@ struct IndexProjection {
     revisions: Option<CacheRevisions>,
     project_id: Option<String>,
     project_binding_mismatch: bool,
+    project_session_busy: bool,
 }
 
 pub(crate) fn connection_health(observation: ServerConnectionObservation) -> ConnectionHealth {
     let index = index_projection(&observation);
+    let project_session_busy = observation.project_session_busy || index.project_session_busy;
     let mut bridge = bridge_condition(&observation.replica);
     if !matches!(
         bridge,
@@ -91,15 +95,18 @@ pub(crate) fn connection_health(observation: ServerConnectionObservation) -> Con
     }
 
     let editor = editor_condition(&observation.replica);
-    let transactions = if observation.transaction_recovery_degraded {
+    let transactions = if project_session_busy {
+        ComponentCondition::Unavailable
+    } else if observation.transaction_recovery_degraded {
         ComponentCondition::Degraded
     } else if !observation.transactions_available {
         ComponentCondition::Unavailable
     } else {
         editor
     };
-    let cache = if observation.static_cache_verified
-        && index.condition == CacheCondition::OnlineCurrent
+    let cache = if project_session_busy {
+        CacheCondition::Unavailable
+    } else if observation.static_cache_verified && index.condition == CacheCondition::OnlineCurrent
     {
         CacheCondition::VerifiedCurrent
     } else if bridge != BridgeCondition::Ready && index.condition == CacheCondition::OnlineCurrent {
@@ -168,8 +175,13 @@ pub(crate) fn connection_health(observation: ServerConnectionObservation) -> Con
             RecoveryCondition::None
         },
         overloaded: false,
+        project_session_busy,
         editor,
-        runtime: observation.runtime,
+        runtime: if project_session_busy {
+            ComponentCondition::Unavailable
+        } else {
+            observation.runtime
+        },
         transactions,
     })
 }
@@ -224,7 +236,8 @@ fn index_projection(observation: &ServerConnectionObservation) -> IndexProjectio
         .iter()
         .filter_map(|status| match status {
             IndexObservation::Current(coordinates) => Some(coordinates),
-            IndexObservation::Degraded
+            IndexObservation::ProjectSessionBusy
+            | IndexObservation::Degraded
             | IndexObservation::Syncing
             | IndexObservation::Offline
             | IndexObservation::Stale
@@ -282,6 +295,7 @@ fn index_projection(observation: &ServerConnectionObservation) -> IndexProjectio
             }),
             project_id: Some(current.project_id.clone()),
             project_binding_mismatch: false,
+            project_session_busy: false,
         };
     }
     let condition = if project_binding_mismatch
@@ -313,6 +327,9 @@ fn index_projection(observation: &ServerConnectionObservation) -> IndexProjectio
         revisions: None,
         project_id: None,
         project_binding_mismatch,
+        project_session_busy: observations
+            .iter()
+            .any(|status| matches!(status, IndexObservation::ProjectSessionBusy)),
     }
 }
 
@@ -403,6 +420,7 @@ mod tests {
             static_cache_verified: false,
             runtime: ComponentCondition::Ready,
             transactions_available: true,
+            project_session_busy: false,
             transaction_recovery_degraded: false,
             cache_age_seconds: Some(7),
         }
@@ -469,6 +487,31 @@ mod tests {
         assert_eq!(stale.status, ConnectionStatus::Syncing);
         assert_eq!(stale.diagnostic.code, DiagnosticCode::BridgeDiscoveryStale);
         assert_eq!(stale.components.editor, ComponentCondition::Stale);
+    }
+
+    #[test]
+    fn same_project_lease_contention_is_not_reported_as_syncing() {
+        let mut observation = ready_observation();
+        observation.resource_index = IndexObservation::ProjectSessionBusy;
+        observation.scene_index = IndexObservation::ProjectSessionBusy;
+        observation.script_index = IndexObservation::ProjectSessionBusy;
+        observation.transactions_available = false;
+        observation.project_session_busy = true;
+        let health = connection_health(observation);
+        assert_eq!(health.status, ConnectionStatus::ProjectSessionBusy);
+        assert_eq!(health.diagnostic.code, DiagnosticCode::ProjectSessionBusy);
+        assert_eq!(health.bridge.condition, BridgeCondition::Ready);
+        assert_eq!(health.components.editor, ComponentCondition::Ready);
+        assert_eq!(health.static_cache.condition, CacheCondition::Unavailable);
+        assert_eq!(health.components.runtime, ComponentCondition::Unavailable);
+        assert_eq!(
+            health.components.transactions,
+            ComponentCondition::Unavailable
+        );
+        assert_ne!(
+            health.remediation_id,
+            Some(godot_codex_product::RemediationId::WaitForFullSync)
+        );
     }
 
     #[test]

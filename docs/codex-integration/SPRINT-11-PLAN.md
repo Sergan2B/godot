@@ -214,7 +214,8 @@ AGENTS documentation; freeze:
   floor;
 - server instructions, tool titles/descriptions, schemas, annotations, and
   error/remediation vocabulary;
-- one-sidecar-per-project topology and multi-project isolation;
+- one canonical full-access sidecar owner per project, diagnostic-only
+  same-project standbys with automatic takeover, and multi-project isolation;
 - offline static authority and prohibited domains;
 - setup ownership, consent, merge/remove, and non-interactive acceptance;
 - doctor checks, JSON schema, exit codes, redaction, and remediation;
@@ -304,8 +305,9 @@ output with `invalid_tool_result`.
 Connection status contains:
 
 - project identity/hash scope and sidecar/package version;
-- `ready`, `connecting`, `syncing`, `offline_cached`, `offline_empty`,
-  `incompatible`, `auth_failed`, `misconfigured`, or `overloaded`;
+- `ready`, `connecting`, `syncing`, `project_session_busy`,
+  `offline_cached`, `offline_empty`, `incompatible`, `auth_failed`,
+  `misconfigured`, or `overloaded`;
 - Bridge/editor/runtime availability and negotiated protocol/capabilities;
 - static cache schema, generation, source-hash verification, age, and
   freshness;
@@ -581,6 +583,12 @@ a real MCP transport in offline-cached, offline-empty, authentication,
 compatibility, connecting, syncing, discovery-stale, and misconfigured states;
 no stale overlay; reconnect/full snapshot; editor crash; two roots; index
 limits/SLO; and no project mutation.
+
+The same-project regression starts multiple production sidecars for one
+`project_root`, proves exactly one lock owner, the explicit
+`project_session_busy` diagnostic-only projection, graceful and crash
+takeover, a simultaneous acquisition race, and transaction ownership following
+the index lease. It rejects the former unbounded `syncing` projection.
 
 The canonical automated gate includes
 `crates/godot-codex-mcp/tests/offline_subprocess.rs`. On macOS arm64 it runs

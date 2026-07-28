@@ -383,6 +383,25 @@ fn compare_cached_edges(
 }
 
 impl SegmentStore {
+    /// Probes the existing canonical writer lease without creating or changing
+    /// project state. A missing lock file means no writer is currently busy.
+    pub fn writer_lease_busy(project_root: &Path) -> Result<bool, StoreError> {
+        let lock_path = project_root.join(".godot").join("codex").join("index.lock");
+        let lock = match OpenOptions::new().read(true).write(true).open(lock_path) {
+            Ok(lock) => lock,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(io_error(error)),
+        };
+        match lock.try_lock() {
+            Ok(()) => {
+                lock.unlock().map_err(io_error)?;
+                Ok(false)
+            }
+            Err(TryLockError::WouldBlock) => Ok(true),
+            Err(TryLockError::Error(error)) => Err(io_error(error)),
+        }
+    }
+
     /// Opens or creates the segment candidate with an exclusive process lease.
     pub fn open(project_root: &Path, project_id: &str) -> Result<Self, StoreError> {
         Self::open_with_version(project_root, project_id, SEGMENT_PHYSICAL_VERSION)

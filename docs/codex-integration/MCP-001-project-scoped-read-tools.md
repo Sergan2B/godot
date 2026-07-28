@@ -9,7 +9,7 @@ registry change
 
 **MCP protocol:** `2025-11-25`
 
-**Server:** `godot-codex-mcp` `0.1.0`
+**Server:** `godot-codex-mcp` `0.1.1`
 
 ## Purpose
 
@@ -265,12 +265,22 @@ sidecar-authoritative project, package, compatibility, Bridge/editor/runtime
 availability, verified static-cache state, safe recovery condition, and one
 stable remediation.
 
-Its top-level state is exactly one of `ready`, `connecting`, `syncing`,
-`offline_cached`, `offline_empty`, `incompatible`, `auth_failed`,
-`misconfigured`, or `overloaded`. It is callable before discovery or Bridge is
-available. It never returns a session token, endpoint, PID, absolute root,
-native handle, approval grant, source text, property value, or stale
-live/runtime payload.
+Schema `godot-connection-status/1.1` adds
+`project_session_busy`. Its top-level state is exactly one of `ready`,
+`connecting`, `syncing`, `project_session_busy`, `offline_cached`,
+`offline_empty`, `incompatible`, `auth_failed`, `misconfigured`, or
+`overloaded`. It is callable before discovery or Bridge is available. It never
+returns a session token, endpoint, PID, absolute root, native handle, approval
+grant, source text, property value, or stale live/runtime payload.
+
+The first sidecar holding `.godot/codex/index.lock` is the canonical project
+session owner. Additional same-project sidecars remain diagnostic-only and
+report `project_session_busy`; their cache, runtime, and transaction
+projections are unavailable and every tool except connection status fails
+closed with the same code. They retry the lease with bounded backoff and
+automatically become full-access owners after the previous owner exits. The
+transaction coordinator follows this canonical index lease and never acquires
+independent write authority.
 
 At the S11-02 gate the production v1 registry contains exactly forty-one
 tools. All existing names and successful-result meanings are frozen. Later

@@ -2445,6 +2445,7 @@ mod tests {
             cache_age_seconds: None,
             recovery: RecoveryCondition::None,
             overloaded: false,
+            project_session_busy: false,
             editor: ComponentCondition::Ready,
             runtime: ComponentCondition::Ready,
             transactions: ComponentCondition::Ready,
