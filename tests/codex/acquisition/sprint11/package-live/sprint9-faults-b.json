@@ -1,7 +1,7 @@
 {
   "artifacts": {
     "godot_sha256": "sha256:157a265d49f72c0b6974340046379549ad74aab6e5a70e3cc6e239bf6be7102e",
-    "sidecar_sha256": "sha256:bd56b5461400107a87ff1093f127e755501a1ca924c4eb4865b9d701ded19f44"
+    "sidecar_sha256": "sha256:0eb99b0568c1143b12ab2ba2f648a426a0af89a612c6519ad778377f4fb05f7d"
   },
   "bridge_frame": {
     "budget_usec": 2000,
