@@ -587,8 +587,10 @@ limits/SLO; and no project mutation.
 The same-project regression starts multiple production sidecars for one
 `project_root`, proves exactly one lock owner, the explicit
 `project_session_busy` diagnostic-only projection, graceful and crash
-takeover, a simultaneous acquisition race, and transaction ownership following
-the index lease. It rejects the former unbounded `syncing` projection.
+takeover, two simultaneous standbys preserving authenticated Bridge/editor
+readiness without snapshot contention, a simultaneous acquisition race, and
+transaction ownership following the index lease. It rejects the former
+unbounded `syncing` projection.
 
 The canonical automated gate includes
 `crates/godot-codex-mcp/tests/offline_subprocess.rs`. On macOS arm64 it runs

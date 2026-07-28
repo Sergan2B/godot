@@ -1137,6 +1137,16 @@ impl GodotMcpServer {
     fn connection_status(&self) -> ConnectionHealth {
         let replica_state = self.replicator.observation();
         let replica_status = replica_state.status;
+        let project_session_busy = self.transaction_coordinator.condition()
+            == TransactionCoordinatorCondition::ProjectSessionBusy;
+        let authenticated_project_id = (project_session_busy
+            && replica_state.negotiated_bridge.is_some())
+        .then(|| {
+            self.project_root.as_deref().and_then(|project_root| {
+                godot_codex_bridge_client::project_id_for_path(project_root).ok()
+            })
+        })
+        .flatten();
         let replica = match replica_status {
             ReplicaStatus::Ready => {
                 self.replicator
@@ -1147,7 +1157,10 @@ impl GodotMcpServer {
                         }
                     })
             }
-            ReplicaStatus::Syncing => ReplicaObservation::Syncing,
+            ReplicaStatus::Syncing => authenticated_project_id
+                .map_or(ReplicaObservation::Syncing, |project_id| {
+                    ReplicaObservation::BridgeReady { project_id }
+                }),
             ReplicaStatus::Stale => ReplicaObservation::Stale,
             ReplicaStatus::Disconnected => match replica_state.failure {
                 None => ReplicaObservation::Connecting,
@@ -1188,8 +1201,7 @@ impl GodotMcpServer {
             static_cache_verified,
             runtime,
             transactions_available: transaction_coordinator.is_some(),
-            project_session_busy: self.transaction_coordinator.condition()
-                == TransactionCoordinatorCondition::ProjectSessionBusy,
+            project_session_busy,
             transaction_recovery_degraded: transaction_coordinator
                 .as_ref()
                 .is_some_and(|coordinator| coordinator.journal_recovered_corruption()),
@@ -7799,6 +7811,58 @@ mod tests {
             TransactionCoordinatorCondition::Unavailable
         );
         assert!(slot.coordinator().is_none());
+    }
+
+    #[test]
+    fn busy_server_projects_authenticated_bridge_probe_without_snapshot_as_ready_editor() {
+        let project = TempDir::new().unwrap();
+        fs::write(project.path().join("project.godot"), b"[application]\n").unwrap();
+        let replicator = SnapshotReplicator::new();
+        replicator.mark_bridge_negotiated(current_negotiated_bridge());
+        let slot = TransactionCoordinatorSlot::acquiring();
+        slot.publish_project_session_busy();
+        let server = GodotMcpServer::with_all_indexes_and_project_slot(
+            replicator,
+            ResourceIndexReader::new(),
+            SceneIndexReader::new(),
+            ScriptIndexReader::new(),
+            project.path().to_path_buf(),
+            slot,
+        )
+        .with_product_startup_observation(ready_product_startup());
+
+        let health = server.connection_status();
+        assert_eq!(health.status, ConnectionStatus::ProjectSessionBusy);
+        assert_eq!(health.bridge.condition, BridgeCondition::Ready);
+        assert_eq!(health.components.editor, ComponentCondition::Ready);
+        assert_eq!(health.static_cache.condition, CacheCondition::Unavailable);
+        assert_eq!(health.components.runtime, ComponentCondition::Unavailable);
+        assert_eq!(
+            health.components.transactions,
+            ComponentCondition::Unavailable
+        );
+    }
+
+    #[test]
+    fn authenticated_bridge_probe_without_busy_does_not_claim_editor_ready() {
+        let project = TempDir::new().unwrap();
+        fs::write(project.path().join("project.godot"), b"[application]\n").unwrap();
+        let replicator = SnapshotReplicator::new();
+        replicator.mark_bridge_negotiated(current_negotiated_bridge());
+        let server = GodotMcpServer::with_all_indexes_and_project_slot(
+            replicator,
+            ResourceIndexReader::new(),
+            SceneIndexReader::new(),
+            ScriptIndexReader::new(),
+            project.path().to_path_buf(),
+            TransactionCoordinatorSlot::acquiring(),
+        )
+        .with_product_startup_observation(ready_product_startup());
+
+        let health = server.connection_status();
+        assert_eq!(health.status, ConnectionStatus::Syncing);
+        assert_eq!(health.bridge.condition, BridgeCondition::Syncing);
+        assert_eq!(health.components.editor, ComponentCondition::Syncing);
     }
 
     #[test]

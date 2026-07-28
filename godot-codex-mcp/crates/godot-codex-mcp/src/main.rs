@@ -2,13 +2,15 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use godot_codex_bridge_client::run_bridge_sync;
+use godot_codex_bridge_client::{BridgeClient, run_bridge_sync};
 use godot_codex_mcp_server::{GodotMcpServer, TransactionCoordinatorSlot};
 use godot_codex_resource_indexer::{ProjectSessionState, ResourceIndexCoordinator};
-use godot_codex_semantic_model::SnapshotReplicator;
+use godot_codex_semantic_model::{NegotiatedBridgeMetadata, ReplicaFailure, SnapshotReplicator};
 use godot_codex_transactions::{TransactionCoordinator, run_transaction_events};
 use rmcp::ServiceExt;
 use tokio::sync::watch;
+
+const BRIDGE_PROBE_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
@@ -17,6 +19,68 @@ enum Command {
         doctor_probe: bool,
     },
     Version,
+}
+
+async fn run_bridge_service(
+    project_root: PathBuf,
+    replicator: SnapshotReplicator,
+    mut project_session: watch::Receiver<ProjectSessionState>,
+) {
+    let mut retry = Duration::from_millis(200);
+    loop {
+        let project_session_state = *project_session.borrow();
+        match project_session_state {
+            ProjectSessionState::Owner => {
+                run_bridge_sync(project_root, replicator).await;
+            }
+            ProjectSessionState::Acquiring | ProjectSessionState::Busy => {
+                let connection = tokio::select! {
+                    result = BridgeClient::connect(&project_root) => Some(result),
+                    changed = project_session.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        None
+                    }
+                };
+                let Some(connection) = connection else {
+                    continue;
+                };
+                match connection {
+                    Ok(client) => {
+                        let profile = client.negotiated_profile();
+                        if let Some(metadata) = NegotiatedBridgeMetadata::new(
+                            profile.protocol_version,
+                            profile.capabilities,
+                        ) {
+                            replicator.mark_bridge_negotiated(metadata);
+                            retry = Duration::from_millis(200);
+                        } else {
+                            replicator.mark_disconnected(ReplicaFailure::TransportDisconnected);
+                        }
+                    }
+                    Err(error) => {
+                        replicator.mark_disconnected(error.failure_class().replica_failure());
+                    }
+                }
+                let wait = if replicator.observation().negotiated_bridge.is_some() {
+                    BRIDGE_PROBE_INTERVAL
+                } else {
+                    retry
+                };
+                tokio::select! {
+                    changed = project_session.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                    }
+                    () = tokio::time::sleep(wait) => {
+                        retry = (retry * 2).min(Duration::from_secs(5));
+                    }
+                }
+            }
+        }
+    }
 }
 
 async fn run_transaction_service(
@@ -203,17 +267,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let replicator = SnapshotReplicator::new();
     let (resource_coordinator, resource_index_reader, scene_index_reader, script_index_reader) =
         ResourceIndexCoordinator::new_semantic(&project_root)?;
-    let project_session = resource_coordinator.subscribe_project_session();
+    let bridge_project_session = resource_coordinator.subscribe_project_session();
+    let transaction_project_session = resource_coordinator.subscribe_project_session();
     // Offline authority and the exact project-bound store are opened before
     // any Bridge discovery/connect attempt can publish live state.
-    let bridge_task = tokio::spawn(run_bridge_sync(project_root.clone(), replicator.clone()));
+    let bridge_task = tokio::spawn(run_bridge_service(
+        project_root.clone(),
+        replicator.clone(),
+        bridge_project_session,
+    ));
     let (shutdown_sender, shutdown_receiver) = tokio::sync::watch::channel(false);
     let resource_task = tokio::spawn(resource_coordinator.run(shutdown_receiver));
     let transaction_coordinator = TransactionCoordinatorSlot::acquiring();
     let transaction_task = tokio::spawn(run_transaction_service(
         project_root.clone(),
         transaction_coordinator.clone(),
-        project_session,
+        transaction_project_session,
         shutdown_sender.subscribe(),
     ));
     let server = GodotMcpServer::with_all_indexes_and_project_slot(

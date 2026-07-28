@@ -38,6 +38,7 @@ pub(crate) enum IndexObservation {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ReplicaObservation {
     Ready { project_id: String },
+    BridgeReady { project_id: String },
     Connecting,
     Syncing,
     Stale,
@@ -88,6 +89,7 @@ pub(crate) fn connection_health(observation: ServerConnectionObservation) -> Con
         || matches!(
             &observation.replica,
             ReplicaObservation::Ready { project_id }
+            | ReplicaObservation::BridgeReady { project_id }
                 if index.project_id.as_deref().is_some_and(|indexed| indexed != project_id)
         ))
     {
@@ -116,7 +118,8 @@ pub(crate) fn connection_health(observation: ServerConnectionObservation) -> Con
         index.condition
     };
     let project_id = match &observation.replica {
-        ReplicaObservation::Ready { project_id } => Some(project_id.as_str()),
+        ReplicaObservation::Ready { project_id }
+        | ReplicaObservation::BridgeReady { project_id } => Some(project_id.as_str()),
         ReplicaObservation::Connecting
         | ReplicaObservation::Syncing
         | ReplicaObservation::Stale
@@ -203,7 +206,9 @@ fn compatibility_evaluation(
 
 fn bridge_condition(observation: &ReplicaObservation) -> BridgeCondition {
     match observation {
-        ReplicaObservation::Ready { .. } => BridgeCondition::Ready,
+        ReplicaObservation::Ready { .. } | ReplicaObservation::BridgeReady { .. } => {
+            BridgeCondition::Ready
+        }
         ReplicaObservation::Connecting => BridgeCondition::Starting,
         ReplicaObservation::Syncing => BridgeCondition::Syncing,
         ReplicaObservation::Stale => BridgeCondition::DiscoveryStale,
@@ -216,7 +221,9 @@ fn bridge_condition(observation: &ReplicaObservation) -> BridgeCondition {
 
 fn editor_condition(observation: &ReplicaObservation) -> ComponentCondition {
     match observation {
-        ReplicaObservation::Ready { .. } => ComponentCondition::Ready,
+        ReplicaObservation::Ready { .. } | ReplicaObservation::BridgeReady { .. } => {
+            ComponentCondition::Ready
+        }
         ReplicaObservation::Connecting | ReplicaObservation::Syncing => ComponentCondition::Syncing,
         ReplicaObservation::Stale => ComponentCondition::Stale,
         ReplicaObservation::TransportDisconnected => ComponentCondition::Disconnected,

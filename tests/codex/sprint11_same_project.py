@@ -204,6 +204,48 @@ def _assert_transaction_coordinator_ready(
     )
 
 
+def _wait_for_single_owner(
+    candidates: tuple[
+        tuple[s9.LineProcess, s9.ModelFreeMcpClient],
+        tuple[s9.LineProcess, s9.ModelFreeMcpClient],
+    ],
+    *,
+    timeout: float,
+) -> tuple[
+    tuple[s9.LineProcess, s9.ModelFreeMcpClient],
+    tuple[s9.LineProcess, s9.ModelFreeMcpClient],
+]:
+    deadline = time.monotonic() + timeout
+    latest: list[dict[str, Any]] = [{}, {}]
+    while time.monotonic() < deadline:
+        for index, (_, client) in enumerate(candidates):
+            latest[index], is_error, _ = client.tool(
+                "godot_get_connection_status",
+                {},
+            )
+            s9.require(not is_error, "same-project status unexpectedly failed")
+        ready = [
+            index
+            for index, status in enumerate(latest)
+            if _ready_projection_is_exact(status)
+        ]
+        busy = [
+            index
+            for index, status in enumerate(latest)
+            if _busy_projection_is_exact(status)
+        ]
+        if len(ready) == 1 and len(busy) == 1:
+            return candidates[ready[0]], candidates[busy[0]]
+        time.sleep(0.05)
+    raise s9.WorkflowError(
+        "same-project competing standbys did not elect exactly one owner: "
+        + ", ".join(
+            f"status={status.get('status')}, code={_status_code(status)}"
+            for status in latest
+        )
+    )
+
+
 def _finish_gracefully(process: s9.LineProcess, timeout: float) -> None:
     stdin = process.process.stdin
     s9.require(stdin is not None, "owner stdin is unavailable")
@@ -362,40 +404,46 @@ def run_live(
                 project_root,
                 timeout,
             )
-            _wait_for_projection(
-                standby_client,
-                expected="project_session_busy",
-                timeout=min(timeout, 5.0),
-            )
-            _assert_busy_tools(standby_client)
-
-            _finish_gracefully(owner, min(timeout, 10.0))
-            _wait_for_projection(
-                standby_client,
-                expected="ready",
-                timeout=timeout,
-            )
-            _assert_transaction_coordinator_ready(standby_client)
-
             successor, successor_client = _start_sidecar(
                 sidecar,
                 project_root,
                 timeout,
             )
             _wait_for_projection(
+                standby_client,
+                expected="project_session_busy",
+                timeout=min(timeout, 5.0),
+            )
+            _wait_for_projection(
                 successor_client,
                 expected="project_session_busy",
                 timeout=min(timeout, 5.0),
             )
+            _assert_busy_tools(standby_client)
             _assert_busy_tools(successor_client)
 
-            _kill(standby, min(timeout, 10.0))
+            _finish_gracefully(owner, min(timeout, 10.0))
+            winner, waiting = _wait_for_single_owner(
+                (
+                    (standby, standby_client),
+                    (successor, successor_client),
+                ),
+                timeout=timeout,
+            )
+            winner_process, winner_client = winner
+            waiting_process, waiting_client = waiting
+            _assert_transaction_coordinator_ready(winner_client)
+            _kill(winner_process, min(timeout, 10.0))
             _wait_for_projection(
-                successor_client,
+                waiting_client,
                 expected="ready",
                 timeout=timeout,
             )
-            _assert_transaction_coordinator_ready(successor_client)
+            _assert_transaction_coordinator_ready(waiting_client)
+            s9.require(
+                waiting_process.process.poll() is None,
+                "surviving standby exited during crash takeover",
+            )
             source_unchanged = (
                 multi_project._project_source_hashes(project_root) == source_before
             )

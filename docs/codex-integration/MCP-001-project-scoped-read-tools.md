@@ -277,10 +277,12 @@ The first sidecar holding `.godot/codex/index.lock` is the canonical project
 session owner. Additional same-project sidecars remain diagnostic-only and
 report `project_session_busy`; their cache, runtime, and transaction
 projections are unavailable and every tool except connection status fails
-closed with the same code. They retry the lease with bounded backoff and
-automatically become full-access owners after the previous owner exits. The
-transaction coordinator follows this canonical index lease and never acquires
-independent write authority.
+closed with the same code. A standby performs only a bounded authenticated
+Bridge probe, so Bridge/editor health remains current without competing full
+snapshot streams. They retry the lease with bounded backoff and automatically
+become full-access owners after the previous owner exits; only then does full
+snapshot replication begin. The transaction coordinator follows this canonical
+index lease and never acquires independent write authority.
 
 At the S11-02 gate the production v1 registry contains exactly forty-one
 tools. All existing names and successful-result meanings are frozen. Later
