@@ -208,28 +208,28 @@
     "a": {
       "action_count": 0,
       "approval_provider": "mcp_action_only_form_v1",
-      "editor_identity_sha256": "sha256:283d9a0336d51ac0c7e8508d9c6a08fba6c91c2b51c4889e936e19e8362ebf19",
+      "editor_identity_sha256": "sha256:69f1e55e8bd75b83a81cfca194d4a85e17bd21670f989df71e8bb2bea6fa3306",
       "operation_seq": 0,
-      "project_identity_sha256": "sha256:e46d91a5d0696062b8301d491bde9a374cf3586fb80d9b08170d71afbf691764",
+      "project_identity_sha256": "sha256:9b68e920c4af9e216295309f738259a7a7ef36792bd6dccc5d26360c8923ca03",
       "readback": true,
-      "runtime_identity_sha256": "sha256:c8c31f0066b9ae62842443b06f1a9f1ffeb7a9f6f6108f6046eaafcd084e2ea7",
+      "runtime_identity_sha256": "sha256:e937f834b7641496142a987ac23c9c7acbae8f1a28a05c384ce363807ea36004",
       "targeted_undo": true,
-      "transaction_identity_sha256": "sha256:fb3cdddde33f83f9c868ae8440ce8891674271931991dcff4dbb60936f4e6f3a",
+      "transaction_identity_sha256": "sha256:9165568f9ac858452b795ed6153d0a06f998d29cda0f5cc6d1276878b5ae540d",
       "validation_outcome": "passed",
-      "validation_report_identity_sha256": "sha256:4a02b50b9511c7164fe1877159b68b1041236de7aba0816dccca556e2c59f63e"
+      "validation_report_identity_sha256": "sha256:6faec85f6d9a78335bfa57c6f5b1276b2ab2ad9e5a53f10c2bf57d0818077dad"
     },
     "b": {
       "action_count": 0,
       "approval_provider": "mcp_action_only_form_v1",
-      "editor_identity_sha256": "sha256:dcc3608f14c9463912916f4b0b43de9d73ca873bd42fb3ae9d7cfae94006a3f3",
+      "editor_identity_sha256": "sha256:8052a6f9a20e4cfa639f81d69396e9cf537e821eb758858eb62e49f0f7253209",
       "operation_seq": 0,
-      "project_identity_sha256": "sha256:5f9b3bf02512849b734c8e439f83070b5058f4c2c0270d26f31ff1b3b40604ee",
+      "project_identity_sha256": "sha256:5de66dd772612060c9f6e0ea94f8a323c4dff85c3c5a0317e87a7785004dec7c",
       "readback": true,
-      "runtime_identity_sha256": "sha256:e43686d827f581b24e134c9621cbea5bb29123715455c4e902c2abedb918ddc2",
+      "runtime_identity_sha256": "sha256:52d2cda830ec4e45121cc736e6c2872700b99fb3e0970cd1cb4a911867c37241",
       "targeted_undo": true,
-      "transaction_identity_sha256": "sha256:c21abfbdf8ac7ac0415bcd9cde5960b0e6b54125a0b884330e144983841ce05c",
+      "transaction_identity_sha256": "sha256:8ebee1d02986eefc44a4c093257bd8300e71f192ae72666c81a3354d565d14f9",
       "validation_outcome": "passed",
-      "validation_report_identity_sha256": "sha256:e4d04a67190ed537e24c963896ff14205dce7468e9863967800d2d659f523094"
+      "validation_report_identity_sha256": "sha256:414fa63551646497e25f5438e675b6e2d83ff4fda03af3d6e1d32782e8c68452"
     }
   },
   "protocol": "2025-11-25",
