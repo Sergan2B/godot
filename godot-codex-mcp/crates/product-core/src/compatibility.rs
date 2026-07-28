@@ -965,7 +965,7 @@ mod tests {
             (
                 SurfaceKind::Ide,
                 "26.721.30844",
-                Some("1.127.0"),
+                Some("1.130.0"),
                 SurfaceQualification::Candidate,
             ),
             (
