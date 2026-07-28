@@ -590,7 +590,7 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
                 f"# godot-codex-setup-owner: {ownership_marker}\n"
                 f'command = "{data_root}/current/bin/godot-codex-mcp"\n'
                 'args = ["--project-root", "."]\n'
-                f'cwd = "{project_path}"\n'
+                f'cwd = "{project_path.resolve()}"\n'
                 "required = true\n"
                 "startup_timeout_sec = 10\n"
                 "tool_timeout_sec = 60\n"
