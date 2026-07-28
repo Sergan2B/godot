@@ -2415,18 +2415,18 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
             "team_id": "2DC432GLL2",
             "cdhash": "432912b777fd97aa5c40d2216aeb3102f433f852",
         },
-        "ide_host_version": "1.127.0",
+        "ide_host_version": "1.130.0",
         "ide_shell_identifier": "com.microsoft.VSCode",
         "ide_shell_artifact_sha256": (
-            "sha256:d2dbd60db1c2e63e6b844a1c13b61e"
-            "6de12bc20391c8ec1bf7bf663b67b105a1"
+            "sha256:e1e3268741a2658a22b31e82b58a42f"
+            "a48be73f64fc2de006be48a2ba136b930"
         ),
         "ide_shell_team_id": "UBF8T346G9",
         "ide_shell_code_signature": {
             "mode": "deep_strict",
             "identifier": "com.microsoft.VSCode",
             "team_id": "UBF8T346G9",
-            "cdhash": "4f0317b8f0d8d6f3d2e1b1b0e979514ad42fdd9b",
+            "cdhash": "a3881eda3a41e747728f32973acd265a08ee0d5a",
         },
     },
 }

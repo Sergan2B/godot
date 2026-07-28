@@ -86,7 +86,7 @@ any Markdown/JSON drift.
 |---|---|---|---|---|---|---|
 | app | `com.openai.codex` | `26.721.41059` / `5848` | `sha256:d7bd5eacb7f59c42240e6c5dc62eebdeca9d09a0b59ed4c3ac3e2b55ef8d9336` | `0.146.0-alpha.3.1` / `sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223` | — | candidate |
 | cli | `codex-cli` | `0.146.0-alpha.3.1` / `0.146.0-alpha.3.1` | `sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223` | `0.146.0-alpha.3.1` / `sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223` | — | candidate |
-| ide | `openai.chatgpt` | `26.721.30844` / `26.721.30844` | `sha256:3ff47b070a08d02acc9c596756b017cf264e3dd4169002613a9171e1219778b0` | `0.146.0-alpha.3` / `sha256:5ab45f8f9819c120bede3743f896e70da47ffe920b48d9a04cc25ecc9e2dd757` | com.microsoft.VSCode 1.127.0 `sha256:d2dbd60db1c2e63e6b844a1c13b61e6de12bc20391c8ec1bf7bf663b67b105a1` | candidate |
+| ide | `openai.chatgpt` | `26.721.30844` / `26.721.30844` | `sha256:3ff47b070a08d02acc9c596756b017cf264e3dd4169002613a9171e1219778b0` | `0.146.0-alpha.3` / `sha256:5ab45f8f9819c120bede3743f896e70da47ffe920b48d9a04cc25ecc9e2dd757` | com.microsoft.VSCode 1.130.0 `sha256:e1e3268741a2658a22b31e82b58a42fa48be73f64fc2de006be48a2ba136b930` | candidate |
 <!-- END S11 HOST COORDINATE AUTHORITY -->
 
 | Component | Exact observed coordinate | Candidate state |
@@ -95,7 +95,7 @@ any Markdown/JSON drift.
 | Codex desktop | bundle `com.openai.codex`, version `26.721.41059`, build `5848`, team `2DC432GLL2` | static capability proven; live workflow pending |
 | App-bundled Codex CLI | `0.146.0-alpha.3.1`, `arm64` | action-only empty form live-proved exact `accept`, `decline`, `cancel`, and `timeout`; full packaged surface workflow pending |
 | App-bundled CLI artifact | `sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223` | candidate artifact identity |
-| VS Code Stable | `1.127.0`, commit `4fe60c8b1cdac1c4c174f2fb180d0d758272d713`, `arm64`, team `UBF8T346G9` | candidate |
+| VS Code Stable | `1.130.0`, commit `1b6a188127eeaf9194f945eb6eb89a657e93c54c`, `arm64`, team `UBF8T346G9` | candidate |
 | Official Codex extension | `openai.chatgpt@26.721.30844`, `darwin-arm64` | installed candidate; live workflow pending |
 | Extension package | `sha256:497c84587406f0cb7022dece0752202dc4490781fde5bc88469207ab9b5cac13` | candidate artifact identity |
 | Extension Codex CLI | `bin/macos-aarch64/codex`, `0.146.0-alpha.3`, `sha256:5ab45f8f9819c120bede3743f896e70da47ffe920b48d9a04cc25ecc9e2dd757`, team `2DC432GLL2` | candidate embedded client |
