@@ -578,6 +578,7 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="s11-fixture-setup.") as temporary:
             root = Path(temporary)
             data_root = root / "data"
+            project_path = root / "project"
             version_root = data_root / "versions/0.1.0"
             binary_root = version_root / "bin"
             binary_root.mkdir(parents=True)
@@ -589,10 +590,11 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
                 f"# godot-codex-setup-owner: {ownership_marker}\n"
                 f'command = "{data_root}/current/bin/godot-codex-mcp"\n'
                 'args = ["--project-root", "."]\n'
-                'cwd = ".."\n'
+                f'cwd = "{project_path}"\n'
                 "required = true\n"
                 "startup_timeout_sec = 10\n"
                 "tool_timeout_sec = 60\n"
+                f'env = {{ GODOT_CODEX_DATA_ROOT = "{data_root}" }}\n'
                 'default_tools_approval_mode = "writes"\n'
                 "enabled_tools = [\n"
                 f"{enabled}\n"
@@ -642,9 +644,16 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
                 "    value += ''.join('-' + line + '\\n' for line in before.splitlines())\n"
                 "    value += ''.join('+' + line + '\\n' for line in after.splitlines())\n"
                 "    return value\n"
+                "def redact(line):\n"
+                "    if line.startswith('command = '):\n"
+                "        return 'command = \"<package-launcher>\"'\n"
+                "    if line.startswith('cwd = '):\n"
+                "        return 'cwd = \"<project-root>\"'\n"
+                "    if line.startswith('env = '):\n"
+                "        return 'env = { GODOT_CODEX_DATA_ROOT = \"<package-data-root>\" }'\n"
+                "    return line\n"
                 "redacted_config = '\\n'.join(\n"
-                "    'command = \"<package-launcher>\"' if line.startswith('command = ') else line\n"
-                "    for line in config_text.splitlines()\n"
+                "    redact(line) for line in config_text.splitlines()\n"
                 ") + '\\n'\n"
                 "if sys.argv[1:2] == ['setup'] and sys.argv[2:3] == ['--project-root'] and sys.argv[4:] == ['--profile', 'full-beta', '--guidance', 'none', '--dry-run', '--json']:\n"
                 "    root = pathlib.Path(sys.argv[sys.argv.index('--project-root') + 1])\n"
@@ -705,7 +714,7 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
             os.chmod(sidecar, 0o755)
             data_root.mkdir(exist_ok=True)
             (data_root / "current").symlink_to(version_root)
-            project = root / "project"
+            project = project_path
             project.mkdir()
             (project / "project.godot").write_text(
                 "[application]\nconfig/name=\"fixture\"\n",
@@ -761,10 +770,6 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
                         b'command = "fixture"\n',
                     ),
                     (
-                        "environment",
-                        b'\nenv = { FIXTURE = "redacted" }\n',
-                    ),
-                    (
                         "headers",
                         b"\nhttp_headers = "
                         b'{ Authorization = "redacted" }\n',
@@ -783,6 +788,27 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
                                 plan_digest="sha256:" + "1" * 64,
                                 package_version="0.1.0",
                             )
+                config_path.write_bytes(original_config)
+                changed_environment = original_config.replace(
+                    (
+                        "env = { GODOT_CODEX_DATA_ROOT = "
+                        f'"{data_root}" }}'
+                    ).encode(),
+                    b'env = { GODOT_CODEX_DATA_ROOT = "/wrong" }',
+                )
+                self.assertNotEqual(changed_environment, original_config)
+                config_path.write_bytes(changed_environment)
+                with self.assertRaisesRegex(
+                    packaged_fixture.PackagedFixtureError,
+                    "full-beta configuration differs",
+                ):
+                    packaged_fixture._validate_applied_project(
+                        project_root=project,
+                        before=project_before,
+                        data_root=data_root,
+                        plan_digest="sha256:" + "1" * 64,
+                        package_version="0.1.0",
+                    )
                 config_path.write_bytes(original_config)
                 receipt_path = (
                     project / ".godot/codex/setup-receipt-v1.json"
@@ -896,6 +922,8 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
                 "[mcp_servers.godot_editor]\n"
                 'command = "/private/package/godot-codex-mcp"\n'
                 'args = ["--project-root", "."]\n'
+                'cwd = "/private/project"\n'
+                'env = { GODOT_CODEX_DATA_ROOT = "/private/data" }\n'
             )
             receipt_text = "{}"
             (applied_root / ".codex/config.toml").write_text(
@@ -920,6 +948,7 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
                     receipt_text,
                 ),
             ):
+                self.assertNotIn("/private/", after_display)
                 exact_records[path]["after_digest"] = matching_after[path][3]
                 exact_records[path]["diff"] = (
                     packaged_fixture._canonical_setup_diff(

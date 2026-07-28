@@ -74,6 +74,7 @@ GODOT_EDITOR_TABLE_KEYS: Final = {
     "command",
     "args",
     "cwd",
+    "env",
     "required",
     "startup_timeout_sec",
     "tool_timeout_sec",
@@ -83,7 +84,6 @@ GODOT_EDITOR_TABLE_KEYS: Final = {
 UNSAFE_SERVER_KEYS: Final = {
     "authorization",
     "bearer_token",
-    "env",
     "environment",
     "env_vars",
     "headers",
@@ -985,11 +985,15 @@ def _validate_setup_changes(
 def _redact_config_launcher(value: str) -> str:
     redacted: list[str] = []
     for line in value.splitlines():
-        if (
-            "=" in line
-            and line.split("=", 1)[0].strip() == "command"
-        ):
+        key = line.split("=", 1)[0].strip() if "=" in line else ""
+        if key == "command":
             redacted.append('command = "<package-launcher>"')
+        elif key == "cwd":
+            redacted.append('cwd = "<project-root>"')
+        elif key == "env":
+            redacted.append(
+                'env = { GODOT_CODEX_DATA_ROOT = "<package-data-root>" }'
+            )
         else:
             redacted.append(line)
     return "".join(line + "\n" for line in redacted)
@@ -1348,7 +1352,9 @@ def _validate_applied_project(
         and server.get("command")
         == str(data_root / "current/bin/godot-codex-mcp")
         and server.get("args") == ["--project-root", "."]
-        and server.get("cwd") == ".."
+        and server.get("cwd") == str(project_root)
+        and server.get("env")
+        == {"GODOT_CODEX_DATA_ROOT": str(data_root)}
         and server.get("required") is True
         and server.get("startup_timeout_sec") == 10
         and server.get("tool_timeout_sec") == 60
