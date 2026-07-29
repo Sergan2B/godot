@@ -375,6 +375,17 @@ def bind_synthetic_recorder_journal(
     return journal
 
 
+def bind_negotiated_recorder_protocol(
+    trace: dict[str, Any],
+    protocol_version: str,
+) -> dict[str, Any]:
+    journal = bind_synthetic_recorder_journal(trace)
+    journal["capture_kind"] = "surface_transport_capture"
+    journal["status"] = "complete"
+    journal["protocol_version"] = protocol_version
+    return journal
+
+
 def synthetic_surface_authority(
     trace: dict[str, Any],
     *,
@@ -1316,6 +1327,29 @@ class Sprint11AcceptanceTests(unittest.TestCase):
                 recorder_journal_sha256=journal_sha256,
                 trace=trace,
             )
+
+    def test_qualifying_recorder_accepts_documented_negotiated_protocols(
+        self,
+    ) -> None:
+        trace = synthetic_trace("cli", "protocol", 100)
+        for protocol in sorted(acceptance.QUALIFYING_MCP_PROTOCOLS):
+            with self.subTest(protocol=protocol):
+                journal = bind_negotiated_recorder_protocol(trace, protocol)
+                with self.assertRaisesRegex(
+                    acceptance.AcceptanceError,
+                    "omits required protocol observations",
+                ):
+                    acceptance.validate_recorder_journal(
+                        journal,
+                        qualifying=True,
+                    )
+
+        journal = bind_negotiated_recorder_protocol(trace, "2025-03-26")
+        with self.assertRaisesRegex(
+            acceptance.AcceptanceError,
+            "qualified negotiated MCP protocol",
+        ):
+            acceptance.validate_recorder_journal(journal, qualifying=True)
 
     def test_every_semantic_assertion_rejects_an_empty_projection(self) -> None:
         for assertion_id in sorted(acceptance.REQUIRED_ASSERTIONS):

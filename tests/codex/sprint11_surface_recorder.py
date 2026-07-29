@@ -38,7 +38,7 @@ except ModuleNotFoundError:  # Direct execution from tests/codex.
 
 SCHEMA_VERSION = "s11-recorder-journal/1.0"
 EVENT_CHAIN_DOMAIN = b"godot-codex/s11-recorder-event-chain/v1\0"
-MAX_FRAME_BYTES = 1_048_576
+MAX_FRAME_BYTES = 8_388_608
 MAX_EVENTS = 4_096
 MAX_JOURNAL_BYTES = 524_288
 MAX_METADATA_BYTES = 32_768
@@ -820,6 +820,7 @@ def _pump(
     recorder: ProtocolRecorder,
     errors: list[str],
     close_destination: bool,
+    shutdown_requested: threading.Event | None = None,
 ) -> None:
     try:
         while True:
@@ -830,7 +831,8 @@ def _pump(
             destination.flush()
             recorder.note_transport(direction, frame)
     except (BrokenPipeError, OSError):
-        errors.append(f"{direction}_pump_failed")
+        if shutdown_requested is None or not shutdown_requested.is_set():
+            errors.append(f"{direction}_pump_failed")
     finally:
         if close_destination:
             try:
@@ -1107,6 +1109,8 @@ def run_proxy(
         ),
     )
     pump_errors: list[str] = []
+    shutdown_requested = threading.Event()
+    termination_started: float | None = None
     executable_descriptor: int | None = None
     qualified_command = list(command)
     if not synthetic_command:
@@ -1138,6 +1142,24 @@ def run_proxy(
             os.close(executable_descriptor)
     assert child.stdin is not None
     assert child.stdout is not None
+
+    previous_handlers: dict[int, Any] = {}
+
+    def request_shutdown(signum: int, _frame: Any) -> None:
+        nonlocal termination_started
+        if not shutdown_requested.is_set():
+            termination_started = time.monotonic()
+            shutdown_requested.set()
+        try:
+            child.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+
+    if threading.current_thread() is threading.main_thread():
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            previous_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, request_shutdown)
+
     inbound = threading.Thread(
         target=_pump,
         args=(stdin, child.stdin),
@@ -1146,6 +1168,7 @@ def run_proxy(
             "recorder": recorder,
             "errors": pump_errors,
             "close_destination": True,
+            "shutdown_requested": shutdown_requested,
         },
         name="s11-recorder-input",
         daemon=True,
@@ -1164,12 +1187,34 @@ def run_proxy(
         daemon=True,
     )
     outbound.start()
+    child_deadline = time.monotonic() + child_timeout
     try:
-        exit_code = child.wait(timeout=child_timeout)
-    except subprocess.TimeoutExpired:
-        pump_errors.append("child_timeout")
-        _terminate_process_group(child, pump_errors)
+        while child.poll() is None:
+            now = time.monotonic()
+            if (
+                termination_started is not None
+                and now - termination_started >= PROCESS_TERM_SECONDS
+            ):
+                pump_errors.append("child_graceful_shutdown_timeout")
+                _terminate_process_group(child, pump_errors)
+                break
+            if now >= child_deadline:
+                pump_errors.append("child_timeout")
+                _terminate_process_group(child, pump_errors)
+                break
+            try:
+                child.wait(
+                    timeout=min(
+                        0.1,
+                        max(0.0, child_deadline - now),
+                    )
+                )
+            except subprocess.TimeoutExpired:
+                pass
         exit_code = child.returncode if child.returncode is not None else 124
+    finally:
+        for signum, previous in previous_handlers.items():
+            signal.signal(signum, previous)
     outbound.join(PUMP_JOIN_SECONDS)
     if outbound.is_alive():
         pump_errors.append("child_output_not_closed")
@@ -1180,7 +1225,7 @@ def run_proxy(
     except OSError:
         pump_errors.append("child_output_close_failed")
     inbound.join(PUMP_JOIN_SECONDS)
-    if inbound.is_alive():
+    if inbound.is_alive() and not shutdown_requested.is_set():
         pump_errors.append("client_input_not_closed")
     document = recorder.document(exit_code, pump_errors)
     try:

@@ -245,6 +245,8 @@ MAX_RECORDER_JOURNAL_BYTES = 524_288
 MAX_ARTIFACT_BYTES = 2_097_152
 MAX_PACKAGE_MANIFEST_BYTES = 262_144
 MAX_GATE_OUTPUT_BYTES = 1_048_576
+MAX_RECORDER_FRAME_BYTES = 8_388_608
+QUALIFYING_MCP_PROTOCOLS = frozenset({"2025-06-18", "2025-11-25"})
 MAX_HUMAN_AUTHORITY_BYTES = 262_144
 
 COMMIT_RE = re.compile(r"[0-9a-f]{40}\Z")
@@ -3669,8 +3671,8 @@ def validate_recorder_journal(
     )
     if qualifying:
         require(
-            protocol == "2025-11-25",
-            "recorder did not observe the qualified MCP protocol",
+            protocol in QUALIFYING_MCP_PROTOCOLS,
+            "recorder did not observe a qualified negotiated MCP protocol",
         )
     events = journal["events"]
     require(
@@ -3710,7 +3712,7 @@ def validate_recorder_journal(
             event["frame_bytes"],
             label="recorder frame bytes",
             minimum=1,
-            maximum=1_048_576,
+            maximum=MAX_RECORDER_FRAME_BYTES,
         )
         method = event.get("method")
         if method is not None:

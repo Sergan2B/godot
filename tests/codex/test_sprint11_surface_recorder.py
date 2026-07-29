@@ -3,9 +3,12 @@ from __future__ import annotations
 import io
 import json
 import os
+import signal
+import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from typing import Any
@@ -329,6 +332,37 @@ class Sprint11SurfaceRecorderTests(unittest.TestCase):
                 document["integrity"]["recorder_errors"],
             )
 
+    def test_sigterm_flushes_a_complete_journal_after_clean_child_exit(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "journal.json"
+            child = (
+                "import sys;"
+                "from tests.codex import sprint11_surface_recorder as r;"
+                f"raise SystemExit(r.run_proxy("
+                f"[{sys.executable!r},'-c','import sys;sys.stdin.buffer.read()'],"
+                f"metadata={metadata()!r},"
+                f"journal_path=r.Path({str(journal)!r}),"
+                "stdin=sys.stdin.buffer,stdout=sys.stdout.buffer,"
+                "synthetic_command=True))"
+            )
+            process = subprocess.Popen(
+                [sys.executable, "-c", child],
+                cwd=recorder.REPOSITORY_ROOT,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            time.sleep(0.2)
+            process.send_signal(signal.SIGTERM)
+            _stdout, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 0, stderr.decode())
+            document = json.loads(journal.read_text(encoding="utf-8"))
+            self.assertEqual(document["status"], "complete")
+            self.assertEqual(document["integrity"]["child_exit_code"], 0)
+            self.assertEqual(document["integrity"]["recorder_errors"], [])
+
     def test_proxy_preserves_server_bytes_and_records_only_safe_metadata(self) -> None:
         secret = "S11_SECRET_DO_NOT_RECORD_123456"
         request = line(
@@ -605,6 +639,49 @@ class Sprint11SurfaceRecorderTests(unittest.TestCase):
         self.assertIn(
             "elicitation_response_missing",
             document["integrity"]["recorder_errors"],
+        )
+
+    def test_real_registry_sized_frame_remains_bounded_and_projected(self) -> None:
+        instance = recorder.ProtocolRecorder(metadata())
+        instance.note_transport(
+            recorder.CLIENT_TO_SERVER,
+            line(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/list",
+                    "params": {},
+                }
+            ),
+        )
+        response = line(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "tools": [
+                        {"name": "godot_get_connection_status"},
+                        {"name": "godot_get_editor_state"},
+                    ],
+                    "schemaPadding": "x" * 4_700_000,
+                },
+            }
+        )
+        self.assertGreater(len(response), 1_048_576)
+        self.assertLess(len(response), recorder.MAX_FRAME_BYTES)
+        instance.note_transport(recorder.SERVER_TO_CLIENT, response)
+        document = instance.document(0, [])
+        self.assertFalse(document["integrity"]["truncated"])
+        self.assertNotIn(
+            "frame_bound_exceeded",
+            document["integrity"]["recorder_errors"],
+        )
+        self.assertEqual(
+            document["events"][-1]["tools"],
+            [
+                "godot_get_connection_status",
+                "godot_get_editor_state",
+            ],
         )
 
     def test_frame_and_event_bounds_fail_closed(self) -> None:
