@@ -461,7 +461,10 @@ def run_workflow(arguments: argparse.Namespace) -> dict[str, Any]:
         coordinates(client, arguments.timeout)
         stop_editor(editor, timeout=arguments.timeout)
         offline = wait_for_status(client, "offline_cached", arguments.timeout)
-        offline_scene, offline_error, _ = client.tool("godot_get_current_scene", {})
+        offline_scene, offline_error, _ = client.tool(
+            "godot_get_scene_graph",
+            {"scene": "res://main.tscn", "limit": 50},
+        )
         require(
             not offline_error
             and offline_scene.get("freshness") == "offline_cached",
