@@ -18,6 +18,7 @@ modules/codex_bridge
 schemas/codex_bridge/v1
 tests/codex/Cargo.lock
 tests/codex/Cargo.toml
+tests/codex/README.md
 tests/codex/acquisition/sprint11
 tests/codex/conformance
 tests/codex/fixtures
@@ -37,7 +38,9 @@ tests/codex/sprint11_packaged_regressions.py
 tests/codex/sprint11_process_scope.py
 tests/codex/sprint11_same_project.py
 tests/codex/sprint11_source_scopes.txt
+tests/codex/sprint11_surface_artifacts.py
 tests/codex/sprint11_surface_recorder.py
+tests/codex/sprint11_surface_transport_live.py
 tests/codex/sprint6_semantic_context_live.py
 tests/codex/sprint7_live_editor.py
 tests/codex/sprint8_runtime_live.py
@@ -55,6 +58,10 @@ tests/codex/test_sprint11_package.py
 tests/codex/test_sprint11_package_source_boundary.py
 tests/codex/test_sprint11_packaged_regressions.py
 tests/codex/test_sprint11_same_project.py
+tests/codex/test_sprint11_surface_artifacts.py
 tests/codex/test_sprint11_surface_recorder.py
+tests/codex/tests/script_semantics_fixture.rs
+tests/codex/tests/semantic_context_fixture.rs
 tests/codex/tests/sprint11_evidence_contract.rs
+tests/codex/tests/sprint11_surface_capture_schema_contract.rs
 tests/codex/usability

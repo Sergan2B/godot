@@ -2354,6 +2354,51 @@ fn read_receipt(path: &Path) -> Result<SetupReceipt, SetupError> {
     serde_json::from_slice(&bytes).map_err(|_| SetupError::ReceiptInvalid)
 }
 
+pub(crate) struct SurfaceCaptureSetupState {
+    pub(crate) config: Vec<u8>,
+    pub(crate) receipt: Vec<u8>,
+}
+
+/// Reuses the setup ownership contract for surface capture without planning
+/// or changing any project file.
+pub(crate) fn verify_surface_capture_setup_state(
+    project_root: &Path,
+    project_id: &str,
+    launcher: &LauncherResolution,
+    package_directory: Option<&Path>,
+) -> Result<SurfaceCaptureSetupState, SetupError> {
+    let config_path = project_root.join(CONFIG_PATH);
+    let receipt_path = project_root.join(RECEIPT_PATH);
+    validate_safe_parent(project_root, &config_path, false)?;
+    validate_safe_parent(project_root, &receipt_path, true)?;
+
+    let config =
+        read_bounded(&config_path, MAX_CONFIG_BYTES).map_err(|_| SetupError::ConfigInvalid)?;
+    let receipt_bytes =
+        read_bounded(&receipt_path, MAX_RECEIPT_BYTES).map_err(|_| SetupError::ReceiptInvalid)?;
+    let receipt = read_receipt(&receipt_path)?;
+    verify_owned_state(project_root, project_id, &receipt)?;
+    let package_identity_digest = match package_directory {
+        Some(package_directory) => current_package_identity_digest(Some(package_directory))?,
+        None => installed_package_identity_digest(launcher.package_root())?,
+    };
+    if !receipt_matches_current_package(&receipt, launcher, &package_identity_digest) {
+        return Err(SetupError::ReceiptInvalid);
+    }
+
+    if read_bounded(&config_path, MAX_CONFIG_BYTES).map_err(|_| SetupError::ConfigInvalid)?
+        != config
+        || read_bounded(&receipt_path, MAX_RECEIPT_BYTES).map_err(|_| SetupError::ReceiptInvalid)?
+            != receipt_bytes
+    {
+        return Err(SetupError::PlanInputsChanged);
+    }
+    Ok(SurfaceCaptureSetupState {
+        config,
+        receipt: receipt_bytes,
+    })
+}
+
 fn committed_plan_state(plan: &SetupPlan, digest: &str) -> Result<bool, SetupError> {
     let receipt_path = plan.project_root.join(RECEIPT_PATH);
     let state = file_state(&receipt_path, MAX_RECEIPT_BYTES)?;
@@ -2776,13 +2821,6 @@ fn verify_supported_target() -> Result<(), SetupError> {
 }
 
 fn current_package_identity_digest(package_override: Option<&Path>) -> Result<String, SetupError> {
-    #[derive(Serialize)]
-    struct PackageIdentity {
-        operations: FileState,
-        sidecar: FileState,
-        manifest: FileState,
-    }
-
     let operations_path =
         fs::canonicalize(std::env::current_exe().map_err(|_| SetupError::PlanInputsChanged)?)
             .map_err(|_| SetupError::PlanInputsChanged)?;
@@ -2803,13 +2841,43 @@ fn current_package_identity_digest(package_override: Option<&Path>) -> Result<St
     let manifest_path = package_root
         .map(|root| root.join("package-manifest.json"))
         .unwrap_or_default();
+    package_identity_digest_for_paths(
+        &operations_path,
+        &sidecar_path,
+        package_root.map(|_| manifest_path.as_path()),
+        package_override.is_some(),
+    )
+}
+
+fn installed_package_identity_digest(package_root: &Path) -> Result<String, SetupError> {
+    package_identity_digest_for_paths(
+        &package_root.join("bin/godot-codex"),
+        &package_root.join("bin/godot-codex-mcp"),
+        Some(&package_root.join("package-manifest.json")),
+        true,
+    )
+}
+
+fn package_identity_digest_for_paths(
+    operations_path: &Path,
+    sidecar_path: &Path,
+    manifest_path: Option<&Path>,
+    require_package_files: bool,
+) -> Result<String, SetupError> {
+    #[derive(Serialize)]
+    struct PackageIdentity {
+        operations: FileState,
+        sidecar: FileState,
+        manifest: FileState,
+    }
+
     let identity = PackageIdentity {
-        operations: file_state(&operations_path, MAX_OPERATIONS_BINARY_BYTES)
+        operations: file_state(operations_path, MAX_OPERATIONS_BINARY_BYTES)
             .map_err(|_| SetupError::PlanInputsChanged)?,
-        sidecar: file_state(&sidecar_path, MAX_OPERATIONS_BINARY_BYTES)
+        sidecar: file_state(sidecar_path, MAX_OPERATIONS_BINARY_BYTES)
             .map_err(|_| SetupError::PlanInputsChanged)?,
-        manifest: if package_root.is_some() {
-            file_state(&manifest_path, MAX_PLAN_BYTES).map_err(|_| SetupError::PlanInputsChanged)?
+        manifest: if let Some(manifest_path) = manifest_path {
+            file_state(manifest_path, MAX_PLAN_BYTES).map_err(|_| SetupError::PlanInputsChanged)?
         } else {
             FileState {
                 exists: false,
@@ -2818,7 +2886,9 @@ fn current_package_identity_digest(package_override: Option<&Path>) -> Result<St
             }
         },
     };
-    if package_override.is_some() && (!identity.sidecar.exists || !identity.manifest.exists) {
+    if require_package_files
+        && (!identity.operations.exists || !identity.sidecar.exists || !identity.manifest.exists)
+    {
         return Err(SetupError::PlanInputsChanged);
     }
     let bytes = serde_json::to_vec(&identity).map_err(|_| SetupError::PlanInputsChanged)?;
@@ -3648,6 +3718,51 @@ mod tests {
         assert_eq!(
             config_ownership_marker(stanza).as_deref(),
             Some(receipt.config_ownership_marker.as_str())
+        );
+    }
+
+    #[test]
+    fn surface_capture_verifier_binds_exact_setup_owned_files_and_package() {
+        let project = project();
+        let store = TempDir::new().unwrap();
+        let options = options(&project, &store);
+        let preview = prepare_setup(&options).unwrap();
+        apply_setup_plan(&preview.plan_digest, options.plan_store.as_deref()).unwrap();
+
+        let canonical = fs::canonicalize(project.path()).unwrap();
+        let project_id = project_id_for_path(&canonical).unwrap();
+        let launcher = resolve_launcher(options.package_directory.as_deref()).unwrap();
+        let verified = verify_surface_capture_setup_state(
+            &canonical,
+            &project_id,
+            &launcher,
+            options.package_directory.as_deref(),
+        )
+        .unwrap();
+        assert_eq!(
+            verified.config,
+            fs::read(canonical.join(CONFIG_PATH)).unwrap()
+        );
+        assert_eq!(
+            verified.receipt,
+            fs::read(canonical.join(RECEIPT_PATH)).unwrap()
+        );
+
+        let config_path = canonical.join(CONFIG_PATH);
+        let original = fs::read_to_string(&config_path).unwrap();
+        fs::write(
+            &config_path,
+            original.replace("tool_timeout_sec = 60", "tool_timeout_sec = 61"),
+        )
+        .unwrap();
+        assert!(
+            verify_surface_capture_setup_state(
+                &canonical,
+                &project_id,
+                &launcher,
+                options.package_directory.as_deref(),
+            )
+            .is_err()
         );
     }
 

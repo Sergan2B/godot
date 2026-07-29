@@ -6,11 +6,38 @@ use godot_codex_bridge_client::{BridgeClient, run_bridge_sync};
 use godot_codex_mcp_server::{GodotMcpServer, TransactionCoordinatorSlot};
 use godot_codex_resource_indexer::{ProjectSessionState, ResourceIndexCoordinator};
 use godot_codex_semantic_model::{NegotiatedBridgeMetadata, ReplicaFailure, SnapshotReplicator};
+use godot_codex_surface_capture::{ClaimContext, ClaimedLease, FinalizeOutcome, LeaseStore};
 use godot_codex_transactions::{TransactionCoordinator, run_transaction_events};
-use rmcp::ServiceExt;
+use rmcp::service::QuitReason;
+use rmcp::{RoleServer, ServiceExt};
 use tokio::sync::watch;
 
 const BRIDGE_PROBE_INTERVAL: Duration = Duration::from_secs(1);
+const SERVICE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
+
+#[cfg(unix)]
+struct ShutdownSignals {
+    interrupt: tokio::signal::unix::Signal,
+    terminate: tokio::signal::unix::Signal,
+}
+
+#[cfg(unix)]
+impl ShutdownSignals {
+    fn install() -> std::io::Result<Self> {
+        Ok(Self {
+            interrupt: tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?,
+            terminate: tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?,
+        })
+    }
+
+    async fn receive(&mut self) {
+        tokio::select! {
+            _ = self.interrupt.recv() => {}
+            _ = self.terminate.recv() => {}
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum Command {
@@ -238,8 +265,162 @@ fn command_from_args(arguments: impl IntoIterator<Item = OsString>) -> Result<Co
         .ok_or_else(|| "usage: godot-codex-mcp --project-root <path>".to_owned())
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn claim_surface_capture(project_root: &std::path::Path) -> Option<ClaimedLease> {
+    let data_root = std::env::var_os("GODOT_CODEX_DATA_ROOT")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)?;
+    let store = match LeaseStore::open(&data_root) {
+        Ok(store) => store,
+        Err(error) => {
+            eprintln!(
+                "godot-codex-mcp: surface capture store unavailable; continuing without capture ({error})"
+            );
+            return None;
+        }
+    };
+    match store.has_capture_state() {
+        Ok(false) => return None,
+        Ok(true) => {}
+        Err(error) => {
+            eprintln!(
+                "godot-codex-mcp: surface capture state unreadable; continuing without capture ({error})"
+            );
+            return None;
+        }
+    }
+    let context =
+        match godot_codex_operations::verify_surface_capture_claim(project_root, &data_root) {
+            Ok(context) => context,
+            Err(_) => return None,
+        };
+    if store.data_root() != context.data_root() {
+        eprintln!(
+            "godot-codex-mcp: surface capture data-root binding differs; continuing without capture"
+        );
+        return None;
+    }
+    match store.claim(&ClaimContext {
+        project_root: context.canonical_project_root().to_path_buf(),
+        bindings: context.binding_digests(),
+    }) {
+        Ok(claim) => claim,
+        Err(error) => {
+            eprintln!(
+                "godot-codex-mcp: surface capture lease not claimable; continuing without capture ({error})"
+            );
+            None
+        }
+    }
+}
+
+async fn serve_mcp(
+    server: GodotMcpServer,
+    mut capture: Option<ClaimedLease>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(unix)]
+    let mut shutdown_signals = match ShutdownSignals::install() {
+        Ok(signals) => signals,
+        Err(error) => {
+            if let Some(capture) = capture.take() {
+                let _ = capture.finalize(FinalizeOutcome::Failed);
+            }
+            return Err(error.into());
+        }
+    };
+
+    let server_result = if let Some(capture) = capture.as_ref() {
+        let transport = rmcp::transport::IntoTransport::<RoleServer, _, _>::into_transport(
+            rmcp::transport::stdio(),
+        );
+        server
+            .serve(capture.wrap_transport::<RoleServer, _>(transport))
+            .await
+    } else {
+        server.serve(rmcp::transport::stdio()).await
+    };
+    let server = match server_result {
+        Ok(server) => server,
+        Err(error) => {
+            if let Some(capture) = capture.take() {
+                let _ = capture.finalize(FinalizeOutcome::Failed);
+            }
+            return Err(error.into());
+        }
+    };
+
+    let cancellation_token = server.cancellation_token();
+    let mut waiting = Box::pin(server.waiting());
+    #[cfg(unix)]
+    let (result, shutdown_requested) = tokio::select! {
+        result = &mut waiting => (Some(result), false),
+        () = shutdown_signals.receive() => {
+            cancellation_token.cancel();
+            let result = tokio::time::timeout(SERVICE_SHUTDOWN_TIMEOUT, &mut waiting)
+                .await
+                .ok();
+            (result, true)
+        }
+    };
+    #[cfg(not(unix))]
+    let (result, shutdown_requested) = (Some(waiting.await), false);
+
+    let Some(result) = result else {
+        // The service task may still own the tapped transport. Leaving the
+        // lease claimed is safer than publishing a journal while capture can
+        // still be changing.
+        return Err(std::io::Error::other(
+            "MCP service cleanup exceeded the graceful shutdown deadline",
+        )
+        .into());
+    };
+    let result = classify_service_exit(result, shutdown_requested);
+    let outcome = service_finalize_outcome(result.is_ok(), shutdown_requested);
+    let finalized = capture.map(|capture| capture.finalize(outcome)).transpose();
+    result?;
+    finalized?;
+    Ok(())
+}
+
+fn service_finalize_outcome(service_succeeded: bool, shutdown_requested: bool) -> FinalizeOutcome {
+    match (service_succeeded, shutdown_requested) {
+        (true, false) => FinalizeOutcome::Completed,
+        (true, true) => FinalizeOutcome::Cancelled,
+        (false, _) => FinalizeOutcome::Failed,
+    }
+}
+
+fn classify_service_exit(
+    result: Result<QuitReason, tokio::task::JoinError>,
+    shutdown_requested: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match result {
+        Ok(QuitReason::Closed) => Ok(()),
+        Ok(QuitReason::Cancelled) if shutdown_requested => Ok(()),
+        Ok(QuitReason::Cancelled) => {
+            Err(std::io::Error::other("MCP service was cancelled unexpectedly").into())
+        }
+        Ok(QuitReason::JoinError(error)) | Err(error) => Err(error.into()),
+        Ok(reason) => Err(std::io::Error::other(format!(
+            "MCP service stopped unexpectedly: {reason:?}"
+        ))
+        .into()),
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let result = runtime.block_on(run());
+    // Tokio's stdin adapter uses a blocking reader which cannot be cancelled
+    // while the parent keeps the MCP pipe open. All service and application
+    // cleanup has completed before this point; bound runtime teardown so a
+    // handled SIGINT/SIGTERM cannot strand the sidecar process.
+    runtime.shutdown_timeout(RUNTIME_SHUTDOWN_TIMEOUT);
+    result
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let command = command_from_args(std::env::args_os().skip(1)).map_err(std::io::Error::other)?;
     let Command::Run {
         project_root,
@@ -264,6 +445,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         server.waiting().await?;
         return Ok(());
     }
+    let surface_capture = claim_surface_capture(&project_root);
     let replicator = SnapshotReplicator::new();
     let (resource_coordinator, resource_index_reader, scene_index_reader, script_index_reader) =
         ResourceIndexCoordinator::new_semantic(&project_root)?;
@@ -293,15 +475,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         project_root,
         transaction_coordinator,
     )
-    .with_product_startup_observation(product_startup)
-    .serve(rmcp::transport::stdio())
-    .await?;
-    server.waiting().await?;
+    .with_product_startup_observation(product_startup);
+    let server_result = serve_mcp(server, surface_capture).await;
     let _ = shutdown_sender.send(true);
     let _ = resource_task.await;
     let _ = transaction_task.await;
     bridge_task.abort();
-    Ok(())
+    let _ = bridge_task.await;
+    server_result
 }
 
 #[cfg(test)]
@@ -359,5 +540,41 @@ mod tests {
             ])
             .is_err()
         );
+    }
+
+    #[test]
+    fn normal_and_signal_requested_service_exits_are_distinguished() {
+        assert!(classify_service_exit(Ok(QuitReason::Closed), false).is_ok());
+        assert!(classify_service_exit(Ok(QuitReason::Cancelled), true).is_ok());
+        assert!(classify_service_exit(Ok(QuitReason::Cancelled), false).is_err());
+        assert_eq!(
+            service_finalize_outcome(true, false),
+            FinalizeOutcome::Completed
+        );
+        assert_eq!(
+            service_finalize_outcome(true, true),
+            FinalizeOutcome::Cancelled
+        );
+        assert_eq!(
+            service_finalize_outcome(false, false),
+            FinalizeOutcome::Failed
+        );
+        assert_eq!(
+            service_finalize_outcome(false, true),
+            FinalizeOutcome::Failed
+        );
+    }
+
+    #[tokio::test]
+    async fn service_join_errors_are_not_classified_as_completed() {
+        let task = tokio::spawn(std::future::pending::<()>());
+        task.abort();
+        let error = task.await.unwrap_err();
+        assert!(classify_service_exit(Ok(QuitReason::JoinError(error)), false).is_err());
+
+        let task = tokio::spawn(std::future::pending::<()>());
+        task.abort();
+        let error = task.await.unwrap_err();
+        assert!(classify_service_exit(Err(error), false).is_err());
     }
 }

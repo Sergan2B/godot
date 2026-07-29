@@ -175,10 +175,7 @@ fn object_map<'a>(document: &'a Value, key: &str) -> BTreeMap<&'a str, &'a Value
 }
 
 fn sha256(value: &[u8]) -> String {
-    Sha256::digest(value)
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    format!("{:x}", Sha256::digest(value))
 }
 
 fn collect_files(directory: &Path, base: &Path, output: &mut Vec<String>) {
@@ -399,7 +396,8 @@ fn script_semantics_fixture_manifest_and_ranges_close_exactly() {
         let (start, end) = nth_span(
             &source,
             string(range, "needle").as_bytes(),
-            integer(range, "occurrence") as usize,
+            usize::try_from(integer(range, "occurrence"))
+                .expect("fixture occurrence must fit usize"),
         );
         assert_eq!(range["bytes"], serde_json::json!([start, end]));
         assert_eq!(range["start"], serde_json::json!(position(text, start)));
@@ -454,11 +452,7 @@ fn script_semantics_fixture_golden_graph_closes_relations_and_identities() {
         identity_digest.update([0]);
     }
     assert_eq!(
-        identity_digest
-            .finalize()
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>(),
+        format!("{:x}", identity_digest.finalize()),
         "fb9dfb15e2e6d442baa02305b581b495a5b0f3b8375b0f7965fae27901fe214c"
     );
 

@@ -4,6 +4,33 @@ This directory contains the Sprint 1 Rust conformance client, the shared Godot
 fixture, and the Sprint 2 live smoke harness. It is test infrastructure; the
 production sidecar now lives in the repository-root `godot-codex-mcp` workspace.
 
+## Sprint 11 official-surface acquisition
+
+Real App, CLI, and IDE evidence is acquired only through the installed
+package's one-shot `godot-codex surface-capture` lease and
+`sprint11_surface_artifacts.py prepare|derive|attest` pipeline. The capture is
+claimed inside the ordinary packaged sidecar, finalized on a clean MCP
+shutdown, independently reduced to safe canonical observations, and joined
+with interactive external-operator attestation. After successful validation,
+`surface-capture consume` removes only the exact digest-bound private
+finalized run. Stop/restart-required installation and doctor faults run and
+fully reset before the one-shot capture; only the continuous
+read/offline-reconnect/runtime/write/isolation phase is captured. A separately
+authorized `surface-capture abandon` removes only an exact
+metadata-digest-bound inactive failed claim after its host has stopped. It can
+also retire a narrowly recognized unrecoverable partial finalization, while a
+valid recoverable partial remains reserved for automatic recovery.
+
+The complete operator sequence, Trust boundary, fresh-root requirement, state
+handling, canonical output paths, and cleanup command are in
+`docs/codex-integration/EXTERNAL-CODEX-BETA-GUIDE.md`. Do not use
+`sprint11_surface_recorder.py` or `sprint11_surface_transport_live.py` for a
+real acquisition: both entry points intentionally fail closed, and acceptance
+rejects legacy `s11-recorder-journal/1.0` evidence. Qualification also
+requires the external operator to personally review the exact root, manually
+accept Trust in the official host, and answer the corresponding closed
+attestation observation.
+
 ## Sprint 7 live-editor oracle
 
 `fixtures/live_editor_project` is the opt-in real-editor project used by the

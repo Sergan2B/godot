@@ -1,0 +1,410 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-surface-metadata.schema.json",
+  "title": "Godot Codex Sprint 11 official-surface capture metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "surface",
+    "package",
+    "host",
+    "bindings",
+    "machine_bindings",
+    "registry",
+    "redaction"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "s11-surface-metadata/1.1"
+    },
+    "surface": {
+      "$ref": "#/$defs/surface"
+    },
+    "package": {
+      "$ref": "#/$defs/package"
+    },
+    "host": {
+      "$ref": "#/$defs/host"
+    },
+    "bindings": {
+      "$ref": "#/$defs/bindings"
+    },
+    "machine_bindings": {
+      "$ref": "#/$defs/machine_bindings"
+    },
+    "registry": {
+      "$ref": "#/$defs/registry"
+    },
+    "redaction": {
+      "$ref": "#/$defs/redaction"
+    }
+  },
+  "$defs": {
+    "surface": {
+      "enum": [
+        "app",
+        "cli",
+        "ide"
+      ]
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9A-Za-z][0-9A-Za-z.+-]{0,127}$"
+    },
+    "nullable_bounded_string": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 128
+    },
+    "observed_code_signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verified",
+        "mode",
+        "identifier",
+        "team_id",
+        "cdhash"
+      ],
+      "properties": {
+        "verified": {
+          "const": true
+        },
+        "mode": {
+          "enum": [
+            "strict",
+            "deep_strict"
+          ]
+        },
+        "identifier": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "team_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "cdhash": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "detached_manifest_sha256",
+        "internal_manifest_sha256",
+        "mcp_binary_sha256"
+      ],
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/version"
+        },
+        "detached_manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "internal_manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "mcp_binary_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "identifier",
+        "artifact_kind",
+        "version",
+        "build",
+        "commit",
+        "client_version",
+        "host_metadata_sha256",
+        "host_code_signature",
+        "client_code_signature",
+        "ide_host_version",
+        "ide_shell_identifier",
+        "ide_shell_artifact_sha256",
+        "ide_shell_team_id",
+        "ide_shell_code_signature",
+        "architecture"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "identifier": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "artifact_kind": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "build": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "commit": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/commit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "client_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "host_metadata_sha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "host_code_signature": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/observed_code_signature"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "client_code_signature": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/observed_code_signature"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ide_host_version": {
+          "$ref": "#/$defs/nullable_bounded_string"
+        },
+        "ide_shell_identifier": {
+          "$ref": "#/$defs/nullable_bounded_string"
+        },
+        "ide_shell_artifact_sha256": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ide_shell_team_id": {
+          "$ref": "#/$defs/nullable_bounded_string"
+        },
+        "ide_shell_code_signature": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/observed_code_signature"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "architecture": {
+          "const": "arm64"
+        }
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package_source_commit",
+        "package_manifest_sha256",
+        "compatibility_matrix_sha256",
+        "host_coordinate_profile_sha256",
+        "project_fixture_sha256",
+        "registry_sha256",
+        "prompt_pack_sha256",
+        "host_artifact_sha256",
+        "client_artifact_sha256",
+        "host_provenance_sha256",
+        "mcp_binary_sha256",
+        "godot_artifact_sha256"
+      ],
+      "properties": {
+        "package_source_commit": {
+          "$ref": "#/$defs/commit"
+        },
+        "package_manifest_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "compatibility_matrix_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_coordinate_profile_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "project_fixture_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "registry_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "prompt_pack_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "client_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "host_provenance_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "mcp_binary_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "godot_artifact_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "machine_bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_identity_sha256",
+        "package_launcher_sha256",
+        "project_config_sha256",
+        "setup_receipt_sha256"
+      ],
+      "properties": {
+        "project_identity_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "package_launcher_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "project_config_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "setup_receipt_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tools",
+        "fixed_resources",
+        "resource_templates",
+        "instructions_sha256"
+      ],
+      "properties": {
+        "tools": {
+          "type": "array",
+          "minItems": 41,
+          "maxItems": 41,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^godot_[a-z0-9_]+$",
+            "maxLength": 128
+          }
+        },
+        "fixed_resources": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^godot://[A-Za-z0-9_.{}@/-]+$",
+            "maxLength": 128
+          }
+        },
+        "resource_templates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^godot://[A-Za-z0-9_.{}@/-]+$",
+            "maxLength": 128
+          }
+        },
+        "instructions_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "absolute_paths_absent",
+        "account_identity_absent",
+        "host_controls_absent",
+        "secrets_absent"
+      ],
+      "properties": {
+        "absolute_paths_absent": {
+          "const": true
+        },
+        "account_identity_absent": {
+          "const": true
+        },
+        "host_controls_absent": {
+          "const": true
+        },
+        "secrets_absent": {
+          "const": true
+        }
+      }
+    }
+  }
+}

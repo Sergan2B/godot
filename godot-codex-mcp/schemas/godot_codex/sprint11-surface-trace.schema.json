@@ -262,8 +262,8 @@
     },
     "assertions": {
       "type": "array",
-      "minItems": 18,
-      "maxItems": 18,
+      "minItems": 17,
+      "maxItems": 17,
       "items": {
         "oneOf": [
           {"$ref": "#/$defs/assertion_approval_accept"},
@@ -275,7 +275,6 @@
           {"$ref": "#/$defs/assertion_host_config_reload"},
           {"$ref": "#/$defs/assertion_host_launcher"},
           {"$ref": "#/$defs/assertion_host_offline_status"},
-          {"$ref": "#/$defs/assertion_host_unsupported_form"},
           {"$ref": "#/$defs/assertion_multi_project_reject"},
           {"$ref": "#/$defs/assertion_offline_saved_query"},
           {"$ref": "#/$defs/assertion_runtime_error_stack"},
@@ -623,28 +622,6 @@
             "freshness": {"const": "offline_cached"},
             "live_state_claimed": {"const": false},
             "remediation_id": {"const": "start_matching_editor"}
-          }
-        }
-      }
-    },
-    "assertion_host_unsupported_form": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["assertion_id", "projection"],
-      "properties": {
-        "assertion_id": {"const": "host.unsupported_form"},
-        "projection": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "error_code",
-            "mutation_observed",
-            "read_only_available"
-          ],
-          "properties": {
-            "error_code": {"const": "approval_host_unsupported"},
-            "mutation_observed": {"const": false},
-            "read_only_available": {"const": true}
           }
         }
       }
@@ -1048,7 +1025,6 @@
         "host.config_reload",
         "host.launcher",
         "host.offline_status",
-        "host.unsupported_form",
         "multi_project.reject",
         "offline.saved_query",
         "runtime.error_stack",

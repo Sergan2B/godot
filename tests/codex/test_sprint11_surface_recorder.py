@@ -316,7 +316,7 @@ class Sprint11SurfaceRecorderTests(unittest.TestCase):
             document = json.loads(journal.read_text(encoding="utf-8"))
             self.assertEqual(
                 document["capture_kind"],
-                "surface_transport_capture",
+                "legacy_direct_transport_capture",
             )
             self.assertEqual(document["status"], "incomplete")
             self.assertIn(

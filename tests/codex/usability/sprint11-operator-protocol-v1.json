@@ -8,7 +8,7 @@
     {
       "id": "sprint11-external-beta-v1",
       "path": "tests/codex/prompts/sprint11-external-beta-v1.json",
-      "sha256": "sha256:9e48fe205b212572b22d31c8b0b85bb2ca00c1f4a9259def190085a2506409b3"
+      "sha256": "sha256:af8023a57f949c60421c12b19a5659dffb6a3a3cfbf1dbb6bf828b2e6a858de1"
     },
     {
       "id": "sprint11-human-usability-consent-v1",
@@ -18,7 +18,7 @@
     {
       "id": "sprint11-human-participant-script-v1",
       "path": "tests/codex/usability/sprint11-participant-script-v1.json",
-      "sha256": "sha256:101fb145b2c582cc9e573728dd391cbd9fd905a976c666a1545a7d6c318b3a70"
+      "sha256": "sha256:20d8f9731d426de9b7c13bdf7032493ea2319f3fc4bb766dedf470c80df896b2"
     },
     {
       "id": "sprint11-human-fault-harness-v1",
@@ -33,7 +33,7 @@
     {
       "id": "s11-human-usability-trace-schema-v1",
       "path": "godot-codex-mcp/schemas/godot_codex/sprint11-human-usability-trace.schema.json",
-      "sha256": "sha256:874c6914b5fe4cb0f37851c375539abe2eb6d6910486f3f39fc479adf3f42021"
+      "sha256": "sha256:55ba0ffec2ff2e9a15208d3a35bec54d8c264c8fc9eaf46b97693a3ad30f38e7"
     },
     {
       "id": "s11-human-usability-trace-template-v1",

@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""Fail-closed, content-minimizing stdio recorder for Sprint 11 surface runs.
+"""Legacy direct-client stdio fixture recorder for Sprint 11.
 
-The recorder is intentionally a transparent byte proxy. It never writes to
+The recorder remains as a regression fixture and transparent byte proxy. It
+cannot produce qualifying App/CLI/IDE evidence: official-host acquisition is
+performed by the package-owned in-process ``surface-capture`` lease and
+``sprint11_surface_artifacts.py``. It never writes to
 stdout except for bytes produced by the wrapped MCP server, and it never puts
 request arguments, tool content, elicitation content, source text, or native
-handles in its journal. The journal proves one package-bound transport
-capture; it does not prove which GUI or CLI process supplied stdin. The
-canonical semantic trace is produced separately and must bind the exact
-journal artifact SHA-256, ordered event hash-chain, and event count. A
-qualifying run additionally requires a separate Git-bound external-operator
-authority for the observed App/CLI/IDE session.
+handles in its journal.
 """
 
 from __future__ import annotations
@@ -489,7 +487,7 @@ class ProtocolRecorder:
         capture_kind: str = "synthetic_contract_fixture",
     ) -> None:
         if capture_kind not in {
-            "surface_transport_capture",
+            "legacy_direct_transport_capture",
             "synthetic_contract_fixture",
         }:
             raise RecorderError("recorder capture kind differs")
@@ -1110,7 +1108,7 @@ def run_proxy(
         capture_kind=(
             "synthetic_contract_fixture"
             if synthetic_command
-            else "surface_transport_capture"
+            else "legacy_direct_transport_capture"
         ),
     )
     pump_errors: list[str] = []
@@ -1256,19 +1254,13 @@ def parse_arguments(arguments: Sequence[str]) -> argparse.Namespace:
 
 
 def main(arguments: Sequence[str] | None = None) -> int:
-    options = parse_arguments(arguments or sys.argv[1:])
-    try:
-        metadata = load_metadata(options.metadata)
-        return run_proxy(
-            options.command,
-            metadata=metadata,
-            journal_path=options.journal,
-            stdin=sys.stdin.buffer,
-            stdout=sys.stdout.buffer,
-        )
-    except RecorderError as error:
-        print(f"sprint11 surface recorder: {error}", file=sys.stderr)
-        return 64
+    _ = arguments
+    print(
+        "sprint11 surface recorder: legacy direct-client recorder is "
+        "nonqualifying and disabled; use package surface-capture",
+        file=sys.stderr,
+    )
+    return 64
 
 
 if __name__ == "__main__":

@@ -307,6 +307,7 @@ fn legal_transition(from: TransactionState, to: TransactionState) -> bool {
     )
 }
 
+#[allow(clippy::too_many_lines)]
 fn validate_variant(value: &Value, depth: usize, items: &mut usize) -> Result<(), &'static str> {
     if depth > MAX_VARIANT_DEPTH {
         return Err("property_value_unsupported");

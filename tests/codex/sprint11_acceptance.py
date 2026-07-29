@@ -53,6 +53,9 @@ EVIDENCE_PATH = (
 EVIDENCE_RELATIVE_PATH = EVIDENCE_PATH.relative_to(REPOSITORY_ROOT).as_posix()
 SOURCE_SCOPE_PATH = SCRIPT_DIR / "sprint11_source_scopes.txt"
 PROMPT_PACK_PATH = SCRIPT_DIR / "prompts" / "sprint11-external-beta-v1.json"
+GLOBAL_UNSUPPORTED_FORM_REPORT_PATH = (
+    "tests/codex/acquisition/sprint11/package-live/sprint9-negatives.json"
+)
 EVIDENCE_SCHEMA_PATH = (
     REPOSITORY_ROOT
     / "godot-codex-mcp"
@@ -66,6 +69,27 @@ TRACE_SCHEMA_PATH = (
     / "schemas"
     / "godot_codex"
     / "sprint11-surface-trace.schema.json"
+)
+SURFACE_METADATA_SCHEMA_PATH = (
+    REPOSITORY_ROOT
+    / "godot-codex-mcp"
+    / "schemas"
+    / "godot_codex"
+    / "sprint11-surface-metadata.schema.json"
+)
+SURFACE_CAPTURE_ARTIFACT_SCHEMA_PATH = (
+    REPOSITORY_ROOT
+    / "godot-codex-mcp"
+    / "schemas"
+    / "godot_codex"
+    / "sprint11-surface-capture-artifact.schema.json"
+)
+RECORDER_JOURNAL_SCHEMA_PATH = (
+    REPOSITORY_ROOT
+    / "godot-codex-mcp"
+    / "schemas"
+    / "godot_codex"
+    / "sprint11-recorder-journal.schema.json"
 )
 SURFACE_AUTHORITY_SCHEMA_PATH = (
     REPOSITORY_ROOT
@@ -241,7 +265,7 @@ EXACT_GODOT_VERIFICATION = {
 
 MAX_EVIDENCE_BYTES = 262_144
 MAX_TRACE_BYTES = 524_288
-MAX_RECORDER_JOURNAL_BYTES = 524_288
+MAX_RECORDER_JOURNAL_BYTES = 2_097_152
 MAX_ARTIFACT_BYTES = 2_097_152
 MAX_PACKAGE_MANIFEST_BYTES = 262_144
 MAX_GATE_OUTPUT_BYTES = 1_048_576
@@ -265,7 +289,6 @@ REQUIRED_ASSERTIONS = frozenset(
         "host.config_reload",
         "host.launcher",
         "host.offline_status",
-        "host.unsupported_form",
         "multi_project.reject",
         "offline.saved_query",
         "runtime.error_stack",
@@ -276,6 +299,14 @@ REQUIRED_ASSERTIONS = frozenset(
         "validation.result",
     }
 )
+HOST_ATTESTED_ASSERTIONS = frozenset(
+    {
+        "host.approval_layers",
+        "host.config_reload",
+        "host.launcher",
+    }
+)
+TRANSPORT_CAPTURE_ASSERTIONS = REQUIRED_ASSERTIONS - HOST_ATTESTED_ASSERTIONS
 REQUIRED_USABILITY_GOALS = frozenset(
     {
         "compound_write_and_undo",
@@ -289,7 +320,7 @@ REQUIRED_USABILITY_GOALS = frozenset(
 )
 PROMPT_GOALS = {
     "install_and_connect": (
-        "Install the frozen manifest-bound package through its package-owned launcher and connect the exact trusted project.",
+        "Verify the frozen manifest-bound package is already installed through its package-owned launcher, then connect the exact trusted project without rerunning setup.",
         (
             "connection.status",
             "host.approval_layers",
@@ -302,7 +333,7 @@ PROMPT_GOALS = {
         ("saved.current_scene",),
     ),
     "offline_context": (
-        "Close the editor, inspect honest offline status, and use only eligible verified saved-project context.",
+        "Close the editor, inspect honest offline status, use only eligible verified saved-project context, then reopen the editor and establish the current revision in the new editor session.",
         ("host.offline_status", "offline.saved_query"),
     ),
     "doctor_fault_matrix": (
@@ -310,17 +341,16 @@ PROMPT_GOALS = {
         ("connection.status",),
     ),
     "runtime_diagnostics": (
-        "Run the project and locate the intentional runtime error with its bounded source-mapped stack.",
+        "Start the project, stop it, start it again in a second distinct runtime session, and locate the intentional runtime error with its bounded source-mapped stack from that second session.",
         ("runtime.error_stack",),
     ),
     "compound_write_and_undo": (
-        "Preview, independently approve, apply, validate, and exactly undo one supported compound change; also prove decline, cancel, timeout, and unsupported-form paths do not mutate.",
+        "Using the established current revision, preview a supported compound change, keep sandbox approval independent, have the surface user accept the action form, then apply, validate, and exactly undo it. The user separately declines and cancels two no-mutation paths and intentionally leaves one timeout form unanswered. Afterward, separately restart Godot Editor, read the current scene once in the new editor session, and prove one old pre-restart guard is rejected as stale.",
         (
             "approval.accept",
             "approval.cancel",
             "approval.decline",
             "approval.timeout",
-            "host.unsupported_form",
             "transaction.apply",
             "transaction.preview",
             "transaction.undo",
@@ -340,6 +370,8 @@ PROMPT_CONSTRAINTS = (
     "Do not use PATH lookup or record a private absolute launcher path.",
     "Exercise exactly the five named doctor faults and verify each stable diagnostic code and remediation ID.",
     "Do not disclose fixture-specific answers, golden outputs, tool-call sequences, or recovery steps in the task pack.",
+    "Complete stop-or-restart-required installation, doctor-fault, and host-owned config/root/cwd/package prelaunch-negative phases in a disposable private install and project before arming a one-shot surface capture; prove no sibling fallback, fully stop and reset that phase, clear its phase-only environment, and use separate measured capture data and project roots for capture.",
+    "The surface user, not the external attester, makes sandbox choices, chooses semantic-form accept, decline, and cancel, and intentionally gives no response for timeout; the attester may accept the exact project Trust request but otherwise only observes.",
 )
 PROMPT_GOAL_ORDER = (
     "install_and_connect",
@@ -430,7 +462,25 @@ EVIDENCE_FIELDS = frozenset(
 )
 REQUIRED_SOURCE_PATHS = frozenset(
     {
+        "godot-codex-mcp/Cargo.lock",
+        "godot-codex-mcp/Cargo.toml",
+        "godot-codex-mcp/crates/godot-codex-mcp/Cargo.toml",
+        "godot-codex-mcp/crates/godot-codex-mcp/src/main.rs",
         "godot-codex-mcp/crates/godot-codex-mcp/tests/offline_subprocess.rs",
+        "godot-codex-mcp/crates/godot-codex-mcp/tests/"
+        "surface_capture_process.rs",
+        "godot-codex-mcp/crates/godot-codex/Cargo.toml",
+        "godot-codex-mcp/crates/godot-codex/src/main.rs",
+        "godot-codex-mcp/crates/operations/Cargo.toml",
+        "godot-codex-mcp/crates/operations/src/lib.rs",
+        "godot-codex-mcp/crates/operations/src/setup.rs",
+        "godot-codex-mcp/crates/operations/src/surface_capture.rs",
+        "godot-codex-mcp/crates/surface-capture/Cargo.toml",
+        "godot-codex-mcp/crates/surface-capture/src/journal.rs",
+        "godot-codex-mcp/crates/surface-capture/src/lease.rs",
+        "godot-codex-mcp/crates/surface-capture/src/lib.rs",
+        "godot-codex-mcp/crates/surface-capture/src/observation.rs",
+        "godot-codex-mcp/crates/surface-capture/src/transport.rs",
         "godot-codex-mcp/packaging/build_macos.py",
         "godot-codex-mcp/packaging/generate_third_party_licenses.py",
         "godot-codex-mcp/packaging/upstream-licenses/"
@@ -468,10 +518,17 @@ REQUIRED_SOURCE_PATHS = frozenset(
         "godot-codex-mcp/schemas/godot_codex/"
         "sprint11-reproducibility-receipt.schema.json",
         "godot-codex-mcp/schemas/godot_codex/"
+        "sprint11-recorder-journal.schema.json",
+        "godot-codex-mcp/schemas/godot_codex/"
         "sprint11-surface-acquisition-authority.schema.json",
+        "godot-codex-mcp/schemas/godot_codex/"
+        "sprint11-surface-capture-artifact.schema.json",
+        "godot-codex-mcp/schemas/godot_codex/"
+        "sprint11-surface-metadata.schema.json",
         "godot-codex-mcp/schemas/godot_codex/sprint11-surface-trace.schema.json",
         "godot-codex-mcp/schemas/godot_codex/"
         "sprint11-usability-report.schema.json",
+        "tests/codex/README.md",
         "tests/codex/prompts/sprint11-external-beta-v1.json",
         "tests/codex/sprint11_acceptance.py",
         "tests/codex/sprint11_acquisition_paths.py",
@@ -484,6 +541,7 @@ REQUIRED_SOURCE_PATHS = frozenset(
         "tests/codex/sprint11_packaged_regressions.py",
         "tests/codex/sprint11_process_scope.py",
         "tests/codex/sprint11_source_scopes.txt",
+        "tests/codex/sprint11_surface_artifacts.py",
         "tests/codex/sprint11_surface_recorder.py",
         "tests/codex/test_sprint11_acceptance.py",
         "tests/codex/test_sprint11_acquisition_paths.py",
@@ -496,8 +554,12 @@ REQUIRED_SOURCE_PATHS = frozenset(
         "tests/codex/test_sprint11_package.py",
         "tests/codex/test_sprint11_package_source_boundary.py",
         "tests/codex/test_sprint11_packaged_regressions.py",
+        "tests/codex/test_sprint11_surface_artifacts.py",
         "tests/codex/test_sprint11_surface_recorder.py",
+        "tests/codex/tests/script_semantics_fixture.rs",
+        "tests/codex/tests/semantic_context_fixture.rs",
         "tests/codex/tests/sprint11_evidence_contract.rs",
+        "tests/codex/tests/sprint11_surface_capture_schema_contract.rs",
         "tests/codex/usability/sprint11-consent-v1.md",
         "tests/codex/usability/sprint11-operator-protocol-v1.json",
         "tests/codex/usability/sprint11-participant-script-v1.json",
@@ -562,6 +624,7 @@ SURFACE_AUTHORITY_OBSERVATION_FIELDS = frozenset(
         "official_host_process_observed",
         "recorder_stdio_bound_to_host_session",
         "exact_project_root_observed",
+        "project_trust_reviewed_and_accepted",
         "nested_cwd_resolution_observed",
         "project_config_reload_observed",
         "package_launcher_observed",
@@ -607,6 +670,22 @@ PACKAGE_FIELDS = frozenset(
         "third_party_licenses_sha256",
     }
 )
+CAPTURE_REQUIRED_PACKAGE_MODES = {
+    "bin/godot-codex": "0755",
+    "bin/godot-codex-mcp": "0755",
+    (
+        "share/godot-codex/schemas/godot_codex/"
+        "sprint11-recorder-journal.schema.json"
+    ): "0644",
+    (
+        "share/godot-codex/schemas/godot_codex/"
+        "sprint11-surface-capture-artifact.schema.json"
+    ): "0644",
+    (
+        "share/godot-codex/schemas/godot_codex/"
+        "sprint11-surface-metadata.schema.json"
+    ): "0644",
+}
 BUILD_PROVENANCE_FIELDS = frozenset(
     {
         "cargo_lock_sha256",
@@ -705,18 +784,42 @@ FORBIDDEN_KEYS = frozenset(
     }
 )
 ABSOLUTE_PATH_PATTERNS = (
-    re.compile(r"(?:^|[\s\"'])/Users/"),
-    re.compile(r"(?:^|[\s\"'])/home/"),
-    re.compile(r"(?:^|[\s\"'])/private/"),
-    re.compile(r"(?:^|[\s\"'])/(?:tmp|var/folders)/"),
-    re.compile(r"(?:^|[\s\"'])[A-Za-z]:[\\/]"),
+    re.compile(
+        r"(?:^|[\s\"'=:(\[])/"
+        r"(?:Users|home|root|private|tmp|var/folders|opt|Applications|Volumes)"
+        r"(?:/|$)"
+    ),
+    re.compile(r"\bfile://[^\s\"']+", re.IGNORECASE),
+    re.compile(r"(?:^|[\s\"'=:(\[])[A-Za-z]:[\\/]"),
     re.compile(r"\\\\[^\\\s]+\\[^\\\s]+"),
+    re.compile(r"(?:^|[\s\"'=:(\[])\\(?!\\)[^\\\s\"']+"),
+    re.compile(r"(?:^|[\s\"'=(\[])//[^/\s]+/[^/\s]+"),
 )
 SECRET_PATTERNS = (
-    re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{12,}", re.IGNORECASE),
-    re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{12,}"),
-    re.compile(r"\bgh[opsu]_[A-Za-z0-9]{20,}"),
-    re.compile(r"\bS11_(?:SECRET|TOKEN|PROOF|CANARY)_[A-Za-z0-9_-]+"),
+    re.compile(
+        r"(?<![A-Za-z0-9])Bearer\s+[A-Za-z0-9._~+/=-]{12,}",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?<![A-Za-z0-9])sk-(?:proj-)?[A-Za-z0-9_-]{12,}",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?<![A-Za-z0-9])gh[opsu]_[A-Za-z0-9]{20,}",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?<![A-Za-z0-9])S11_(?:SECRET|TOKEN|PROOF|CANARY)_[A-Za-z0-9_-]+",
+        re.IGNORECASE,
+    ),
+)
+ACCOUNT_IDENTITY_PATTERNS = (
+    re.compile(
+        r"(?<![A-Za-z0-9._%+-])"
+        r"[A-Za-z0-9][A-Za-z0-9._%+-]{0,63}"
+        r"@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+        r"(?:\.[A-Za-z]{2,63})+\b"
+    ),
 )
 PREVIEW_OPERATION_FIELDS = {
     "create_node": frozenset(
@@ -963,8 +1066,19 @@ AUTOMATED_GATE_GROUPS = (
                     "tests.codex.test_sprint11_package",
                     "tests.codex.test_sprint11_package_source_boundary",
                     "tests.codex.test_sprint11_packaged_regressions",
+                    "tests.codex.test_sprint11_surface_artifacts",
                     "tests.codex.test_sprint11_surface_recorder",
                     "tests.codex.usability.test_human_acquisition_kit",
+                ),
+            ),
+            GateCommand(
+                cwd="tests/codex",
+                argv=(
+                    "cargo",
+                    "test",
+                    "--locked",
+                    "--test",
+                    "sprint11_surface_capture_schema_contract",
                 ),
             ),
             GateCommand(
@@ -1013,6 +1127,8 @@ AUTOMATED_GATE_GROUPS = (
                     "godot-codex-operations",
                     "-p",
                     "godot-codex",
+                    "-p",
+                    "godot-codex-surface-capture",
                 ),
             ),
         ),
@@ -1674,6 +1790,12 @@ def safe_evidence_scan(value: Any) -> None:
         require(
             not any(pattern.search(item) for pattern in SECRET_PATTERNS),
             "secret or canary leaked",
+        )
+        require(
+            not any(
+                pattern.search(item) for pattern in ACCOUNT_IDENTITY_PATTERNS
+            ),
+            "account identity leaked",
         )
 
 
@@ -2670,7 +2792,7 @@ def validate_sprint_plan_assertion_authority() -> None:
         raise AcceptanceError("Sprint 11 plan is unavailable") from error
     marker = "The exact set is "
     require(
-        "Each of the eighteen assertion IDs" in document
+        "Each of the seventeen assertion IDs" in document
         and document.count(marker) == 1,
         "Sprint 11 plan assertion count authority differs",
     )
@@ -2988,24 +3110,6 @@ def _validate_host_assertions(
             "remediation_id": "start_matching_editor",
         },
         "host offline-status projection differs",
-    )
-    unsupported = _exact_fields(
-        assertions["host.unsupported_form"],
-        {
-            "error_code",
-            "mutation_observed",
-            "read_only_available",
-        },
-        label="host.unsupported_form",
-    )
-    require(
-        unsupported
-        == {
-            "error_code": "approval_host_unsupported",
-            "mutation_observed": False,
-            "read_only_available": True,
-        },
-        "unsupported-form projection differs",
     )
 
 
@@ -3563,6 +3667,15 @@ def validate_recorder_journal(
     *,
     qualifying: bool,
 ) -> dict[str, Any]:
+    if (
+        isinstance(value, dict)
+        and value.get("schema_version") == "s11-recorder-journal/1.1"
+    ):
+        return _validate_recorder_journal_v11(value, qualifying=qualifying)
+    if qualifying:
+        raise AcceptanceError(
+            "qualifying recorder journal is not an in-process official-host capture"
+        )
     journal = _exact_fields(
         value,
         RECORDER_JOURNAL_FIELDS,
@@ -3584,9 +3697,8 @@ def validate_recorder_journal(
         )
     else:
         require(
-            journal["capture_kind"]
-            in {"surface_transport_capture", "synthetic_contract_fixture"}
-            and journal["status"] in {"complete", "fixture_valid"},
+            journal["capture_kind"] == "synthetic_contract_fixture"
+            and journal["status"] == "fixture_valid",
             "recorder journal capture/status differs",
         )
     require(journal["surface"] in {"app", "cli", "ide"}, "journal surface differs")
@@ -3697,7 +3809,6 @@ def validate_recorder_journal(
     form_seen = False
     form_actions: set[str] = set()
     offline_seen = False
-    unsupported_seen = False
     registry_observed: set[str] = set()
     canonical_registry = canonical_registry_profile()
     for index, item in enumerate(events):
@@ -3818,8 +3929,6 @@ def validate_recorder_journal(
             )
         if event.get("semantic_status") == "offline_cached":
             offline_seen = True
-        if event.get("error_code") == "approval_host_unsupported":
-            unsupported_seen = True
         projected_events.append(event)
     integrity = _exact_fields(
         journal["integrity"],
@@ -3889,13 +3998,173 @@ def validate_recorder_journal(
             and form_seen
             and form_actions == {"accept", "decline", "cancel", "timeout"}
             and offline_seen
-            and unsupported_seen
             and registry_observed
             == {"tools", "resources", "resource_templates"},
             "recorder journal omits required protocol observations",
         )
     safe_evidence_scan(journal)
     return dict(journal)
+
+
+def _validate_recorder_journal_v11(
+    value: Mapping[str, Any],
+    *,
+    qualifying: bool,
+) -> dict[str, Any]:
+    require(
+        len(canonical_json(value)) + 1 <= MAX_RECORDER_JOURNAL_BYTES,
+        "recorder journal exceeds byte bound",
+    )
+    require(
+        value.get("capture_kind") == "surface_transport_capture"
+        and value.get("status") == "complete",
+        "recorder transport capture is incomplete or synthetic",
+    )
+    try:
+        from tests.codex import sprint11_surface_artifacts as surface_artifacts
+    except ModuleNotFoundError:
+        import sprint11_surface_artifacts as surface_artifacts  # type: ignore[no-redef]
+
+    origin = value.get("transport_origin")
+    require(
+        isinstance(origin, dict),
+        "recorder transport origin is absent",
+    )
+    registry = canonical_registry_profile()
+    metadata = {
+        "surface": value.get("surface"),
+        "host": value.get("host"),
+        "bindings": value.get("bindings"),
+        "machine_bindings": {
+            "project_identity_sha256": origin.get(
+                "project_identity_sha256"
+            ),
+            "package_launcher_sha256": origin.get(
+                "package_launcher_sha256"
+            ),
+            "project_config_sha256": origin.get(
+                "project_config_sha256"
+            ),
+            "setup_receipt_sha256": origin.get(
+                "setup_receipt_sha256"
+            ),
+        },
+        "registry": {
+            "tools": registry["tools"],
+            "fixed_resources": registry["fixed_resources"],
+            "resource_templates": registry["resource_templates"],
+            "instructions_sha256": canonical_server_instructions()[
+                "wire_sha256"
+            ],
+        },
+    }
+    try:
+        journal, _projections = surface_artifacts.validate_journal(
+            value,
+            metadata=metadata,
+            metadata_sha256=cast(str, value.get("metadata_sha256")),
+        )
+    except surface_artifacts.SurfaceArtifactError as error:
+        raise AcceptanceError(
+            "recorder journal 1.1 contract differs"
+        ) from error
+    require(
+        not qualifying
+        or (
+            journal["schema_version"] == "s11-recorder-journal/1.1"
+            and journal["transport_origin"]["transport"]
+            == "official_host_stdio"
+        ),
+        "qualifying recorder is not bound to official-host stdio",
+    )
+    safe_evidence_scan(journal)
+    return dict(journal)
+
+
+def _validate_trace_semantics_against_recorder_v11(
+    trace: Mapping[str, Any],
+    journal: Mapping[str, Any],
+) -> None:
+    projections_value = journal.get("semantic_projections")
+    require(
+        isinstance(projections_value, list)
+        and len(projections_value) == 23,
+        "recorder semantic projection count differs",
+    )
+    projections: dict[str, Any] = {}
+    for item in projections_value:
+        record = _exact_fields(
+            item,
+            {"projection_id", "source_event_seq", "value"},
+            label="recorder semantic projection",
+        )
+        projection_id = record["projection_id"]
+        require(
+            isinstance(projection_id, str)
+            and projection_id not in projections,
+            "recorder semantic projection is duplicated",
+        )
+        projections[projection_id] = record["value"]
+    assertions = _assertion_map(trace)
+    require(
+        all(
+            projections.get(f"assertion.{assertion_id}")
+            == assertions[assertion_id]
+            for assertion_id in TRANSPORT_CAPTURE_ASSERTIONS
+        ),
+        "trace assertions differ from recorder tool observations",
+    )
+    forms = trace.get("form_outcomes")
+    require(
+        isinstance(forms, list) and len(forms) == 4,
+        "trace form outcomes differ from recorder",
+    )
+    form_map: dict[str, Any] = {}
+    for item in forms:
+        require(isinstance(item, dict), "trace form outcome differs")
+        scenario = item.get("scenario")
+        require(
+            isinstance(scenario, str) and scenario not in form_map,
+            "trace form outcome is duplicated",
+        )
+        form_map[scenario] = item
+    require(
+        set(form_map) == {"accept", "cancel", "decline", "timeout"}
+        and all(
+            projections.get(f"form_outcome.{scenario}") == item
+            for scenario, item in form_map.items()
+        ),
+        "trace form outcomes differ from recorder tool observations",
+    )
+    revisions = trace.get("revision_timeline")
+    require(
+        isinstance(revisions, list) and len(revisions) == 5,
+        "trace revision timeline differs from recorder",
+    )
+    revision_map: dict[str, Any] = {}
+    for item in revisions:
+        require(isinstance(item, dict), "trace revision row differs")
+        step = item.get("step")
+        require(
+            isinstance(step, str) and step not in revision_map,
+            "trace revision row is duplicated",
+        )
+        revision_map[step] = item
+    expected_steps = {
+        "initial",
+        "prepared",
+        "applied",
+        "restarted",
+        "stale_guard_rejected",
+    }
+    require(
+        set(revision_map) == expected_steps
+        and all(
+            projections.get(f"revision.{step}") == item
+            for step, item in revision_map.items()
+        ),
+        "trace revision timeline differs from recorder tool observations",
+    )
 
 
 def surface_acquisition_directory(surface: str) -> str:
@@ -4067,10 +4336,14 @@ def validate_surface_trace(
     else:
         require(
             (trace["capture_kind"], trace["status"])
-            in {
-                ("surface_transport_capture", "passed"),
-                ("synthetic_contract_fixture", "fixture_valid"),
-            },
+            == ("synthetic_contract_fixture", "fixture_valid")
+            or (
+                (trace["capture_kind"], trace["status"])
+                == ("surface_transport_capture", "passed")
+                and isinstance(recorder_journal, dict)
+                and recorder_journal.get("schema_version")
+                == "s11-recorder-journal/1.1"
+            ),
             "surface trace capture/status pairing differs",
         )
     require(trace["surface"] in {"app", "cli", "ide"}, "surface differs")
@@ -4294,6 +4567,8 @@ def validate_surface_trace(
             ),
             "surface trace and recorder journal binding differs",
         )
+        if journal["schema_version"] == "s11-recorder-journal/1.1":
+            _validate_trace_semantics_against_recorder_v11(trace, journal)
     if qualifying:
         authority = _exact_fields(
             source_bound_authority,
@@ -4726,17 +5001,18 @@ def validate_detached_package_manifest(
     )
     require(
         {
-            "bin/godot-codex",
-            "bin/godot-codex-mcp",
+            *CAPTURE_REQUIRED_PACKAGE_MODES,
             "share/godot-codex/licenses/Godot-LICENSE.txt",
             "share/godot-codex/licenses/THIRD_PARTY_LICENSES.txt",
         }.issubset(content_records),
-        "package omits a required binary or license bundle",
+        "package omits a required binary, capture schema, or license bundle",
     )
     require(
-        content_records["bin/godot-codex"]["mode"] == "0755"
-        and content_records["bin/godot-codex-mcp"]["mode"] == "0755",
-        "packaged binaries are not executable",
+        all(
+            content_records[path]["mode"] == expected_mode
+            for path, expected_mode in CAPTURE_REQUIRED_PACKAGE_MODES.items()
+        ),
+        "capture-required package modes differ",
     )
     godot_license = content_records[
         "share/godot-codex/licenses/Godot-LICENSE.txt"
@@ -4904,6 +5180,60 @@ def package_content_record(
     return cast(Mapping[str, Any], matches[0])
 
 
+def validate_global_unsupported_form_probe(
+    report: Mapping[str, Any],
+) -> None:
+    """Require the package-live no-form host probe outside surface traces."""
+
+    require(
+        report.get("schema_version") == "s9-model-free-workflow/1.0"
+        and report.get("status") == "passed"
+        and report.get("source_unchanged") is True,
+        "global unsupported-form probe report identity differs",
+    )
+    negatives = report.get("negatives")
+    require(
+        isinstance(negatives, dict),
+        "global unsupported-form probe negatives are missing",
+    )
+    approval = negatives.get("approval")
+    require(
+        isinstance(approval, list),
+        "global unsupported-form probe approval matrix is missing",
+    )
+    matches = [
+        item
+        for item in approval
+        if isinstance(item, dict) and item.get("decision") == "unsupported"
+    ]
+    require(
+        len(matches) == 1,
+        "global unsupported-form probe is missing or ambiguous",
+    )
+    record = _exact_fields(
+        matches[0],
+        {
+            "decision",
+            "elicitation_count",
+            "error",
+            "native_actions",
+            "source_unchanged",
+        },
+        label="global unsupported-form probe",
+    )
+    require(
+        record
+        == {
+            "decision": "unsupported",
+            "elicitation_count": 0,
+            "error": "approval_host_unsupported",
+            "native_actions": 0,
+            "source_unchanged": True,
+        },
+        "global unsupported-form probe semantics differ",
+    )
+
+
 def validate_packaged_regression_receipt(
     receipt: Any,
     *,
@@ -5069,6 +5399,11 @@ def validate_packaged_regression_receipt(
             and report_path not in acquisition_paths,
             "packaged regression report path differs",
         )
+        if spec.command_id == "s9_negatives":
+            require(
+                report_path == GLOBAL_UNSUPPORTED_FORM_REPORT_PATH,
+                "global unsupported-form probe report path differs",
+            )
         report_blob = repository.blob_at(source_commit, report_path)
         require(
             len(report_blob) <= packaged_regressions.MAX_REPORT_BYTES
@@ -5097,6 +5432,7 @@ def validate_packaged_regression_receipt(
         packaged_regressions.validate_aggregate_reports(reports)
     except packaged_regressions.PackagedRegressionError as error:
         raise AcceptanceError("packaged regression shard coverage differs") from error
+    validate_global_unsupported_form_probe(reports["s9_negatives"])
     coverage = _exact_fields(
         root["coverage"],
         {
@@ -7015,6 +7351,21 @@ def validate_contract_files(repository: GitRepository) -> dict[str, Any]:
             TRACE_SCHEMA_PATH,
             "https://godot-codex.invalid/schemas/godot_codex/"
             "sprint11-surface-trace.schema.json",
+        ),
+        (
+            SURFACE_METADATA_SCHEMA_PATH,
+            "https://godot-codex.invalid/schemas/godot_codex/"
+            "sprint11-surface-metadata.schema.json",
+        ),
+        (
+            SURFACE_CAPTURE_ARTIFACT_SCHEMA_PATH,
+            "https://godot-codex.invalid/schemas/godot_codex/"
+            "sprint11-surface-capture-artifact.schema.json",
+        ),
+        (
+            RECORDER_JOURNAL_SCHEMA_PATH,
+            "https://godot-codex.invalid/schemas/godot_codex/"
+            "sprint11-recorder-journal.schema.json",
         ),
         (
             SURFACE_AUTHORITY_SCHEMA_PATH,

@@ -1,0 +1,1388 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/sprint11-surface-capture-artifact.schema.json",
+  "title": "Godot Codex private Sprint 11 surface transport capture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "outcome",
+    "metadata_file",
+    "metadata_sha256",
+    "journal"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "sprint11-surface-capture-artifact/1.1"
+    },
+    "outcome": {
+      "enum": [
+        "completed",
+        "cancelled",
+        "failed"
+      ]
+    },
+    "metadata_file": {
+      "const": "metadata.json"
+    },
+    "metadata_sha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "journal": {
+      "$ref": "#/$defs/journal"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "safe_atom": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/@{}-]*$"
+    },
+    "observation_token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/@{}-]*$",
+      "not": {
+        "pattern": "://"
+      }
+    },
+    "project_path": {
+      "type": "string",
+      "minLength": 7,
+      "maxLength": 1024,
+      "pattern": "^(?:res|scene:res)://[^\\\\\\u0000-\\u001f]+$",
+      "not": {
+        "pattern": "(?:^|/)\\.\\.(?:/|$)"
+      }
+    },
+    "observation_string": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/observation_token"
+        },
+        {
+          "$ref": "#/$defs/project_path"
+        }
+      ]
+    },
+    "observation_value": {
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "$ref": "#/$defs/observation_string"
+        },
+        {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/observation_value"
+          }
+        },
+        {
+          "$ref": "#/$defs/observation_object"
+        }
+      ]
+    },
+    "observation_object": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 256,
+      "properties": {
+        "scene_revisions": {
+          "$ref": "#/$defs/scene_revision_map"
+        }
+      },
+      "patternProperties": {
+        "^(?!scene_revisions$)[A-Za-z][A-Za-z0-9_]{0,127}$": {
+          "$ref": "#/$defs/observation_value"
+        }
+      }
+    },
+    "scene_revision_map": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 256,
+      "patternProperties": {
+        "^(?!.*://)[A-Za-z0-9][A-Za-z0-9_.:/@{}-]{0,511}$": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "^(?:res|scene:res)://[^\\\\\\u0000-\\u001f]+$": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "tool_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request",
+        "result"
+      ],
+      "properties": {
+        "request": {
+          "$ref": "#/$defs/observation_object"
+        },
+        "result": {
+          "$ref": "#/$defs/observation_object"
+        }
+      }
+    },
+    "form_tool_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request",
+        "result"
+      ],
+      "properties": {
+        "request": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "parent_tool",
+            "transaction_id"
+          ],
+          "properties": {
+            "parent_tool": {
+              "const": "godot_apply_transaction"
+            },
+            "transaction_id": {
+              "$ref": "#/$defs/observation_token"
+            }
+          }
+        },
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "content_recorded"
+          ],
+          "properties": {
+            "action": {
+              "enum": [
+                "accept",
+                "decline",
+                "cancel"
+              ]
+            },
+            "content_recorded": {
+              "const": false
+            }
+          }
+        }
+      }
+    },
+    "semantic_value": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "$ref": "#/$defs/semantic_string"
+        },
+        {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/semantic_value"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "maxProperties": 128,
+          "patternProperties": {
+            "^[A-Za-z][A-Za-z0-9_.-]{0,63}$": {
+              "$ref": "#/$defs/semantic_value"
+            }
+          }
+        }
+      ]
+    },
+    "semantic_string": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^(?!/)(?!~/)(?![A-Za-z]:[/\\\\])(?!file:)(?!https?:)(?!sk-)[^\\\\\\u0000-\\u001f]*$"
+    },
+    "semantic_projection_id": {
+      "enum": [
+        "assertion.approval.accept",
+        "assertion.approval.cancel",
+        "assertion.approval.decline",
+        "assertion.approval.timeout",
+        "assertion.connection.status",
+        "assertion.host.offline_status",
+        "assertion.multi_project.reject",
+        "assertion.offline.saved_query",
+        "assertion.runtime.error_stack",
+        "assertion.saved.current_scene",
+        "assertion.transaction.apply",
+        "assertion.transaction.preview",
+        "assertion.transaction.undo",
+        "assertion.validation.result",
+        "form_outcome.accept",
+        "form_outcome.cancel",
+        "form_outcome.decline",
+        "form_outcome.timeout",
+        "revision.initial",
+        "revision.prepared",
+        "revision.applied",
+        "revision.restarted",
+        "revision.stale_guard_rejected"
+      ]
+    },
+    "semantic_projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projection_id",
+        "source_event_seq",
+        "value"
+      ],
+      "properties": {
+        "projection_id": {
+          "$ref": "#/$defs/semantic_projection_id"
+        },
+        "source_event_seq": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "value": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "maxProperties": 128,
+          "patternProperties": {
+            "^[A-Za-z][A-Za-z0-9_.-]{0,63}$": {
+              "$ref": "#/$defs/semantic_value"
+            }
+          }
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "observed_at_unix_ms",
+        "direction",
+        "class",
+        "phase",
+        "previous_event_sha256",
+        "event_sha256"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "observed_at_unix_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "direction": {
+          "enum": [
+            "client_to_server",
+            "server_to_client"
+          ]
+        },
+        "class": {
+          "enum": [
+            "initialize",
+            "registry",
+            "tool",
+            "form",
+            "status",
+            "error",
+            "protocol",
+            "semantic_projection"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "request",
+            "response",
+            "notification",
+            "error",
+            "projection"
+          ]
+        },
+        "method": {
+          "$ref": "#/$defs/safe_atom"
+        },
+        "tool": {
+          "$ref": "#/$defs/safe_atom"
+        },
+        "registry_names": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/safe_atom"
+          }
+        },
+        "protocol_version": {
+          "$ref": "#/$defs/safe_atom"
+        },
+        "client_name": {
+          "$ref": "#/$defs/safe_atom"
+        },
+        "client_version": {
+          "$ref": "#/$defs/safe_atom"
+        },
+        "instructions_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "error_code": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "semantic_projection": {
+          "$ref": "#/$defs/semantic_projection"
+        },
+        "tool_observation": {
+          "$ref": "#/$defs/tool_observation"
+        },
+        "previous_event_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "event_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "class": {
+                "const": "semantic_projection"
+              }
+            },
+            "required": [
+              "class"
+            ]
+          },
+          "then": {
+            "properties": {
+              "direction": {
+                "const": "server_to_client"
+              },
+              "phase": {
+                "const": "projection"
+              }
+            },
+            "required": [
+              "semantic_projection"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "method"
+                  ]
+                },
+                {
+                  "required": [
+                    "tool"
+                  ]
+                },
+                {
+                  "required": [
+                    "protocol_version"
+                  ]
+                },
+                {
+                  "required": [
+                    "instructions_sha256"
+                  ]
+                },
+                {
+                  "required": [
+                    "error_code"
+                  ]
+                },
+                {
+                  "required": [
+                    "tool_observation"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "phase": {
+                      "const": "projection"
+                    }
+                  },
+                  "required": [
+                    "phase"
+                  ]
+                },
+                {
+                  "required": [
+                    "semantic_projection"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "class": {
+                "const": "error"
+              }
+            },
+            "required": [
+              "class"
+            ]
+          },
+          "then": {
+            "properties": {
+              "phase": {
+                "const": "error"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "phase": {
+                "not": {
+                  "const": "error"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "tool"
+            ]
+          },
+          "then": {
+            "properties": {
+              "method": {
+                "const": "tools/call"
+              }
+            },
+            "required": [
+              "method"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "class": {
+                "const": "status"
+              }
+            },
+            "required": [
+              "class"
+            ]
+          },
+          "then": {
+            "properties": {
+              "method": {
+                "const": "tools/call"
+              },
+              "tool": {
+                "const": "godot_get_connection_status"
+              }
+            },
+            "required": [
+              "method",
+              "tool"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "class": {
+                "const": "form"
+              },
+              "phase": {
+                "const": "response"
+              }
+            },
+            "required": [
+              "class",
+              "phase"
+            ]
+          },
+          "then": {
+            "properties": {
+              "tool_observation": {
+                "$ref": "#/$defs/form_tool_observation"
+              }
+            },
+            "required": [
+              "tool_observation"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "tool_observation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "phase": {
+                "enum": [
+                  "response",
+                  "error"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "$ref": "#/$defs/connection_status_observation_condition"
+        },
+        {
+          "$ref": "#/$defs/current_scene_observation_condition"
+        },
+        {
+          "$ref": "#/$defs/scene_graph_observation_condition"
+        },
+        {
+          "$ref": "#/$defs/run_observation_condition"
+        },
+        {
+          "$ref": "#/$defs/stop_observation_condition"
+        },
+        {
+          "$ref": "#/$defs/runtime_tree_observation_condition"
+        },
+        {
+          "$ref": "#/$defs/stack_trace_observation_condition"
+        },
+        {
+          "$ref": "#/$defs/prepare_observation_condition"
+        },
+        {
+          "$ref": "#/$defs/apply_observation_condition"
+        },
+        {
+          "$ref": "#/$defs/transaction_status_observation_condition"
+        },
+        {
+          "$ref": "#/$defs/undo_observation_condition"
+        },
+        {
+          "$ref": "#/$defs/validation_observation_condition"
+        }
+      ]
+    },
+    "connection_status_observation_condition": {
+      "$ref": "#/$defs/tool_observation_condition_base",
+      "if": {
+        "properties": {
+          "tool": {
+            "const": "godot_get_connection_status"
+          },
+          "phase": {
+            "enum": [
+              "response",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "tool",
+          "phase"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool_observation"
+        ],
+        "properties": {
+          "tool_observation": {
+            "properties": {
+              "request": {
+                "maxProperties": 0
+              },
+              "result": {
+                "propertyNames": {
+                  "enum": [
+                    "schema_version",
+                    "status",
+                    "project_scope",
+                    "package_version",
+                    "compatibility",
+                    "bridge",
+                    "static_cache",
+                    "recovery",
+                    "components",
+                    "diagnostic",
+                    "remediation_id",
+                    "next_action_redacted",
+                    "next_action_digest",
+                    "limits_applied",
+                    "evidence",
+                    "is_error",
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "current_scene_observation_condition": {
+      "if": {
+        "properties": {
+          "tool": {
+            "const": "godot_get_current_scene"
+          },
+          "phase": {
+            "enum": [
+              "response",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "tool",
+          "phase"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool_observation"
+        ],
+        "properties": {
+          "tool_observation": {
+            "properties": {
+              "request": {
+                "propertyNames": {
+                  "enum": [
+                    "expected_editor_session_id",
+                    "expected_event_seq",
+                    "expected_scene_revision"
+                  ]
+                }
+              },
+              "result": {
+                "propertyNames": {
+                  "enum": [
+                    "schema_version",
+                    "project_id",
+                    "editor_session_id",
+                    "snapshot_id",
+                    "revision_vector",
+                    "status",
+                    "freshness",
+                    "truncated",
+                    "evidence",
+                    "capabilities_used",
+                    "partial_reasons",
+                    "diagnostics",
+                    "limits_applied",
+                    "entities",
+                    "facts",
+                    "scene",
+                    "nodes",
+                    "is_error",
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "scene_graph_observation_condition": {
+      "if": {
+        "properties": {
+          "tool": {
+            "const": "godot_get_scene_graph"
+          },
+          "phase": {
+            "enum": [
+              "response",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "tool",
+          "phase"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool_observation"
+        ],
+        "properties": {
+          "tool_observation": {
+            "properties": {
+              "request": {
+                "propertyNames": {
+                  "enum": [
+                    "scene",
+                    "limit",
+                    "cursor"
+                  ]
+                }
+              },
+              "result": {
+                "propertyNames": {
+                  "enum": [
+                    "project_id",
+                    "schema_version",
+                    "generation_id",
+                    "index_revision",
+                    "resource_revision",
+                    "scene_graph_revision",
+                    "freshness",
+                    "offline_cached",
+                    "status",
+                    "scene",
+                    "query_redacted",
+                    "query_digest",
+                    "nodes",
+                    "project_context",
+                    "project_context_truncated",
+                    "diagnostics",
+                    "partial_reasons",
+                    "truncated",
+                    "next_cursor",
+                    "live_overlay",
+                    "conflicts",
+                    "validated_checkpoint",
+                    "evidence",
+                    "is_error",
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "run_observation_condition": {
+      "if": {
+        "properties": {
+          "tool": {
+            "enum": [
+              "godot_run_project",
+              "godot_run_current_scene"
+            ]
+          },
+          "phase": {
+            "enum": [
+              "response",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "tool",
+          "phase"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool_observation"
+        ],
+        "properties": {
+          "tool_observation": {
+            "properties": {
+              "request": {
+                "maxProperties": 0
+              },
+              "result": {
+                "$ref": "#/$defs/runtime_control_result"
+              }
+            }
+          }
+        }
+      }
+    },
+    "stop_observation_condition": {
+      "if": {
+        "properties": {
+          "tool": {
+            "const": "godot_stop_project"
+          },
+          "phase": {
+            "enum": [
+              "response",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "tool",
+          "phase"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool_observation"
+        ],
+        "properties": {
+          "tool_observation": {
+            "properties": {
+              "request": {
+                "propertyNames": {
+                  "enum": [
+                    "runtime_session_id",
+                    "expected_runtime_event_seq"
+                  ]
+                }
+              },
+              "result": {
+                "$ref": "#/$defs/runtime_control_result"
+              }
+            }
+          }
+        }
+      }
+    },
+    "runtime_control_result": {
+      "$ref": "#/$defs/observation_object",
+      "propertyNames": {
+        "enum": [
+          "schema_version",
+          "project_id",
+          "editor_session_id",
+          "runtime_session_id",
+          "runtime_event_seq",
+          "state",
+          "origin",
+          "target",
+          "scene_path",
+          "is_error",
+          "error"
+        ]
+      }
+    },
+    "runtime_tree_observation_condition": {
+      "if": {
+        "properties": {
+          "tool": {
+            "const": "godot_get_runtime_tree"
+          },
+          "phase": {
+            "enum": [
+              "response",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "tool",
+          "phase"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool_observation"
+        ],
+        "properties": {
+          "tool_observation": {
+            "properties": {
+              "request": {
+                "propertyNames": {
+                  "enum": [
+                    "runtime_session_id",
+                    "expected_runtime_event_seq",
+                    "limit",
+                    "cursor"
+                  ]
+                }
+              },
+              "result": {
+                "propertyNames": {
+                  "enum": [
+                    "schema_version",
+                    "project_id",
+                    "editor_session_id",
+                    "runtime_session_id",
+                    "runtime_event_seq",
+                    "state",
+                    "snapshot_id",
+                    "limit",
+                    "offset",
+                    "total",
+                    "nodes",
+                    "truncated",
+                    "limits_applied",
+                    "next_cursor",
+                    "evidence",
+                    "is_error",
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "stack_trace_observation_condition": {
+      "if": {
+        "properties": {
+          "tool": {
+            "const": "godot_get_stack_trace"
+          },
+          "phase": {
+            "enum": [
+              "response",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "tool",
+          "phase"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool_observation"
+        ],
+        "properties": {
+          "tool_observation": {
+            "properties": {
+              "request": {
+                "propertyNames": {
+                  "enum": [
+                    "runtime_session_id",
+                    "runtime_stack_id",
+                    "expected_runtime_event_seq"
+                  ]
+                }
+              },
+              "result": {
+                "propertyNames": {
+                  "enum": [
+                    "schema_version",
+                    "runtime_session_id",
+                    "runtime_event_seq",
+                    "state",
+                    "stack",
+                    "is_error",
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "prepare_observation_condition": {
+      "if": {
+        "properties": {
+          "tool": {
+            "const": "godot_prepare_change_set"
+          },
+          "phase": {
+            "enum": [
+              "response",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "tool",
+          "phase"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool_observation"
+        ],
+        "properties": {
+          "tool_observation": {
+            "properties": {
+              "request": {
+                "propertyNames": {
+                  "enum": [
+                    "project_id",
+                    "idempotency_key_redacted",
+                    "idempotency_key_digest",
+                    "coordinates",
+                    "operations",
+                    "save_scope",
+                    "validation_policy"
+                  ]
+                }
+              },
+              "result": {
+                "$ref": "#/$defs/prepare_result"
+              }
+            }
+          }
+        }
+      }
+    },
+    "prepare_result": {
+      "$ref": "#/$defs/observation_object",
+      "propertyNames": {
+        "enum": [
+          "schema_version",
+          "change_set_id",
+          "state",
+          "transaction_seq",
+          "preview_digest",
+          "request_digest",
+          "preview",
+          "risk",
+          "scope",
+          "operation_count",
+          "created_at_ms",
+          "expires_at_ms",
+          "limits_applied",
+          "coordinates",
+          "is_error",
+          "error"
+        ]
+      }
+    },
+    "apply_observation_condition": {
+      "if": {
+        "properties": {
+          "tool": {
+            "const": "godot_apply_transaction"
+          },
+          "phase": {
+            "enum": [
+              "response",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "tool",
+          "phase"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool_observation"
+        ],
+        "properties": {
+          "tool_observation": {
+            "properties": {
+              "request": {
+                "propertyNames": {
+                  "enum": [
+                    "transaction_id",
+                    "preview_digest",
+                    "expected_scene_revision",
+                    "expected_operation_seq"
+                  ]
+                }
+              },
+              "result": {
+                "$ref": "#/$defs/transaction_result"
+              }
+            }
+          }
+        }
+      }
+    },
+    "transaction_status_observation_condition": {
+      "if": {
+        "properties": {
+          "tool": {
+            "const": "godot_get_transaction_status"
+          },
+          "phase": {
+            "enum": [
+              "response",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "tool",
+          "phase"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool_observation"
+        ],
+        "properties": {
+          "tool_observation": {
+            "properties": {
+              "request": {
+                "propertyNames": {
+                  "enum": [
+                    "transaction_id"
+                  ]
+                }
+              },
+              "result": {
+                "$ref": "#/$defs/transaction_result"
+              }
+            }
+          }
+        }
+      }
+    },
+    "undo_observation_condition": {
+      "if": {
+        "properties": {
+          "tool": {
+            "const": "godot_undo_transaction"
+          },
+          "phase": {
+            "enum": [
+              "response",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "tool",
+          "phase"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool_observation"
+        ],
+        "properties": {
+          "tool_observation": {
+            "properties": {
+              "request": {
+                "propertyNames": {
+                  "enum": [
+                    "transaction_id",
+                    "expected_transaction_seq",
+                    "expected_scene_revision",
+                    "expected_operation_seq"
+                  ]
+                }
+              },
+              "result": {
+                "$ref": "#/$defs/transaction_result"
+              }
+            }
+          }
+        }
+      }
+    },
+    "transaction_result": {
+      "$ref": "#/$defs/observation_object",
+      "propertyNames": {
+        "enum": [
+          "schema_version",
+          "transaction_id",
+          "change_set_id",
+          "editor_session_id",
+          "scene_id",
+          "state",
+          "transaction_seq",
+          "operation_kind",
+          "risk",
+          "scope",
+          "preview_digest",
+          "request_digest",
+          "current_scene_revision",
+          "current_operation_seq",
+          "outcome",
+          "undo_eligibility",
+          "committed_entities",
+          "updated_at_ms",
+          "limits_applied",
+          "truncated",
+          "preview",
+          "operation_count",
+          "created_at_ms",
+          "expires_at_ms",
+          "coordinates",
+          "postimage_digest",
+          "validation_report_id",
+          "terminal_error",
+          "is_error",
+          "error"
+        ]
+      }
+    },
+    "validation_observation_condition": {
+      "if": {
+        "properties": {
+          "tool": {
+            "const": "godot_get_validation_report"
+          },
+          "phase": {
+            "enum": [
+              "response",
+              "error"
+            ]
+          }
+        },
+        "required": [
+          "tool",
+          "phase"
+        ]
+      },
+      "then": {
+        "required": [
+          "tool_observation"
+        ],
+        "properties": {
+          "tool_observation": {
+            "properties": {
+              "request": {
+                "propertyNames": {
+                  "enum": [
+                    "report_id",
+                    "page"
+                  ]
+                }
+              },
+              "result": {
+                "propertyNames": {
+                  "enum": [
+                    "schema_version",
+                    "report_id",
+                    "report_digest",
+                    "page",
+                    "page_count",
+                    "content_projection",
+                    "content_bytes",
+                    "limits_applied",
+                    "is_error",
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "tool_observation_condition_base": {},
+    "journal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "run_id",
+        "transport_origin",
+        "surface",
+        "project_identity",
+        "metadata_sha256",
+        "package_launcher_sha256",
+        "project_config_sha256",
+        "setup_receipt_sha256",
+        "event_capacity",
+        "observed_event_count",
+        "dropped_event_count",
+        "final_event_sha256",
+        "events"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "sprint11-surface-capture-journal/1.1"
+        },
+        "run_id": {
+          "$ref": "#/$defs/run_id"
+        },
+        "transport_origin": {
+          "const": "official_host_stdio"
+        },
+        "surface": {
+          "enum": [
+            "app",
+            "cli",
+            "ide"
+          ]
+        },
+        "project_identity": {
+          "$ref": "#/$defs/digest"
+        },
+        "metadata_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "package_launcher_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "project_config_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "setup_receipt_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "event_capacity": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4096
+        },
+        "observed_event_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "dropped_event_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 18446744073709551615
+        },
+        "final_event_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "events": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        }
+      }
+    }
+  }
+}

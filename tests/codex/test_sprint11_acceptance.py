@@ -117,11 +117,6 @@ def synthetic_trace(
             "live_state_claimed": False,
             "remediation_id": "start_matching_editor",
         },
-        "host.unsupported_form": {
-            "error_code": "approval_host_unsupported",
-            "mutation_observed": False,
-            "read_only_available": True,
-        },
         "multi_project.reject": {
             "project_id": "project:fixture",
             "foreign_project_id": "project:other-fixture",
@@ -725,6 +720,59 @@ def qualifying_usability_report() -> tuple[dict[str, Any], dict[str, bytes]]:
 
 
 class Sprint11AcceptanceTests(unittest.TestCase):
+    def test_surface_contract_has_seventeen_assertions_and_global_no_form_gate(
+        self,
+    ) -> None:
+        self.assertEqual(len(acceptance.REQUIRED_ASSERTIONS), 17)
+        self.assertNotIn(
+            "host.unsupported_form",
+            acceptance.REQUIRED_ASSERTIONS,
+        )
+        report = acceptance.strict_json_load(
+            acceptance.REPOSITORY_ROOT
+            / acceptance.GLOBAL_UNSUPPORTED_FORM_REPORT_PATH,
+            maximum_bytes=acceptance.MAX_ARTIFACT_BYTES,
+        )
+        acceptance.validate_global_unsupported_form_probe(report)
+        for field, value in (
+            ("elicitation_count", 1),
+            ("error", "approval_invalid"),
+            ("native_actions", 1),
+            ("source_unchanged", False),
+        ):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(report)
+                unsupported = next(
+                    item
+                    for item in changed["negatives"]["approval"]
+                    if item["decision"] == "unsupported"
+                )
+                unsupported[field] = value
+                with self.assertRaises(acceptance.AcceptanceError):
+                    acceptance.validate_global_unsupported_form_probe(
+                        changed
+                    )
+        missing = copy.deepcopy(report)
+        missing["negatives"]["approval"] = [
+            item
+            for item in missing["negatives"]["approval"]
+            if item["decision"] != "unsupported"
+        ]
+        with self.assertRaises(acceptance.AcceptanceError):
+            acceptance.validate_global_unsupported_form_probe(missing)
+        duplicated = copy.deepcopy(report)
+        duplicated["negatives"]["approval"].append(
+            copy.deepcopy(
+                next(
+                    item
+                    for item in report["negatives"]["approval"]
+                    if item["decision"] == "unsupported"
+                )
+            )
+        )
+        with self.assertRaises(acceptance.AcceptanceError):
+            acceptance.validate_global_unsupported_form_probe(duplicated)
+
     def setUp(self) -> None:
         self.vectors = acceptance.strict_json_load(
             acceptance.SCRIPT_DIR
@@ -797,9 +845,52 @@ class Sprint11AcceptanceTests(unittest.TestCase):
             ("-p", "godot-codex-mcp"),
             tuple(zip(offline_argv, offline_argv[1:], strict=False)),
         )
+        product_group = next(
+            group
+            for group in acceptance.AUTOMATED_GATE_GROUPS
+            if group.group_id == "product_operations_contracts"
+        )
+        self.assertIn(
+            ("-p", "godot-codex-surface-capture"),
+            tuple(
+                zip(
+                    product_group.commands[0].argv,
+                    product_group.commands[0].argv[1:],
+                    strict=False,
+                )
+            ),
+        )
+        python_group = next(
+            group
+            for group in acceptance.AUTOMATED_GATE_GROUPS
+            if group.group_id == "s11_python_contracts"
+        )
+        python_argv = python_group.commands[0].argv
+        self.assertIn(
+            "tests.codex.test_sprint11_surface_artifacts",
+            python_argv,
+        )
+        self.assertTrue(
+            any(
+                command.cwd == "tests/codex"
+                and command.argv
+                == (
+                    "cargo",
+                    "test",
+                    "--locked",
+                    "--test",
+                    "sprint11_surface_capture_schema_contract",
+                )
+                for command in python_group.commands
+            )
+        )
         self.assertIn(
             "godot-codex-mcp/crates/godot-codex-mcp/tests/"
             "offline_subprocess.rs",
+            acceptance.REQUIRED_SOURCE_PATHS,
+        )
+        self.assertIn(
+            "tests/codex/README.md",
             acceptance.REQUIRED_SOURCE_PATHS,
         )
         self.assertTrue(
@@ -1289,7 +1380,9 @@ class Sprint11AcceptanceTests(unittest.TestCase):
             )
 
         tampered = copy.deepcopy(authority)
-        tampered["observations"]["actual_surface_session_observed"] = False
+        tampered["observations"][
+            "project_trust_reviewed_and_accepted"
+        ] = False
         projection = dict(tampered)
         projection.pop("attestation_projection_sha256")
         tampered["attestation_projection_sha256"] = acceptance.sha256_bytes(
@@ -1328,28 +1421,132 @@ class Sprint11AcceptanceTests(unittest.TestCase):
                 trace=trace,
             )
 
-    def test_qualifying_recorder_accepts_documented_negotiated_protocols(
+    def test_legacy_recorder_cannot_qualify_for_any_protocol(
         self,
     ) -> None:
         trace = synthetic_trace("cli", "protocol", 100)
-        for protocol in sorted(acceptance.QUALIFYING_MCP_PROTOCOLS):
+        for protocol in [
+            *sorted(acceptance.QUALIFYING_MCP_PROTOCOLS),
+            "2025-03-26",
+        ]:
             with self.subTest(protocol=protocol):
                 journal = bind_negotiated_recorder_protocol(trace, protocol)
                 with self.assertRaisesRegex(
                     acceptance.AcceptanceError,
-                    "omits required protocol observations",
+                    "not an in-process official-host capture",
                 ):
                     acceptance.validate_recorder_journal(
                         journal,
                         qualifying=True,
                     )
 
-        journal = bind_negotiated_recorder_protocol(trace, "2025-03-26")
-        with self.assertRaisesRegex(
-            acceptance.AcceptanceError,
-            "qualified negotiated MCP protocol",
-        ):
-            acceptance.validate_recorder_journal(journal, qualifying=True)
+    def test_legacy_form_capable_transport_journal_is_always_rejected(
+        self,
+    ) -> None:
+        trace = synthetic_trace("cli", "no-form-probe", 100)
+        journal = bind_negotiated_recorder_protocol(trace, "2025-11-25")
+        registry = acceptance.canonical_registry_profile()
+        events = [
+            {
+                "seq": 0,
+                "direction": "server_to_client",
+                "kind": "response",
+                "method": "initialize",
+                "frame_bytes": 64,
+                "protocol_version": "2025-11-25",
+                "instructions_sha256": (
+                    acceptance.canonical_server_instructions()[
+                        "wire_sha256"
+                    ]
+                ),
+            },
+            {
+                "seq": 1,
+                "direction": "server_to_client",
+                "kind": "response",
+                "method": "tools/list",
+                "frame_bytes": 64,
+                "tools": registry["tools"],
+            },
+            {
+                "seq": 2,
+                "direction": "server_to_client",
+                "kind": "response",
+                "method": "resources/list",
+                "frame_bytes": 64,
+                "resources": registry["fixed_resources"],
+            },
+            {
+                "seq": 3,
+                "direction": "server_to_client",
+                "kind": "response",
+                "method": "resources/templates/list",
+                "frame_bytes": 64,
+                "resource_templates": registry["resource_templates"],
+            },
+            {
+                "seq": 4,
+                "direction": "server_to_client",
+                "kind": "response",
+                "method": "tools/call",
+                "tool": "godot_get_connection_status",
+                "frame_bytes": 64,
+                "semantic_status": "offline_cached",
+                "is_error": False,
+            },
+            *[
+                {
+                    "seq": sequence,
+                    "direction": "client_to_server",
+                    "kind": "response",
+                    "method": "elicitation/create",
+                    "frame_bytes": 64,
+                    "form_mode": "form",
+                    "form_action": action,
+                    "content_recorded": False,
+                }
+                for sequence, action in enumerate(
+                    ("accept", "decline", "cancel"),
+                    start=5,
+                )
+            ],
+            {
+                "seq": 8,
+                "direction": "server_to_client",
+                "kind": "response",
+                "method": "tools/call",
+                "frame_bytes": 64,
+                "form_action": "timeout",
+                "error_code": "approval_timeout",
+                "is_error": True,
+            },
+        ]
+        journal["events"] = events
+        journal["integrity"].update(
+            {
+                "event_count": len(events),
+                "event_chain_sha256": (
+                    acceptance.recorder_event_chain_sha256(events)
+                ),
+                "input_frames": 3,
+                "output_frames": 6,
+                "input_bytes": 192,
+                "output_bytes": 384,
+            }
+        )
+        self.assertFalse(
+            any(
+                event.get("error_code") == "approval_host_unsupported"
+                for event in events
+            )
+        )
+        for qualifying in (False, True):
+            with self.subTest(qualifying=qualifying):
+                with self.assertRaises(acceptance.AcceptanceError):
+                    acceptance.validate_recorder_journal(
+                        journal,
+                        qualifying=qualifying,
+                    )
 
     def test_every_semantic_assertion_rejects_an_empty_projection(self) -> None:
         for assertion_id in sorted(acceptance.REQUIRED_ASSERTIONS):
@@ -1667,6 +1864,76 @@ class Sprint11AcceptanceTests(unittest.TestCase):
                 ),
             )
 
+    def test_v11_recorder_is_independently_bound_to_trace_semantics(self) -> None:
+        from tests.codex import sprint11_surface_artifacts as artifacts
+        from tests.codex.test_sprint11_surface_artifacts import (
+            build_fixture_bundle,
+        )
+
+        bundle = build_fixture_bundle()
+        trace = bundle["final"]
+        journal = bundle["journal"]
+        journal_digest = acceptance.sha256_bytes(bundle["journal_payload"])
+        validated = acceptance.validate_recorder_journal(
+            journal,
+            qualifying=True,
+        )
+        self.assertEqual(validated["schema_version"], "s11-recorder-journal/1.1")
+        acceptance.validate_surface_trace(
+            trace,
+            qualifying=False,
+            recorder_journal=journal,
+            recorder_journal_digest=journal_digest,
+        )
+
+        tampered_projection = copy.deepcopy(journal)
+        tampered_projection["semantic_projections"][0]["value"][
+            "unbound"
+        ] = True
+        with self.assertRaises(acceptance.AcceptanceError):
+            acceptance.validate_recorder_journal(
+                tampered_projection,
+                qualifying=True,
+            )
+
+        tampered_observation = copy.deepcopy(journal)
+        event = next(
+            item
+            for item in tampered_observation["events"]
+            if "tool_observation" in item
+        )
+        event["tool_observation"]["result"]["unbound"] = True
+        tampered_observation["integrity"]["event_chain_sha256"] = (
+            artifacts.recorder_event_chain_sha256(
+                tampered_observation["events"]
+            )
+        )
+        with self.assertRaises(acceptance.AcceptanceError):
+            acceptance.validate_recorder_journal(
+                tampered_observation,
+                qualifying=True,
+            )
+
+        rebound_trace = copy.deepcopy(trace)
+        connection = next(
+            item
+            for item in rebound_trace["assertions"]
+            if item["assertion_id"] == "connection.status"
+        )
+        connection["projection"]["project_id"] = (
+            f"project:sha256:{'f' * 64}"
+        )
+        with self.assertRaisesRegex(
+            acceptance.AcceptanceError,
+            "trace assertions differ from recorder",
+        ):
+            acceptance.validate_surface_trace(
+                rebound_trace,
+                qualifying=False,
+                recorder_journal=journal,
+                recorder_journal_digest=journal_digest,
+            )
+
     def test_usability_targets_and_independence_fail_closed(self) -> None:
         report = synthetic_usability_report()
         report["metrics"]["first_useful_status_seconds"] = 300.001
@@ -1770,6 +2037,73 @@ class Sprint11AcceptanceTests(unittest.TestCase):
             ):
                 acceptance.safe_evidence_scan(value)
 
+    def test_redaction_rejects_embedded_absolute_paths_but_keeps_project_uris(
+        self,
+    ) -> None:
+        leaks = (
+            "project=/Users/alice/private/main.tscn",
+            "root:/opt/private/package",
+            "open(/Applications/ChatGPT.app)",
+            "roots[/Volumes/private/project]",
+            "source=file:///private/project/main.gd",
+            r"project=C:\Users\alice\private\main.tscn",
+            "project=C:/Users/alice/private/main.tscn",
+            r"share=\\private-server\account\project",
+            r"path=\Users\alice\private\main.tscn",
+            "share=//private-server/account/project",
+        )
+        for leak in leaks:
+            with self.subTest(leak=leak):
+                with self.assertRaises(acceptance.AcceptanceError):
+                    acceptance.safe_evidence_scan({"value": leak})
+                self.assertFalse(
+                    acceptance.derive_surface_trace_redaction(
+                        {"value": leak}
+                    )["absolute_paths_absent"]
+                )
+
+        for intended in (
+            "godot://runtime/status",
+            "godot://scene/{scene_id}",
+            "godot://resource/{id}@revision",
+            "res://main.tscn",
+            "tests/codex/fixtures/runtime_mvp_project/project.godot",
+            "project/main.tscn",
+            "./main.tscn",
+            "../shared/main.tscn",
+            r"project\main.tscn",
+            "/usr/bin/shasum",
+        ):
+            with self.subTest(intended=intended):
+                acceptance.safe_evidence_scan({"value": intended})
+                self.assertTrue(
+                    acceptance.derive_surface_trace_redaction(
+                        {"value": intended}
+                    )["absolute_paths_absent"]
+                )
+
+        for account_identity in (
+            "alice@example.com",
+            "owner=alice+capture@example.co.uk",
+        ):
+            with self.subTest(account_identity=account_identity):
+                with self.assertRaises(acceptance.AcceptanceError):
+                    acceptance.safe_evidence_scan(
+                        {"value": account_identity}
+                    )
+
+        for uppercase_secret in (
+            "READY:SK-PROJ-ABCDEFGHIJKLMNOP",
+            "READY_SK-PROJ-ABCDEFGHIJKLMNOP",
+        ):
+            with self.assertRaises(acceptance.AcceptanceError):
+                acceptance.safe_evidence_scan({"value": uppercase_secret})
+            self.assertFalse(
+                acceptance.derive_surface_trace_redaction(
+                    {"value": uppercase_secret}
+                )["secrets_absent"]
+            )
+
     def test_detached_manifest_verifies_files_spaces_and_unicode(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -1784,6 +2118,18 @@ class Sprint11AcceptanceTests(unittest.TestCase):
                 ),
                 "share/Godot Beta/readme.txt": b"space path",
                 "share/\u0421\u0446\u0435\u043d\u0430/readme.txt": b"unicode path",
+                (
+                    "share/godot-codex/schemas/godot_codex/"
+                    "sprint11-recorder-journal.schema.json"
+                ): b'{"schema_version":"fixture-recorder"}\n',
+                (
+                    "share/godot-codex/schemas/godot_codex/"
+                    "sprint11-surface-capture-artifact.schema.json"
+                ): b'{"schema_version":"fixture-capture"}\n',
+                (
+                    "share/godot-codex/schemas/godot_codex/"
+                    "sprint11-surface-metadata.schema.json"
+                ): b'{"schema_version":"fixture-metadata"}\n',
             }
             records = []
             for relative, data in sorted(content.items()):
@@ -1885,6 +2231,29 @@ class Sprint11AcceptanceTests(unittest.TestCase):
                 artifact_root=root,
                 expected_source_commit="a" * 40,
             )
+            for required_schema in (
+                set(acceptance.CAPTURE_REQUIRED_PACKAGE_MODES)
+                - {"bin/godot-codex", "bin/godot-codex-mcp"}
+            ):
+                changed = copy.deepcopy(manifest)
+                changed["contents"] = [
+                    record
+                    for record in changed["contents"]
+                    if record["path"] != required_schema
+                ]
+                with self.subTest(required_schema=required_schema):
+                    with self.assertRaisesRegex(
+                        acceptance.AcceptanceError,
+                        "capture schema",
+                    ):
+                        acceptance.validate_detached_package_manifest(
+                            changed,
+                            manifest_relative_path=(
+                                "dist/godot-codex-beta.manifest.json"
+                            ),
+                            artifact_root=root,
+                            expected_source_commit="a" * 40,
+                        )
             changed = copy.deepcopy(manifest)
             changed["contents"][0]["path"] = (
                 "dist/godot-codex-beta.manifest.json"

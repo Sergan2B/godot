@@ -9,7 +9,8 @@ fn oracle_root() -> PathBuf {
 
 fn read(name: &str) -> Value {
     serde_json::from_slice(
-        &fs::read(oracle_root().join(name)).unwrap_or_else(|error| panic!("cannot read {name}: {error}")),
+        &fs::read(oracle_root().join(name))
+            .unwrap_or_else(|error| panic!("cannot read {name}: {error}")),
     )
     .unwrap_or_else(|error| panic!("cannot parse {name}: {error}"))
 }
@@ -32,7 +33,9 @@ fn semantic_context_fixture_matches_draft_2020_12_schemas() {
         let instance = read(instance_name);
         validator(&schema)
             .validate(&instance)
-            .unwrap_or_else(|error| panic!("{instance_name} does not match {schema_name}: {error}"));
+            .unwrap_or_else(|error| {
+                panic!("{instance_name} does not match {schema_name}: {error}")
+            });
     }
 }
 

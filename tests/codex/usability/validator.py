@@ -98,7 +98,6 @@ ASSERTIONS: dict[str, tuple[str, ...]] = {
         "approval.cancel",
         "approval.decline",
         "approval.timeout",
-        "host.unsupported_form",
         "transaction.apply",
         "transaction.preview",
         "transaction.undo",

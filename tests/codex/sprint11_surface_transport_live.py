@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Acquire one complete real Sprint 11 surface transport journal.
+"""Legacy headless direct-client transport workflow.
 
-The workflow keeps one MCP session alive while it observes the closed registry,
-the four approval outcomes, an unsupported-form error, and verified offline
-cache behavior. Project-content files must remain byte-for-byte unchanged.
+This module is retained only for regression helpers. It cannot represent the
+official Codex App, CLI, or IDE host and its command-line entry point is
+disabled. Use the package-owned ``surface-capture`` lease followed by
+``sprint11_surface_artifacts.py prepare/derive/attest``.
 """
 
 from __future__ import annotations
@@ -492,7 +493,6 @@ def run_workflow(arguments: argparse.Namespace) -> dict[str, Any]:
             for decision, code in (
                 ("decline", "approval_declined"),
                 ("cancel", "approval_cancelled"),
-                ("unsupported", "approval_host_unsupported"),
                 ("timeout", "approval_timeout"),
             )
         ]
@@ -557,13 +557,12 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def main() -> int:
-    try:
-        result = run_workflow(parse_arguments())
-    except (OSError, s9.WorkflowError, KeyError, TypeError, ValueError) as error:
-        print(f"sprint11 surface transport: {error}", file=sys.stderr)
-        return 1
-    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
-    return 0
+    print(
+        "sprint11 surface transport: legacy direct-client workflow is "
+        "nonqualifying; use surface-capture plus sprint11_surface_artifacts.py",
+        file=sys.stderr,
+    )
+    return 64
 
 
 if __name__ == "__main__":

@@ -730,35 +730,71 @@ without Rust, source checkout, admin privileges, or manual binary copying.
 
 **Depends on:** S11-02, S11-03, and S11-10.
 
-**Changes:** test-only stdio recorder shim and canonical trace schema. The shim
-passes MCP bytes unchanged, records bounded protocol metadata and canonical
-tool/resource/elicitation messages, redacts secrets/absolute roots/source
-content, and binds each trace to package, project fixture, surface, host
-version, registry hash, and revision timeline. Evidence binds the exact
-recorder journal path and full-file SHA-256; the trace repeats that digest and
-binds an ordered event hash-chain and event count. The validator recomputes all
-three and rejects a trace whose journal surface/host/package bindings differ.
-The exact detached `sprint11-package-manifest.json` is placed beside recorder
-metadata and supplies the source/package binding used by final evidence. Its
-content records independently bind the different installed
-`package-manifest.json`, ownership marker, `VERSION`, and MCP executable; the
-recorder rejects a detached/internal manifest digest substitution.
-The recorder labels this artifact `surface_transport_capture`: stdio bytes do
-not by themselves prove that the claimed App/CLI/IDE process owned stdin.
+**Changes:** a private, one-shot capture lease in the installed package sidecar
+and three closed capture schemas. Before an official host starts its MCP
+session, the operator prepares measured metadata and arms one package,
+project, fixture, host-provenance, registry, prompt, and intended
+`app|cli|ide` coordinate. The next sidecar matching the exact project and
+installed-package bindings atomically claims that lease and records bounded
+typed RMCP observations inside its ordinary stdio transport. The surface
+value is a bound intent label, not a process-origin signal available to MCP:
+the operator must close every other task for that project, and the separate
+authority attests the observed official host. A run claimed by any unintended
+task is discarded. With no armed lease, startup, stdout, and stderr are
+byte-for-byte the normal product path and no capture state is created.
 
-A qualifying surface additionally requires one canonical
-`authority.json` under
+The private
+`sprint11-surface-capture-artifact/1.1` contains at most 4,096 events and
+approximately 480 KiB of canonical event payloads. Its hash chain excludes
+timestamps, omits source content, secrets, absolute paths, elicitation
+content, and opaque native handles, and reduces each supported result to a
+closed per-tool allowlist. Arm publication is atomic and exact retries are
+idempotent: a lost successful response can recover the same `run_id`, while a
+different active, claimed, or expired same-project lease returns a typed
+non-authorizing report and blocks another arm. A normal transport shutdown
+finalizes exactly one `completed` artifact. SIGINT/SIGTERM finalizes as
+`cancelled`; a crash remains visibly claimed. Neither can qualify or be
+reused. `doctor` and `version` never claim a lease.
+
+The repository helper independently validates that private artifact and
+derives `s11-recorder-journal/1.1` plus a nonqualifying pending trace. The
+canonical journal retains only safe tool observations and binds the exact
+metadata, package, fixture, host, prompt, registry, ordered event chain, and
+capture digest. Validation independently re-derives all twenty-three semantic
+projections: fourteen transport assertions, four form outcomes, and five
+revision rows. A projection supplied by the caller is never accepted as
+authority.
+
+A qualifying surface additionally requires an operator to run interactive
+attestation from a controlling TTY. The operator answers each closed
+observation from the official App, CLI, or IDE session; a negative answer
+publishes nothing. A successful attestation atomically publishes exactly one
+`recorder-journal.json`, `trace.json`, and `authority.json` under
 `tests/codex/acquisition/sprint11/surfaces/<app|cli|ide>/`. The closed
-`s11-surface-acquisition-authority/1.0` document is a separate external
-operator attestation binding the exact trace/journal bytes, host-provenance
-measurement, package, fixture, prompt pack, host/client artifacts, and MCP
-binary. It attests the observed official host session, recorder stdio binding,
-root/nested-cwd behavior, config reload, package launcher, sandbox approval,
-all four form outcomes, foreign config/root/cwd rejection, package
-digest/version rejection before launch, and absence of cross-project
-fallback. Git proves the reviewed bytes but not human observation or process
-ancestry; that limitation is recorded as an explicit trust boundary and
-never described as cryptographic proof.
+`s11-surface-acquisition-authority/1.0` binds their exact bytes to the
+host-provenance measurement, package, fixture, prompt pack, host/client
+artifacts, and MCP binary. It covers the observed official host session,
+capture binding, the operator's personal review of the exact root and manual
+Trust acceptance in the official host, root/nested-cwd behavior, config
+reload, package launcher, sandbox approval, all four form outcomes, foreign
+config/root/cwd rejection, package digest/version rejection before launch,
+and absence of cross-project fallback.
+
+After all three publications and final acceptance validation, the installed
+CLI consumes only each exact finalized private run named by its run ID and
+capture SHA-256. Wrong digests, armed or claimed leases, unexpected files,
+unsafe permissions, and symlinks fail without deletion. Unconsumed finalized
+or interrupted runs occupy a bounded owner-only store; reaching its hard
+capacity rejects a new arm before creating another run. Retention never turns
+private state into qualifying evidence.
+
+The old direct-client stdio recorder and transport-live script are
+fixture-only regression code and fail closed when invoked as acquisition
+entry points. Acceptance rejects legacy `s11-recorder-journal/1.0` for every
+real surface. Git and hashes prove the reviewed bytes and measured
+coordinates, but only the external operator attests the visible official-host
+observations and project Trust decision; neither is described as
+cryptographic process-ancestry proof.
 
 Comparator asserts semantic parity after one deterministic alpha-renaming map
 per isolated run:
@@ -785,21 +821,32 @@ The comparator ignores host/model prose, UI layout, thread/request IDs,
 timestamps, latency within SLO, and ordering explicitly declared
 non-semantic.
 
-Each of the eighteen assertion IDs has a closed, required projection shape;
+Each of the seventeen assertion IDs has a closed, required projection shape;
 `{}` is never semantic evidence.
 The exact set is `approval.accept`, `approval.cancel`, `approval.decline`,
 `approval.timeout`, `connection.status`, `host.approval_layers`,
 `host.config_reload`, `host.launcher`, `host.offline_status`,
-`host.unsupported_form`, `multi_project.reject`, `offline.saved_query`,
-`runtime.error_stack`, `saved.current_scene`, `transaction.apply`,
-`transaction.preview`, `transaction.undo`, and `validation.result`.
+`multi_project.reject`, `offline.saved_query`, `runtime.error_stack`,
+`saved.current_scene`, `transaction.apply`, `transaction.preview`,
+`transaction.undo`, and `validation.result`.
 
-**Tests:** golden App/CLI/IDE traces; reordered JSON keys; different request
-IDs/timestamps; real semantic divergence; missing call; changed entity ID,
-revision, evidence, approval action, or error; redaction leakage; truncation;
-recorder crash and pass-through integrity; missing/swapped/tampered journal;
-event reorder and stale journal digest; missing/recomputed/cross-surface
-authority; false host/root/cwd/launcher/form observations.
+Unsupported-form behavior is a separate global package-live gate rather than
+an assertion repeated in each form-capable surface. Acceptance binds the
+`unsupported` no-form probe in
+`tests/codex/acquisition/sprint11/package-live/sprint9-negatives.json` and
+requires `approval_host_unsupported`, zero elicitation, zero native actions,
+and unchanged source.
+
+**Tests:** no-lease byte parity and zero state; exact one-shot claim; package,
+project, config, receipt, metadata, TTL, and surface mismatch; doctor/version
+non-claim; private permissions; event/redaction bounds; clean finalization;
+crash/restart non-reuse; digest-bound consume and bounded retention; golden
+App/CLI/IDE artifacts; reordered JSON keys; different request IDs/timestamps;
+real semantic divergence; missing call; changed entity ID, revision, evidence,
+approval action, or error; truncation; missing/swapped/tampered journal; event
+reorder and stale journal digest; forged caller projection; legacy journal;
+missing/recomputed/cross-surface authority; and false
+host/root/cwd/launcher/form observations.
 
 **Done when:** one machine-readable comparator detects semantic divergence
 without requiring screenshots or treating prose as the API contract.
@@ -863,25 +910,80 @@ sufficient for the required daily workflow.
 - Codex CLI from the exact project root;
 - the official Codex IDE extension on the frozen VS Code Stable version.
 
-Each surface uses the packaged binaries and project config, connects to the
-same fixture state in isolated runs, emits a redacted recorder trace, and
-executes status, saved/live query, runtime error/stack, compound preview/form
-approval/apply/validation/Undo, offline query, and multi-project negative
-scenarios.
+Each surface uses the packaged binaries and project config and a fresh,
+uniquely rooted copy of the same fixture state. A surface user and external
+operator have separate closed roles: the user sends intents and makes
+sandbox plus accept/decline/cancel form choices and intentionally gives no
+response for timeout; the operator controls faults and safety, personally
+reviews and accepts the exact project Trust request, and observes without
+answering sandbox or semantic forms for the user.
+
+The three sequential surface runs share only one newly installed,
+manifest-verified candidate under a new mode-0700 operator root. They never
+use the normal user-local data root or a superseded candidate workspace.
+App, CLI, and IDE still receive separate new canonical capture projects and
+work roots, while their finalized private runs remain in that candidate store
+until parity and final acceptance pass.
+
+Installation plus the five stop/restart-required doctor faults run and fully
+reset under new mode-0700 disposable run/data/bin/project roots before capture
+is armed; the normal user-local installation is never faulted. Foreign
+config/root/cwd and package digest/version prelaunch rejection plus absence of
+sibling fallback are also observed in that preliminary disposable official
+surface. As required by S11-08, those host-owned cases pair the public
+prelaunch authority gate with the external App/CLI/IDE observation; they are
+not deferred to a captured model workflow. The operator then fully resets
+those coordinates, stops all fault-phase processes, clears the phase-only
+installer environment, and switches to separate measured capture data/project
+roots.
+Only then does the operator measure metadata, arm exactly one package-sidecar
+capture, and close every other Codex task for that capture project. The
+continuous captured session verifies the already-installed coordinate without
+rerunning setup, then executes saved context; offline editor
+disconnect/reconnect followed by a current-revision observation; runtime
+start/stop and a second distinct runtime session; accepted compound
+apply/validation/exact Undo followed by a separate Godot Editor restart, one
+current-scene read in the new session, and stale old-guard rejection; the
+decline/cancel/timeout no-mutation paths; and project isolation. Godot may
+restart for those explicit editor-reconnect checks; the selected Codex task and
+sidecar never restart within that capture.
+
+The selected official host is then exited normally so its stdio service
+finishes; task switching or archiving is not treated as shutdown proof. The
+finalized private artifact is derived, attested from a controlling TTY
+including the closed Trust observation, validated, and published. Its exact
+run ID and capture digest remain private until all three surfaces, parity, and
+the final acceptance wrapper have passed; only then are the three private
+runs consumed by exact digest. An interrupted inactive claimed state can be removed
+only through the explicit run-ID plus metadata-digest `abandon` command after
+the failed host process is confirmed stopped. The same command may remove a
+narrowly recognized unrecoverable partial; a valid recoverable partial must
+be recovered, and a healthy finalized run must be consumed.
+
+The run executes status, saved/live query, runtime error/stack, compound
+preview/form approval/apply/validation/Undo, offline query, and multi-project
+negative scenarios. A `project_session_busy` result is an explicit ownership
+failure to resolve, not `syncing` and not a reason to start extra tasks.
+Armed/claimed/finalized capture state is never shared across App, CLI, IDE, or
+project copies.
 
 The write scenario is blocked unless the surface proves standard form
-elicitation. Decline/cancel/timeout are exercised. Host sandbox approval and
-semantic transaction confirmation are recorded as distinct control layers.
+elicitation. The surface user explicitly accepts, declines, and cancels; the
+timeout path has no form completion and must terminate with the bounded timeout
+result without mutation. Host sandbox approval and semantic transaction
+confirmation are recorded as distinct control layers.
 The comparator applies §3.8 alpha-renaming and relational revision rules; UI,
 prose, and isolated-run opaque values may differ.
 
-**Tests:** exact host versions; registry/instructions visibility; config reload/
-restart behavior; task cwd/root; form capability; read/runtime/write traces;
-offline status; two projects; surface restart; recorder integrity; parity
-comparison. The short `previous_sprint_contracts` gate runs unit and protocol
-regressions; the real `previous_sprint_regressions` gate is satisfied only by
-the separately acquired, package-bound Sprint 6–10 receipt described in
-S11-14.
+**Tests:** exact host versions and measured host binaries; registry/instructions
+visibility; config reload/restart behavior; task cwd/root; explicit human
+Trust; form capability; read/runtime/write traces; offline status; two
+projects; same-project session contention and recovery; surface restart;
+one-shot capture integrity; interactive authority; legacy recorder rejection;
+private artifact consumption; and parity comparison. The short
+`previous_sprint_contracts` gate runs unit and protocol regressions; the real
+`previous_sprint_regressions` gate is satisfied only by the separately
+acquired, package-bound Sprint 6–10 receipt described in S11-14.
 
 **Done when:** the main read/write/runtime workflow passes on all three
 required surfaces and every semantic assertion named by the roadmap is equal
@@ -1255,8 +1357,10 @@ Sprint 11 passes only when independent evidence proves:
 19. the write scenario shows semantically equal previews/risk/scope, each local
     digest verifies its own preview, requires real form confirmation, returns
     an alpha-renamed equivalent validation report, and fully Undoes;
-20. decline/cancel/timeout and a host without interaction fail identically and
-    never accept an approval boolean/prose/config substitute;
+20. decline/cancel/timeout fail identically on every form-capable surface, and
+    the global package-live no-form probe returns
+    `approval_host_unsupported` without elicitation, native action, mutation,
+    or an approval boolean/prose/config substitute;
 21. source-bound external-operator attestations and the corresponding exact
     primary bundles show task-based users install, connect, diagnose
     offline/faults, perform the daily workflow, and isolate two projects

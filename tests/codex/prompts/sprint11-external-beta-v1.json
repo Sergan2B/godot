@@ -32,7 +32,7 @@
   "generic_goals": [
     {
       "goal_id": "install_and_connect",
-      "intent": "Install the frozen manifest-bound package through its package-owned launcher and connect the exact trusted project.",
+      "intent": "Verify the frozen manifest-bound package is already installed through its package-owned launcher, then connect the exact trusted project without rerunning setup.",
       "semantic_assertion_ids": [
         "connection.status",
         "host.approval_layers",
@@ -49,7 +49,7 @@
     },
     {
       "goal_id": "offline_context",
-      "intent": "Close the editor, inspect honest offline status, and use only eligible verified saved-project context.",
+      "intent": "Close the editor, inspect honest offline status, use only eligible verified saved-project context, then reopen the editor and establish the current revision in the new editor session.",
       "semantic_assertion_ids": [
         "host.offline_status",
         "offline.saved_query"
@@ -64,20 +64,19 @@
     },
     {
       "goal_id": "runtime_diagnostics",
-      "intent": "Run the project and locate the intentional runtime error with its bounded source-mapped stack.",
+      "intent": "Start the project, stop it, start it again in a second distinct runtime session, and locate the intentional runtime error with its bounded source-mapped stack from that second session.",
       "semantic_assertion_ids": [
         "runtime.error_stack"
       ]
     },
     {
       "goal_id": "compound_write_and_undo",
-      "intent": "Preview, independently approve, apply, validate, and exactly undo one supported compound change; also prove decline, cancel, timeout, and unsupported-form paths do not mutate.",
+      "intent": "Using the established current revision, preview a supported compound change, keep sandbox approval independent, have the surface user accept the action form, then apply, validate, and exactly undo it. The user separately declines and cancels two no-mutation paths and intentionally leaves one timeout form unanswered. Afterward, separately restart Godot Editor, read the current scene once in the new editor session, and prove one old pre-restart guard is rejected as stale.",
       "semantic_assertion_ids": [
         "approval.accept",
         "approval.cancel",
         "approval.decline",
         "approval.timeout",
-        "host.unsupported_form",
         "transaction.apply",
         "transaction.preview",
         "transaction.undo",
@@ -102,7 +101,6 @@
     "host.config_reload",
     "host.launcher",
     "host.offline_status",
-    "host.unsupported_form",
     "multi_project.reject",
     "offline.saved_query",
     "runtime.error_stack",
@@ -119,6 +117,8 @@
     "Do not infer current live editor or runtime state while the editor is offline; offline access is read-only saved-project context.",
     "Do not use PATH lookup or record a private absolute launcher path.",
     "Exercise exactly the five named doctor faults and verify each stable diagnostic code and remediation ID.",
-    "Do not disclose fixture-specific answers, golden outputs, tool-call sequences, or recovery steps in the task pack."
+    "Do not disclose fixture-specific answers, golden outputs, tool-call sequences, or recovery steps in the task pack.",
+    "Complete stop-or-restart-required installation, doctor-fault, and host-owned config/root/cwd/package prelaunch-negative phases in a disposable private install and project before arming a one-shot surface capture; prove no sibling fallback, fully stop and reset that phase, clear its phase-only environment, and use separate measured capture data and project roots for capture.",
+    "The surface user, not the external attester, makes sandbox choices, chooses semantic-form accept, decline, and cancel, and intentionally gives no response for timeout; the attester may accept the exact project Trust request but otherwise only observes."
   ]
 }

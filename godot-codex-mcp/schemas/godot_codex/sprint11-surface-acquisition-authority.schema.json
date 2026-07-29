@@ -129,6 +129,7 @@
         "official_host_process_observed",
         "recorder_stdio_bound_to_host_session",
         "exact_project_root_observed",
+        "project_trust_reviewed_and_accepted",
         "nested_cwd_resolution_observed",
         "project_config_reload_observed",
         "package_launcher_observed",
@@ -156,6 +157,9 @@
           "const": true
         },
         "exact_project_root_observed": {
+          "const": true
+        },
+        "project_trust_reviewed_and_accepted": {
           "const": true
         },
         "nested_cwd_resolution_observed": {

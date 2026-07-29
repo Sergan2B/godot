@@ -10,6 +10,8 @@ getrandom.workspace = true
 godot-codex-bridge-client = { path = "../bridge-client" }
 godot-codex-index-store = { path = "../index-store" }
 godot-codex-product = { path = "../product-core" }
+godot-codex-surface-capture = { path = "../surface-capture" }
+jsonschema = { version = "0.47.0", default-features = false }
 rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true

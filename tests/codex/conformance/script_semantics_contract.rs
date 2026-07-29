@@ -243,7 +243,8 @@ fn script_semantics_contract_ranges_reproduce_exactly() {
         let (start, end) = nth_span(
             content.as_bytes(),
             string(vector, "needle").as_bytes(),
-            integer(vector, "occurrence") as usize,
+            usize::try_from(integer(vector, "occurrence"))
+                .expect("range-vector occurrence must fit usize"),
         );
         assert_eq!(start as u64, integer(vector, "start_byte"));
         assert_eq!(end as u64, integer(vector, "end_byte"));

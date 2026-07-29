@@ -80,6 +80,27 @@ SURFACE_AUTHORITY_SCHEMA_PATH = (
     / "godot_codex"
     / "sprint11-surface-acquisition-authority.schema.json"
 )
+SURFACE_METADATA_SCHEMA_PATH = (
+    REPOSITORY_ROOT
+    / "godot-codex-mcp"
+    / "schemas"
+    / "godot_codex"
+    / "sprint11-surface-metadata.schema.json"
+)
+SURFACE_CAPTURE_ARTIFACT_SCHEMA_PATH = (
+    REPOSITORY_ROOT
+    / "godot-codex-mcp"
+    / "schemas"
+    / "godot_codex"
+    / "sprint11-surface-capture-artifact.schema.json"
+)
+RECORDER_JOURNAL_SCHEMA_PATH = (
+    REPOSITORY_ROOT
+    / "godot-codex-mcp"
+    / "schemas"
+    / "godot_codex"
+    / "sprint11-recorder-journal.schema.json"
+)
 
 SPEC = importlib.util.spec_from_file_location("sprint11_package_builder", BUILDER_PATH)
 assert SPEC is not None and SPEC.loader is not None
@@ -231,6 +252,27 @@ def package_fixture(root: Path, *, version: str = "0.1.0") -> tuple[Path, Path]:
         SURFACE_AUTHORITY_SCHEMA_PATH.read_bytes(),
     )
     write(
+        workspace
+        / "schemas"
+        / "godot_codex"
+        / "sprint11-surface-metadata.schema.json",
+        SURFACE_METADATA_SCHEMA_PATH.read_bytes(),
+    )
+    write(
+        workspace
+        / "schemas"
+        / "godot_codex"
+        / "sprint11-surface-capture-artifact.schema.json",
+        SURFACE_CAPTURE_ARTIFACT_SCHEMA_PATH.read_bytes(),
+    )
+    write(
+        workspace
+        / "schemas"
+        / "godot_codex"
+        / "sprint11-recorder-journal.schema.json",
+        RECORDER_JOURNAL_SCHEMA_PATH.read_bytes(),
+    )
+    write(
         workspace / "schemas" / "godot_codex" / "fixture.schema.json",
         b'{"type":"object"}\n',
     )
@@ -253,6 +295,24 @@ def package_fixture(root: Path, *, version: str = "0.1.0") -> tuple[Path, Path]:
         ).read_bytes(),
     )
     write(workspace / ".gitignore", b"/target/\n")
+    for relative in (
+        "crates/godot-codex-mcp/Cargo.toml",
+        "crates/godot-codex-mcp/src/main.rs",
+        "crates/godot-codex-mcp/tests/surface_capture_process.rs",
+        "crates/godot-codex/Cargo.toml",
+        "crates/godot-codex/src/main.rs",
+        "crates/operations/Cargo.toml",
+        "crates/operations/src/lib.rs",
+        "crates/operations/src/setup.rs",
+        "crates/operations/src/surface_capture.rs",
+        "crates/surface-capture/Cargo.toml",
+        "crates/surface-capture/src/journal.rs",
+        "crates/surface-capture/src/lease.rs",
+        "crates/surface-capture/src/lib.rs",
+        "crates/surface-capture/src/observation.rs",
+        "crates/surface-capture/src/transport.rs",
+    ):
+        write(workspace / relative, f"fixture: {relative}\n".encode())
     write(
         workspace / "target" / "release" / "godot-codex",
         thin_arm64_macho(b"ignored operations"),
@@ -599,6 +659,21 @@ class Sprint11PackageTests(unittest.TestCase):
             ),
             "raw committed bytes\n",
         )
+        for relative in (
+            "crates/godot-codex-mcp/src/main.rs",
+            "crates/godot-codex-mcp/tests/surface_capture_process.rs",
+            "crates/godot-codex/src/main.rs",
+            "crates/operations/src/surface_capture.rs",
+            "crates/surface-capture/src/lib.rs",
+            "schemas/godot_codex/sprint11-recorder-journal.schema.json",
+            "schemas/godot_codex/"
+            "sprint11-surface-capture-artifact.schema.json",
+            "schemas/godot_codex/sprint11-surface-metadata.schema.json",
+        ):
+            self.assertEqual(
+                (snapshot / "godot-codex-mcp" / relative).read_bytes(),
+                (repository / "godot-codex-mcp" / relative).read_bytes(),
+            )
 
     @unittest.skipUnless(
         Path("/usr/bin/git").is_file(),
@@ -1426,7 +1501,10 @@ class Sprint11PackageTests(unittest.TestCase):
             "doctor-report.schema.json",
             "sprint11-multi-project-report.schema.json",
             "sprint11-multi-project-receipt.schema.json",
+            "sprint11-recorder-journal.schema.json",
             "sprint11-surface-acquisition-authority.schema.json",
+            "sprint11-surface-capture-artifact.schema.json",
+            "sprint11-surface-metadata.schema.json",
         ):
             self.assertIn(
                 "share/godot-codex/schemas/godot_codex/" + schema_name,

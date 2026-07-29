@@ -263,7 +263,17 @@ def synthetic_report(
                 "committed_replay": {},
                 "expired_preview": {},
                 "approval": [
-                    {"decision": decision}
+                    (
+                        {
+                            "decision": "unsupported",
+                            "elicitation_count": 0,
+                            "error": "approval_host_unsupported",
+                            "native_actions": 0,
+                            "source_unchanged": True,
+                        }
+                        if decision == "unsupported"
+                        else {"decision": decision}
+                    )
                     for decision in (
                         "confirm_false",
                         "decline",

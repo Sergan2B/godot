@@ -26,7 +26,10 @@ fn sprint11_schemas_are_valid_draft_2020_12_and_closed_at_the_root() {
         "compatibility-matrix.schema.json",
         "sprint11-evidence.schema.json",
         "sprint11-packaged-regression-receipt.schema.json",
+        "sprint11-recorder-journal.schema.json",
         "sprint11-surface-acquisition-authority.schema.json",
+        "sprint11-surface-capture-artifact.schema.json",
+        "sprint11-surface-metadata.schema.json",
         "sprint11-surface-trace.schema.json",
         "sprint11-multi-project-report.schema.json",
         "sprint11-multi-project-receipt.schema.json",
@@ -134,10 +137,16 @@ fn sprint11_surface_evidence_requires_external_operator_authority() {
         authority["properties"]["trust_boundary"]["const"],
         "git_binds_exact_surface_artifacts_external_operator_attests_actual_host_session_without_cryptographic_process_origin_proof"
     );
-    for observation in authority["$defs"]["observations"]["required"]
+    let observations = authority["$defs"]["observations"]["required"]
         .as_array()
-        .unwrap()
-    {
+        .unwrap();
+    assert!(
+        observations
+            .iter()
+            .any(|value| { value.as_str() == Some("project_trust_reviewed_and_accepted") }),
+        "surface authority must attest personal project Trust review and acceptance"
+    );
+    for observation in observations {
         let name = observation.as_str().unwrap();
         assert_eq!(
             authority["$defs"]["observations"]["properties"][name]["const"],
@@ -159,7 +168,12 @@ fn sprint11_assertion_schemas_reject_empty_semantic_projections() {
         .build(&assertion_schema)
         .unwrap();
     let assertion_ids = schema["$defs"]["assertion_id"]["enum"].as_array().unwrap();
-    assert_eq!(assertion_ids.len(), 18);
+    assert_eq!(assertion_ids.len(), 17);
+    assert!(
+        !assertion_ids
+            .iter()
+            .any(|value| value.as_str() == Some("host.unsupported_form"))
+    );
     for assertion_id in assertion_ids {
         let instance = json!({
             "assertion_id": assertion_id,
@@ -170,6 +184,22 @@ fn sprint11_assertion_schemas_reject_empty_semantic_projections() {
             "empty projection unexpectedly validates for {assertion_id}"
         );
     }
+}
+
+#[test]
+fn sprint11_human_trace_excludes_the_global_unsupported_form_probe() {
+    let schema = load_schema("sprint11-human-usability-trace.schema.json");
+    let assertion_ids = schema["$defs"]["assertion_id"]["enum"].as_array().unwrap();
+    assert_eq!(assertion_ids.len(), 17);
+    assert!(
+        !assertion_ids
+            .iter()
+            .any(|value| value.as_str() == Some("host.unsupported_form"))
+    );
+    assert_eq!(
+        schema["$defs"]["task"]["properties"]["semantic_assertion_ids"]["maxItems"],
+        Value::from(8)
+    );
 }
 
 #[test]

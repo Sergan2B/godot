@@ -85,14 +85,13 @@
     {
       "sequence": 6,
       "goal_id": "compound_write_and_undo",
-      "participant_prompt": "Preview one supported compound scene change, distinguish host sandbox approval from the action-only semantic confirmation, apply and validate the accepted change, then undo it exactly. Also exercise the operator-directed decline, cancel, timeout, and unavailable-form cases without mutation.",
+      "participant_prompt": "Preview one supported compound scene change, distinguish host sandbox approval from the action-only semantic confirmation, apply and validate the accepted change, then undo it exactly. Also exercise the operator-directed decline, cancel, and timeout cases without mutation.",
       "completion_prompt": "Explain the commit point, validation result, no-mutation negative outcomes, and how you verified exact Undo.",
       "semantic_assertion_ids": [
         "approval.accept",
         "approval.cancel",
         "approval.decline",
         "approval.timeout",
-        "host.unsupported_form",
         "transaction.apply",
         "transaction.preview",
         "transaction.undo",

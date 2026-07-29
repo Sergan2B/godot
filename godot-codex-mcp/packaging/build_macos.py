@@ -1712,6 +1712,40 @@ def snapshot_source_checkout(
         PurePosixPath("godot-codex-mcp/Cargo.toml"),
         PurePosixPath("godot-codex-mcp/Cargo.lock"),
         PurePosixPath("godot-codex-mcp/rust-toolchain.toml"),
+        PurePosixPath(
+            "godot-codex-mcp/crates/godot-codex-mcp/Cargo.toml"
+        ),
+        PurePosixPath(
+            "godot-codex-mcp/crates/godot-codex-mcp/src/main.rs"
+        ),
+        PurePosixPath(
+            "godot-codex-mcp/crates/godot-codex-mcp/tests/"
+            "surface_capture_process.rs"
+        ),
+        PurePosixPath("godot-codex-mcp/crates/godot-codex/Cargo.toml"),
+        PurePosixPath("godot-codex-mcp/crates/godot-codex/src/main.rs"),
+        PurePosixPath("godot-codex-mcp/crates/operations/Cargo.toml"),
+        PurePosixPath("godot-codex-mcp/crates/operations/src/lib.rs"),
+        PurePosixPath("godot-codex-mcp/crates/operations/src/setup.rs"),
+        PurePosixPath(
+            "godot-codex-mcp/crates/operations/src/surface_capture.rs"
+        ),
+        PurePosixPath("godot-codex-mcp/crates/surface-capture/Cargo.toml"),
+        PurePosixPath(
+            "godot-codex-mcp/crates/surface-capture/src/journal.rs"
+        ),
+        PurePosixPath(
+            "godot-codex-mcp/crates/surface-capture/src/lease.rs"
+        ),
+        PurePosixPath(
+            "godot-codex-mcp/crates/surface-capture/src/lib.rs"
+        ),
+        PurePosixPath(
+            "godot-codex-mcp/crates/surface-capture/src/observation.rs"
+        ),
+        PurePosixPath(
+            "godot-codex-mcp/crates/surface-capture/src/transport.rs"
+        ),
         PurePosixPath("godot-codex-mcp/packaging/install.sh"),
         PurePosixPath(
             "godot-codex-mcp/packaging/generate_third_party_licenses.py"
@@ -1726,6 +1760,18 @@ def snapshot_source_checkout(
         ),
         PurePosixPath(
             "godot-codex-mcp/schemas/godot_codex/doctor-report.schema.json"
+        ),
+        PurePosixPath(
+            "godot-codex-mcp/schemas/godot_codex/"
+            "sprint11-recorder-journal.schema.json"
+        ),
+        PurePosixPath(
+            "godot-codex-mcp/schemas/godot_codex/"
+            "sprint11-surface-capture-artifact.schema.json"
+        ),
+        PurePosixPath(
+            "godot-codex-mcp/schemas/godot_codex/"
+            "sprint11-surface-metadata.schema.json"
         ),
     )
     for relative in required:

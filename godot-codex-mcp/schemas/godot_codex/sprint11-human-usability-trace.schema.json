@@ -230,7 +230,6 @@
         "host.config_reload",
         "host.launcher",
         "host.offline_status",
-        "host.unsupported_form",
         "multi_project.reject",
         "offline.saved_query",
         "runtime.error_stack",
@@ -652,7 +651,7 @@
         "semantic_assertion_ids": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 9,
+          "maxItems": 8,
           "uniqueItems": true,
           "items": {
             "$ref": "#/$defs/assertion_id"

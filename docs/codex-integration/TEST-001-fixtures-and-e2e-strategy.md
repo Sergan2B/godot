@@ -182,6 +182,9 @@ godot-codex-mcp/product/registry-profile.v1.json
 godot-codex-mcp/schemas/godot_codex/compatibility-matrix.schema.json
 godot-codex-mcp/schemas/godot_codex/sprint11-evidence.schema.json
 godot-codex-mcp/schemas/godot_codex/sprint11-packaged-regression-receipt.schema.json
+godot-codex-mcp/schemas/godot_codex/sprint11-recorder-journal.schema.json
+godot-codex-mcp/schemas/godot_codex/sprint11-surface-capture-artifact.schema.json
+godot-codex-mcp/schemas/godot_codex/sprint11-surface-metadata.schema.json
 godot-codex-mcp/schemas/godot_codex/sprint11-surface-trace.schema.json
 tests/codex/prompts/sprint11-external-beta-v1.json
 ```
@@ -208,7 +211,7 @@ Each canonical App/CLI/IDE semantic trace binds exactly the fields closed by
 `sprint11-surface-trace.schema.json`: trace kind/status, surface and exact host
 coordinate; source commit; package-manifest, fixture, registry, prompt-pack,
 host, MCP, and Godot artifact digests; the exact MCP registry and instructions
-digest; eighteen normalized semantic assertions; four form outcome classes; a
+digest; seventeen normalized semantic assertions; four form outcome classes; a
 relational revision timeline; and the redaction declaration. Clean source
 digest, compatibility-matrix digest, package contents, and acquisition report
 digests are bound by final evidence rather than duplicated as extra trace
@@ -216,35 +219,51 @@ members. Every assertion ID selects a closed projection schema with required
 semantic fields; an empty projection or a projection shaped for another ID is
 invalid.
 
-The recorder produces a separate bounded acquisition journal. Surface evidence
-binds it by committed path and full-file SHA-256; the trace binds the same
-full-file digest, ordered event hash-chain, and event count. Validation
-recomputes the chain and requires exact surface, host, package, fixture,
-registry, prompt, MCP, and Godot equality between trace and journal. A trace
-without its exact journal cannot qualify.
+The package-owned sidecar produces a separate bounded acquisition journal only
+after the model-free operations CLI arms one private one-shot lease. Arming
+binds `s11-surface-metadata/1.1`, the canonical project identity, installed
+launcher, exact setup-owned config, and private receipt. The next matching
+sidecar process claims the lease atomically and taps the typed stdio transport
+in process; with no lease, capture creates no files and the original transport
+path is unchanged. The surface value is a measured intent label, not a
+process-origin selector available to MCP. Project/package bindings select the
+lease; an external operator attests the observed official host, and a claim
+by any unintended task invalidates the run.
 
-Recorder metadata binds the exact detached
-`sprint11-package-manifest.json`, supplied as a regular file beside the
-metadata. The recorder validates that detached manifest against the source,
-matrix, registry, Godot, and MCP bindings, then separately verifies the
-installed `package-manifest.json`, `VERSION`, ownership marker, and MCP
-executable against the detached manifest's content records. The detached and
-installed manifests have intentionally different SHA-256 values; substituting
-one digest for the other or rebuilding either file invalidates the capture.
+The private `sprint11-surface-capture-artifact/1.1` is hash-chained and
+timestamped for local recovery. `derive` validates that artifact and emits a
+timestamp-free `s11-recorder-journal/1.1`. The canonical journal retains only
+closed protocol events and safe allowlisted request/result observations. Its
+23 semantic projections are independently re-derived from those observations
+on every validation, then bound exactly to the trace's fourteen transport
+assertions, four form outcomes, and five revision rows. A changed projection,
+changed observation, missing source event, or recomputed but inconsistent
+chain is rejected.
 
-Neither the recorder nor a model-authored trace can prove that stdin belonged
-to the claimed App, CLI, or IDE session. Recorder output is therefore labelled
+Surface evidence binds the canonical journal by committed path and full-file
+SHA-256; the trace binds the same digest, ordered event hash-chain, and event
+count. Validation requires exact surface, host, package, fixture, registry,
+prompt, MCP, and Godot equality. A trace without its exact journal cannot
+qualify. Journal `1.0` and the legacy headless/direct-client recorder are
+fixture-only and are rejected even if their labels, hashes, trace, and
+authority are recomputed.
+
+The in-process tap proves that the package sidecar observed one exact stdio
+session, but it cannot cryptographically identify the parent GUI/CLI process
+or replace human observation. Recorder output is therefore labelled
 `surface_transport_capture`, not `real_surface`. Qualification additionally
 loads one separate
 `s11-surface-acquisition-authority/1.0` artifact per surface from the exact
 evidence Git commit. Its external operator attests the observed official host
 session, recorder-to-host binding, exact project root and nested cwd
-resolution, project-config reload, package launcher, sandbox approval, and
-accept/decline/cancel/timeout form outcomes. The same real-host attestation
-records rejection of foreign config/root/cwd and mismatched package
-digest/version with no sibling-project fallback. The authority binds the
-exact trace, journal, package, host-provenance measurement, fixture, prompt,
-host, client, and MCP digests.
+resolution, the operator's personal root review and manual Trust acceptance,
+project-config reload, package launcher, sandbox approval, and
+surface-user accept/decline/cancel choices plus the intentional no-response
+timeout outcome. The same real-host attestation records rejection of foreign
+config/root/cwd and mismatched package
+digest/version with no sibling-project fallback. The authority binds the exact
+trace, journal, package, host-provenance measurement, fixture, prompt, host,
+client, and MCP digests.
 
 Git and SHA-256 prove which authority and capture bytes were reviewed; they do
 not cryptographically prove process ancestry or the operator's observation.
@@ -252,21 +271,46 @@ That fact is an explicit external-operator trust boundary, not a claim the
 recorder can manufacture. Relabelling or recomputing a transport capture
 without the separate canonical authority path remains nonqualifying.
 
-The recorder passes stdio
-bytes through unchanged and retains only content-minimized protocol metadata:
-direction, method, safe tool/resource names, exact registry enumeration, form
-action class, bounded status/error tokens, byte/frame counts, and child/
-recorder integrity. It never retains arguments, tool content, form content,
-source text, native IDs, private paths, or secrets. Its failure, truncation,
-unanswered form, or wrapped-server crash invalidates the acquisition; it
-cannot drop, reorder, synthesize, retry, or interpret a product message. The
-semantic trace is derived and validated separately, and raw private transport
-data is not retained.
+The tap passes typed MCP messages unchanged and retains only direction, method,
+safe registry names, form action class, bounded status/error tokens, digests,
+revision coordinates, and explicitly allowlisted tool observations. Sensitive
+request fields are replaced by redaction markers and SHA-256 digests;
+unrestricted tool content, form content, source text, opaque native handles,
+private paths, and secrets are absent. Failure, truncation, a dropped event, a
+form without either an explicit surface-user action or the required terminal
+timeout observation, or a sidecar crash invalidates the acquisition. A crash
+leaves no completed journal. A finalized run is removed only by an exact
+digest-bound consume operation after all three surface artifacts and final
+acceptance pass. A confirmed-stopped bare claim or narrowly recognized
+unrecoverable partial can be explicitly abandoned only with its run ID and
+metadata digest; a live, armed, finalized, recoverable partial, unknown-extra,
+or unsafe run is never silently removed.
+The owner-only store rejects a new arm before exceeding its hard run limit.
 
-One operator-driven surface capture is bounded to 30 minutes so the full
-eighteen-assertion workflow and four independent form outcomes can complete.
-This does not change the separate 180-second maximum for each automated gate
-child.
+Installation and the five doctor faults require host/sidecar restarts, so they
+run under disposable private data/bin/project roots and fully reset before
+one-shot capture. Foreign config/root/cwd and package digest/version prelaunch
+rejection plus absence of sibling fallback are observed in the same
+preliminary disposable official surface, paired with the public prelaunch
+authority gate, and reset before metadata measurement. They are external
+authority facts, not captured model tool calls. After every fault process is
+stopped and the phase-only installer environment is cleared, the continuous
+captured session uses a manifest-verified candidate installed under a new
+private operator root, never the normal user-local or a superseded candidate
+store. That one candidate store is shared only sequentially across the three
+surfaces; each surface has separate fresh capture project/work roots and all
+private runs remain until final acceptance. The captured workflow establishes the
+current revision after the offline editor reconnect, creates two distinct
+runtime sessions, and, after accepted apply/validation/exact Undo, performs a
+separate Godot Editor restart, one current-scene read in the new editor
+session, and rejection of one old guard as stale. These observations cover the
+fourteen transport assertions, four form outcomes, and five revision rows. The
+surface user makes sandbox and accept/decline/cancel form choices and
+intentionally gives no response for timeout; the external attester observes
+without choosing or answering for them. The arm claim window is at most 30
+minutes, but an already claimed session is bounded by event/byte limits rather
+than that wall clock. This does not change the separate 180-second maximum for
+each automated gate child.
 
 Surface equality uses three classes:
 
@@ -302,7 +346,12 @@ Every qualified surface must exercise:
 | decline | terminal rejection; no apply/mutation |
 | cancel | no receipt or mutation; prepared plan remains only as allowed by its lifecycle |
 | timeout | no receipt or mutation; retry creates a new elicitation nonce |
-| missing form capability | structured read-only failure; no fallback |
+
+The missing-form path is not repeated inside form-capable App/CLI/IDE runs.
+It is a separate global package-live gate bound to
+`tests/codex/acquisition/sprint11/package-live/sprint9-negatives.json`. The
+`unsupported` no-form probe must return `approval_host_unsupported` with zero
+elicitation, zero native actions, and unchanged source.
 
 Traces retain only the outcome class and receipt eligibility. They never store
 form content, approval receipt/MAC/nonce, host decision text, account data, or

@@ -8,6 +8,7 @@ members = [
   "crates/product-core",
   "crates/resource-indexer",
   "crates/semantic-model",
+  "crates/surface-capture",
   "crates/transactions",
   "crates/mcp-server",
   "crates/godot-codex",

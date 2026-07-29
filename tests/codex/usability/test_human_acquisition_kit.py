@@ -5,7 +5,6 @@ import hashlib
 import json
 import os
 import shutil
-import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -367,9 +366,6 @@ def synthetic_rubric(
     trace: dict[str, Any], defects: dict[str, Any]
 ) -> dict[str, Any]:
     payload = trace["payload"]
-    events = {
-        item["event_id"]: item for item in payload["timeline"]
-    }
     task_scores = []
     for task in payload["tasks"]:
         event_id = task["completed_event"]
@@ -647,10 +643,25 @@ class HumanAcquisitionContractTests(unittest.TestCase):
             list(validator.GOALS),
         )
         participant_bytes = json.dumps(script, sort_keys=True)
+        self.assertNotIn("host.unsupported_form", participant_bytes)
         for scenario, (code, remediation) in validator.FAULTS.items():
             self.assertNotIn(scenario, participant_bytes)
             self.assertNotIn(code, participant_bytes)
             self.assertNotIn(remediation, participant_bytes)
+
+    def test_human_trace_rejects_surface_only_unsupported_form_assertion(
+        self,
+    ) -> None:
+        trace, _rubric, _consent, _defects = synthetic_bundle()
+        compound = next(
+            task
+            for task in trace["payload"]["tasks"]
+            if task["goal_id"] == "compound_write_and_undo"
+        )
+        self.assertEqual(len(compound["semantic_assertion_ids"]), 8)
+        compound["semantic_assertion_ids"].append("host.unsupported_form")
+        with self.assertRaises(validator.AcquisitionError):
+            validator.validate_trace(trace)
 
     def test_synthetic_bundle_is_valid_but_never_qualifies(self) -> None:
         trace, rubric, consent, defects = synthetic_bundle()
