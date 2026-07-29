@@ -140,9 +140,9 @@ IDE extension.
   (`sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223`),
   VS Code Stable `1.130.0` commit
   `1b6a188127eeaf9194f945eb6eb89a657e93c54c`, and official extension
-  `openai.chatgpt@26.721.30844`. The extension embeds Codex CLI
-  `0.146.0-alpha.3` at `bin/macos-aarch64/codex`
-  (`sha256:5ab45f8f9819c120bede3743f896e70da47ffe920b48d9a04cc25ecc9e2dd757`).
+  `openai.chatgpt@26.721.41059`. The extension embeds Codex CLI
+  `0.146.0-alpha.3.1` at `bin/macos-aarch64/codex`
+  (`sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4`).
   These are observations, not support promises; S11-01 records the exact
   coordinates used by final evidence. On the current App-bundled CLI,
   action-only `accept`, `decline`, `cancel`, and `timeout` are live-proven.
@@ -185,7 +185,7 @@ IDE extension.
 | `S11-05` | Consent-bound setup/config repair | Dry-run/digest acceptance and ownership-preserving TOML merge pass |
 | `S11-06` | Connection status and remediation projection | Ready/offline/syncing/incompatible/auth/config states remain available and bounded |
 | `S11-07` | Offline validated static-cache mode | Saved semantic queries work honestly; every live/runtime/write path fails closed |
-| `S11-08` | Concurrent multi-project isolation | Two editor/sidecar/task bindings remain independent under faults and reconnect |
+| `S11-08` | Concurrent multi-project isolation and same-project single ownership | Different projects remain independent; one same-project task owns index and transactions while diagnostic standbys take over safely |
 | `S11-09` | Skill, AGENTS, setup, approval, sandbox, and troubleshooting guidance | A user follows one current package-owned workflow without stale read-only instructions |
 | `S11-10` | Reproducible external beta package/installer | Versioned macOS arm64 archive installs both binaries and verifies manifest/hashes |
 | `S11-11` | Surface recorder and canonical parity comparator | One redacted trace schema compares App, CLI, and IDE semantics |
@@ -584,14 +584,6 @@ compatibility, connecting, syncing, discovery-stale, and misconfigured states;
 no stale overlay; reconnect/full snapshot; editor crash; two roots; index
 limits/SLO; and no project mutation.
 
-The same-project regression starts multiple production sidecars for one
-`project_root`, proves exactly one lock owner, the explicit
-`project_session_busy` diagnostic-only projection, graceful and crash
-takeover, two simultaneous standbys preserving authenticated Bridge/editor
-readiness without snapshot contention, a simultaneous acquisition race, and
-transaction ownership following the index lease. It rejects the former
-unbounded `syncing` projection.
-
 The canonical automated gate includes
 `crates/godot-codex-mcp/tests/offline_subprocess.rs`. On macOS arm64 it runs
 the actual compiled sidecar from a validator-owned installed-package layout,
@@ -606,7 +598,7 @@ still requires the exact Godot Bridge prerequisite.
 offline status while making live/runtime/write unavailability impossible to
 misinterpret.
 
-### S11-08 — Prove concurrent multi-project isolation
+### S11-08 — Prove multi-project isolation and same-project single ownership
 
 **Depends on:** S11-05 through S11-07.
 
@@ -615,11 +607,20 @@ task bindings active concurrently. Each process owns its root-local discovery,
 token, cache, journals, status, and config. Add process-instance labels only
 inside the test harness; production identity remains project/session based.
 
+For one canonical root, `index.lock` is the single project-session lease.
+Exactly one sidecar owns both the semantic index and transaction journal.
+Other sidecars expose only `godot_get_connection_status` and
+`godot://connection/status` with `project_session_busy`; every other tool and
+resource fails closed. After graceful or abnormal owner termination, one
+standby passes through acquiring/syncing to `ready`, activates transaction
+reconciliation, and becomes the sole owner. Acquisition retries use bounded
+backoff and never project contention as an unbounded cache rebuild.
+
 No server enumerates sibling roots or globally scans for bridge discovery.
 Same server name `godot_editor` is allowed because each Codex task loads the
-project-scoped config for its exact trusted root. If two editors attempt the
-same root, the existing lock/conflict semantics remain authoritative and
-doctor reports the ambiguity.
+project-scoped config for its exact trusted root. Same-root contention is
+reported as `project_session_busy` by status and doctor without disclosing
+the owner.
 
 **Tests:** simultaneous reads, runtime sessions, prepared writes, approvals,
 validation reports, and Undo in A/B; identical filenames/entities; copied
@@ -636,8 +637,18 @@ public runner's prelaunch authority gate with the separately Git-bound real
 App/CLI/IDE operator attestations; a local helper alone cannot qualify those
 host-owned coordinates.
 
+The separate source-bound `same_project_single_owner` gate starts competing
+package sidecars for one live project. It requires one owner within five
+seconds, exact diagnostic-only busy projections, exhaustive non-status
+tool/resource rejection, one winner under simultaneous standby acquisition,
+and both graceful and crash takeover to `ready`, `online_current`, and
+`transactions: ready` within an absolute 90-second budget. The multi-project
+and same-project gates are both required; neither substitutes for the other.
+
 **Done when:** failure or activity in one project changes no state, result,
-status, revision, evidence, approval, or recovery record in the other.
+status, revision, evidence, approval, or recovery record in the other, and
+same-project contention always has exactly one full-access owner with bounded
+automatic takeover.
 
 ### S11-09 — Publish the guidance and troubleshooting package
 
@@ -900,9 +911,9 @@ python3 tests/codex/sprint11_external_acquisitions.py host-provenance \
   --app-client '/Applications/ChatGPT.app/Contents/Resources/codex' \
   --vscode-bundle '/Applications/Visual Studio Code.app' \
   --vscode-executable '/Applications/Visual Studio Code.app/Contents/MacOS/Code' \
-  --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.30844-darwin-arm64" \
-  --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.30844-darwin-arm64/package.json" \
-  --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.30844-darwin-arm64/bin/macos-aarch64/codex" \
+  --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64" \
+  --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json" \
+  --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex" \
   --output-root tests/codex/acquisition/sprint11/host-provenance
 ```
 

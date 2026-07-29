@@ -3,7 +3,7 @@
   "profile_id": "external-codex-beta-macos-arm64-hosts-v1",
   "compatibility_matrix": {
     "path": "godot-codex-mcp/product/compatibility-matrix.v1.json",
-    "sha256": "sha256:db1fbe42043da3df6ab1dc1dcf388647074f734308fa91ea42b56bd8f3f94b19"
+    "sha256": "sha256:feed61fd4a1deadf0449809507a4fe4001844b9e28d8aef8a4639fb27b9a8187"
   },
   "server_instructions": {
     "path": "godot-codex-mcp/product/server-instructions.v1.txt",
@@ -78,19 +78,19 @@
       "host_name": "openai.chatgpt",
       "host_identifier": "openai.chatgpt",
       "host_artifact_kind": "extension_tree",
-      "host_version": "26.721.30844",
-      "host_build": "26.721.30844",
-      "host_commit": "4fe60c8b1cdac1c4c174f2fb180d0d758272d713",
-      "host_artifact_sha256": "sha256:3ff47b070a08d02acc9c596756b017cf264e3dd4169002613a9171e1219778b0",
-      "host_metadata_sha256": "sha256:497c84587406f0cb7022dece0752202dc4490781fde5bc88469207ab9b5cac13",
+      "host_version": "26.721.41059",
+      "host_build": "26.721.41059",
+      "host_commit": null,
+      "host_artifact_sha256": "sha256:ea66cea39f5c40d83079fe200251ac698afe285e4cb30d335e4ee6517ee7b8aa",
+      "host_metadata_sha256": "sha256:fa2a88ea55413183654f5613b14e744517ad7626d26a673403bdde83c73adea7",
       "host_code_signature": null,
-      "client_version": "0.146.0-alpha.3",
-      "client_artifact_sha256": "sha256:5ab45f8f9819c120bede3743f896e70da47ffe920b48d9a04cc25ecc9e2dd757",
+      "client_version": "0.146.0-alpha.3.1",
+      "client_artifact_sha256": "sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4",
       "client_code_signature": {
         "mode": "strict",
         "identifier": "codex",
         "team_id": "2DC432GLL2",
-        "cdhash": "432912b777fd97aa5c40d2216aeb3102f433f852"
+        "cdhash": "34fe2ba0b5f1b88e294c8dca8caa8675806e05fa"
       },
       "ide_host_version": "1.130.0",
       "ide_shell_identifier": "com.microsoft.VSCode",

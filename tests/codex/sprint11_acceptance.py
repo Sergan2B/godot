@@ -214,9 +214,9 @@ DOCUMENTED_HOST_ACQUISITION_COMMAND = """python3 tests/codex/sprint11_external_a
   --app-client '/Applications/ChatGPT.app/Contents/Resources/codex' \\
   --vscode-bundle '/Applications/Visual Studio Code.app' \\
   --vscode-executable '/Applications/Visual Studio Code.app/Contents/MacOS/Code' \\
-  --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.30844-darwin-arm64" \\
-  --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.30844-darwin-arm64/package.json" \\
-  --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.30844-darwin-arm64/bin/macos-aarch64/codex" \\
+  --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64" \\
+  --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json" \\
+  --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex" \\
   --output-root tests/codex/acquisition/sprint11/host-provenance"""
 
 SPRINT10_SOURCE_COMMIT = "b225f77acf48648ef6f59a76ff5a7dbb824da7bb"
@@ -383,6 +383,7 @@ REQUIRED_GATES = frozenset(
         "previous_sprint_contracts",
         "previous_sprint_regressions",
         "rust_quality",
+        "same_project_single_owner",
         "setup_ownership",
         "surface_parity",
         "surface_real_workflows",
@@ -395,6 +396,7 @@ EXTERNAL_ARTIFACT_GATES = frozenset(
         "previous_sprint_regressions",
         "multi_project_isolation",
         "package_reproducibility",
+        "same_project_single_owner",
         "surface_parity",
         "surface_real_workflows",
         "usability_report",
@@ -1116,6 +1118,15 @@ EXTERNAL_GATE_DEFINITIONS = {
             "two_clean_public_cli_builds",
             "byte_identical_archive",
             "byte_identical_manifest",
+        ],
+    },
+    "same_project_single_owner": {
+        "kind": "source_bound_artifact_validator",
+        "validator": "validate_same_project_report/1",
+        "requires": [
+            "exactly_one_index_and_transaction_owner",
+            "diagnostic_only_busy_standbys",
+            "graceful_and_crash_takeover_within_90_seconds",
         ],
     },
     "previous_sprint_regressions": {
@@ -2394,28 +2405,28 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         "host_name": "openai.chatgpt",
         "host_identifier": "openai.chatgpt",
         "host_artifact_kind": "extension_tree",
-        "host_version": "26.721.30844",
-        "host_build": "26.721.30844",
-        "host_commit": "4fe60c8b1cdac1c4c174f2fb180d0d758272d713",
+        "host_version": "26.721.41059",
+        "host_build": "26.721.41059",
+        "host_commit": None,
         "host_artifact_sha256": (
-            "sha256:3ff47b070a08d02acc9c596756b017cf"
-            "264e3dd4169002613a9171e1219778b0"
+            "sha256:ea66cea39f5c40d83079fe200251ac69"
+            "8afe285e4cb30d335e4ee6517ee7b8aa"
         ),
         "host_metadata_sha256": (
-            "sha256:497c84587406f0cb7022dece0752202d"
-            "c4490781fde5bc88469207ab9b5cac13"
+            "sha256:fa2a88ea55413183654f5613b14e7445"
+            "17ad7626d26a673403bdde83c73adea7"
         ),
         "host_code_signature": None,
-        "client_version": "0.146.0-alpha.3",
+        "client_version": "0.146.0-alpha.3.1",
         "client_artifact_sha256": (
-            "sha256:5ab45f8f9819c120bede3743f896e70"
-            "da47ffe920b48d9a04cc25ecc9e2dd757"
+            "sha256:fa0cb7c5f80e6a192563fcb1d9f9885"
+            "7f4a808a28cb29289400ed7110291bce4"
         ),
         "client_code_signature": {
             "mode": "strict",
             "identifier": "codex",
             "team_id": "2DC432GLL2",
-            "cdhash": "432912b777fd97aa5c40d2216aeb3102f433f852",
+            "cdhash": "34fe2ba0b5f1b88e294c8dca8caa8675806e05fa",
         },
         "ide_host_version": "1.130.0",
         "ide_shell_identifier": "com.microsoft.VSCode",

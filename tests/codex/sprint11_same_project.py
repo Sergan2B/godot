@@ -35,9 +35,10 @@ except ModuleNotFoundError:  # Direct execution from tests/codex.
     import sprint11_multi_project as multi_project
     import sprint11_packaged_fixture as packaged_fixture
 
-REPORT_SCHEMA = "s11-same-project-live/1.0"
+REPORT_SCHEMA = "s11-same-project-live/1.1"
 CONNECTION_SCHEMA = "godot-connection-status/1.1"
 REPORT_LIMIT = 65_536
+TAKEOVER_LIMIT_SECONDS = 90.0
 BUSY_ACTION = (
     "Close the other Codex task for this project, or wait for it to finish."
 )
@@ -52,6 +53,12 @@ BUSY_PROBE_TOOLS: tuple[tuple[str, dict[str, Any]], ...] = (
         "godot_get_transaction_status",
         {"transaction_id": "change-set:" + "0" * 32},
     ),
+)
+BUSY_PROBE_RESOURCES = (
+    "godot://project/summary",
+    "godot://editor/summary",
+    "godot://runtime/summary",
+    "godot://scene/godot%3Ascene%3Auid%3Av1%3Atestscene/summary",
 )
 
 
@@ -188,6 +195,42 @@ def _assert_busy_tools(client: s9.ModelFreeMcpClient) -> None:
         )
 
 
+def _assert_busy_resources(client: s9.ModelFreeMcpClient) -> None:
+    connection = client.request(
+        "resources/read",
+        {"uri": "godot://connection/status"},
+    )
+    contents = connection.get("result", {}).get("contents")
+    s9.require(
+        isinstance(contents, list)
+        and len(contents) == 1
+        and isinstance(contents[0], dict)
+        and isinstance(contents[0].get("text"), str),
+        "busy connection resource is unavailable",
+    )
+    connection_status = s9.strict_json_text(str(contents[0]["text"]))
+    s9.require(
+        _busy_projection_is_exact(connection_status),
+        "busy connection resource projection differs",
+    )
+
+    for uri in BUSY_PROBE_RESOURCES:
+        response = client.request("resources/read", {"uri": uri})
+        error = response.get("error")
+        data = error.get("data") if isinstance(error, dict) else None
+        s9.require(
+            isinstance(error, dict)
+            and error.get("code") == -32002
+            and isinstance(data, dict)
+            and data.get("code") == "project_session_busy"
+            and data.get("status") == "project_session_busy"
+            and data.get("diagnostic_code") == "project_session_busy"
+            and data.get("retryable") is True
+            and data.get("remediation_id") == "wait_for_project_session",
+            f"{uri} did not fail closed for the standby task",
+        )
+
+
 def _assert_transaction_coordinator_ready(
     client: s9.ModelFreeMcpClient,
 ) -> None:
@@ -266,6 +309,12 @@ def _kill(process: s9.LineProcess, timeout: float) -> None:
         process.process.wait(timeout=timeout)
 
 
+def _remaining(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    s9.require(remaining > 0.0, "same-project takeover exceeded 90 seconds")
+    return remaining
+
+
 def _safe_report(report: Mapping[str, Any]) -> None:
     encoded = json.dumps(
         report,
@@ -326,6 +375,7 @@ def validate_report(value: Any) -> dict[str, Any]:
             "diagnostic_only_standby",
             "graceful_takeover",
             "crash_takeover",
+            "takeover_within_90_seconds",
             "transaction_coordinator_follows_index_lease",
         },
         "same-project assertions",
@@ -387,6 +437,7 @@ def run_live(
     successor: s9.LineProcess | None = None
     source_unchanged = False
     proof_complete = False
+    takeover_within_90_seconds = False
     try:
         with multi_project._managed_fixture(session):
             s9.require(
@@ -421,23 +472,33 @@ def run_live(
             )
             _assert_busy_tools(standby_client)
             _assert_busy_tools(successor_client)
+            _assert_busy_resources(standby_client)
+            _assert_busy_resources(successor_client)
 
-            _finish_gracefully(owner, min(timeout, 10.0))
+            graceful_deadline = time.monotonic() + min(
+                timeout,
+                TAKEOVER_LIMIT_SECONDS,
+            )
+            _finish_gracefully(owner, min(_remaining(graceful_deadline), 10.0))
             winner, waiting = _wait_for_single_owner(
                 (
                     (standby, standby_client),
                     (successor, successor_client),
                 ),
-                timeout=timeout,
+                timeout=_remaining(graceful_deadline),
             )
             winner_process, winner_client = winner
             waiting_process, waiting_client = waiting
             _assert_transaction_coordinator_ready(winner_client)
-            _kill(winner_process, min(timeout, 10.0))
+            crash_deadline = time.monotonic() + min(
+                timeout,
+                TAKEOVER_LIMIT_SECONDS,
+            )
+            _kill(winner_process, min(_remaining(crash_deadline), 10.0))
             _wait_for_projection(
                 waiting_client,
                 expected="ready",
-                timeout=timeout,
+                timeout=_remaining(crash_deadline),
             )
             _assert_transaction_coordinator_ready(waiting_client)
             s9.require(
@@ -446,6 +507,9 @@ def run_live(
             )
             source_unchanged = (
                 multi_project._project_source_hashes(project_root) == source_before
+            )
+            takeover_within_90_seconds = (
+                time.monotonic() <= crash_deadline
             )
             proof_complete = True
     finally:
@@ -475,6 +539,7 @@ def run_live(
             "diagnostic_only_standby": proof_complete,
             "graceful_takeover": proof_complete,
             "crash_takeover": proof_complete,
+            "takeover_within_90_seconds": takeover_within_90_seconds,
             "transaction_coordinator_follows_index_lease": proof_complete,
         },
         "source_unchanged": source_unchanged,

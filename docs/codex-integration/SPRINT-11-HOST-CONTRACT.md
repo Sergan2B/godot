@@ -86,7 +86,7 @@ any Markdown/JSON drift.
 |---|---|---|---|---|---|---|
 | app | `com.openai.codex` | `26.721.41059` / `5848` | `sha256:d7bd5eacb7f59c42240e6c5dc62eebdeca9d09a0b59ed4c3ac3e2b55ef8d9336` | `0.146.0-alpha.3.1` / `sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223` | — | candidate |
 | cli | `codex-cli` | `0.146.0-alpha.3.1` / `0.146.0-alpha.3.1` | `sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223` | `0.146.0-alpha.3.1` / `sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223` | — | candidate |
-| ide | `openai.chatgpt` | `26.721.30844` / `26.721.30844` | `sha256:3ff47b070a08d02acc9c596756b017cf264e3dd4169002613a9171e1219778b0` | `0.146.0-alpha.3` / `sha256:5ab45f8f9819c120bede3743f896e70da47ffe920b48d9a04cc25ecc9e2dd757` | com.microsoft.VSCode 1.130.0 `sha256:e1e3268741a2658a22b31e82b58a42fa48be73f64fc2de006be48a2ba136b930` | candidate |
+| ide | `openai.chatgpt` | `26.721.41059` / `26.721.41059` | `sha256:ea66cea39f5c40d83079fe200251ac698afe285e4cb30d335e4ee6517ee7b8aa` | `0.146.0-alpha.3.1` / `sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4` | com.microsoft.VSCode 1.130.0 `sha256:e1e3268741a2658a22b31e82b58a42fa48be73f64fc2de006be48a2ba136b930` | candidate |
 <!-- END S11 HOST COORDINATE AUTHORITY -->
 
 | Component | Exact observed coordinate | Candidate state |
@@ -96,9 +96,9 @@ any Markdown/JSON drift.
 | App-bundled Codex CLI | `0.146.0-alpha.3.1`, `arm64` | action-only empty form live-proved exact `accept`, `decline`, `cancel`, and `timeout`; full packaged surface workflow pending |
 | App-bundled CLI artifact | `sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223` | candidate artifact identity |
 | VS Code Stable | `1.130.0`, commit `1b6a188127eeaf9194f945eb6eb89a657e93c54c`, `arm64`, team `UBF8T346G9` | candidate |
-| Official Codex extension | `openai.chatgpt@26.721.30844`, `darwin-arm64` | installed candidate; live workflow pending |
-| Extension package | `sha256:497c84587406f0cb7022dece0752202dc4490781fde5bc88469207ab9b5cac13` | candidate artifact identity |
-| Extension Codex CLI | `bin/macos-aarch64/codex`, `0.146.0-alpha.3`, `sha256:5ab45f8f9819c120bede3743f896e70da47ffe920b48d9a04cc25ecc9e2dd757`, team `2DC432GLL2` | candidate embedded client |
+| Official Codex extension | `openai.chatgpt@26.721.41059`, `darwin-arm64` | installed candidate; live workflow pending |
+| Extension package | `sha256:fa2a88ea55413183654f5613b14e744517ad7626d26a673403bdde83c73adea7` | candidate artifact identity |
+| Extension Codex CLI | `bin/macos-aarch64/codex`, `0.146.0-alpha.3.1`, `sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4`, team `2DC432GLL2` | candidate embedded client |
 | MCP protocol | `2025-11-25`; form-compatible floor `2025-06-18` | candidate |
 | Bridge | RPC `1.8` exact profile | candidate |
 | Godot × Codex package | workspace `0.1.1` | same-project lease contention fixed and package coordinate frozen |
@@ -138,7 +138,7 @@ effective reload therefore remain unproved.
 ## 4. Current blockers and fail-closed interpretation
 
 VS Code Stable now contains the official
-`openai.chatgpt@26.721.30844` extension. Installation is only acquisition; no
+`openai.chatgpt@26.721.41059` extension. Installation is only acquisition; no
 IDE MCP workflow or form outcome is qualified yet, and Cursor cannot replace
 that gate.
 
@@ -193,9 +193,9 @@ shasum -a 256 /Applications/ChatGPT.app/Contents/Resources/codex
 '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code' \
   --list-extensions --show-versions
 shasum -a 256 \
-  "$HOME/.vscode/extensions/openai.chatgpt-26.721.30844-darwin-arm64/package.json"
+  "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json"
 shasum -a 256 \
-  "$HOME/.vscode/extensions/openai.chatgpt-26.721.30844-darwin-arm64/bin/macos-aarch64/codex"
+  "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex"
 readlink /usr/local/bin/code
 ```
 
@@ -214,9 +214,9 @@ python3 tests/codex/sprint11_external_acquisitions.py host-provenance \
   --app-client '/Applications/ChatGPT.app/Contents/Resources/codex' \
   --vscode-bundle '/Applications/Visual Studio Code.app' \
   --vscode-executable '/Applications/Visual Studio Code.app/Contents/MacOS/Code' \
-  --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.30844-darwin-arm64" \
-  --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.30844-darwin-arm64/package.json" \
-  --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.30844-darwin-arm64/bin/macos-aarch64/codex" \
+  --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64" \
+  --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json" \
+  --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex" \
   --output-root tests/codex/acquisition/sprint11/host-provenance
 ```
 

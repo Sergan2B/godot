@@ -330,7 +330,7 @@ def synthetic_report(
         }
     if command_id == "s11_same_project":
         return {
-            "schema_version": "s11-same-project-live/1.0",
+            "schema_version": "s11-same-project-live/1.1",
             "status": "passed",
             "platform": "macos-arm64",
             "protocol": "2025-11-25",
@@ -348,6 +348,7 @@ def synthetic_report(
                 "diagnostic_only_standby": True,
                 "graceful_takeover": True,
                 "crash_takeover": True,
+                "takeover_within_90_seconds": True,
                 "transaction_coordinator_follows_index_lease": True,
             },
             "source_unchanged": True,

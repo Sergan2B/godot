@@ -20,6 +20,11 @@ Windows, Linux, remote CI, Cursor, the embedded Dock, signing/notarization, and
 Stable 1.0 are outside this beta coordinate unless a later matrix says
 otherwise.
 
+Package `0.1.0` and every operator workspace created for its Sprint 11
+acceptance are superseded. Do not replace their binaries in place or reuse
+their evidence. Install `0.1.1` as a new version, create a clean operator
+workspace, and repeat App, CLI, and IDE acceptance from the beginning.
+
 ## Install and verify
 
 1. Verify the archive and detached manifest with the package's documented
@@ -169,6 +174,7 @@ Call `godot_get_connection_status` or read
 - `syncing`/`connecting`: wait or follow the returned remediation.
 - `project_session_busy`: another Codex task owns this project session. Close
   that task or wait for it to finish; this task takes over automatically.
+  Only the connection-status tool/resource remains readable while waiting.
 - `offline_cached`: only source-hash-verified saved semantics are current.
 - `offline_empty`: no safe static generation is available.
 - `misconfigured`, `incompatible`, or `auth_failed`: stop and run doctor.

@@ -3586,6 +3586,25 @@ impl GodotMcpServer {
                 ResourceContents::text(text, uri).with_mime_type("application/json"),
             ]));
         }
+        if self.connection_status().status == ConnectionStatus::ProjectSessionBusy {
+            let data = self
+                .unavailable_error(AvailabilityDomain::Editor)
+                .and_then(|error| error.structured_content)
+                .and_then(|value| value.get("error").cloned())
+                .unwrap_or_else(|| {
+                    json!({
+                        "code": "project_session_busy",
+                        "retryable": true,
+                        "status": "project_session_busy",
+                        "diagnostic_code": "project_session_busy",
+                        "remediation_id": "wait_for_project_session",
+                    })
+                });
+            return Err(McpError::resource_not_found(
+                "only the connection status resource is available while another task owns this project session",
+                Some(data),
+            ));
+        }
         if uri == RUNTIME_SUMMARY_URI {
             if let Some(error) = self.unavailable_error(AvailabilityDomain::Runtime) {
                 let error = error
@@ -7800,6 +7819,10 @@ mod tests {
         );
         assert!(slot.coordinator().is_none());
 
+        slot.publish_acquiring();
+        assert_eq!(slot.condition(), TransactionCoordinatorCondition::Acquiring);
+        assert!(slot.coordinator().is_none());
+
         let coordinator = TransactionCoordinator::open(project.path()).unwrap();
         slot.publish_ready(coordinator.clone());
         assert_eq!(slot.condition(), TransactionCoordinatorCondition::Ready);
@@ -10771,6 +10794,34 @@ mod tests {
             busy_value.pointer("/diagnostic/code"),
             Some(&json!("project_session_busy"))
         );
+        for uri in [
+            PROJECT_SUMMARY_URI,
+            EDITOR_SUMMARY_URI,
+            RUNTIME_SUMMARY_URI,
+            "godot://scene/godot%3Ascene%3Auid%3Av1%3Atestscene/summary",
+        ] {
+            let error = busy_server
+                .read_summary_resource(uri)
+                .expect_err("busy non-status resource must fail closed");
+            assert_eq!(
+                error.data.as_ref().and_then(|data| data.get("code")),
+                Some(&json!("project_session_busy")),
+                "{uri}"
+            );
+            assert_eq!(
+                error.data.as_ref().and_then(|data| data.get("retryable")),
+                Some(&json!(true)),
+                "{uri}"
+            );
+            assert_eq!(
+                error
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.get("remediation_id")),
+                Some(&json!("wait_for_project_session")),
+                "{uri}"
+            );
+        }
 
         let scene_id = "godot:scene:uid:v1:testscene";
         let uri = format!(

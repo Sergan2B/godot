@@ -67,6 +67,7 @@ def valid_report() -> dict[str, Any]:
             "diagnostic_only_standby": True,
             "graceful_takeover": True,
             "crash_takeover": True,
+            "takeover_within_90_seconds": True,
             "transaction_coordinator_follows_index_lease": True,
         },
         "source_unchanged": True,
@@ -81,6 +82,9 @@ def valid_report() -> dict[str, Any]:
 
 
 class Sprint11SameProjectContractTests(unittest.TestCase):
+    def test_takeover_limit_is_exactly_ninety_seconds(self) -> None:
+        self.assertEqual(same_project.TAKEOVER_LIMIT_SECONDS, 90.0)
+
     def test_busy_projection_is_explicit_and_fail_closed(self) -> None:
         self.assertTrue(
             same_project._busy_projection_is_exact(busy_status())

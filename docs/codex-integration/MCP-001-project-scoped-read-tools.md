@@ -276,8 +276,9 @@ grant, source text, property value, or stale live/runtime payload.
 The first sidecar holding `.godot/codex/index.lock` is the canonical project
 session owner. Additional same-project sidecars remain diagnostic-only and
 report `project_session_busy`; their cache, runtime, and transaction
-projections are unavailable and every tool except connection status fails
-closed with the same code. A standby performs only a bounded authenticated
+projections are unavailable. Only `godot_get_connection_status` and
+`godot://connection/status` remain readable; every other tool and resource
+fails closed with the same code. A standby performs only a bounded authenticated
 Bridge probe, so Bridge/editor health remains current without competing full
 snapshot streams. They retry the lease with bounded backoff and automatically
 become full-access owners after the previous owner exits; only then does full

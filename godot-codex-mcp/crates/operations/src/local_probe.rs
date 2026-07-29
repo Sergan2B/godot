@@ -1544,7 +1544,7 @@ mod tests {
                 "#!/bin/sh\n\
                  case \"$1\" in\n\
                    --version) printf '%s\\n' '1.130.0' 'commit' 'arm64' ;;\n\
-                   --list-extensions) printf '%s\\n' 'openai.chatgpt@26.721.30844' ;;\n\
+                   --list-extensions) printf '%s\\n' 'openai.chatgpt@26.721.41059' ;;\n\
                    --locate-extension) printf '%s\\n' '{}' ;;\n\
                    *) exit 2 ;;\n\
                  esac\n",
@@ -1572,7 +1572,7 @@ mod tests {
             ProbeDeadline::new(programs.total_timeout),
         )
         .unwrap();
-        assert_eq!(observed.host_version, "26.721.30844");
+        assert_eq!(observed.host_version, "26.721.41059");
         assert_eq!(observed.ide_host_version.as_deref(), Some("1.130.0"));
         assert_eq!(observed.effective_project_config, Some(true));
         assert_eq!(observed.restart_required, None);

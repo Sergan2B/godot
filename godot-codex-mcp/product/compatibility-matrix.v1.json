@@ -269,7 +269,7 @@
     },
     {
       "surface": "ide",
-      "host_version": "26.721.30844",
+      "host_version": "26.721.41059",
       "ide_host_version": "1.130.0",
       "target": {
         "os": "macos",

@@ -346,6 +346,7 @@
         "previous_sprint_contracts",
         "previous_sprint_regressions",
         "rust_quality",
+        "same_project_single_owner",
         "setup_ownership",
         "surface_parity",
         "surface_real_workflows",
@@ -387,6 +388,9 @@
           "$ref": "#/$defs/gate"
         },
         "rust_quality": {
+          "$ref": "#/$defs/gate"
+        },
+        "same_project_single_owner": {
           "$ref": "#/$defs/gate"
         },
         "setup_ownership": {
