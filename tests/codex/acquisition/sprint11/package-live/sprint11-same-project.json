@@ -1,7 +1,7 @@
 {
   "artifacts": {
     "godot_sha256": "sha256:157a265d49f72c0b6974340046379549ad74aab6e5a70e3cc6e239bf6be7102e",
-    "sidecar_sha256": "sha256:545b38cf1a55bffc486acac9b63027dc4b474ad0671cc96fd6a4582a2c28553a"
+    "sidecar_sha256": "sha256:eacc7f1e55558610827bfa73ad69c5be7bd083e3616027a7b64e2d29d33b043b"
   },
   "assertions": {
     "busy_not_syncing": true,
