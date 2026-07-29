@@ -361,10 +361,10 @@ fn require_inventory_hash(
 
 fn should_skip_directory(relative: &Path) -> bool {
     relative.components().next().is_some_and(|component| {
-        matches!(
-            component.as_os_str().to_str(),
-            Some(".godot" | ".git" | ".codex" | "target")
-        )
+        component
+            .as_os_str()
+            .to_str()
+            .is_some_and(|name| name.starts_with('.') || name == "target")
     })
 }
 
@@ -393,6 +393,7 @@ fn is_primary_saved_godot_source(relative: &Path) -> bool {
                     | "scn"
                     | "tres"
                     | "res"
+                    | "md"
                     | "gd"
                     | "gdc"
                     | "gdshader"
@@ -738,6 +739,54 @@ mod tests {
         load_verified_offline_authority(project.path(), &project_id, &generation).unwrap();
 
         fs::write(&sidecar, b"uid://changed\n").unwrap();
+        assert_eq!(
+            load_verified_offline_authority(project.path(), &project_id, &generation).unwrap_err(),
+            OfflineAuthorityError::SourceMismatch
+        );
+    }
+
+    #[test]
+    fn manifest_covers_editor_indexed_markdown_but_skips_hidden_guidance() {
+        let project = project();
+        let guidance = b"# Godot guidance\n";
+        fs::write(project.path().join("AGENTS.md"), guidance).unwrap();
+        fs::create_dir_all(project.path().join(".agents/skills/godot-editor")).unwrap();
+        fs::write(
+            project.path().join(".agents/skills/godot-editor/SKILL.md"),
+            b"# Hidden host guidance\n",
+        )
+        .unwrap();
+        let project_id = godot_codex_bridge_client::project_id_for_path(project.path()).unwrap();
+        let mut generation = generation(&project_id);
+        generation.source_documents.push(SourceDocument {
+            entity_id: "godot:resource:v1:agents-guidance".to_owned(),
+            comparison_path: "res://AGENTS.md".to_owned(),
+            size_before: guidance.len() as u64,
+            size_after: guidance.len() as u64,
+            mtime_before_ns: 1,
+            mtime_after_ns: 1,
+            content_generation: Some(format!("sha256:{:x}", Sha256::digest(guidance))),
+            ingest_state: "ready".to_owned(),
+        });
+        generation.validation_digest.clear();
+        generation.validation_digest = generation.compute_validation_digest();
+
+        let manifest = persist_offline_authority(project.path(), &generation).unwrap();
+        assert!(
+            manifest
+                .sources
+                .iter()
+                .any(|source| source.path == "AGENTS.md")
+        );
+        assert!(
+            manifest
+                .sources
+                .iter()
+                .all(|source| source.path != ".agents/skills/godot-editor/SKILL.md")
+        );
+        load_verified_offline_authority(project.path(), &project_id, &generation).unwrap();
+
+        fs::write(project.path().join("AGENTS.md"), b"# Changed guidance\n").unwrap();
         assert_eq!(
             load_verified_offline_authority(project.path(), &project_id, &generation).unwrap_err(),
             OfflineAuthorityError::SourceMismatch

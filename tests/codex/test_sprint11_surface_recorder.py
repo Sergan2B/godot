@@ -595,6 +595,61 @@ class Sprint11SurfaceRecorderTests(unittest.TestCase):
         self.assertEqual(timeout["form_action"], "timeout")
         self.assertFalse(timeout["content_recorded"])
 
+    def test_real_nested_timeout_closes_its_correlated_pending_form(
+        self,
+    ) -> None:
+        instance = recorder.ProtocolRecorder(metadata())
+        instance.note_transport(
+            recorder.CLIENT_TO_SERVER,
+            line(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "apply-1",
+                    "method": "tools/call",
+                    "params": {
+                        "name": "godot_apply_transaction",
+                        "arguments": {},
+                    },
+                }
+            ),
+        )
+        instance.note_transport(
+            recorder.SERVER_TO_CLIENT,
+            line(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "form-1",
+                    "method": "elicitation/create",
+                    "params": {"mode": "form", "message": "not recorded"},
+                }
+            ),
+        )
+        instance.note_transport(
+            recorder.SERVER_TO_CLIENT,
+            line(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "apply-1",
+                    "result": {
+                        "isError": True,
+                        "structuredContent": {
+                            "error": {
+                                "code": "approval_timeout",
+                                "message": "not recorded",
+                            },
+                            "state": "not_applied",
+                        },
+                    },
+                }
+            ),
+        )
+        document = instance.document(0, [])
+        self.assertEqual(document["status"], "complete")
+        timeout = document["events"][-1]
+        self.assertEqual(timeout["error_code"], "approval_timeout")
+        self.assertEqual(timeout["form_action"], "timeout")
+        self.assertFalse(timeout["content_recorded"])
+
     def test_unrelated_timeout_error_cannot_close_a_pending_form(self) -> None:
         instance = recorder.ProtocolRecorder(metadata())
         instance.note_transport(

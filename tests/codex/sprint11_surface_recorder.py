@@ -736,6 +736,11 @@ class ProtocolRecorder:
                     structured = error
             if structured is not None:
                 code = structured.get("code")
+                nested_error = structured.get("error")
+                if not isinstance(code, str) and isinstance(
+                    nested_error, Mapping
+                ):
+                    code = nested_error.get("code")
                 state = structured.get("state")
                 status = structured.get("status")
                 for key, candidate in (

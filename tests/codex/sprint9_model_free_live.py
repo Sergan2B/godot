@@ -503,6 +503,18 @@ class ModelFreeMcpClient:
             }
         elif decision in {"decline", "cancel"}:
             result = {"action": decision}
+        elif decision == "unsupported":
+            self.process.send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {
+                        "code": -32601,
+                        "message": "elicitation is not supported by this host",
+                    },
+                }
+            )
+            return
         else:
             raise WorkflowError(f"unsupported test approval decision: {decision}")
         self.process.send(
