@@ -218,6 +218,22 @@ def line(value: Any) -> bytes:
 
 
 class Sprint11SurfaceRecorderTests(unittest.TestCase):
+    def test_operator_capture_timeout_is_bounded_to_thirty_minutes(self) -> None:
+        self.assertEqual(recorder.MAX_CHILD_SECONDS, 1_800.0)
+        with self.assertRaisesRegex(
+            recorder.RecorderError,
+            "wrapped MCP timeout differs",
+        ):
+            recorder.run_proxy(
+                [sys.executable, "-c", "raise SystemExit(0)"],
+                metadata=metadata(),
+                journal_path=Path("unused.json"),
+                stdin=io.BytesIO(),
+                stdout=io.BytesIO(),
+                child_timeout=1_800.1,
+                synthetic_command=True,
+            )
+
     def test_qualifying_command_binds_versioned_package_and_rejects_symlink(
         self,
     ) -> None:

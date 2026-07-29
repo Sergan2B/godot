@@ -263,6 +263,11 @@ cannot drop, reorder, synthesize, retry, or interpret a product message. The
 semantic trace is derived and validated separately, and raw private transport
 data is not retained.
 
+One operator-driven surface capture is bounded to 30 minutes so the full
+eighteen-assertion workflow and four independent form outcomes can complete.
+This does not change the separate 180-second maximum for each automated gate
+child.
+
 Surface equality uses three classes:
 
 1. Persistent project/resource/scene/script identities, normalized facts,
