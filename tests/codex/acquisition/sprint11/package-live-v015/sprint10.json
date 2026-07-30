@@ -1,0 +1,67 @@
+{
+  "artifacts": {
+    "godot_sha256": "sha256:2166f3c6b7784cc7259a08a9636aafe89c8d6bebcbdc05c2b1d8d76933373dff",
+    "sidecar_sha256": "sha256:3ea87608c6eaa1b67e86e4978191267c2dcc7464c70dd435484f8be46e339b6d"
+  },
+  "bridge_rpc": "1.8",
+  "change_set_id": "change-set:b726218aa097a8d631a5a9daa9bf7eb6",
+  "cleanup": {
+    "processes_stopped": true
+  },
+  "exact_undo": true,
+  "latency_ms": {
+    "apply": [
+      37.10954199777916
+    ],
+    "prepare": [
+      31.24775001197122
+    ],
+    "read": [
+      15.394667017972097,
+      10.655292018782347,
+      0.614624994341284
+    ],
+    "report": [
+      12.931167002534494
+    ],
+    "status": [
+      26.42241699504666,
+      16.385417024139315,
+      0.4175420035608113,
+      0.4846669908147305,
+      0.4640420083887875,
+      0.43270899914205074,
+      0.4371250106487423,
+      0.37641701055690646,
+      0.4415420116856694,
+      34.97725000488572,
+      19.014332996448502
+    ],
+    "undo": [
+      29.470540990587324
+    ]
+  },
+  "one_native_action": true,
+  "operation_count": 2,
+  "platform": "macos-arm64",
+  "prepare_read_only": true,
+  "protocol": "2025-11-25",
+  "schema_version": "s10-model-free-live/1.0",
+  "status": "passed",
+  "tool_registry": 41,
+  "validation": {
+    "checks": {
+      "diagnostics": "passed",
+      "index_convergence": "passed",
+      "intrinsic": "passed",
+      "persistence": "passed",
+      "reload_reparse": "passed",
+      "runtime": "skipped",
+      "semantic_graph": "passed"
+    },
+    "outcome": "passed",
+    "page_count": 1,
+    "retained_bytes": 3037
+  },
+  "validation_report_id": "validation-report:d19427658ebfb1b73525814fcc6cd4bd"
+}
