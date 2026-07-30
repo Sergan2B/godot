@@ -26,7 +26,11 @@ const MCP_PROBE_TIMEOUT: Duration = Duration::from_secs(8);
 const TOTAL_PROBE_TIMEOUT: Duration = Duration::from_secs(15);
 const COMMAND_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const MAX_COMMAND_OUTPUT_BYTES: usize = 128 * 1024;
-const MAX_MCP_FRAME_BYTES: usize = 4 * 1024 * 1024;
+// The full-beta registry includes closed per-tool output schemas. Its current
+// tools/list response is about 4.7 MiB, so the diagnostic client must accept
+// one bounded registry frame above 4 MiB while retaining the independent
+// aggregate transcript limit below.
+const MAX_MCP_FRAME_BYTES: usize = 8 * 1024 * 1024;
 const MAX_MCP_TOTAL_BYTES: usize = 16 * 1024 * 1024;
 const MAX_MCP_FRAMES: usize = 64;
 const MAX_PATH_ENTRIES: usize = 128;
@@ -1950,6 +1954,92 @@ for raw in sys.stdin:
             !temp.path().join(".godot/codex/bridge.json").exists(),
             "the stdio probe must not synthesize Bridge discovery"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mcp_adapter_accepts_bounded_full_beta_registry_frame_over_four_mib() {
+        let temp = TempDir::new().unwrap();
+        fs::write(temp.path().join("project.godot"), "[application]\n").unwrap();
+        let registry = godot_codex_product::canonical_registry_profile();
+        let script = temp.path().join("large-registry-sidecar");
+        let tool_names = serde_json::to_string(&registry.tools).unwrap();
+        let resources = serde_json::to_string(
+            &registry
+                .fixed_resources
+                .iter()
+                .map(|uri| json!({"uri": uri}))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let templates = serde_json::to_string(
+            &registry
+                .resource_templates
+                .iter()
+                .map(|uri| json!({"uriTemplate": uri}))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        executable(
+            &script,
+            &format!(
+                r#"#!/usr/bin/env python3
+import json
+import sys
+TOOL_NAMES = {tool_names}
+RESOURCES = {resources}
+TEMPLATES = {templates}
+TOOLS = [{{"name": name}} for name in TOOL_NAMES]
+TOOLS[0]["description"] = "x" * (5 * 1024 * 1024)
+for raw in sys.stdin:
+    request = json.loads(raw)
+    if "id" not in request:
+        continue
+    method = request.get("method")
+    if method == "initialize":
+        result = {{
+            "protocolVersion": "2025-11-25",
+            "serverInfo": {{"name": "fake", "version": "1"}},
+            "capabilities": {{"tools": {{}}, "resources": {{}}}},
+            "instructions": "Call godot_get_connection_status first."
+        }}
+    elif method == "tools/list":
+        result = {{"tools": TOOLS}}
+    elif method == "resources/list":
+        result = {{"resources": RESOURCES}}
+    elif method == "resources/templates/list":
+        result = {{"resourceTemplates": TEMPLATES}}
+    elif method == "tools/call":
+        result = {{
+            "content": [],
+            "structuredContent": {{
+                "status": "offline_empty",
+                "package_version": "{version}"
+            }},
+            "isError": False
+        }}
+    else:
+        result = {{}}
+    print(json.dumps({{"jsonrpc": "2.0", "id": request["id"], "result": result}}), flush=True)
+"#,
+                version = env!("CARGO_PKG_VERSION"),
+            ),
+        );
+        let observed = probe_mcp(
+            temp.path(),
+            "2025-11-25",
+            &registry,
+            &script,
+            MCP_PROBE_TIMEOUT,
+        )
+        .unwrap();
+        assert!(observed.initialized);
+        assert!(observed.status_tool_available);
+        assert!(observed.instructions_present);
+        assert_eq!(observed.registry_digest, registry.digest);
+        assert_eq!(observed.tool_count, 41);
+        assert_eq!(observed.fixed_resource_count, 4);
+        assert_eq!(observed.resource_template_count, 1);
     }
 
     #[test]
