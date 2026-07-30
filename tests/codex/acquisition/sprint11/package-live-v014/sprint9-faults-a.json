@@ -1,0 +1,49 @@
+{
+  "artifacts": {
+    "godot_sha256": "sha256:2166f3c6b7784cc7259a08a9636aafe89c8d6bebcbdc05c2b1d8d76933373dff",
+    "sidecar_sha256": "sha256:984f12bf03bf07fee1c1e03bd8f96ecc2ff6d5923445ce15ca1e4292afeb1e8c"
+  },
+  "bridge_frame": {
+    "budget_usec": 2000,
+    "max_elapsed_usec": 0,
+    "over_budget_count": 0
+  },
+  "cleanup": true,
+  "elicitation_count": 0,
+  "fault_count": 3,
+  "faults": {
+    "bridge_response_loss_after_commit": {
+      "apply_dispatched_durable": true,
+      "approval_count": 1,
+      "reconciled_without_replay": true,
+      "source_unchanged": true,
+      "state": "committed",
+      "transaction_native_actions": 1
+    },
+    "disconnect_before_commit": {
+      "automatic_replay": false,
+      "classification": "failed",
+      "source_unchanged": true,
+      "transaction_native_actions": 0
+    },
+    "sidecar_disconnect_prepared": {
+      "native_actions": 0,
+      "same_preview_digest": true,
+      "same_transaction": true,
+      "source_unchanged": true
+    }
+  },
+  "latency_ms": {},
+  "native_action_count": 0,
+  "negatives": {},
+  "operation_count": 0,
+  "operations": [],
+  "platform": "macos-arm64",
+  "protocol": "2025-11-25",
+  "redaction": true,
+  "schema_version": "s9-model-free-workflow/1.0",
+  "source_unchanged": true,
+  "status": "passed",
+  "tool_registry": 41,
+  "transaction_identity_unique": true
+}
