@@ -26,14 +26,15 @@ Windows, Linux, remote CI, Cursor, the embedded Dock, signing/notarization, and
 Stable 1.0 are outside this beta coordinate unless a later matrix says
 otherwise.
 
-Packages `0.1.0` through `0.1.3`, plus every operator workspace created for
+Packages `0.1.0` through `0.1.4`, plus every operator workspace created for
 their Sprint 11 acceptance, are superseded by the independently issued
-`0.1.4` candidate. Packages `0.1.2` and `0.1.3` remain immutable historical
+`0.1.5` candidate. Packages `0.1.2` through `0.1.4` remain immutable historical
 evidence: `0.1.2` cannot qualify long project roots, while `0.1.3` allowed
-accepted Bridge UDS descriptors to survive into a launched game process. Do
-not replace old binaries in place, reuse an old detached manifest, or relabel
-old evidence. Install `0.1.4` into a clean operator root and repeat App, CLI,
-and IDE technical acceptance from the beginning.
+accepted Bridge UDS descriptors to survive into a launched game process, and
+`0.1.4` rejected its own full-beta MCP registry during `doctor`. Do not replace
+old binaries in place, reuse an old detached manifest, or relabel old evidence.
+Install `0.1.5` into a clean operator root and repeat App, CLI, and IDE
+technical acceptance from the beginning.
 
 ## Install and verify
 
@@ -79,7 +80,7 @@ and discovery/authentication material.
 
 ## Update Codex host compatibility without replacing the package
 
-Package `0.1.4` can consume a later, independently released App/CLI/IDE
+Package `0.1.5` can consume a later, independently released App/CLI/IDE
 compatibility bundle while keeping the sidecar, Godot, protocol, schemas,
 registry, and Bridge contract unchanged. Obtain all three release inputs from
 the same trusted channel:
@@ -434,7 +435,7 @@ Git-bound App/CLI/IDE operator attestation; the five-fault human operator
 protocol alone does not cover those host-owned coordinates.
 
 `S11_CAPTURE_PROJECT_ROOT` must now be configured independently by the verified
-`0.1.4` package under `S11_CAPTURE_DATA_ROOT`; the fault-phase config or receipt
+`0.1.5` package under `S11_CAPTURE_DATA_ROOT`; the fault-phase config or receipt
 is not reusable. Run doctor from that measured capture package. A
 `project_config_invalid`, wrong package/receipt, symlinked root, or fixture
 digest mismatch is a stop condition:
