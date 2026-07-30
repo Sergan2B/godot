@@ -265,7 +265,7 @@ python3 tests/codex/sprint11_external_acquisitions.py host-provenance \
   --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64" \
   --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json" \
   --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex" \
-  --output-root tests/codex/acquisition/sprint11/host-provenance
+  --output-root tests/codex/acquisition/sprint11/host-provenance-v013
 ```
 
 The output directory must not already exist. `receipt.json` is the

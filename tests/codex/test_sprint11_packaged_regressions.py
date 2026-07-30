@@ -1913,7 +1913,7 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
                     packaged.REPOSITORY_ROOT / spec.runner_path
                 ).read_bytes()
                 canonical_path = (
-                    "tests/codex/acquisition/sprint11/package-live/"
+                    "tests/codex/acquisition/sprint11/package-live-v013/"
                     + spec.report_name
                 )
                 command["report_path"] = canonical_path

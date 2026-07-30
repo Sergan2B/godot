@@ -349,7 +349,7 @@ Every qualified surface must exercise:
 
 The missing-form path is not repeated inside form-capable App/CLI/IDE runs.
 It is a separate global package-live gate bound to
-`tests/codex/acquisition/sprint11/package-live/sprint9-negatives.json`. The
+`tests/codex/acquisition/sprint11/package-live-v013/sprint9-negatives.json`. The
 `unsupported` no-form probe must return `approval_host_unsupported` with zero
 elicitation, zero native actions, and unchanged source.
 

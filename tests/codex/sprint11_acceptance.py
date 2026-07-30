@@ -54,7 +54,7 @@ EVIDENCE_RELATIVE_PATH = EVIDENCE_PATH.relative_to(REPOSITORY_ROOT).as_posix()
 SOURCE_SCOPE_PATH = SCRIPT_DIR / "sprint11_source_scopes.txt"
 PROMPT_PACK_PATH = SCRIPT_DIR / "prompts" / "sprint11-external-beta-v1.json"
 GLOBAL_UNSUPPORTED_FORM_REPORT_PATH = (
-    "tests/codex/acquisition/sprint11/package-live/sprint9-negatives.json"
+    "tests/codex/acquisition/sprint11/package-live-v013/sprint9-negatives.json"
 )
 EVIDENCE_SCHEMA_PATH = (
     REPOSITORY_ROOT
@@ -248,7 +248,7 @@ DOCUMENTED_HOST_ACQUISITION_COMMAND = """python3 tests/codex/sprint11_external_a
   --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64" \\
   --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json" \\
   --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex" \\
-  --output-root tests/codex/acquisition/sprint11/host-provenance"""
+  --output-root tests/codex/acquisition/sprint11/host-provenance-v013"""
 
 SPRINT10_SOURCE_COMMIT = "b225f77acf48648ef6f59a76ff5a7dbb824da7bb"
 SPRINT10_EVIDENCE_COMMIT = "815bccedddcd7c64a387dc8e9d5de2e941003fea"
@@ -5404,7 +5404,7 @@ def validate_packaged_regression_receipt(
         )
         require(
             report_path.startswith(
-                "tests/codex/acquisition/sprint11/package-live/"
+                "tests/codex/acquisition/sprint11/package-live-v013/"
             )
             and report_path not in acquisition_paths,
             "packaged regression report path differs",

@@ -835,7 +835,7 @@ The exact set is `approval.accept`, `approval.cancel`, `approval.decline`,
 Unsupported-form behavior is a separate global package-live gate rather than
 an assertion repeated in each form-capable surface. Acceptance binds the
 `unsupported` no-form probe in
-`tests/codex/acquisition/sprint11/package-live/sprint9-negatives.json` and
+`tests/codex/acquisition/sprint11/package-live-v013/sprint9-negatives.json` and
 requires `approval_host_unsupported`, zero elicitation, zero native actions,
 and unchanged source.
 
@@ -1035,7 +1035,7 @@ python3 tests/codex/sprint11_external_acquisitions.py host-provenance \
   --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64" \
   --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json" \
   --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex" \
-  --output-root tests/codex/acquisition/sprint11/host-provenance
+  --output-root tests/codex/acquisition/sprint11/host-provenance-v013
 ```
 
 The repository-local output directory is new and contains two authorities
@@ -1418,7 +1418,7 @@ package and Godot prerequisite:
   --artifact-root '<detached-package-root>' \
   --package-manifest '<detached-package-manifest>' \
   --godot '<exact-arm64-Godot-prerequisite>' \
-  --output-root tests/codex/acquisition/sprint11/package-live \
+  --output-root tests/codex/acquisition/sprint11/package-live-v013 \
   --timeout 180
 ```
 
@@ -1444,7 +1444,7 @@ package coordinate:
   --artifact-root '<detached-package-root>' \
   --package-manifest '<detached-package-manifest>' \
   --godot '<exact-arm64-Godot-prerequisite>' \
-  --output-root tests/codex/acquisition/sprint11/multi-project \
+  --output-root tests/codex/acquisition/sprint11/multi-project-v013 \
   --timeout 180
 ```
 

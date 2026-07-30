@@ -468,7 +468,7 @@ python3 "$S11_REPOSITORY/tests/codex/sprint11_surface_artifacts.py" prepare \
   --package-manifest "$S11_PACKAGE_MANIFEST" \
   --data-root "$S11_CAPTURE_DATA_ROOT" \
   --measurement \
-    "$S11_REPOSITORY/tests/codex/acquisition/sprint11/host-provenance/measurement.json" \
+    "$S11_REPOSITORY/tests/codex/acquisition/sprint11/host-provenance-v013/measurement.json" \
   --fixture-root "$S11_CAPTURE_PROJECT_ROOT" \
   --repository-root "$S11_REPOSITORY" \
   --output "$S11_CAPTURE_WORK_ROOT/metadata.json"
