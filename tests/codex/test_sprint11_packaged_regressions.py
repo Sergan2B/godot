@@ -345,7 +345,7 @@ def synthetic_report(
             "platform": "macos-arm64",
             "protocol": "2025-11-25",
             "bridge_rpc": "1.8",
-            "package_version": "0.1.2",
+            "package_version": "0.1.3",
             "artifacts": artifacts,
             "registry": {
                 "tools": 41,

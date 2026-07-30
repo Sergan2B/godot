@@ -135,7 +135,7 @@ sys.modules[ACCEPTANCE_SPEC.name] = sprint11_acceptance
 ACCEPTANCE_SPEC.loader.exec_module(sprint11_acceptance)
 
 SOURCE_COMMIT = "a" * 40
-GODOT_HASH = "157a265d49f72c0b6974340046379549ad74aab6e5a70e3cc6e239bf6be7102e"
+GODOT_HASH = "dea4ace0e2885582e5dd9397a4f5ab4b2130df7000825123db08ef9d318a5056"
 
 
 def thin_arm64_macho(payload: bytes) -> bytes:
@@ -184,9 +184,9 @@ def package_fixture(root: Path, *, version: str = "0.1.0") -> tuple[Path, Path]:
     )
     matrix["package"]["version"] = version
     matrix["godot"]["artifact_sha256"] = GODOT_HASH
-    matrix["godot"]["build_id"] = "4.8.dev.codex.506f7f084"
+    matrix["godot"]["build_id"] = "4.8.dev.codex.c11459e33"
     matrix["godot"]["source_commit"] = (
-        "506f7f084c0bfd62a78788b6b947e1142eaafed5"
+        "c11459e33904a724701b6e2ddc81de0662609709"
     )
     matrix_content = package_builder.canonical_json(matrix)
     write(
@@ -393,11 +393,11 @@ def build_fixture(
     )
     godot = {
         "architecture": "arm64",
-        "commit": "506f7f084c0bfd62a78788b6b947e1142eaafed5",
+        "commit": "c11459e33904a724701b6e2ddc81de0662609709",
         "expected_install_path": package_builder.GODOT_EXPECTED_INSTALL_PATH,
         "sha256": f"sha256:{GODOT_HASH}",
         "verification": package_builder.GODOT_VERIFICATION,
-        "version": "4.8.dev.codex.506f7f084",
+        "version": "4.8.dev.codex.c11459e33",
     }
     provenance = {
         "cargo_lock_sha256": "sha256:" + "1" * 64,

@@ -101,12 +101,12 @@ any Markdown/JSON drift.
 | Extension Codex CLI | `bin/macos-aarch64/codex`, `0.146.0-alpha.3.1`, `sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4`, team `2DC432GLL2` | candidate embedded client |
 | MCP protocol | `2025-11-25`; form-compatible floor `2025-06-18` | candidate |
 | Bridge | RPC `1.8` exact profile | candidate |
-| Godot × Codex package | workspace `0.1.2` | same-project lease contention fixed; independently installable host-surface bundle added |
-| Godot Bridge prerequisite | `bin/godot.macos.editor.dev.arm64`, `4.8.dev.codex.506f7f084`, `sha256:157a265d49f72c0b6974340046379549ad74aab6e5a70e3cc6e239bf6be7102e` | exact local candidate; detached package binding pending |
+| Godot × Codex package | workspace `0.1.3` | same-project lease contention and long project-root UDS transport fixed; independently installable host-surface bundle added |
+| Godot Bridge prerequisite | `bin/godot.macos.editor.dev.arm64`, `4.8.dev.codex.c11459e33`, `sha256:dea4ace0e2885582e5dd9397a4f5ab4b2130df7000825123db08ef9d318a5056` | exact local candidate; detached package binding pending |
 
 ### 3.1 Independent host-surface compatibility updates
 
-Package `0.1.2` keeps package, Godot, protocol, schema, registry, Bridge, and
+Package `0.1.3` keeps package, Godot, protocol, schema, registry, Bridge, and
 Cursor coordinates embedded and immutable. A separately released
 `godot-codex-surface-compatibility-bundle/1.0` may replace only the complete
 App/CLI/IDE surface snapshot for that exact embedded matrix. This permits a

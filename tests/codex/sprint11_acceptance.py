@@ -260,7 +260,7 @@ SPRINT10_SOURCE_SHA256 = (
     "sha256:c5fe1303e005d5866b28be6c8162bb8bebe4507975fd37eb55f690d72d4dc978"
 )
 EXACT_GODOT_PREREQUISITE_SHA256 = (
-    "sha256:157a265d49f72c0b6974340046379549ad74aab6e5a70e3cc6e239bf6be7102e"
+    "sha256:dea4ace0e2885582e5dd9397a4f5ab4b2130df7000825123db08ef9d318a5056"
 )
 EXACT_GODOT_INSTALL_PATH = (
     "~/Applications/Godot Codex.app/Contents/MacOS/Godot"
@@ -2624,7 +2624,7 @@ def validate_host_coordinate_profile(
         profile["schema_version"]
         == "godot-codex-host-coordinate-profile/1.0"
         and profile["profile_id"]
-        == "external-codex-beta-macos-arm64-hosts-v2",
+        == "external-codex-beta-macos-arm64-hosts-v3",
         "host coordinate profile identity differs",
     )
     matrix_binding = _exact_fields(
