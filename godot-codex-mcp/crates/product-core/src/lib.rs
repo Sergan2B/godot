@@ -15,8 +15,8 @@ pub use compatibility::{
     CompatibilityObservation, CompatibilityReason, CompatibilityStatus, GodotCoordinate,
     MatrixError, OperatingSystem, PackageCoordinate, ProductCompatibilityBasis,
     ProductCompatibilityObservation, ProtocolContract, ProtocolVersion, RegistryBinding,
-    SchemaContract, SurfaceKind, SurfaceQualification, SurfaceRule, TargetCoordinate,
-    embedded_compatibility_matrix,
+    SchemaContract, SurfaceBundleError, SurfaceCompatibilityBundle, SurfaceKind,
+    SurfaceQualification, SurfaceRule, TargetCoordinate, embedded_compatibility_matrix,
 };
 pub use diagnostics::{
     Component, Diagnostic, DiagnosticCode, DiagnosticSeverity, DiagnosticSpec, RemediationId,
@@ -36,6 +36,10 @@ pub use registry::{
 
 /// Version of the closed External Codex Beta compatibility document.
 pub const COMPATIBILITY_MATRIX_SCHEMA: &str = "godot-codex-compatibility-matrix/1.0";
+
+/// Version of independently distributed host-surface compatibility bundles.
+pub const SURFACE_COMPATIBILITY_BUNDLE_SCHEMA: &str =
+    "godot-codex-surface-compatibility-bundle/1.0";
 
 /// Version of the bounded connection-status projection.
 pub const CONNECTION_STATUS_SCHEMA: &str = "godot-connection-status/1.1";
@@ -58,3 +62,7 @@ pub const SERVER_INSTRUCTIONS_TEXT: &str =
 /// Closed JSON Schema for [`COMPATIBILITY_MATRIX_JSON`].
 pub const COMPATIBILITY_MATRIX_JSON_SCHEMA: &str =
     include_str!("../../../schemas/godot_codex/compatibility-matrix.schema.json");
+
+/// Closed JSON Schema for independently distributed surface bundles.
+pub const SURFACE_COMPATIBILITY_BUNDLE_JSON_SCHEMA: &str =
+    include_str!("../../../schemas/godot_codex/surface-compatibility-bundle.schema.json");

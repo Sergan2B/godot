@@ -84,25 +84,73 @@ any Markdown/JSON drift.
 <!-- BEGIN S11 HOST COORDINATE AUTHORITY -->
 | Surface | Host identifier | Host version/build | Host artifact SHA-256 | Client version/SHA-256 | IDE shell | Qualification |
 |---|---|---|---|---|---|---|
-| app | `com.openai.codex` | `26.721.41059` / `5848` | `sha256:d7bd5eacb7f59c42240e6c5dc62eebdeca9d09a0b59ed4c3ac3e2b55ef8d9336` | `0.146.0-alpha.3.1` / `sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223` | — | candidate |
-| cli | `codex-cli` | `0.146.0-alpha.3.1` / `0.146.0-alpha.3.1` | `sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223` | `0.146.0-alpha.3.1` / `sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223` | — | candidate |
+| app | `com.openai.codex` | `26.721.81911` / `5973` | `sha256:83d9925b3ded1c65b6f1968ae79b72313f1b6b9d27c61131b438b49ab8e2b406` | `0.146.0-alpha.3.1` / `sha256:fb2b6b35789e59c885cf4d2aee12475809dd67b2c10df580e638122fd6b3438e` | — | candidate |
+| cli | `codex-cli` | `0.146.0-alpha.3.1` / `0.146.0-alpha.3.1` | `sha256:fb2b6b35789e59c885cf4d2aee12475809dd67b2c10df580e638122fd6b3438e` | `0.146.0-alpha.3.1` / `sha256:fb2b6b35789e59c885cf4d2aee12475809dd67b2c10df580e638122fd6b3438e` | — | candidate |
 | ide | `openai.chatgpt` | `26.721.41059` / `26.721.41059` | `sha256:ea66cea39f5c40d83079fe200251ac698afe285e4cb30d335e4ee6517ee7b8aa` | `0.146.0-alpha.3.1` / `sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4` | com.microsoft.VSCode 1.130.0 `sha256:e1e3268741a2658a22b31e82b58a42fa48be73f64fc2de006be48a2ba136b930` | candidate |
 <!-- END S11 HOST COORDINATE AUTHORITY -->
 
 | Component | Exact observed coordinate | Candidate state |
 |---|---|---|
 | OS | macOS `26.5.2` build `25F84`, `arm64` | candidate |
-| Codex desktop | bundle `com.openai.codex`, version `26.721.41059`, build `5848`, team `2DC432GLL2` | static capability proven; live workflow pending |
+| Codex desktop | bundle `com.openai.codex`, version `26.721.81911`, build `5973`, team `2DC432GLL2` | static capability proven; live workflow pending |
 | App-bundled Codex CLI | `0.146.0-alpha.3.1`, `arm64` | action-only empty form live-proved exact `accept`, `decline`, `cancel`, and `timeout`; full packaged surface workflow pending |
-| App-bundled CLI artifact | `sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223` | candidate artifact identity |
+| App-bundled CLI artifact | `sha256:fb2b6b35789e59c885cf4d2aee12475809dd67b2c10df580e638122fd6b3438e` | candidate artifact identity |
 | VS Code Stable | `1.130.0`, commit `1b6a188127eeaf9194f945eb6eb89a657e93c54c`, `arm64`, team `UBF8T346G9` | candidate |
 | Official Codex extension | `openai.chatgpt@26.721.41059`, `darwin-arm64` | installed candidate; live workflow pending |
 | Extension package | `sha256:fa2a88ea55413183654f5613b14e744517ad7626d26a673403bdde83c73adea7` | candidate artifact identity |
 | Extension Codex CLI | `bin/macos-aarch64/codex`, `0.146.0-alpha.3.1`, `sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4`, team `2DC432GLL2` | candidate embedded client |
 | MCP protocol | `2025-11-25`; form-compatible floor `2025-06-18` | candidate |
 | Bridge | RPC `1.8` exact profile | candidate |
-| Godot × Codex package | workspace `0.1.1` | same-project lease contention fixed and package coordinate frozen |
+| Godot × Codex package | workspace `0.1.2` | same-project lease contention fixed; independently installable host-surface bundle added |
 | Godot Bridge prerequisite | `bin/godot.macos.editor.dev.arm64`, `4.8.dev.codex.506f7f084`, `sha256:157a265d49f72c0b6974340046379549ad74aab6e5a70e3cc6e239bf6be7102e` | exact local candidate; detached package binding pending |
+
+### 3.1 Independent host-surface compatibility updates
+
+Package `0.1.2` keeps package, Godot, protocol, schema, registry, Bridge, and
+Cursor coordinates embedded and immutable. A separately released
+`godot-codex-surface-compatibility-bundle/1.0` may replace only the complete
+App/CLI/IDE surface snapshot for that exact embedded matrix. This permits a
+new Codex host qualification without rebuilding or silently changing the
+sidecar.
+
+Every bundle is bound to:
+
+- the exact package version and target;
+- the canonical SHA-256 of the embedded baseline matrix;
+- a monotonically increasing, JavaScript-safe sequence;
+- the raw SHA-256 of a detached, exact host-coordinate profile;
+- a complete, unique App/CLI/IDE rule set.
+
+Installation requires the bundle, its detached host profile, and the bundle
+SHA-256 published through the trusted release channel. The CLI rechecks both
+files during preview and apply, persists a private expiring plan, rejects
+equal or lower sequences, and commits the bundle plus profile as one atomic
+private state document. Unknown fields, malformed files, binding drift,
+source replacement, replay, downgrade, symlinks, or an invalid active state
+fail closed. No bundle can alter a project, trust, Codex config, Godot,
+package binaries, protocols, schemas, registry, Bridge capabilities, or
+transaction policy.
+
+```sh
+"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex" \
+  compatibility install \
+  --bundle /path/to/surface-compatibility-bundle.json \
+  --host-profile /path/to/host-coordinate-profile.json \
+  --expected-sha256 sha256:<published-bundle-digest> \
+  --dry-run --json
+
+"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex" \
+  compatibility install --apply-plan sha256:<preview-plan-digest> --json
+
+"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex" \
+  compatibility status --json
+```
+
+The expected bundle SHA-256 is an explicit offline release-authority input;
+the bundle is not self-authenticating and must not be accepted from an
+untrusted channel. Doctor reports the effective matrix digest. If an active
+bundle becomes invalid, doctor reports `package_invalid` instead of silently
+falling back to embedded host claims.
 
 The current App-bundled CLI reports `tool_call_mcp_elicitation` as stable.
 Real stdio probes through `tests/codex/sprint11_approval_host_probe.py`

@@ -1222,13 +1222,14 @@ class Sprint11SurfaceArtifactTests(unittest.TestCase):
         ).read_bytes()
         document = json.loads(superseded)
         self.assertEqual(
-            document["source_commit"],
-            "82ab6f4ec9dbb1c8f510781ca4dded48e5e4953a",
+            document["package_version"],
+            "0.1.1",
         )
+        self.assertNotEqual(document["source_commit"], self.inputs.source_commit)
         self.inputs.package_manifest.write_bytes(superseded)
         with self.assertRaisesRegex(
             artifacts.SurfaceArtifactError,
-            "capture-required",
+            "installed versioned package path is unavailable",
         ):
             self.inputs.prepare()
 

@@ -4,12 +4,20 @@
 //! `doctor` is strictly read-only and never opens the Bridge endpoint.
 //! `setup` separates an immutable preview from a digest-bound apply step.
 
+mod compatibility_bundle;
 mod doctor;
 mod launcher;
 mod local_probe;
 mod setup;
 mod surface_capture;
 
+pub use compatibility_bundle::{
+    CompatibilityBundleError, CompatibilityBundleStatus, CompatibilityInstallOptions,
+    CompatibilityInstallPreview, CompatibilityInstallReport, CompatibilityMatrixSource,
+    EffectiveCompatibilityMatrix, apply_compatibility_install, compatibility_bundle_status,
+    default_compatibility_plan_store, load_effective_compatibility_matrix,
+    prepare_compatibility_install,
+};
 pub use doctor::{
     BridgeProbeObservation, BridgeProbeStatus, DoctorCheck, DoctorCheckStatus, DoctorOptions,
     DoctorProbeObservations, DoctorReport, DoctorStatus, GodotProbeObservation,

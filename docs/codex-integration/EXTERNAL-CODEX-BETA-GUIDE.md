@@ -26,14 +26,11 @@ Windows, Linux, remote CI, Cursor, the embedded Dock, signing/notarization, and
 Stable 1.0 are outside this beta coordinate unless a later matrix says
 otherwise.
 
-Package `0.1.0`, the previously tracked `0.1.1` package whose source commit is
-`82ab6f4ec9dbb1c8f510781ca4dded48e5e4953a`, and every operator workspace
-created for their Sprint 11 acceptance are superseded. That tracked `0.1.1`
-package predates the package-owned capture schemas and cannot prepare
-qualifying surface metadata. Do not replace its binaries in place, reuse its
-detached manifest, or reuse its evidence. Install a newly issued
-capture-capable `0.1.1` candidate into a clean operator root and repeat App,
-CLI, and IDE acceptance from the beginning.
+Packages `0.1.0` and `0.1.1`, plus every operator workspace created for their
+Sprint 11 acceptance, are superseded by the independently issued `0.1.2`
+candidate. Do not replace old binaries in place, reuse an old detached
+manifest, or relabel old evidence. Install `0.1.2` into a clean operator root
+and repeat App, CLI, and IDE technical acceptance from the beginning.
 
 ## Install and verify
 
@@ -76,6 +73,45 @@ CLI, and IDE acceptance from the beginning.
 Doctor is model-free, network-free, and non-mutating unless a future command
 explicitly says otherwise. Default JSON and text redact private absolute paths
 and discovery/authentication material.
+
+## Update Codex host compatibility without replacing the package
+
+Package `0.1.2` can consume a later, independently released App/CLI/IDE
+compatibility bundle while keeping the sidecar, Godot, protocol, schemas,
+registry, and Bridge contract unchanged. Obtain all three release inputs from
+the same trusted channel:
+
+- `surface-compatibility-bundle.json`;
+- its detached `host-coordinate-profile.json`;
+- the published raw SHA-256 of the bundle file.
+
+Preview and inspect the exact bounded update:
+
+```sh
+"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex" \
+  compatibility install \
+  --bundle /path/to/surface-compatibility-bundle.json \
+  --host-profile /path/to/host-coordinate-profile.json \
+  --expected-sha256 sha256:<published-bundle-digest> \
+  --dry-run --json
+```
+
+Apply only that preview:
+
+```sh
+"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex" \
+  compatibility install --apply-plan sha256:<preview-plan-digest> --json
+"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex" \
+  compatibility status --json
+```
+
+The updater rejects a profile whose bytes do not match the bundle binding and
+rejects any equal or lower sequence. It stores the bundle and profile as one
+private atomic state document under the package-version compatibility
+namespace. A malformed active document makes doctor fail with
+`package_invalid`; it is never ignored in favor of an older support claim.
+The bundle SHA is external trust input, not a self-signature, so do not install
+files received through an untrusted channel.
 
 ## Upgrade or roll back the package
 
@@ -395,7 +431,7 @@ Git-bound App/CLI/IDE operator attestation; the five-fault human operator
 protocol alone does not cover those host-owned coordinates.
 
 `S11_CAPTURE_PROJECT_ROOT` must now be configured independently by the verified
-`0.1.1` package under `S11_CAPTURE_DATA_ROOT`; the fault-phase config or receipt
+`0.1.2` package under `S11_CAPTURE_DATA_ROOT`; the fault-phase config or receipt
 is not reusable. Run doctor from that measured capture package. A
 `project_config_invalid`, wrong package/receipt, symlinked root, or fixture
 digest mismatch is a stop condition:

@@ -136,10 +136,10 @@ IDE extension.
 - The required IDE surface is the official Codex extension on VS Code Stable.
   Cursor and other compatible editors may be recorded as `not_tested`, but
   they do not substitute for the required VS Code gate.
-- Qualification candidates observed on 2026-07-28 are Codex desktop app
-  `com.openai.codex` `26.721.41059` build `5848` (team `2DC432GLL2`),
+- Qualification candidates refreshed on 2026-07-30 are Codex desktop app
+  `com.openai.codex` `26.721.81911` build `5973` (team `2DC432GLL2`),
   its bundled Codex CLI `0.146.0-alpha.3.1`
-  (`sha256:6d8be49e49751554df16572369e636cbe02c84b208cad3dc35528c846eeca223`),
+  (`sha256:fb2b6b35789e59c885cf4d2aee12475809dd67b2c10df580e638122fd6b3438e`),
   VS Code Stable `1.130.0` commit
   `1b6a188127eeaf9194f945eb6eb89a657e93c54c`, and official extension
   `openai.chatgpt@26.721.41059`. The extension embeds Codex CLI

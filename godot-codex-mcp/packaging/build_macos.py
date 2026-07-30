@@ -1725,6 +1725,9 @@ def snapshot_source_checkout(
         PurePosixPath("godot-codex-mcp/crates/godot-codex/Cargo.toml"),
         PurePosixPath("godot-codex-mcp/crates/godot-codex/src/main.rs"),
         PurePosixPath("godot-codex-mcp/crates/operations/Cargo.toml"),
+        PurePosixPath(
+            "godot-codex-mcp/crates/operations/src/compatibility_bundle.rs"
+        ),
         PurePosixPath("godot-codex-mcp/crates/operations/src/lib.rs"),
         PurePosixPath("godot-codex-mcp/crates/operations/src/setup.rs"),
         PurePosixPath(
@@ -1772,6 +1775,10 @@ def snapshot_source_checkout(
         PurePosixPath(
             "godot-codex-mcp/schemas/godot_codex/"
             "sprint11-surface-metadata.schema.json"
+        ),
+        PurePosixPath(
+            "godot-codex-mcp/schemas/godot_codex/"
+            "surface-compatibility-bundle.schema.json"
         ),
     )
     for relative in required:

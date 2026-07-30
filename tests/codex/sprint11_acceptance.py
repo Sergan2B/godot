@@ -140,6 +140,13 @@ HOST_PROFILE_SCHEMA_PATH = (
     / "godot_codex"
     / "host-coordinate-profile.schema.json"
 )
+SURFACE_COMPATIBILITY_BUNDLE_SCHEMA_PATH = (
+    REPOSITORY_ROOT
+    / "godot-codex-mcp"
+    / "schemas"
+    / "godot_codex"
+    / "surface-compatibility-bundle.schema.json"
+)
 HOST_PROVENANCE_SCHEMA_PATH = (
     REPOSITORY_ROOT
     / "godot-codex-mcp"
@@ -472,6 +479,7 @@ REQUIRED_SOURCE_PATHS = frozenset(
         "godot-codex-mcp/crates/godot-codex/Cargo.toml",
         "godot-codex-mcp/crates/godot-codex/src/main.rs",
         "godot-codex-mcp/crates/operations/Cargo.toml",
+        "godot-codex-mcp/crates/operations/src/compatibility_bundle.rs",
         "godot-codex-mcp/crates/operations/src/lib.rs",
         "godot-codex-mcp/crates/operations/src/setup.rs",
         "godot-codex-mcp/crates/operations/src/surface_capture.rs",
@@ -494,6 +502,8 @@ REQUIRED_SOURCE_PATHS = frozenset(
         "godot-codex-mcp/product/THIRD_PARTY_LICENSES.txt",
         "godot-codex-mcp/schemas/godot_codex/host-coordinate-profile.schema.json",
         "godot-codex-mcp/schemas/godot_codex/compatibility-matrix.schema.json",
+        "godot-codex-mcp/schemas/godot_codex/"
+        "surface-compatibility-bundle.schema.json",
         "godot-codex-mcp/schemas/godot_codex/"
         "sprint11-human-acquisition-authority.schema.json",
         "godot-codex-mcp/schemas/godot_codex/"
@@ -2457,24 +2467,24 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         "host_name": "codex-desktop",
         "host_identifier": "com.openai.codex",
         "host_artifact_kind": "macos_bundle_executable",
-        "host_version": "26.721.41059",
-        "host_build": "5848",
+        "host_version": "26.721.81911",
+        "host_build": "5973",
         "host_commit": None,
         "host_artifact_sha256": (
-            "sha256:d7bd5eacb7f59c42240e6c5dc62eebd"
-            "eca9d09a0b59ed4c3ac3e2b55ef8d9336"
+            "sha256:83d9925b3ded1c65b6f1968ae79b72313"
+            "f1b6b9d27c61131b438b49ab8e2b406"
         ),
         "host_metadata_sha256": None,
         "host_code_signature": {
             "mode": "deep_strict",
             "identifier": "com.openai.codex",
             "team_id": "2DC432GLL2",
-            "cdhash": "753af97d4310c3c393348bdc0f28794e51b096ed",
+            "cdhash": "6e85f197aec22c1a0552f1aca1b3d1f3707946ec",
         },
         "client_version": "0.146.0-alpha.3.1",
         "client_artifact_sha256": (
-            "sha256:6d8be49e49751554df16572369e636cbe"
-            "02c84b208cad3dc35528c846eeca223"
+            "sha256:fb2b6b35789e59c885cf4d2aee124758"
+            "09dd67b2c10df580e638122fd6b3438e"
         ),
         "client_code_signature": {
             "mode": "strict",
@@ -2496,8 +2506,8 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         "host_build": "0.146.0-alpha.3.1",
         "host_commit": None,
         "host_artifact_sha256": (
-            "sha256:6d8be49e49751554df16572369e636cbe"
-            "02c84b208cad3dc35528c846eeca223"
+            "sha256:fb2b6b35789e59c885cf4d2aee124758"
+            "09dd67b2c10df580e638122fd6b3438e"
         ),
         "host_metadata_sha256": None,
         "host_code_signature": {
@@ -2508,8 +2518,8 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         },
         "client_version": "0.146.0-alpha.3.1",
         "client_artifact_sha256": (
-            "sha256:6d8be49e49751554df16572369e636cbe"
-            "02c84b208cad3dc35528c846eeca223"
+            "sha256:fb2b6b35789e59c885cf4d2aee124758"
+            "09dd67b2c10df580e638122fd6b3438e"
         ),
         "client_code_signature": {
             "mode": "strict",
@@ -2614,7 +2624,7 @@ def validate_host_coordinate_profile(
         profile["schema_version"]
         == "godot-codex-host-coordinate-profile/1.0"
         and profile["profile_id"]
-        == "external-codex-beta-macos-arm64-hosts-v1",
+        == "external-codex-beta-macos-arm64-hosts-v2",
         "host coordinate profile identity differs",
     )
     matrix_binding = _exact_fields(
@@ -7401,6 +7411,11 @@ def validate_contract_files(repository: GitRepository) -> dict[str, Any]:
             HOST_PROFILE_SCHEMA_PATH,
             "https://godot-codex.invalid/schemas/godot_codex/"
             "host-coordinate-profile.schema.json",
+        ),
+        (
+            SURFACE_COMPATIBILITY_BUNDLE_SCHEMA_PATH,
+            "https://godot-codex.invalid/schemas/godot_codex/"
+            "surface-compatibility-bundle.schema.json",
         ),
         (
             HOST_PROVENANCE_SCHEMA_PATH,

@@ -1,8 +1,8 @@
 {
   "schema_version": "godot-codex-compatibility-matrix/1.0",
-  "matrix_id": "external-codex-beta-macos-arm64-v1",
+  "matrix_id": "external-codex-beta-macos-arm64-v2",
   "package": {
-    "version": "0.1.1",
+    "version": "0.1.2",
     "target": {
       "os": "macos",
       "architecture": "arm64"
@@ -249,7 +249,7 @@
   "surfaces": [
     {
       "surface": "app",
-      "host_version": "26.721.41059",
+      "host_version": "26.721.81911",
       "ide_host_version": null,
       "target": {
         "os": "macos",

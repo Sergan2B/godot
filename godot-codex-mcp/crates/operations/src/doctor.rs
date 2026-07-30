@@ -16,6 +16,7 @@ use sha2::{Digest, Sha256};
 use toml_edit::DocumentMut;
 
 use crate::PRODUCT_VERSION;
+use crate::compatibility_bundle::load_effective_compatibility_matrix;
 use crate::launcher::{LauncherResolution, resolve_launcher};
 
 const REPORT_SCHEMA: &str = "godot-codex-doctor-report/1.0";
@@ -396,14 +397,40 @@ fn run_doctor_inner(
     options: &DoctorOptions,
     injected_probes: Option<&DoctorProbeObservations>,
 ) -> DoctorReport {
-    let matrix = embedded_compatibility_matrix()
+    let baseline = embedded_compatibility_matrix()
         .expect("the compiled compatibility matrix passed product-core tests");
+    let installed_data_root = options
+        .package_directory
+        .is_none()
+        .then(|| resolve_launcher(None).ok())
+        .flatten()
+        .and_then(|launcher| launcher.installed_data_root().map(Path::to_path_buf));
+    let (matrix, bundle_invalid) = installed_data_root.as_deref().map_or_else(
+        || (baseline.clone(), false),
+        |data_root| match load_effective_compatibility_matrix(data_root) {
+            Ok(effective) => (effective.matrix, false),
+            Err(_) => (baseline.clone(), true),
+        },
+    );
     let registry = canonical_registry_profile();
     let matrix_digest = matrix
         .canonical_digest()
         .expect("the compiled compatibility matrix is canonical");
     let mut checks = Vec::with_capacity(10);
     let mut exit_code = 0_u8;
+
+    if bundle_invalid {
+        exit_code = exit_code.max(3);
+        checks.push(DoctorCheck::from_code(
+            "compatibility.bundle",
+            DoctorCheckStatus::Fail,
+            DiagnosticCode::PackageInvalid,
+            None,
+            None,
+        ));
+    } else {
+        checks.push(pass("compatibility.bundle", Component::Package));
+    }
 
     let startup = inspect_product_startup(
         &options.project_root,

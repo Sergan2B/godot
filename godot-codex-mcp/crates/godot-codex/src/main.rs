@@ -4,13 +4,14 @@ use std::io::{self, BufRead, IsTerminal, Read, Write};
 use std::path::PathBuf;
 
 use godot_codex_operations::{
-    DoctorOptions, GuidanceMode, PRODUCT_VERSION, PendingSetup, RemoveOptions, RepairOptions,
-    SetupOptions, SetupPreview, SetupProfile, SurfaceCaptureArmOptions, SurfaceCaptureArmReport,
-    SurfaceCaptureError, SurfaceCaptureSurface, SurfaceSelection, abandon_surface_capture,
-    apply_setup_plan, arm_surface_capture, cancel_surface_capture, consume_surface_capture,
-    prepare_setup, prepare_setup_for_consent, prepare_setup_remove,
-    prepare_setup_remove_for_consent, prepare_setup_repair, prepare_setup_repair_for_consent,
-    run_doctor, surface_capture_status,
+    CompatibilityInstallOptions, DoctorOptions, GuidanceMode, PRODUCT_VERSION, PendingSetup,
+    RemoveOptions, RepairOptions, SetupOptions, SetupPreview, SetupProfile,
+    SurfaceCaptureArmOptions, SurfaceCaptureArmReport, SurfaceCaptureError, SurfaceCaptureSurface,
+    SurfaceSelection, abandon_surface_capture, apply_compatibility_install, apply_setup_plan,
+    arm_surface_capture, cancel_surface_capture, compatibility_bundle_status,
+    consume_surface_capture, prepare_compatibility_install, prepare_setup,
+    prepare_setup_for_consent, prepare_setup_remove, prepare_setup_remove_for_consent,
+    prepare_setup_repair, prepare_setup_repair_for_consent, run_doctor, surface_capture_status,
 };
 
 const USAGE: &str = "\
@@ -21,6 +22,9 @@ usage:
   \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" setup --repair --project-root <path> [--dry-run] [--json]
   \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" setup --apply-plan sha256:<digest> [--json]
   \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" setup --remove --project-root <path> [--dry-run] [--json]
+  \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" compatibility status [--json]
+  \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" compatibility install --bundle <path> --host-profile <path> --expected-sha256 sha256:<digest> --dry-run [--json]
+  \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" compatibility install --apply-plan sha256:<digest> [--json]
   \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" surface-capture arm --surface app|cli|ide --project-root <path> --metadata <path> --ttl-seconds <1..1800> --json
   \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" surface-capture status --run-id <64-lowercase-hex> --json
   \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" surface-capture cancel --run-id <64-lowercase-hex> --json
@@ -52,6 +56,18 @@ Repair derives profile and guidance from a valid private setup receipt. It may
 replace only a missing or drifted receipt-owned godot_editor stanza in an
 otherwise valid TOML file. It preserves unrelated TOML/comments and file mode;
 malformed, unowned, unsafe, or oversized inputs fail closed.";
+
+const COMPATIBILITY_USAGE: &str = "\
+usage:
+  \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" compatibility status [--json]
+  \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" compatibility install --bundle <path> --host-profile <path> --expected-sha256 sha256:<digest> --dry-run [--json]
+  \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" compatibility install --apply-plan sha256:<digest> [--json]
+
+Install accepts only a bundle whose raw bytes match the independently
+published SHA-256. Dry-run publishes an immutable, expiring plan; apply-plan
+commits only that exact plan. Bundle sequence numbers must increase, so an old
+or replayed host qualification cannot replace a newer one. This command never
+changes a project, host trust, Codex config, Godot, or the sidecar binary.";
 
 const SURFACE_CAPTURE_USAGE: &str = "\
 usage:
@@ -96,6 +112,17 @@ enum Command {
         dry_run: bool,
         json: bool,
     },
+    CompatibilityStatus {
+        json: bool,
+    },
+    CompatibilityInstallPreview {
+        options: CompatibilityInstallOptions,
+        json: bool,
+    },
+    CompatibilityInstallApply {
+        digest: String,
+        json: bool,
+    },
     SurfaceCaptureArm {
         options: SurfaceCaptureArmOptions,
     },
@@ -137,6 +164,7 @@ fn parse_command(arguments: impl IntoIterator<Item = OsString>) -> Result<Comman
         }
         Some("doctor") => parse_doctor(arguments),
         Some("setup") => parse_setup(arguments),
+        Some("compatibility") => parse_compatibility(arguments),
         Some("surface-capture") => parse_surface_capture(arguments),
         _ => Err(USAGE.to_owned()),
     }
@@ -333,6 +361,95 @@ fn parse_setup(mut arguments: VecDeque<OsString>) -> Result<Command, String> {
     Ok(Command::SetupPreview {
         options,
         dry_run,
+        json,
+    })
+}
+
+fn parse_compatibility(mut arguments: VecDeque<OsString>) -> Result<Command, String> {
+    if matches!(
+        arguments.front().and_then(|argument| argument.to_str()),
+        Some("help" | "--help" | "-h")
+    ) {
+        return if arguments.len() == 1 {
+            Ok(Command::Help(COMPATIBILITY_USAGE))
+        } else {
+            Err("compatibility help cannot be combined with other arguments".to_owned())
+        };
+    }
+    let action = arguments
+        .pop_front()
+        .and_then(|argument| argument.into_string().ok())
+        .ok_or_else(|| COMPATIBILITY_USAGE.to_owned())?;
+    if action == "status" {
+        let mut json = false;
+        while let Some(argument) = arguments.pop_front() {
+            match argument.to_str() {
+                Some("--json") if !json => json = true,
+                _ => return Err("compatibility status accepts only --json".to_owned()),
+            }
+        }
+        return Ok(Command::CompatibilityStatus { json });
+    }
+    if action != "install" {
+        return Err(COMPATIBILITY_USAGE.to_owned());
+    }
+
+    let mut bundle = None;
+    let mut host_profile = None;
+    let mut expected_sha256 = None;
+    let mut apply_plan = None;
+    let mut dry_run = false;
+    let mut json = false;
+    while let Some(argument) = arguments.pop_front() {
+        match argument.to_str() {
+            Some("--bundle") => set_once(
+                &mut bundle,
+                PathBuf::from(required_value(&mut arguments, "--bundle")?),
+                "--bundle",
+            )?,
+            Some("--expected-sha256") => set_once(
+                &mut expected_sha256,
+                required_utf8(&mut arguments, "--expected-sha256")?,
+                "--expected-sha256",
+            )?,
+            Some("--host-profile") => set_once(
+                &mut host_profile,
+                PathBuf::from(required_value(&mut arguments, "--host-profile")?),
+                "--host-profile",
+            )?,
+            Some("--apply-plan") => set_once(
+                &mut apply_plan,
+                required_utf8(&mut arguments, "--apply-plan")?,
+                "--apply-plan",
+            )?,
+            Some("--dry-run") if !dry_run => dry_run = true,
+            Some("--json") if !json => json = true,
+            _ => return Err("unknown or duplicate compatibility install argument".to_owned()),
+        }
+    }
+    if let Some(digest) = apply_plan {
+        if bundle.is_some() || host_profile.is_some() || expected_sha256.is_some() || dry_run {
+            return Err("--apply-plan cannot be combined with bundle planning options".to_owned());
+        }
+        if !valid_surface_capture_digest(&digest) {
+            return Err("--apply-plan requires an exact sha256 digest".to_owned());
+        }
+        return Ok(Command::CompatibilityInstallApply { digest, json });
+    }
+    if !dry_run {
+        return Err("compatibility install requires --dry-run before --apply-plan".to_owned());
+    }
+    let expected_sha256 =
+        expected_sha256.ok_or_else(|| "--expected-sha256 is required".to_owned())?;
+    if !valid_surface_capture_digest(&expected_sha256) {
+        return Err("--expected-sha256 requires an exact sha256 digest".to_owned());
+    }
+    Ok(Command::CompatibilityInstallPreview {
+        options: CompatibilityInstallOptions::new(
+            bundle.ok_or_else(|| "--bundle is required".to_owned())?,
+            host_profile.ok_or_else(|| "--host-profile is required".to_owned())?,
+            expected_sha256,
+        ),
         json,
     })
 }
@@ -684,6 +801,74 @@ fn run(
                     error,
                     interactive,
                 )
+            }
+        }
+        Command::CompatibilityStatus { json } => match compatibility_bundle_status(None) {
+            Ok(status) => {
+                if json {
+                    let _ = serde_json::to_writer_pretty(&mut *output, &status);
+                    let _ = writeln!(output);
+                } else {
+                    let _ = writeln!(
+                        output,
+                        "Surface compatibility: {:?}; sequence: {}",
+                        status.source,
+                        status
+                            .sequence
+                            .map_or_else(|| "embedded".to_owned(), |value| value.to_string())
+                    );
+                }
+                0
+            }
+            Err(bundle_error) => {
+                render_error(error, json, &bundle_error.to_string());
+                2
+            }
+        },
+        Command::CompatibilityInstallPreview { options, json } => {
+            match prepare_compatibility_install(&options) {
+                Ok(preview) => {
+                    if json {
+                        let _ = serde_json::to_writer_pretty(&mut *output, &preview);
+                        let _ = writeln!(output);
+                    } else {
+                        let _ = writeln!(
+                            output,
+                            "Surface compatibility plan {} for bundle {} sequence {}",
+                            preview.plan_digest, preview.bundle_id, preview.sequence
+                        );
+                        let _ = writeln!(
+                            output,
+                            "Apply only after verifying the published bundle SHA-256."
+                        );
+                    }
+                    0
+                }
+                Err(bundle_error) => {
+                    render_error(error, json, &bundle_error.to_string());
+                    2
+                }
+            }
+        }
+        Command::CompatibilityInstallApply { digest, json } => {
+            match apply_compatibility_install(&digest, None) {
+                Ok(report) => {
+                    if json {
+                        let _ = serde_json::to_writer_pretty(&mut *output, &report);
+                        let _ = writeln!(output);
+                    } else {
+                        let _ = writeln!(
+                            output,
+                            "Surface compatibility bundle {} sequence {}: {}.",
+                            report.bundle_id, report.sequence, report.status
+                        );
+                    }
+                    0
+                }
+                Err(bundle_error) => {
+                    render_error(error, json, &bundle_error.to_string());
+                    2
+                }
             }
         }
         Command::SurfaceCaptureArm { options } => {
@@ -1124,6 +1309,10 @@ mod tests {
             Ok(Command::Help(SETUP_USAGE))
         );
         assert_eq!(
+            parse_command([OsString::from("compatibility"), OsString::from("help")]),
+            Ok(Command::Help(COMPATIBILITY_USAGE))
+        );
+        assert_eq!(
             parse_command([OsString::from("surface-capture"), OsString::from("help"),]),
             Ok(Command::Help(SURFACE_CAPTURE_USAGE))
         );
@@ -1189,6 +1378,55 @@ mod tests {
                 OsString::from(format!("sha256:{}", "a".repeat(64))),
                 OsString::from("--profile"),
                 OsString::from("read-only"),
+            ])
+            .is_err()
+        );
+        assert_eq!(
+            parse_command([
+                OsString::from("compatibility"),
+                OsString::from("status"),
+                OsString::from("--json"),
+            ]),
+            Ok(Command::CompatibilityStatus { json: true })
+        );
+        assert!(matches!(
+            parse_command([
+                OsString::from("compatibility"),
+                OsString::from("install"),
+                OsString::from("--bundle"),
+                OsString::from("/private/bundle.json"),
+                OsString::from("--host-profile"),
+                OsString::from("/private/host-profile.json"),
+                OsString::from("--expected-sha256"),
+                OsString::from(format!("sha256:{}", "a".repeat(64))),
+                OsString::from("--dry-run"),
+                OsString::from("--json"),
+            ]),
+            Ok(Command::CompatibilityInstallPreview { json: true, .. })
+        ));
+        assert_eq!(
+            parse_command([
+                OsString::from("compatibility"),
+                OsString::from("install"),
+                OsString::from("--apply-plan"),
+                OsString::from(format!("sha256:{}", "b".repeat(64))),
+                OsString::from("--json"),
+            ]),
+            Ok(Command::CompatibilityInstallApply {
+                digest: format!("sha256:{}", "b".repeat(64)),
+                json: true,
+            })
+        );
+        assert!(
+            parse_command([
+                OsString::from("compatibility"),
+                OsString::from("install"),
+                OsString::from("--bundle"),
+                OsString::from("/private/bundle.json"),
+                OsString::from("--host-profile"),
+                OsString::from("/private/host-profile.json"),
+                OsString::from("--expected-sha256"),
+                OsString::from(format!("sha256:{}", "a".repeat(64))),
             ])
             .is_err()
         );

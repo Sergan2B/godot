@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/godot_codex/surface-compatibility-bundle.schema.json",
+  "title": "Godot Codex Surface Compatibility Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "bundle_id",
+    "sequence",
+    "package_version",
+    "baseline_matrix_sha256",
+    "host_coordinate_profile_sha256",
+    "target",
+    "surfaces"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "godot-codex-surface-compatibility-bundle/1.0"
+    },
+    "bundle_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._+:/-]+$"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "package_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9._+:/-]+$"
+    },
+    "baseline_matrix_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "host_coordinate_profile_sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "surfaces": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/surface"
+      }
+    }
+  },
+  "$defs": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os",
+        "architecture"
+      ],
+      "properties": {
+        "os": {
+          "enum": [
+            "macos",
+            "linux",
+            "windows"
+          ]
+        },
+        "architecture": {
+          "enum": [
+            "arm64",
+            "x86_64"
+          ]
+        }
+      }
+    },
+    "surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "surface",
+        "host_version",
+        "ide_host_version",
+        "target",
+        "qualification"
+      ],
+      "properties": {
+        "surface": {
+          "enum": [
+            "app",
+            "cli",
+            "ide"
+          ]
+        },
+        "host_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._+:/-]+$"
+        },
+        "ide_host_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "qualification": {
+          "enum": [
+            "candidate",
+            "supported",
+            "compatible_reduced"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -52,6 +52,13 @@ HOST_PROFILE_SCHEMA_PATH = (
     / "godot_codex"
     / "host-coordinate-profile.schema.json"
 )
+SURFACE_COMPATIBILITY_BUNDLE_SCHEMA_PATH = (
+    REPOSITORY_ROOT
+    / "godot-codex-mcp"
+    / "schemas"
+    / "godot_codex"
+    / "surface-compatibility-bundle.schema.json"
+)
 DOCTOR_REPORT_SCHEMA_PATH = (
     REPOSITORY_ROOT
     / "godot-codex-mcp"
@@ -234,6 +241,13 @@ def package_fixture(root: Path, *, version: str = "0.1.0") -> tuple[Path, Path]:
         workspace
         / "schemas"
         / "godot_codex"
+        / "surface-compatibility-bundle.schema.json",
+        SURFACE_COMPATIBILITY_BUNDLE_SCHEMA_PATH.read_bytes(),
+    )
+    write(
+        workspace
+        / "schemas"
+        / "godot_codex"
         / "sprint11-multi-project-report.schema.json",
         MULTI_PROJECT_REPORT_SCHEMA_PATH.read_bytes(),
     )
@@ -302,6 +316,7 @@ def package_fixture(root: Path, *, version: str = "0.1.0") -> tuple[Path, Path]:
         "crates/godot-codex/Cargo.toml",
         "crates/godot-codex/src/main.rs",
         "crates/operations/Cargo.toml",
+        "crates/operations/src/compatibility_bundle.rs",
         "crates/operations/src/lib.rs",
         "crates/operations/src/setup.rs",
         "crates/operations/src/surface_capture.rs",
@@ -664,11 +679,13 @@ class Sprint11PackageTests(unittest.TestCase):
             "crates/godot-codex-mcp/tests/surface_capture_process.rs",
             "crates/godot-codex/src/main.rs",
             "crates/operations/src/surface_capture.rs",
+            "crates/operations/src/compatibility_bundle.rs",
             "crates/surface-capture/src/lib.rs",
             "schemas/godot_codex/sprint11-recorder-journal.schema.json",
             "schemas/godot_codex/"
             "sprint11-surface-capture-artifact.schema.json",
             "schemas/godot_codex/sprint11-surface-metadata.schema.json",
+            "schemas/godot_codex/surface-compatibility-bundle.schema.json",
         ):
             self.assertEqual(
                 (snapshot / "godot-codex-mcp" / relative).read_bytes(),
@@ -1505,6 +1522,7 @@ class Sprint11PackageTests(unittest.TestCase):
             "sprint11-surface-acquisition-authority.schema.json",
             "sprint11-surface-capture-artifact.schema.json",
             "sprint11-surface-metadata.schema.json",
+            "surface-compatibility-bundle.schema.json",
         ):
             self.assertIn(
                 "share/godot-codex/schemas/godot_codex/" + schema_name,

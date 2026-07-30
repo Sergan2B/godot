@@ -11,6 +11,7 @@ use crate::{COMPATIBILITY_MATRIX_JSON, COMPATIBILITY_MATRIX_SCHEMA};
 const MAX_BRIDGE_PROFILES: usize = 32;
 const MAX_CAPABILITIES_PER_PROFILE: usize = 128;
 const MAX_SURFACE_RULES: usize = 32;
+const MAX_SURFACE_BUNDLE_SEQUENCE: u64 = 9_007_199_254_740_991;
 
 /// Operating-system coordinate supported by the compatibility contract.
 #[derive(
@@ -137,7 +138,9 @@ pub struct BridgeCapabilityProfile {
 }
 
 /// Qualified Codex host surfaces.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(
+    Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum SurfaceKind {
     App,
@@ -163,7 +166,7 @@ pub enum SurfaceQualification {
 
 /// One exact surface/version/host/target rule. `ide_host_version` is present
 /// for IDE integrations and absent for standalone App/CLI.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SurfaceRule {
     pub surface: SurfaceKind,
@@ -171,6 +174,25 @@ pub struct SurfaceRule {
     pub ide_host_version: Option<String>,
     pub target: TargetCoordinate,
     pub qualification: SurfaceQualification,
+}
+
+/// Independently distributed host-surface compatibility snapshot.
+///
+/// A bundle can replace only App/CLI/IDE rules. Package, Godot, protocol,
+/// schema, registry, Bridge, and Cursor coordinates remain pinned by the
+/// embedded matrix. The detached host-coordinate profile carries exact
+/// artifact hashes and is bound here by digest.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SurfaceCompatibilityBundle {
+    pub schema_version: String,
+    pub bundle_id: String,
+    pub sequence: u64,
+    pub package_version: String,
+    pub baseline_matrix_sha256: String,
+    pub host_coordinate_profile_sha256: String,
+    pub target: TargetCoordinate,
+    pub surfaces: Vec<SurfaceRule>,
 }
 
 /// Closed machine-readable compatibility matrix.
@@ -389,6 +411,130 @@ pub enum MatrixError {
     DigestMismatch,
     #[error("compatibility matrix JSON is invalid")]
     Json,
+}
+
+/// Structural or baseline-binding failure for a surface compatibility bundle.
+/// Messages contain only static field names and never echo untrusted values.
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
+pub enum SurfaceBundleError {
+    #[error("surface compatibility bundle schema_version is unsupported")]
+    SchemaVersion,
+    #[error("surface compatibility bundle contains an invalid identifier")]
+    InvalidIdentifier,
+    #[error("surface compatibility bundle contains an invalid SHA-256")]
+    InvalidSha256,
+    #[error("surface compatibility bundle sequence is invalid")]
+    InvalidSequence,
+    #[error("surface compatibility bundle does not match the embedded product")]
+    ProductBinding,
+    #[error("surface compatibility bundle rules are missing, duplicate, or invalid")]
+    SurfaceRules,
+    #[error("surface compatibility bundle produces an invalid matrix")]
+    Matrix,
+    #[error("surface compatibility bundle JSON is invalid")]
+    Json,
+}
+
+impl SurfaceCompatibilityBundle {
+    /// Parses and validates a bundle against one immutable baseline matrix.
+    pub fn parse(bytes: &[u8], baseline: &CompatibilityMatrix) -> Result<Self, SurfaceBundleError> {
+        let bundle = serde_json::from_slice::<Self>(bytes).map_err(|_| SurfaceBundleError::Json)?;
+        bundle.validate_against(baseline)?;
+        Ok(bundle)
+    }
+
+    /// Validates that the bundle is a complete, single-valued App/CLI/IDE
+    /// snapshot for exactly the supplied embedded product.
+    pub fn validate_against(
+        &self,
+        baseline: &CompatibilityMatrix,
+    ) -> Result<(), SurfaceBundleError> {
+        baseline
+            .validate()
+            .map_err(|_| SurfaceBundleError::Matrix)?;
+        if self.schema_version != crate::SURFACE_COMPATIBILITY_BUNDLE_SCHEMA {
+            return Err(SurfaceBundleError::SchemaVersion);
+        }
+        if !safe_identifier(&self.bundle_id) || !safe_identifier(&self.package_version) {
+            return Err(SurfaceBundleError::InvalidIdentifier);
+        }
+        if self.sequence == 0 || self.sequence > MAX_SURFACE_BUNDLE_SEQUENCE {
+            return Err(SurfaceBundleError::InvalidSequence);
+        }
+        if !prefixed_lowercase_sha256(&self.baseline_matrix_sha256)
+            || !prefixed_lowercase_sha256(&self.host_coordinate_profile_sha256)
+        {
+            return Err(SurfaceBundleError::InvalidSha256);
+        }
+        let baseline_digest = baseline
+            .canonical_digest()
+            .map_err(|_| SurfaceBundleError::Matrix)?;
+        if self.package_version != baseline.package.version
+            || self.target != baseline.package.target
+            || self.baseline_matrix_sha256 != format!("sha256:{baseline_digest}")
+        {
+            return Err(SurfaceBundleError::ProductBinding);
+        }
+        if self.surfaces.len() < 3 || self.surfaces.len() > MAX_SURFACE_RULES {
+            return Err(SurfaceBundleError::SurfaceRules);
+        }
+        let mut keys = BTreeSet::new();
+        let mut required = BTreeSet::new();
+        for rule in &self.surfaces {
+            if !matches!(
+                rule.surface,
+                SurfaceKind::App | SurfaceKind::Cli | SurfaceKind::Ide
+            ) || rule.target != self.target
+                || !safe_identifier(&rule.host_version)
+                || rule
+                    .ide_host_version
+                    .as_deref()
+                    .is_some_and(|value| !safe_identifier(value))
+                || (rule.surface == SurfaceKind::Ide) != rule.ide_host_version.is_some()
+                || matches!(
+                    rule.qualification,
+                    SurfaceQualification::Incompatible | SurfaceQualification::NotTested
+                )
+                || !keys.insert((
+                    rule.surface,
+                    rule.host_version.as_str(),
+                    rule.ide_host_version.as_deref(),
+                ))
+            {
+                return Err(SurfaceBundleError::SurfaceRules);
+            }
+            required.insert(rule.surface);
+        }
+        if required != BTreeSet::from([SurfaceKind::App, SurfaceKind::Cli, SurfaceKind::Ide]) {
+            return Err(SurfaceBundleError::SurfaceRules);
+        }
+        Ok(())
+    }
+
+    /// Applies the validated surface snapshot while retaining every
+    /// host-independent baseline field and all baseline Cursor rules.
+    pub fn apply_to(
+        &self,
+        baseline: &CompatibilityMatrix,
+    ) -> Result<CompatibilityMatrix, SurfaceBundleError> {
+        self.validate_against(baseline)?;
+        let mut matrix = baseline.clone();
+        matrix.surfaces.retain(|rule| {
+            !matches!(
+                rule.surface,
+                SurfaceKind::App | SurfaceKind::Cli | SurfaceKind::Ide
+            )
+        });
+        matrix.surfaces.extend(self.surfaces.iter().cloned());
+        matrix.validate().map_err(|_| SurfaceBundleError::Matrix)?;
+        Ok(matrix)
+    }
+
+    /// Stable lowercase SHA-256 of the canonical typed JSON representation.
+    pub fn canonical_digest(&self) -> Result<String, SurfaceBundleError> {
+        let bytes = serde_json::to_vec(self).map_err(|_| SurfaceBundleError::Json)?;
+        Ok(format!("sha256:{:x}", Sha256::digest(bytes)))
+    }
 }
 
 impl CompatibilityMatrix {
@@ -824,11 +970,18 @@ fn lowercase_sha256(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+fn prefixed_lowercase_sha256(value: &str) -> bool {
+    value.strip_prefix("sha256:").is_some_and(lowercase_sha256)
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
-    use crate::COMPATIBILITY_MATRIX_JSON_SCHEMA;
+    use crate::{
+        COMPATIBILITY_MATRIX_JSON_SCHEMA, SURFACE_COMPATIBILITY_BUNDLE_JSON_SCHEMA,
+        SURFACE_COMPATIBILITY_BUNDLE_SCHEMA,
+    };
 
     use super::*;
 
@@ -866,6 +1019,28 @@ mod tests {
             surface,
             host_version: rule.host_version.clone(),
             ide_host_version: rule.ide_host_version.clone(),
+        }
+    }
+
+    fn surface_bundle(matrix: &CompatibilityMatrix, sequence: u64) -> SurfaceCompatibilityBundle {
+        let mut surfaces = matrix
+            .surfaces
+            .iter()
+            .filter(|rule| rule.surface != SurfaceKind::Cursor)
+            .cloned()
+            .collect::<Vec<_>>();
+        for rule in &mut surfaces {
+            rule.qualification = SurfaceQualification::Supported;
+        }
+        SurfaceCompatibilityBundle {
+            schema_version: SURFACE_COMPATIBILITY_BUNDLE_SCHEMA.to_owned(),
+            bundle_id: format!("qualified-hosts-{sequence}"),
+            sequence,
+            package_version: matrix.package.version.clone(),
+            baseline_matrix_sha256: format!("sha256:{}", matrix.canonical_digest().unwrap()),
+            host_coordinate_profile_sha256: format!("sha256:{}", "a".repeat(64)),
+            target: matrix.package.target,
+            surfaces,
         }
     }
 
@@ -923,6 +1098,99 @@ mod tests {
     }
 
     #[test]
+    fn surface_bundle_schema_is_closed_and_matches_the_rust_contract() {
+        let schema: serde_json::Value =
+            serde_json::from_str(SURFACE_COMPATIBILITY_BUNDLE_JSON_SCHEMA).unwrap();
+        assert_eq!(schema["additionalProperties"], false);
+        assert_eq!(
+            schema["properties"]["schema_version"]["const"],
+            SURFACE_COMPATIBILITY_BUNDLE_SCHEMA
+        );
+        assert_eq!(schema["$defs"]["surface"]["additionalProperties"], false);
+
+        let matrix = embedded_compatibility_matrix().unwrap();
+        let bundle = surface_bundle(&matrix, 1);
+        let generated = schemars::schema_for!(SurfaceCompatibilityBundle);
+        let generated_value = serde_json::to_value(generated).unwrap();
+        assert_eq!(
+            generated_value["properties"]["schema_version"]["type"],
+            "string"
+        );
+        let mut bundle_value = serde_json::to_value(bundle).unwrap();
+        bundle_value["unexpected"] = json!(true);
+        assert!(serde_json::from_value::<SurfaceCompatibilityBundle>(bundle_value).is_err());
+    }
+
+    #[test]
+    fn surface_bundle_promotes_only_host_surfaces() {
+        let matrix = embedded_compatibility_matrix().unwrap();
+        let bundle = surface_bundle(&matrix, 1);
+        bundle.validate_against(&matrix).unwrap();
+        let effective = bundle.apply_to(&matrix).unwrap();
+        assert_eq!(effective.package, matrix.package);
+        assert_eq!(effective.godot, matrix.godot);
+        assert_eq!(effective.protocols, matrix.protocols);
+        assert_eq!(effective.schemas, matrix.schemas);
+        assert_eq!(effective.registry, matrix.registry);
+        assert_eq!(effective.bridge_profiles, matrix.bridge_profiles);
+        for surface in [SurfaceKind::App, SurfaceKind::Cli, SurfaceKind::Ide] {
+            assert_eq!(
+                effective
+                    .surfaces
+                    .iter()
+                    .find(|rule| rule.surface == surface)
+                    .unwrap()
+                    .qualification,
+                SurfaceQualification::Supported
+            );
+        }
+        assert_eq!(
+            effective
+                .surfaces
+                .iter()
+                .find(|rule| rule.surface == SurfaceKind::Cursor),
+            matrix
+                .surfaces
+                .iter()
+                .find(|rule| rule.surface == SurfaceKind::Cursor)
+        );
+    }
+
+    #[test]
+    fn surface_bundle_rejects_wrong_baseline_and_incomplete_or_unsafe_rules() {
+        let matrix = embedded_compatibility_matrix().unwrap();
+        let mut bundle = surface_bundle(&matrix, 1);
+        bundle.baseline_matrix_sha256 = format!("sha256:{}", "b".repeat(64));
+        assert_eq!(
+            bundle.validate_against(&matrix),
+            Err(SurfaceBundleError::ProductBinding)
+        );
+
+        let mut bundle = surface_bundle(&matrix, 1);
+        bundle
+            .surfaces
+            .retain(|rule| rule.surface != SurfaceKind::Ide);
+        assert_eq!(
+            bundle.validate_against(&matrix),
+            Err(SurfaceBundleError::SurfaceRules)
+        );
+
+        let mut bundle = surface_bundle(&matrix, 1);
+        bundle.surfaces[0].surface = SurfaceKind::Cursor;
+        assert_eq!(
+            bundle.validate_against(&matrix),
+            Err(SurfaceBundleError::SurfaceRules)
+        );
+
+        let mut bundle = surface_bundle(&matrix, 1);
+        bundle.sequence = 0;
+        assert_eq!(
+            bundle.validate_against(&matrix),
+            Err(SurfaceBundleError::InvalidSequence)
+        );
+    }
+
+    #[test]
     fn canonical_app_cli_and_ide_rows_are_candidates_and_fail_closed() {
         let matrix = embedded_compatibility_matrix().unwrap();
         for surface in [SurfaceKind::App, SurfaceKind::Cli, SurfaceKind::Ide] {
@@ -952,7 +1220,7 @@ mod tests {
         let expected = [
             (
                 SurfaceKind::App,
-                "26.721.41059",
+                "26.721.81911",
                 None,
                 SurfaceQualification::Candidate,
             ),
