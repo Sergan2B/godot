@@ -1,8 +1,10 @@
 # Sprint 11 plan — external Codex productization
 
-**Status:** In progress; non-qualifying source implementation is under local
-verification, while S11-01 packaged host feasibility and the S11-12–14
-external qualification gates still block beta promotion
+**Status:** Technical qualification in progress. By explicit product-owner
+decision on 2026-07-30, S11-12 independent human usability is deferred to a
+future commercial beta. This does not satisfy S11-12 or permit External Codex
+Beta promotion; see
+[SPRINT-11-TECHNICAL-QUALIFICATION](SPRINT-11-TECHNICAL-QUALIFICATION.md).
 
 **Milestone:** External Codex Beta
 
@@ -855,6 +857,13 @@ without requiring screenshots or treating prose as the API contract.
 
 **Depends on:** S11-09 through S11-11.
 
+**2026-07-30 scope decision:** this gate is `deferred_unacquired` because the
+solo product owner has no independent usability participants for this sprint.
+The technical App/CLI/IDE qualification may continue, but neither founder
+dogfooding nor an administrative waiver qualifies this gate. The unchanged
+three-participant contract becomes a future commercial-beta exit gate. Until
+then, S11-14 and the External Codex Beta claim remain blocked.
+
 **Changes:** frozen participant script and rubric with no developer coaching.
 At least three clean-start runs include one participant not involved in the
 implementation. Tasks:
@@ -903,6 +912,11 @@ sufficient for the required daily workflow.
 ### S11-13 — Qualify real App, CLI, and IDE workflows
 
 **Depends on:** S11-11 and S11-12.
+
+Technical surface acquisition may proceed while S11-12 is deferred so that
+the engineering candidate can be evaluated. A technically passing S11-13
+surface bundle is not a qualifying External Codex Beta bundle unless S11-12
+also passes.
 
 **Changes:** run the same canonical task pack from:
 
@@ -993,6 +1007,11 @@ after the normative normalization rules.
 
 **Depends on:** all implementation, docs, package, usability, and surface gates
 complete.
+
+The 2026-07-30 usability deferral does not waive this dependency. No
+`sprint-11-external-codex-beta-macos.json` may be created while S11-12 remains
+`deferred_unacquired`; the separate technical track stops at an engineering
+candidate/private-alpha claim.
 
 **Changes:** no implementation changes. From the clean package source, first
 run the source-bound package-live Sprint 6–10 acquisition. Commit its detached
@@ -1313,6 +1332,12 @@ discarded. The fix enters the correct boundary, is committed, and the complete
 gate restarts from a clean coordinate and rebuilt package.
 
 ## 5. External Codex Beta acceptance
+
+The technical-qualification track in
+[SPRINT-11-TECHNICAL-QUALIFICATION](SPRINT-11-TECHNICAL-QUALIFICATION.md)
+does not alter any criterion in this section. It may complete machine and
+official-host evidence, but it cannot mark this acceptance as passed or use
+the full-beta evidence filename while human usability is deferred.
 
 Sprint 11 passes only when independent evidence proves:
 

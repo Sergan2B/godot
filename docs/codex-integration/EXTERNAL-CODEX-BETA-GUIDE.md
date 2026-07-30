@@ -5,6 +5,12 @@ manifest and archive pass the package validator, then run the installed
 `"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex" doctor`;
 this document does not turn a developer build into a qualified release.
 
+The 2026-07-30 product-owner decision defers independent human usability to a
+future commercial beta. App/CLI/IDE technical acquisition may continue, but
+the result is limited to an engineering candidate/private alpha and must not
+be called External Codex Beta qualified. See
+[SPRINT-11-TECHNICAL-QUALIFICATION](SPRINT-11-TECHNICAL-QUALIFICATION.md).
+
 ## Support coordinate
 
 The Sprint 11 gate covers local macOS arm64 with:

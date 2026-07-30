@@ -52,6 +52,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 46. [SPRINT-11-HOST-CONTRACT.md](SPRINT-11-HOST-CONTRACT.md) — exact local App/CLI/IDE/Godot candidate coordinate and open feasibility gates.
 47. [EXTERNAL-CODEX-BETA-GUIDE.md](EXTERNAL-CODEX-BETA-GUIDE.md) — install/setup/status/read/runtime/write/offline/multi-project/troubleshooting workflow.
 48. [TEST-001-fixtures-and-e2e-strategy.md](TEST-001-fixtures-and-e2e-strategy.md) — closed fixture, trace, usability, package, and source-bound evidence rules.
+49. [SPRINT-11-TECHNICAL-QUALIFICATION.md](SPRINT-11-TECHNICAL-QUALIFICATION.md) — explicit solo-developer usability deferral, allowed technical claims, and future commercial-beta exit gate.
 
 ## Document status
 
@@ -91,7 +92,7 @@ This directory is the authoritative entry point for the Godot × Codex integrati
 | Sprint 8 plan / `RUNTIME-001` | Complete locally on macOS arm64 through Bridge RPC 1.6 | Runtime regressions remain blocking for Sprint 11 |
 | Sprint 9 plan / WRITE-001 v1 | Complete locally through Bridge RPC 1.7 and targeted native Undo | Superseded by Sprint 10 compound profile |
 | Sprint 10 plan / VALIDATION-001 / WRITE-001 v2 | Complete locally on source `b225f77acf48648ef6f59a76ff5a7dbb824da7bb`; evidence-only commit `815bccedddcd7c64a387dc8e9d5de2e941003fea` | M3 achieved; immutable Sprint 11 input |
-| Sprint 11 plan / host contract / TEST-001 | In progress; local candidate and fail-closed external beta gates frozen | Implement and qualify App/CLI/official IDE package workflow |
+| Sprint 11 plan / host contract / TEST-001 | Technical qualification in progress; S11-12 is explicitly deferred/unacquired and full External Codex Beta remains blocked | Complete App/CLI/official IDE technical evidence; move independent usability to the commercial-beta exit gate |
 
 ## Interim ownership
 

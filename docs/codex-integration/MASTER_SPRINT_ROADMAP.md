@@ -814,6 +814,14 @@ Linux и remote CI остаются `not_run` и не заявлены как п
 **Длительность:** 2 недели
 **Milestone:** External Codex Beta
 
+**Scope decision 2026-07-30:** техническая квалификация пакета и официальных
+App/CLI/IDE поверхностей продолжается, но независимое usability-тестирование
+перенесено на будущую коммерческую бету. До появления не менее трёх реальных
+участников, включая одного независимого от реализации, результат может
+называться только engineering candidate/private alpha; milestone External
+Codex Beta не достигнут. См.
+[SPRINT-11-TECHNICAL-QUALIFICATION](SPRINT-11-TECHNICAL-QUALIFICATION.md).
+
 #### Цель
 
 Сделать внешний Codex основным пригодным для ежедневной работы клиентом интеграции.

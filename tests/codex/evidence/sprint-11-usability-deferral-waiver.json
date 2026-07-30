@@ -1,0 +1,47 @@
+{
+  "decision": {
+    "authority": "product_owner",
+    "date": "2026-07-30",
+    "reason": "The product is developed and commercialized by one person, and independent usability participants are not available for Sprint 11.",
+    "reason_code": "solo_commercial_development",
+    "requested_by_owner": true
+  },
+  "future_exit_gate": {
+    "consent_required": true,
+    "independent_participants_minimum": 1,
+    "participants_minimum": 3,
+    "phase": "commercial_beta",
+    "retest_after_high_or_critical_fix": true,
+    "waiver_can_satisfy": false
+  },
+  "human_usability": {
+    "independent_participant": false,
+    "participant_count": 0,
+    "qualifying_report": null,
+    "status": "deferred_unacquired",
+    "superseded_by": null,
+    "synthetic_substitute_allowed": false
+  },
+  "package": {
+    "archive_sha256": "sha256:6f0efae4223fc5e1463027e4c6a105e322b57e746d37f17b112a6558526aa591",
+    "manifest_path": "tests/codex/acquisition/sprint11/package/sprint11-package-manifest.json",
+    "manifest_sha256": "sha256:353a37c3c13c9f1013f5e0b96ec7305c890449396336124259702267b0ead0bd",
+    "source_commit": "5236aeaf99d3e585a7950f234db6a3aac3b4676f",
+    "version": "0.1.1"
+  },
+  "risk": {
+    "accepted": true,
+    "summary": "Technical correctness and host parity do not prove that external users can complete or recover the workflow without developer assistance."
+  },
+  "schema_version": "s11-usability-deferral/1.0",
+  "sprint": 11,
+  "status": "accepted_scope_change",
+  "technical_qualification": {
+    "allowed_claim": "engineering_candidate_private_alpha",
+    "app_cli_ide_required": true,
+    "commercial_release_qualified": false,
+    "external_codex_beta_qualified": false,
+    "status": "in_progress"
+  }
+}
+
