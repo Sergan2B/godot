@@ -39,7 +39,10 @@ TEST_FORCE_LINK(test_uds_server)
 #include "core/io/stream_peer_uds.h"
 #include "core/io/uds_server.h"
 #include "core/os/os.h"
+#define NET_SOCKET_UNIX_TESTS_ENABLED
+#include "drivers/unix/net_socket_unix.h"
 
+#include <fcntl.h>
 #include <functional>
 
 namespace TestUDSServer {
@@ -112,6 +115,39 @@ TEST_CASE("[UDSServer] Instantiation") {
 
 	REQUIRE(server.is_valid());
 	CHECK_FALSE(server->is_listening());
+}
+
+TEST_CASE("[UDSServer] Accepted sockets are closed when starting a subprocess") {
+	cleanup_socket_file();
+
+	IP::Type ip_type = IP::TYPE_NONE;
+	Ref<NetSocket> server = NetSocket::create();
+	REQUIRE_EQ(server->open(NetSocket::Family::UNIX, NetSocket::TYPE_NONE, ip_type), Error::OK);
+	REQUIRE_EQ(server->bind(NetSocket::Address(SOCKET_PATH)), Error::OK);
+	REQUIRE_EQ(server->listen(1), Error::OK);
+
+	Ref<NetSocket> client = NetSocket::create();
+	REQUIRE_EQ(client->open(NetSocket::Family::UNIX, NetSocket::TYPE_NONE, ip_type), Error::OK);
+	Error connect_error = client->connect_to_host(NetSocket::Address(SOCKET_PATH));
+	REQUIRE((connect_error == Error::OK || connect_error == Error::ERR_BUSY));
+
+	Ref<NetSocket> accepted;
+	wait_for_condition([&]() {
+		NetSocket::Address peer_address;
+		accepted = server->accept(peer_address);
+		return accepted.is_valid();
+	});
+	REQUIRE(accepted.is_valid());
+
+	NetSocketUnix *accepted_unix = static_cast<NetSocketUnix *>(accepted.ptr());
+	const int descriptor_flags = fcntl(accepted_unix->get_socket_descriptor_for_tests(), F_GETFD);
+	REQUIRE_NE(descriptor_flags, -1);
+	CHECK((descriptor_flags & FD_CLOEXEC) != 0);
+
+	accepted->close();
+	client->close();
+	server->close();
+	cleanup_socket_file();
 }
 
 TEST_CASE("[UDSServer] Accept a connection and receive/send data") {

@@ -818,6 +818,9 @@ Ref<NetSocket> NetSocketUnix::_unix_accept() {
 	ret->_sock = fd;
 	ret->_family = _family;
 	ret->_unix_path = _unix_path;
+	// Match accepted INET sockets: the accepted descriptor must not leak into
+	// child processes started by the editor (for example, a running project).
+	ret->_set_close_exec_enabled(true);
 	ret->set_blocking_enabled(false);
 	return Ref<NetSocket>(ret);
 }

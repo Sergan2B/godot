@@ -112,6 +112,10 @@ public:
 	virtual Error join_multicast_group(const IPAddress &p_multi_address, const String &p_if_name) override;
 	virtual Error leave_multicast_group(const IPAddress &p_multi_address, const String &p_if_name) override;
 
+#ifdef NET_SOCKET_UNIX_TESTS_ENABLED
+	int get_socket_descriptor_for_tests() const { return _sock; }
+#endif
+
 	NetSocketUnix();
 	~NetSocketUnix() override;
 };
