@@ -1,17 +1,17 @@
 {
   "schema_version": "godot-codex-compatibility-matrix/1.0",
-  "matrix_id": "external-codex-beta-macos-arm64-v3",
+  "matrix_id": "external-codex-beta-macos-arm64-v4",
   "package": {
-    "version": "0.1.3",
+    "version": "0.1.4",
     "target": {
       "os": "macos",
       "architecture": "arm64"
     }
   },
   "godot": {
-    "source_commit": "c11459e33904a724701b6e2ddc81de0662609709",
-    "build_id": "4.8.dev.codex.c11459e33",
-    "artifact_sha256": "dea4ace0e2885582e5dd9397a4f5ab4b2130df7000825123db08ef9d318a5056",
+    "source_commit": "336fc9a13a2b5a0823ef5ba69e30459935af3da8",
+    "build_id": "4.8.dev.codex.336fc9a13",
+    "artifact_sha256": "2166f3c6b7784cc7259a08a9636aafe89c8d6bebcbdc05c2b1d8d76933373dff",
     "target": {
       "os": "macos",
       "architecture": "arm64"
