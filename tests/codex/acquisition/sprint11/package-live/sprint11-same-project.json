@@ -1,7 +1,7 @@
 {
   "artifacts": {
     "godot_sha256": "sha256:157a265d49f72c0b6974340046379549ad74aab6e5a70e3cc6e239bf6be7102e",
-    "sidecar_sha256": "sha256:eacc7f1e55558610827bfa73ad69c5be7bd083e3616027a7b64e2d29d33b043b"
+    "sidecar_sha256": "sha256:af7283ab78e1c5c49d0f63e075ee360012599f52f9ef8a092a983879c165c89e"
   },
   "assertions": {
     "busy_not_syncing": true,
@@ -20,7 +20,7 @@
     "standby_stopped": true,
     "successor_stopped": true
   },
-  "package_version": "0.1.1",
+  "package_version": "0.1.2",
   "platform": "macos-arm64",
   "protocol": "2025-11-25",
   "redaction": true,
