@@ -143,6 +143,40 @@ mod unix {
                 .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
     }
 
+    fn external_runtime_root() -> PathBuf {
+        #[cfg(target_os = "macos")]
+        let temporary_root = Path::new("/private/tmp");
+        #[cfg(not(target_os = "macos"))]
+        let temporary_root = Path::new("/tmp");
+        temporary_root.join(format!("gcx-{}", rustix::process::geteuid().as_raw()))
+    }
+
+    fn external_project_directory(project_id: &str) -> Result<PathBuf, BridgeError> {
+        let digest = project_id
+            .strip_prefix("project:sha256:")
+            .filter(|value| {
+                value.len() == 64
+                    && value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            })
+            .ok_or_else(|| BridgeError::Invalid("invalid project binding".to_owned()))?;
+        Ok(external_runtime_root().join(format!("p-{}", &digest[..32])))
+    }
+
+    fn expected_external_endpoint(
+        project_id: &str,
+        editor_session_id: &str,
+    ) -> Result<PathBuf, BridgeError> {
+        if !valid_editor_session_id(editor_session_id) {
+            return Err(BridgeError::Invalid(
+                "invalid editor session binding".to_owned(),
+            ));
+        }
+        Ok(external_project_directory(project_id)?
+            .join(format!("b-{}.sock", &editor_session_id[7..])))
+    }
+
     pub(super) fn load(project_root: &Path) -> Result<Discovery, BridgeError> {
         let canonical_root = fs::canonicalize(project_root)?;
         if !canonical_root.is_dir() || !canonical_root.join("project.godot").is_file() {
@@ -160,7 +194,7 @@ mod unix {
         require_private_metadata(&discovery_path, 0o600, is_regular_file)?;
         let raw_record = fs::read(&discovery_path)?;
         let record: DiscoveryRecord = serde_json::from_slice(&raw_record)?;
-        if record.discovery_schema != 1
+        if !matches!(record.discovery_schema, 1 | 2)
             || record.transport != "uds"
             || !valid_editor_session_id(&record.editor_session_id)
         {
@@ -196,10 +230,28 @@ mod unix {
             .try_into()
             .map_err(|_| BridgeError::Invalid("session token is not 32 bytes".to_owned()))?;
 
-        let endpoint_relative = safe_relative(&record.endpoint, Path::new(".godot/codex/run"))?;
-        let endpoint = canonical_root.join(endpoint_relative);
-        require_private_metadata(&endpoint, 0o600, is_socket)?;
-        canonical_descendant(&endpoint, &canonical_codex)?;
+        let endpoint = if record.discovery_schema == 1 {
+            let endpoint_relative = safe_relative(&record.endpoint, Path::new(".godot/codex/run"))?;
+            let endpoint = canonical_root.join(endpoint_relative);
+            require_private_metadata(&endpoint, 0o600, is_socket)?;
+            canonical_descendant(&endpoint, &canonical_codex)?
+        } else {
+            let expected =
+                expected_external_endpoint(&record.project_id, &record.editor_session_id)?;
+            if Path::new(&record.endpoint) != expected {
+                return Err(BridgeError::Invalid(
+                    "external endpoint does not match the project/session binding".to_owned(),
+                ));
+            }
+            let external_root = external_runtime_root();
+            let external_project = external_project_directory(&record.project_id)?;
+            require_private_metadata(&external_root, 0o700, is_directory)?;
+            require_private_metadata(&external_project, 0o700, is_directory)?;
+            let canonical_external_project = fs::canonicalize(&external_project)?;
+            let endpoint = PathBuf::from(&record.endpoint);
+            require_private_metadata(&endpoint, 0o600, is_socket)?;
+            canonical_descendant(&endpoint, &canonical_external_project)?
+        };
         let lock_path = codex_dir.join("bridge.lock");
         require_private_metadata(&lock_path, 0o600, is_regular_file)?;
         canonical_descendant(&lock_path, &canonical_codex)?;
@@ -212,6 +264,94 @@ mod unix {
             token,
             raw_record,
         })
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::net::UnixListener;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        #[test]
+        fn external_endpoint_is_exactly_bound_to_project_and_session() {
+            let project_id = format!("project:sha256:{}", "a".repeat(64));
+            let session_id = format!("editor:{}", "b".repeat(32));
+            let endpoint = expected_external_endpoint(&project_id, &session_id).unwrap();
+            assert_eq!(
+                endpoint,
+                external_runtime_root()
+                    .join(format!("p-{}", "a".repeat(32)))
+                    .join(format!("b-{}.sock", "b".repeat(32)))
+            );
+            assert!(endpoint.is_absolute());
+            assert!(expected_external_endpoint("project:sha256:bad", &session_id).is_err());
+            assert!(expected_external_endpoint(&project_id, "editor:bad").is_err());
+        }
+
+        #[test]
+        fn schema_two_loads_an_exact_private_external_socket() {
+            let unique = format!(
+                "gcb-client-{}-{}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            );
+            let project_root = std::env::temp_dir().join(unique);
+            let codex = project_root.join(".godot/codex");
+            let run = codex.join("run");
+            fs::create_dir_all(&run).unwrap();
+            fs::write(project_root.join("project.godot"), b"[application]\n").unwrap();
+            fs::set_permissions(&codex, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::set_permissions(&run, fs::Permissions::from_mode(0o700)).unwrap();
+
+            let canonical_root = fs::canonicalize(&project_root).unwrap();
+            let project_id = project_id_for_root(canonical_root.to_str().unwrap().as_bytes());
+            let session_id = format!("editor:{}", "b".repeat(32));
+            let external_root = external_runtime_root();
+            let external_project = external_project_directory(&project_id).unwrap();
+            fs::create_dir_all(&external_project).unwrap();
+            fs::set_permissions(&external_root, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::set_permissions(&external_project, fs::Permissions::from_mode(0o700)).unwrap();
+            let endpoint = expected_external_endpoint(&project_id, &session_id).unwrap();
+            let listener = UnixListener::bind(&endpoint).unwrap();
+            fs::set_permissions(&endpoint, fs::Permissions::from_mode(0o600)).unwrap();
+
+            let record = serde_json::json!({
+                "discovery_schema": 2,
+                "transport": "uds",
+                "endpoint": endpoint.to_str().unwrap(),
+                "token_file": ".godot/codex/session.token",
+                "project_id": project_id.clone(),
+                "editor_session_id": session_id,
+                "protocol_versions": ["1.8"],
+            });
+            fs::write(
+                codex.join("bridge.json"),
+                serde_json::to_vec(&record).unwrap(),
+            )
+            .unwrap();
+            fs::write(codex.join("session.token"), [7_u8; 32]).unwrap();
+            fs::write(codex.join("bridge.lock"), b"{}").unwrap();
+            for name in ["bridge.json", "session.token", "bridge.lock"] {
+                fs::set_permissions(codex.join(name), fs::Permissions::from_mode(0o600)).unwrap();
+            }
+
+            let discovery = Discovery::load(&project_root).unwrap();
+            assert_eq!(discovery.project_id, project_id);
+            assert!(matches!(
+                discovery.endpoint,
+                super::super::BridgeEndpoint::Unix(ref value) if value == &endpoint
+            ));
+
+            drop(listener);
+            fs::remove_file(&endpoint).unwrap();
+            fs::remove_dir(&external_project).unwrap();
+            let _ = fs::remove_dir(&external_root);
+            fs::remove_dir_all(&project_root).unwrap();
+        }
     }
 }
 

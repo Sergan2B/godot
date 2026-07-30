@@ -51,7 +51,8 @@ class BridgeRuntime {
 	String token_path;
 	String lock_path;
 	String endpoint_path;
-	String endpoint_relative_path;
+	String endpoint_discovery_path;
+	String external_runtime_directory;
 	String project_id;
 	String editor_session_id;
 	PackedByteArray token;
@@ -62,6 +63,7 @@ class BridgeRuntime {
 #endif
 	bool discovery_published = false;
 	bool token_published = false;
+	int discovery_schema = 1;
 
 	Error _acquire_lock();
 	Error _remove_or_reject_stale_runtime();

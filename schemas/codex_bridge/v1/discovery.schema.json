@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Codex Bridge project-local discovery record",
+  "title": "Codex Bridge project-bound discovery record",
   "type": "object",
   "required": [
     "discovery_schema",
@@ -15,7 +15,7 @@
   ],
   "properties": {
     "discovery_schema": {
-      "const": 1
+      "enum": [1, 2]
     },
     "project_id": {
       "$ref": "common.schema.json#/$defs/projectId"
@@ -37,7 +37,7 @@
     "protocol_versions": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 8,
+      "maxItems": 9,
       "uniqueItems": true,
       "items": {
         "$ref": "common.schema.json#/$defs/protocolVersion"
@@ -55,8 +55,11 @@
   "allOf": [
     {
       "if": {
-        "properties": { "transport": { "const": "uds" } },
-        "required": ["transport"]
+        "properties": {
+          "discovery_schema": { "const": 1 },
+          "transport": { "const": "uds" }
+        },
+        "required": ["discovery_schema", "transport"]
       },
       "then": {
         "properties": {
@@ -68,13 +71,32 @@
     },
     {
       "if": {
-        "properties": { "transport": { "const": "tcp_loopback" } },
-        "required": ["transport"]
+        "properties": {
+          "discovery_schema": { "const": 1 },
+          "transport": { "const": "tcp_loopback" }
+        },
+        "required": ["discovery_schema", "transport"]
       },
       "then": {
         "properties": {
           "endpoint": {
             "pattern": "^127\\.0\\.0\\.1:(?:[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "discovery_schema": { "const": 2 } },
+        "required": ["discovery_schema"]
+      },
+      "then": {
+        "properties": {
+          "transport": {
+            "const": "uds"
+          },
+          "endpoint": {
+            "pattern": "^/(?:private/)?tmp/gcx-[0-9]+/p-[0-9a-f]{32}/b-[0-9a-f]{32}\\.sock$"
           }
         }
       }

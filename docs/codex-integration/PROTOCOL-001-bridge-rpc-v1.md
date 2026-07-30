@@ -72,7 +72,7 @@ Binary values in JSON use unpadded base64url as defined by the URL-safe Base64 a
 
 ## 3. Runtime discovery and publication
 
-The v1 runtime layout is project-local:
+The v1 binding metadata, lock, and token are project-local:
 
 ```text
 .godot/codex/
@@ -83,12 +83,23 @@ The v1 runtime layout is project-local:
     └── bridge-<session-hex>.sock
 ```
 
-On macOS, the containing directories use mode `0700`; `bridge.json`,
-`bridge.lock`, `session.token`, and the socket use owner-only access and regular
-files use mode `0600`. On Windows, `.godot/codex`, `run`, and the three runtime
-files use a protected DACL limited to the current user, Local System, and local
-Administrators. Reparse points are rejected. A more permissive observed access
-policy is a startup failure, not a warning followed by publication.
+Schema 1 uses the project-local socket shown above. If that absolute path does
+not fit the platform `sockaddr_un.sun_path`, Unix schema 2 uses the exact
+short endpoint
+`/private/tmp/gcx-<euid>/p-<project-hash-prefix>/b-<session-hex>.sock` on
+macOS (`/tmp/...` on other Unix systems). The 128-bit directory prefix keeps
+the path bounded; the complete 256-bit `project_id` remains mandatory in
+discovery and in the authenticated handshake.
+
+On Unix, every controlled directory uses mode `0700`; `bridge.json`,
+`bridge.lock`, `session.token`, and the socket use owner-only access and
+regular files use mode `0600`. The external root, project directory, endpoint
+spelling, owner, type, and mode are validated independently; an arbitrary
+absolute endpoint is never accepted. On Windows, `.godot/codex`, `run`, and
+the three runtime files use a protected DACL limited to the current user,
+Local System, and local Administrators. Reparse points are rejected. A more
+permissive observed access policy is a startup failure, not a warning followed
+by publication.
 
 `session.token` contains exactly 32 raw random bytes and no text encoding or trailing newline. It is regenerated for every editor session.
 
@@ -100,7 +111,7 @@ The endpoint and token are published only after a successful local `bind()` and
 3. write a token temporary file, set mode `0600`, `fsync` as supported, and atomically rename it to `session.token`;
 4. write and atomically rename the discovery record to `bridge.json` last.
 
-The macOS discovery record contains only project-relative file paths:
+The normal macOS discovery record contains only project-relative file paths:
 
 ```json
 {
@@ -111,6 +122,23 @@ The macOS discovery record contains only project-relative file paths:
   "pid": 12345,
   "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd",
   "protocol_versions": ["1.0"],
+  "token_file": ".godot/codex/session.token",
+  "transport": "uds"
+}
+```
+
+For a long canonical project root, macOS publishes schema 2 with the exact
+project/session-bound external endpoint; the token remains project-local:
+
+```json
+{
+  "created_at": "2026-07-30T10:00:00Z",
+  "discovery_schema": 2,
+  "editor_session_id": "editor:0123456789abcdef0123456789abcdef",
+  "endpoint": "/private/tmp/gcx-501/p-94cc0c8419cfeecadbe62dfba93b8949/b-0123456789abcdef0123456789abcdef.sock",
+  "pid": 12345,
+  "project_id": "project:sha256:94cc0c8419cfeecadbe62dfba93b8949acf1d9bcc48ed602b194d0dc4c53bdcd",
+  "protocol_versions": ["1.8", "1.7", "1.6", "1.5", "1.4", "1.3", "1.2", "1.1", "1.0"],
   "token_file": ".godot/codex/session.token",
   "transport": "uds"
 }
@@ -137,13 +165,15 @@ The Windows server asks the OS for an ephemeral port and binds only
 endpoints are rejected by the client. The TCP stream still requires the same
 per-session mutual HMAC authentication before any RPC data is accepted.
 
-The client discovers the record from the canonical project root supplied to
-that client. It MUST reject absolute token paths, `..` traversal, symlinks or
-reparse points escaping `.godot/codex`, an unexpected Unix owner/mode, a
-mismatched `project_id`, a transport/endpoint mismatch, or a changed
-discovery/session record during connection. On Windows, the bridge validates
-and protects the DACL before publishing; the client independently rejects
-reparse points and non-regular runtime objects before reading them.
+The client discovers the record only from the canonical project root supplied
+to that client. It MUST reject absolute token paths, `..` traversal, symlinks
+or reparse points escaping a controlled runtime directory, an unexpected Unix
+owner/mode, a mismatched `project_id`, a transport/schema/endpoint mismatch,
+an absolute schema-1 endpoint, a schema-2 endpoint that differs from the exact
+euid/project/session derivation, or a changed discovery/session record during
+connection. On Windows, the bridge validates and protects the DACL before
+publishing; the client independently rejects reparse points and non-regular
+runtime objects before reading them.
 
 A second editor for the same canonical project MUST NOT replace active
 discovery. Stale ownership is not inferred from age alone: the implementation
@@ -152,6 +182,9 @@ over. Unix uses a non-blocking file lock; Windows opens `bridge.lock` with
 exclusive read/write sharing. Shutdown stops accept, closes clients, removes
 `bridge.json`, `session.token`, the Unix socket when applicable, and the lock
 owned by that session, and waits for the worker only for a bounded interval.
+After a schema-2 socket is removed, the Bridge removes its exact empty
+project directory and then the empty per-user root on a best-effort basis; it
+never recursively removes the shared temporary root.
 
 ## 4. Framing and JSON encoding
 

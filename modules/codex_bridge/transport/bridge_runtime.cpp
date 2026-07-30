@@ -250,6 +250,76 @@ static bool validate_relative_endpoint(const String &p_endpoint) {
 	return !p_endpoint.is_absolute_path() && !p_endpoint.contains("..") && p_endpoint.begins_with(prefix) && p_endpoint.ends_with(suffix) && is_lower_hex_32(p_endpoint.substr(prefix.length(), 32)) && p_endpoint.length() == prefix.length() + 32 + suffix.length();
 }
 
+static String external_runtime_root() {
+#ifdef MACOS_ENABLED
+	static const String temporary_root = "/private/tmp";
+#else
+	static const String temporary_root = "/tmp";
+#endif
+	return temporary_root.path_join("gcx-" + itos(geteuid()));
+}
+
+static String external_project_directory(const String &p_project_id) {
+	static const String project_prefix = "project:sha256:";
+	return external_runtime_root().path_join("p-" + p_project_id.trim_prefix(project_prefix).substr(0, 32));
+}
+
+static String expected_external_endpoint(const String &p_project_id, const String &p_editor_session_id) {
+	return external_project_directory(p_project_id).path_join("b-" + p_editor_session_id.trim_prefix("editor:") + ".sock");
+}
+
+static bool validate_external_endpoint(const String &p_endpoint, const String &p_project_id, const String &p_editor_session_id) {
+	return p_endpoint.is_absolute_path() &&
+			p_project_id.begins_with("project:sha256:") && is_lower_hex(p_project_id.trim_prefix("project:sha256:"), 64) &&
+			p_editor_session_id.begins_with("editor:") && is_lower_hex(p_editor_session_id.trim_prefix("editor:"), 32) &&
+			p_endpoint == expected_external_endpoint(p_project_id, p_editor_session_id);
+}
+
+static bool get_string_field(const Dictionary &p_object, const StringName &p_key, String &r_value);
+static bool get_bounded_integer_field(const Dictionary &p_object, const StringName &p_key, int64_t p_minimum, int64_t p_maximum, int64_t &r_value);
+
+static bool resolve_discovery_endpoint(const String &p_project_root, const Dictionary &p_discovery, String &r_endpoint, bool &r_external) {
+	int64_t schema = 0;
+	String endpoint;
+	String project_id;
+	String editor_session_id;
+	if (!get_bounded_integer_field(p_discovery, "discovery_schema", 1, 2, schema) ||
+			!get_string_field(p_discovery, "endpoint", endpoint) ||
+			!get_string_field(p_discovery, "project_id", project_id) ||
+			!get_string_field(p_discovery, "editor_session_id", editor_session_id)) {
+		return false;
+	}
+	if (schema == 1 && validate_relative_endpoint(endpoint)) {
+		r_endpoint = p_project_root.path_join(endpoint);
+		r_external = false;
+		return true;
+	}
+	if (schema == 2 && validate_external_endpoint(endpoint, project_id, editor_session_id)) {
+		r_endpoint = endpoint;
+		r_external = true;
+		return true;
+	}
+	return false;
+}
+
+static bool validate_external_runtime_directories(const String &p_project_id) {
+	return BridgeRuntime::validate_private_path(external_runtime_root(), BridgeRuntime::DIRECTORY_MODE, true) == OK &&
+			BridgeRuntime::validate_private_path(external_project_directory(p_project_id), BridgeRuntime::DIRECTORY_MODE, true) == OK;
+}
+
+static void remove_empty_external_runtime_directories(const String &p_project_id) {
+	const String project_directory = external_project_directory(p_project_id);
+	if (BridgeRuntime::validate_private_path(project_directory, BridgeRuntime::DIRECTORY_MODE, true) == OK) {
+		const CharString path = path_utf8(project_directory);
+		rmdir(path.get_data());
+	}
+	const String root = external_runtime_root();
+	if (BridgeRuntime::validate_private_path(root, BridgeRuntime::DIRECTORY_MODE, true) == OK) {
+		const CharString path = path_utf8(root);
+		rmdir(path.get_data());
+	}
+}
+
 static bool wait_for_connected(const Ref<StreamPeerUDS> &p_peer, uint64_t p_deadline) {
 	while (OS::get_singleton()->get_ticks_usec() < p_deadline) {
 		if (p_peer->poll() != OK) {
@@ -347,15 +417,19 @@ static bool validate_discovery_record(const Dictionary &p_discovery, const Strin
 	String created_at;
 	int64_t discovery_schema = 0;
 	int64_t pid = 0;
-	if (!get_bounded_integer_field(p_discovery, "discovery_schema", 1, 1, discovery_schema) ||
+	if (!get_bounded_integer_field(p_discovery, "discovery_schema", 1, 2, discovery_schema) ||
 			!get_bounded_integer_field(p_discovery, "pid", 1, INT32_MAX, pid) ||
 			!get_string_field(p_discovery, "transport", transport) || transport != "uds" ||
-			!get_string_field(p_discovery, "endpoint", endpoint) || !validate_relative_endpoint(endpoint) ||
+			!get_string_field(p_discovery, "endpoint", endpoint) ||
 			!get_string_field(p_discovery, "token_file", token_file) || token_file != ".godot/codex/session.token" ||
 			!get_string_field(p_discovery, "project_id", project_id) || project_id != p_expected_project_id || !project_id.begins_with("project:sha256:") || !is_lower_hex(project_id.trim_prefix("project:sha256:"), 64) ||
 			!get_string_field(p_discovery, "editor_session_id", editor_session_id) || !editor_session_id.begins_with("editor:") || !is_lower_hex(editor_session_id.trim_prefix("editor:"), 32) ||
 			!get_string_field(p_discovery, "created_at", created_at) || created_at.is_empty() || created_at.length() > 64 ||
 			!p_discovery.has("protocol_versions") || p_discovery["protocol_versions"].get_type() != Variant::ARRAY) {
+		return false;
+	}
+	if ((discovery_schema == 1 && !validate_relative_endpoint(endpoint)) ||
+			(discovery_schema == 2 && !validate_external_endpoint(endpoint, project_id, editor_session_id))) {
 		return false;
 	}
 	const Array versions = p_discovery["protocol_versions"];
@@ -369,17 +443,20 @@ static bool validate_discovery_record(const Dictionary &p_discovery, const Strin
 }
 
 static bool probe_authenticated_endpoint(const String &p_project_root, const Dictionary &p_discovery) {
-	String endpoint_relative;
+	String endpoint;
 	String token_relative;
 	String project_id;
 	String editor_session_id;
-	if (!get_string_field(p_discovery, "endpoint", endpoint_relative) || !validate_relative_endpoint(endpoint_relative) ||
+	bool external_endpoint = false;
+	if (!resolve_discovery_endpoint(p_project_root, p_discovery, endpoint, external_endpoint) ||
 			!get_string_field(p_discovery, "token_file", token_relative) || token_relative != ".godot/codex/session.token" ||
 			!get_string_field(p_discovery, "project_id", project_id) || !get_string_field(p_discovery, "editor_session_id", editor_session_id)) {
 		return false;
 	}
-	const String endpoint = p_project_root.path_join(endpoint_relative);
 	const String token_path = p_project_root.path_join(token_relative);
+	if (external_endpoint && !validate_external_runtime_directories(project_id)) {
+		return false;
+	}
 	if (BridgeRuntime::validate_private_path(endpoint, BridgeRuntime::PRIVATE_FILE_MODE, false, true) != OK) {
 		return false;
 	}
@@ -1167,12 +1244,17 @@ Error BridgeRuntime::_remove_or_reject_stale_runtime() {
 		}
 		String stale_endpoint;
 #ifdef UNIX_ENABLED
-		if (get_string_field(discovery, "endpoint", stale_endpoint) && validate_relative_endpoint(stale_endpoint)) {
-			const String stale_endpoint_path = canonical_project_root.path_join(stale_endpoint);
+		bool external_endpoint = false;
+		if (validate_discovery_record(discovery, project_id) && resolve_discovery_endpoint(canonical_project_root, discovery, stale_endpoint, external_endpoint) &&
+				(!external_endpoint || validate_external_runtime_directories(project_id))) {
+			const String stale_endpoint_path = stale_endpoint;
 			if (path_exists_no_follow(stale_endpoint_path) && validate_private_path(stale_endpoint_path, PRIVATE_FILE_MODE, false, true) != OK) {
 				return ERR_UNAUTHORIZED;
 			}
 			remove_path_no_follow(stale_endpoint_path);
+			if (external_endpoint) {
+				remove_empty_external_runtime_directories(project_id);
+			}
 		}
 #endif
 	}
@@ -1244,8 +1326,8 @@ Error BridgeRuntime::_bind_server() {
 		server.unref();
 		return ERR_CANT_CREATE;
 	}
-	endpoint_relative_path = "127.0.0.1:" + itos(port);
-	endpoint_path = endpoint_relative_path;
+	endpoint_discovery_path = "127.0.0.1:" + itos(port);
+	endpoint_path = endpoint_discovery_path;
 	return OK;
 #else
 	return ERR_UNAVAILABLE;
@@ -1269,9 +1351,9 @@ Error BridgeRuntime::_publish_discovery() {
 #if defined(UNIX_ENABLED) || defined(WINDOWS_ENABLED)
 	Dictionary discovery;
 	discovery["created_at"] = Time::get_singleton()->get_datetime_string_from_system(true, false) + "Z";
-	discovery["discovery_schema"] = 1;
+	discovery["discovery_schema"] = discovery_schema;
 	discovery["editor_session_id"] = editor_session_id;
-	discovery["endpoint"] = endpoint_relative_path;
+	discovery["endpoint"] = endpoint_discovery_path;
 	discovery["pid"] = OS::get_singleton()->get_process_id();
 	discovery["project_id"] = project_id;
 	Array versions;
@@ -1344,9 +1426,17 @@ Error BridgeRuntime::initialize(const String &p_project_root) {
 	discovery_path = codex_directory.path_join("bridge.json");
 	token_path = codex_directory.path_join("session.token");
 	lock_path = codex_directory.path_join("bridge.lock");
+	discovery_schema = 1;
+	external_runtime_directory = String();
 #ifdef UNIX_ENABLED
-	endpoint_relative_path = ".godot/codex/run/bridge-" + session_hex + ".sock";
-	endpoint_path = canonical_project_root.path_join(endpoint_relative_path);
+	endpoint_discovery_path = ".godot/codex/run/bridge-" + session_hex + ".sock";
+	endpoint_path = canonical_project_root.path_join(endpoint_discovery_path);
+	if (endpoint_path.utf8().length() >= (int)sizeof(sockaddr_un::sun_path)) {
+		discovery_schema = 2;
+		external_runtime_directory = external_project_directory(project_id);
+		endpoint_discovery_path = expected_external_endpoint(project_id, editor_session_id);
+		endpoint_path = endpoint_discovery_path;
+	}
 #endif
 
 	error = ensure_project_data_directory(canonical_project_root.path_join(".godot"));
@@ -1356,6 +1446,14 @@ Error BridgeRuntime::initialize(const String &p_project_root) {
 	if (error == OK) {
 		error = ensure_private_directory(run_directory);
 	}
+#ifdef UNIX_ENABLED
+	if (error == OK && discovery_schema == 2) {
+		error = ensure_private_directory(external_runtime_root());
+	}
+	if (error == OK && discovery_schema == 2) {
+		error = ensure_private_directory(external_runtime_directory);
+	}
+#endif
 	if (error == OK) {
 		error = _acquire_lock();
 	}
@@ -1396,6 +1494,9 @@ void BridgeRuntime::cleanup() {
 #ifdef UNIX_ENABLED
 	if (!endpoint_path.is_empty()) {
 		remove_path_no_follow(endpoint_path);
+	}
+	if (discovery_schema == 2 && !project_id.is_empty()) {
+		remove_empty_external_runtime_directories(project_id);
 	}
 #endif
 	if (discovery_published) {

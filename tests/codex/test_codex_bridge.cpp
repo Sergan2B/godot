@@ -64,8 +64,8 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "modules/codex_bridge/editor/scene_state_adapter.h"
 #include "modules/codex_bridge/editor/script_delta_journal.h"
 #include "modules/codex_bridge/editor/script_graph_adapter.h"
-#include "modules/codex_bridge/protocol/bridge_crypto.h"
 #include "modules/codex_bridge/protocol/bridge_change_set_profile.h"
+#include "modules/codex_bridge/protocol/bridge_crypto.h"
 #include "modules/codex_bridge/protocol/bridge_frame_codec.h"
 #include "modules/codex_bridge/protocol/bridge_handshake.h"
 #include "modules/codex_bridge/protocol/bridge_rpc_session.h"
@@ -558,16 +558,22 @@ static PackedByteArray bytes_from_utf8(const String &p_text) {
 class TemporaryBridgeProject {
 public:
 	String root;
+	String cleanup_root;
 	Error error = OK;
 
-	TemporaryBridgeProject() {
+	explicit TemporaryBridgeProject(bool p_long_path = false) {
 		String temporary_root = OS::get_singleton()->get_temp_path();
 #ifdef MACOS_ENABLED
-		// NSTemporaryDirectory is too long for a project-local sockaddr_un path.
+		// Keep the default fixture on schema 1; dedicated coverage exercises the
+		// long-root schema 2 fallback.
 		temporary_root = "/tmp";
 #endif
-		root = temporary_root.path_join("gcb_" + itos(OS::get_singleton()->get_process_id()) + "_" + itos(OS::get_singleton()->get_ticks_usec()));
-		error = DirAccess::make_dir_absolute(root);
+		cleanup_root = temporary_root.path_join("gcb_" + itos(OS::get_singleton()->get_process_id()) + "_" + itos(OS::get_singleton()->get_ticks_usec()));
+		root = cleanup_root;
+		if (p_long_path) {
+			root = cleanup_root.path_join("long-project-root-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef").path_join("project");
+		}
+		error = DirAccess::make_dir_recursive_absolute(root);
 		if (error != OK) {
 			return;
 		}
@@ -580,11 +586,11 @@ public:
 
 	~TemporaryBridgeProject() {
 		Error open_error = OK;
-		Ref<DirAccess> directory = DirAccess::open(root, &open_error);
+		Ref<DirAccess> directory = DirAccess::open(cleanup_root, &open_error);
 		if (directory.is_valid()) {
 			directory->erase_contents_recursive();
 			directory.unref();
-			DirAccess::remove_absolute(root);
+			DirAccess::remove_absolute(cleanup_root);
 		}
 	}
 };
@@ -3294,7 +3300,8 @@ static String runtime_endpoint(const String &p_project_root, const Dictionary &p
 #ifdef WINDOWS_ENABLED
 	return p_discovery["endpoint"];
 #else
-	return p_project_root.path_join(p_discovery["endpoint"]);
+	const String endpoint = p_discovery["endpoint"];
+	return endpoint.is_absolute_path() ? endpoint : p_project_root.path_join(endpoint);
 #endif
 }
 
@@ -3603,6 +3610,29 @@ TEST_CASE("[CodexBridge] Private runtime publishes atomically and rotates sessio
 }
 
 #ifdef UNIX_ENABLED
+TEST_CASE("[CodexBridge] Long project roots use a private project-bound external endpoint") {
+	TemporaryBridgeProject project(true);
+	REQUIRE(project.error == OK);
+	BridgeTransportWorker worker;
+	REQUIRE(worker.start(project.root) == OK);
+
+	Dictionary discovery;
+	REQUIRE(BridgeJson::parse_strict_object(read_file_bytes(project.root.path_join(".godot/codex/bridge.json")), discovery) == OK);
+	CHECK((int64_t)discovery["discovery_schema"] == 2);
+	CHECK(discovery["transport"] == "uds");
+	const String endpoint = discovery["endpoint"];
+	CHECK(endpoint.is_absolute_path());
+	CHECK(endpoint == runtime_endpoint(project.root, discovery));
+	CHECK(BridgeRuntime::validate_private_path(endpoint.get_base_dir(), 0700, true) == OK);
+	CHECK(BridgeRuntime::validate_private_path(endpoint, 0600, false, true) == OK);
+	CHECK(BridgeRuntime::probe_authenticated_runtime(project.root));
+
+	const String external_project_directory = endpoint.get_base_dir();
+	CHECK(worker.stop() == BridgeTransportWorker::STOPPED);
+	CHECK_FALSE(FileAccess::exists(endpoint));
+	CHECK_FALSE(DirAccess::dir_exists_absolute(external_project_directory));
+}
+
 TEST_CASE("[CodexBridge] Private runtime rejects permissive directories") {
 	TemporaryBridgeProject project;
 	REQUIRE(project.error == OK);

@@ -106,6 +106,37 @@ fn canonical_descendant(path: &Path, parent: &Path) -> Result<PathBuf> {
     Ok(canonical)
 }
 
+fn external_runtime_root() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    let temporary_root = Path::new("/private/tmp");
+    #[cfg(not(target_os = "macos"))]
+    let temporary_root = Path::new("/tmp");
+    temporary_root.join(format!("gcx-{}", effective_uid()))
+}
+
+fn expected_external_endpoint(project_id: &str, editor_session_id: &str) -> Result<PathBuf> {
+    let digest = project_id
+        .strip_prefix("project:sha256:")
+        .filter(|value| {
+            value.len() == 64
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        })
+        .ok_or_else(|| ConformanceError("invalid discovery project binding".to_owned()))?;
+    require(
+        editor_session_id.len() == 39
+            && editor_session_id.starts_with("editor:")
+            && editor_session_id[7..]
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()),
+        "invalid discovery editor session binding",
+    )?;
+    Ok(external_runtime_root()
+        .join(format!("p-{}", &digest[..32]))
+        .join(format!("b-{}.sock", &editor_session_id[7..])))
+}
+
 impl Discovery {
     pub fn load(project_root: &Path) -> Result<Self> {
         let canonical_root = fs::canonicalize(project_root).map_err(|error| {
@@ -174,13 +205,37 @@ impl Discovery {
             .try_into()
             .map_err(|_| ConformanceError("session token must be exactly 32 bytes".to_owned()))?;
 
-        let endpoint_relative = require_safe_relative_path(
-            required_string(&record, "endpoint")?,
-            Path::new(".godot/codex/run"),
-        )?;
-        let endpoint = canonical_root.join(endpoint_relative);
-        require_private_metadata(&endpoint, 0o600, is_socket)?;
-        canonical_descendant(&endpoint, &canonical_codex)?;
+        let discovery_schema = record
+            .get("discovery_schema")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| ConformanceError("discovery_schema must be an integer".to_owned()))?;
+        let endpoint = if discovery_schema == 1 {
+            let endpoint_relative = require_safe_relative_path(
+                required_string(&record, "endpoint")?,
+                Path::new(".godot/codex/run"),
+            )?;
+            let endpoint = canonical_root.join(endpoint_relative);
+            require_private_metadata(&endpoint, 0o600, is_socket)?;
+            canonical_descendant(&endpoint, &canonical_codex)?
+        } else {
+            require(discovery_schema == 2, "unsupported discovery schema")?;
+            let external_root = external_runtime_root();
+            let external_project = external_root.join(format!(
+                "p-{}",
+                &project_id
+                    .strip_prefix("project:sha256:")
+                    .ok_or_else(|| ConformanceError("invalid project binding".to_owned()))?[..32]
+            ));
+            require_private_metadata(&external_root, 0o700, is_directory)?;
+            require_private_metadata(&external_project, 0o700, is_directory)?;
+            let expected = expected_external_endpoint(&project_id, &editor_session_id)?;
+            require(
+                Path::new(required_string(&record, "endpoint")?) == expected,
+                "external endpoint does not match project/session binding",
+            )?;
+            require_private_metadata(&expected, 0o600, is_socket)?;
+            canonical_descendant(&expected, &fs::canonicalize(&external_project)?)?
+        };
 
         let lock_path = codex_dir.join("bridge.lock");
         require_private_metadata(&lock_path, 0o600, is_regular_file)?;
@@ -231,6 +286,18 @@ mod tests {
         assert!(
             require_safe_relative_path(".godot/codex/../session.token", Path::new(".godot/codex"))
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn external_endpoint_is_exactly_bound_to_project_and_session() {
+        let project_id = format!("project:sha256:{}", "a".repeat(64));
+        let session_id = format!("editor:{}", "b".repeat(32));
+        assert_eq!(
+            expected_external_endpoint(&project_id, &session_id).unwrap(),
+            external_runtime_root()
+                .join(format!("p-{}", "a".repeat(32)))
+                .join(format!("b-{}.sock", "b".repeat(32)))
         );
     }
 }

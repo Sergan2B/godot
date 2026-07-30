@@ -44,7 +44,12 @@ The transport accepts only the handshake in this stage. Post-authentication RPC 
     └── bridge-<session-hex>.sock
 ```
 
-`bridge.json` contains only the project fingerprint, process/session metadata, protocol versions, and project-relative endpoint/token paths. Token, proofs, frame payloads, and the canonical project root are not logged.
+At this historical stage, `bridge.json` contained only the project
+fingerprint, process/session metadata, protocol versions, and
+project-relative endpoint/token paths. Token, proofs, frame payloads, and the
+canonical project root were not logged. The schema-2 long-root correction
+described below keeps discovery and token publication project-local but may
+publish one exact, deterministic private absolute socket endpoint.
 
 Publication order is:
 
@@ -119,7 +124,15 @@ All changed C++ and test files passed the repository formatting, include, code-o
 
 ## Known observations
 
-- macOS limits the absolute `sockaddr_un.sun_path`. A project whose canonical root makes the project-local endpoint too long receives a safe startup failure. Live transport smoke therefore copies the fixture to a short `/tmp` path; no alternate global socket location is introduced silently.
+- The original Stage 3 implementation failed safely when a canonical project
+  root made the project-local socket exceed `sockaddr_un.sun_path`; the live
+  smoke therefore used a short `/tmp` fixture. Sprint 11 operator acquisition
+  later proved that this prevented legitimate deep workspaces from starting
+  (`ERR_INVALID_PARAMETER`, surfaced as transport worker `error 31`).
+  Package `0.1.3` supersedes that behavior with discovery schema 2: an exact
+  euid/project/session-bound private short socket, strict `0700/0600`
+  validation, full-project HMAC binding, and bounded empty-directory cleanup.
+  Schema 1 remains unchanged for short roots.
 - One live-inspection run reproduced the known upstream macOS editor shutdown failure at `EditorNode::is_cmdline_mode` after the bridge had removed all session artifacts. Subsequent enabled smoke runs exited 0 with clean bridge start/stop. The flake is recorded and is not masked with `continue-on-error`.
 - The full Godot suite emits existing negative-path diagnostics while still passing all 1,422 executed cases.
 

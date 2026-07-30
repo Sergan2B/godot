@@ -1564,12 +1564,12 @@ fn check_discovery(
             class: 4,
         };
     };
-    if record.discovery_schema != 1
+    if !matches!(record.discovery_schema, 1 | 2)
+        || record.created_at.is_empty()
         || record.created_at.len() > 64
         || record.transport != expected_transport()
         || !valid_session_id(&record.editor_session_id)
         || record.token_file != ".godot/codex/session.token"
-        || !safe_relative_path(&record.endpoint, Path::new(".godot/codex/run"))
     {
         return DiscoveryOutcome::Failed {
             code: DiagnosticCode::BridgeDiscoveryStale,
@@ -1588,9 +1588,47 @@ fn check_discovery(
             class: 6,
         };
     }
+    let endpoint_path = if record.discovery_schema == 1
+        && safe_relative_path(&record.endpoint, Path::new(".godot/codex/run"))
+    {
+        project_root.join(&record.endpoint)
+    } else if record.discovery_schema == 2 {
+        #[cfg(unix)]
+        {
+            let Some((external_root, external_project, expected_endpoint)) =
+                expected_external_endpoint(&record.project_id, &record.editor_session_id)
+            else {
+                return DiscoveryOutcome::Failed {
+                    code: DiagnosticCode::BridgeDiscoveryStale,
+                    class: 4,
+                };
+            };
+            if Path::new(&record.endpoint) != expected_endpoint
+                || !private_directory(&external_root)
+                || !private_directory(&external_project)
+            {
+                return DiscoveryOutcome::Failed {
+                    code: DiagnosticCode::PermissionsInvalid,
+                    class: 4,
+                };
+            }
+            expected_endpoint
+        }
+        #[cfg(not(unix))]
+        {
+            return DiscoveryOutcome::Failed {
+                code: DiagnosticCode::BridgeDiscoveryStale,
+                class: 4,
+            };
+        }
+    } else {
+        return DiscoveryOutcome::Failed {
+            code: DiagnosticCode::BridgeDiscoveryStale,
+            class: 4,
+        };
+    };
     let token_path = project_root.join(&record.token_file);
     let lock_path = codex.join("bridge.lock");
-    let endpoint_path = project_root.join(&record.endpoint);
     if !private_file(&token_path) || !private_file(&lock_path) || !private_endpoint(&endpoint_path)
     {
         return DiscoveryOutcome::Failed {
@@ -1877,6 +1915,35 @@ fn valid_session_id(value: &str) -> bool {
         && value[7..]
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+#[cfg(unix)]
+fn external_runtime_root() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    let temporary_root = Path::new("/private/tmp");
+    #[cfg(not(target_os = "macos"))]
+    let temporary_root = Path::new("/tmp");
+    temporary_root.join(format!("gcx-{}", rustix::process::geteuid().as_raw()))
+}
+
+#[cfg(unix)]
+fn expected_external_endpoint(
+    project_id: &str,
+    editor_session_id: &str,
+) -> Option<(PathBuf, PathBuf, PathBuf)> {
+    let digest = project_id.strip_prefix("project:sha256:")?;
+    if digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        || !valid_session_id(editor_session_id)
+    {
+        return None;
+    }
+    let root = external_runtime_root();
+    let project = root.join(format!("p-{}", &digest[..32]));
+    let endpoint = project.join(format!("b-{}.sock", &editor_session_id[7..]));
+    Some((root, project, endpoint))
 }
 
 fn expected_transport() -> &'static str {
@@ -2482,6 +2549,19 @@ mod tests {
             "/tmp/bridge.sock",
             Path::new(".godot/codex/run")
         ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_discovery_endpoint_is_exactly_bound() {
+        let project_id = format!("project:sha256:{}", "a".repeat(64));
+        let session_id = format!("editor:{}", "b".repeat(32));
+        let (root, project, endpoint) =
+            expected_external_endpoint(&project_id, &session_id).unwrap();
+        assert_eq!(project, root.join(format!("p-{}", "a".repeat(32))));
+        assert_eq!(endpoint, project.join(format!("b-{}.sock", "b".repeat(32))));
+        assert!(expected_external_endpoint("project:sha256:bad", &session_id).is_none());
+        assert!(expected_external_endpoint(&project_id, "editor:bad").is_none());
     }
 
     #[cfg(unix)]

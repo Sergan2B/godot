@@ -42,9 +42,7 @@ except ModuleNotFoundError:  # Direct execution from tests/codex.
 
 SCRIPT_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = SCRIPT_ROOT.parent.parent
-REGISTRY_PROFILE = (
-    REPOSITORY_ROOT / "godot-codex-mcp/product/registry-profile.v1.json"
-)
+REGISTRY_PROFILE = REPOSITORY_ROOT / "godot-codex-mcp/product/registry-profile.v1.json"
 
 REPORT_SCHEMA = "s11-multi-project-live/1.0"
 REPORT_LIMIT = 65_536
@@ -60,28 +58,20 @@ TRANSACTION_RE = re.compile(r"transaction:[0-9a-f]{32}\Z")
 PACKAGE_VERSION_RE = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+-]{0,127}\Z")
 
 ISOLATION_CASE_EXPECTATIONS: dict[str, frozenset[str]] = {
-    "copied_discovery": frozenset(
-        {
-            "bridge_discovery_stale",
-            "bridge_unreachable",
-            "editor_offline",
-            "project_binding_mismatch",
-        }
-    ),
-    "copied_token": frozenset(
-        {"bridge_authentication_failed", "editor_offline"}
-    ),
-    "swapped_discovery": frozenset(
-        {
-            "bridge_discovery_stale",
-            "bridge_unreachable",
-            "editor_offline",
-            "project_binding_mismatch",
-        }
-    ),
-    "swapped_token": frozenset(
-        {"bridge_authentication_failed", "editor_offline"}
-    ),
+    "copied_discovery": frozenset({
+        "bridge_discovery_stale",
+        "bridge_unreachable",
+        "editor_offline",
+        "project_binding_mismatch",
+    }),
+    "copied_token": frozenset({"bridge_authentication_failed", "editor_offline"}),
+    "swapped_discovery": frozenset({
+        "bridge_discovery_stale",
+        "bridge_unreachable",
+        "editor_offline",
+        "project_binding_mismatch",
+    }),
+    "swapped_token": frozenset({"bridge_authentication_failed", "editor_offline"}),
     "swapped_config": frozenset({"project_binding_mismatch"}),
     "swapped_root": frozenset({"project_binding_mismatch"}),
     "swapped_cwd": frozenset({"project_binding_mismatch"}),
@@ -104,24 +94,28 @@ ISOLATION_CASE_PROOF_SOURCES = {
     "copied_token": "live_two_project_processes",
     "swapped_discovery": "live_two_project_processes",
     "swapped_token": "live_two_project_processes",
-    "swapped_config": (
-        "public_runner_prelaunch_authority_plus_external_surface_attestation"
-    ),
-    "swapped_root": (
-        "public_runner_prelaunch_authority_plus_external_surface_attestation"
-    ),
-    "swapped_cwd": (
-        "public_runner_prelaunch_authority_plus_external_surface_attestation"
-    ),
+    "swapped_config": ("public_runner_prelaunch_authority_plus_external_surface_attestation"),
+    "swapped_root": ("public_runner_prelaunch_authority_plus_external_surface_attestation"),
+    "swapped_cwd": ("public_runner_prelaunch_authority_plus_external_surface_attestation"),
     "editor_restart": "live_two_project_processes",
     "cache_rebuild": "live_two_project_processes",
-    "package_mismatch": (
-        "package_bound_prelaunch_authority_plus_external_surface_attestation"
-    ),
-    "version_mismatch": (
-        "package_bound_prelaunch_authority_plus_external_surface_attestation"
-    ),
+    "package_mismatch": ("package_bound_prelaunch_authority_plus_external_surface_attestation"),
+    "version_mismatch": ("package_bound_prelaunch_authority_plus_external_surface_attestation"),
 }
+
+
+def _private_directory(path: Path) -> bool:
+    try:
+        metadata = path.lstat()
+    except OSError:
+        return False
+    return (
+        stat.S_ISDIR(metadata.st_mode)
+        and not path.is_symlink()
+        and metadata.st_uid == os.geteuid()
+        and metadata.st_mode & 0o777 == 0o700
+    )
+
 
 FOREIGN_EXPECTATIONS = {
     "approval_binding": "transaction_not_found",
@@ -156,8 +150,7 @@ def _registry_profile() -> dict[str, Any]:
         and isinstance(read_only, list)
         and read_only == sorted(set(read_only))
         and set(read_only) <= set(tools)
-        and DIGEST_RE.fullmatch("sha256:" + str(value.get("digest", "")))
-        is not None,
+        and DIGEST_RE.fullmatch("sha256:" + str(value.get("digest", ""))) is not None,
         "canonical registry profile differs",
     )
     return cast(dict[str, Any], value)
@@ -215,8 +208,7 @@ def _project_source_hashes(project_root: Path) -> dict[str, str]:
         if stat.S_ISDIR(metadata.st_mode):
             continue
         s9.require(
-            stat.S_ISREG(metadata.st_mode)
-            and len(hashes) < MAX_PROJECT_SOURCE_FILES,
+            stat.S_ISREG(metadata.st_mode) and len(hashes) < MAX_PROJECT_SOURCE_FILES,
             "project source tree shape exceeds its bound",
         )
         relative = path.relative_to(project_root).as_posix()
@@ -226,9 +218,7 @@ def _project_source_hashes(project_root: Path) -> dict[str, str]:
                 maximum=MAX_PROJECT_SOURCE_FILE_BYTES,
             )
         except acquisition_paths.AcquisitionPathError as error:
-            raise s9.WorkflowError(
-                "project source file cannot be read safely"
-            ) from error
+            raise s9.WorkflowError("project source file cannot be read safely") from error
         total_bytes += len(payload)
         s9.require(
             total_bytes <= MAX_PROJECT_SOURCE_BYTES,
@@ -266,18 +256,14 @@ def _isolation_case(
     **proofs: bool,
 ) -> dict[str, Any]:
     s9.require(
-        case_id in ISOLATION_CASE_EXPECTATIONS
-        and observed_code in ISOLATION_CASE_EXPECTATIONS[case_id],
+        case_id in ISOLATION_CASE_EXPECTATIONS and observed_code in ISOLATION_CASE_EXPECTATIONS[case_id],
         f"isolation case {case_id} outcome differs",
     )
     proof_fields_match = set(proofs) == ISOLATION_PROOF_FIELDS
-    failed_proofs = sorted(
-        name for name, value in proofs.items() if value is not True
-    )
+    failed_proofs = sorted(name for name, value in proofs.items() if value is not True)
     s9.require(
         proof_fields_match and not failed_proofs,
-        f"isolation case {case_id} proof differs "
-        f"(fields_match={proof_fields_match}, failed={failed_proofs})",
+        f"isolation case {case_id} proof differs (fields_match={proof_fields_match}, failed={failed_proofs})",
     )
     return {
         "case_id": case_id,
@@ -313,8 +299,7 @@ def _validated_fault_matrix(value: Any) -> list[dict[str, Any]]:
             and isinstance(observed_code, str)
             and case_id in ISOLATION_CASE_EXPECTATIONS
             and observed_code in ISOLATION_CASE_EXPECTATIONS[case_id]
-            and record["proof_source"]
-            == ISOLATION_CASE_PROOF_SOURCES[case_id]
+            and record["proof_source"] == ISOLATION_CASE_PROOF_SOURCES[case_id]
             and all(record[field] is True for field in ISOLATION_PROOF_FIELDS),
             f"isolation fault case {index} differs",
         )
@@ -341,10 +326,7 @@ def _probe_sidecar_version(sidecar: Path, timeout: float) -> str:
     except (OSError, subprocess.TimeoutExpired) as error:
         raise s9.WorkflowError("package version probe failed") from error
     s9.require(
-        result.returncode == 0
-        and len(result.stdout) <= 512
-        and len(result.stderr) <= 512
-        and result.stderr == b"",
+        result.returncode == 0 and len(result.stdout) <= 512 and len(result.stderr) <= 512 and result.stderr == b"",
         "package version probe differs",
     )
     try:
@@ -354,8 +336,7 @@ def _probe_sidecar_version(sidecar: Path, timeout: float) -> str:
     prefix = "godot-codex-mcp "
     version = output.removeprefix(prefix)
     s9.require(
-        output.startswith(prefix)
-        and PACKAGE_VERSION_RE.fullmatch(version) is not None,
+        output.startswith(prefix) and PACKAGE_VERSION_RE.fullmatch(version) is not None,
         "package version probe differs",
     )
     return version
@@ -392,9 +373,7 @@ def _canonical_project_root(path: Path) -> Path:
     except OSError as error:
         raise s9.WorkflowError("project_binding_mismatch") from error
     s9.require(
-        canonical.is_dir()
-        and (canonical / "project.godot").is_file()
-        and not path.is_symlink(),
+        canonical.is_dir() and (canonical / "project.godot").is_file() and not path.is_symlink(),
         "project_binding_mismatch",
     )
     return canonical
@@ -408,10 +387,7 @@ def _require_launch_authority(
     cwd: Path,
 ) -> Path:
     expected = _canonical_project_root(expected_root)
-    coordinates = tuple(
-        _canonical_project_root(path)
-        for path in (config_root, argument_root, cwd)
-    )
+    coordinates = tuple(_canonical_project_root(path) for path in (config_root, argument_root, cwd))
     if any(coordinate != expected for coordinate in coordinates):
         raise s9.WorkflowError("project_binding_mismatch")
     return expected
@@ -477,9 +453,7 @@ def _quiescent_read(
         elif now - stable_since >= 0.25:
             return latest
         time.sleep(0.05)
-    raise s9.WorkflowError(
-        f"editor coordinates did not become quiescent: {latest}"
-    )
+    raise s9.WorkflowError(f"editor coordinates did not become quiescent: {latest}")
 
 
 def _connection_status(
@@ -516,9 +490,7 @@ def _connection_status(
             break
         time.sleep(0.05)
     else:
-        raise s9.WorkflowError(
-            f"project-scoped connection/cache/version status differs: {status}"
-        )
+        raise s9.WorkflowError(f"project-scoped connection/cache/version status differs: {status}")
     encoded = json.dumps(status, sort_keys=True, separators=(",", ":"))
     s9.require(
         expected_project_id not in encoded
@@ -556,16 +528,37 @@ def _discovery_binding(
             "token_file",
             "transport",
         }
-        and discovery["discovery_schema"] == 1
+        and discovery["discovery_schema"] in {1, 2}
         and discovery["project_id"] == expected["project_id"]
         and discovery["editor_session_id"] == expected["editor_session_id"]
         and discovery["token_file"] == ".godot/codex/session.token"
         and isinstance(discovery["endpoint"], str)
-        and discovery["protocol_versions"]
-        == [f"1.{minor}" for minor in range(8, -1, -1)]
+        and discovery["protocol_versions"] == [f"1.{minor}" for minor in range(8, -1, -1)]
         and discovery["transport"] in {"uds", "tcp_loopback"},
         "discovery project/session/protocol binding differs",
     )
+    endpoint = cast(str, discovery["endpoint"])
+    if discovery["discovery_schema"] == 1:
+        s9.require(
+            endpoint.startswith(".godot/codex/run/bridge-")
+            and endpoint.endswith(".sock")
+            and not Path(endpoint).is_absolute()
+            and ".." not in Path(endpoint).parts,
+            "schema-1 discovery endpoint differs",
+        )
+    else:
+        project_digest = cast(str, discovery["project_id"]).removeprefix("project:sha256:")
+        session_digest = cast(str, discovery["editor_session_id"]).removeprefix("editor:")
+        temporary_root = Path("/private/tmp" if sys.platform == "darwin" else "/tmp")
+        external_root = temporary_root / f"gcx-{os.geteuid()}"
+        external_project = external_root / f"p-{project_digest[:32]}"
+        expected_endpoint = external_project / f"b-{session_digest}.sock"
+        s9.require(
+            Path(endpoint) == expected_endpoint
+            and _private_directory(external_root)
+            and _private_directory(external_project),
+            "schema-2 discovery endpoint binding differs",
+        )
     token_path = project_root / cast(str, discovery["token_file"])
     try:
         token = acquisition_paths.read_regular_file(token_path, maximum=32)
@@ -593,13 +586,9 @@ class _PrivateFile:
                 maximum=maximum,
             )
         except (OSError, acquisition_paths.AcquisitionPathError) as error:
-            raise s9.WorkflowError(
-                "private project binding cannot be captured safely"
-            ) from error
+            raise s9.WorkflowError("private project binding cannot be captured safely") from error
         s9.require(
-            stat.S_ISREG(metadata.st_mode)
-            and not path.is_symlink()
-            and metadata.st_mode & 0o777 == 0o600,
+            stat.S_ISREG(metadata.st_mode) and not path.is_symlink() and metadata.st_mode & 0o777 == 0o600,
             "private project binding mode/type differs",
         )
         return cls(path=path, payload=payload, mode=metadata.st_mode & 0o777)
@@ -610,10 +599,7 @@ class _PrivateFile:
 
 def _replace_private_file(path: Path, payload: bytes, mode: int = 0o600) -> None:
     s9.require(
-        path.parent.is_dir()
-        and not path.parent.is_symlink()
-        and 0 < len(payload) <= 16_384
-        and mode == 0o600,
+        path.parent.is_dir() and not path.parent.is_symlink() and 0 < len(payload) <= 16_384 and mode == 0o600,
         "private project binding replacement differs",
     )
     descriptor = -1
@@ -637,9 +623,7 @@ def _replace_private_file(path: Path, payload: bytes, mode: int = 0o600) -> None
         finally:
             os.close(directory)
     except OSError as error:
-        raise s9.WorkflowError(
-            "private project binding replacement failed"
-        ) from error
+        raise s9.WorkflowError("private project binding replacement failed") from error
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -730,10 +714,7 @@ def _fault_probe_evidence(
         sort_keys=True,
         separators=(",", ":"),
     )
-    no_fallback = (
-        foreign_project_id not in encoded_status
-        and foreign_node_name not in encoded_status
-    )
+    no_fallback = foreign_project_id not in encoded_status and foreign_node_name not in encoded_status
     graph, graph_error, _ = client.tool(
         "godot_get_scene_graph",
         {"scene": "res://main.tscn", "limit": 200},
@@ -747,10 +728,7 @@ def _fault_probe_evidence(
     no_foreign_data = (
         foreign_project_id not in graph_text
         and foreign_node_name not in graph_text
-        and (
-            graph_error
-            or graph.get("project_id") == local_project_id
-        )
+        and (graph_error or graph.get("project_id") == local_project_id)
     )
     s9.require(
         no_fallback and no_foreign_data,
@@ -785,16 +763,8 @@ def _fault_probe_evidence(
             "expected_operation_seq": foreign_before["operation_seq"],
         },
     )
-    status_code = (
-        foreign_status.get("error", {}).get("code")
-        if isinstance(foreign_status.get("error"), dict)
-        else None
-    )
-    apply_code = (
-        foreign_apply.get("error", {}).get("code")
-        if isinstance(foreign_apply.get("error"), dict)
-        else None
-    )
+    status_code = foreign_status.get("error", {}).get("code") if isinstance(foreign_status.get("error"), dict) else None
+    apply_code = foreign_apply.get("error", {}).get("code") if isinstance(foreign_apply.get("error"), dict) else None
     fault_errors = {
         "editor_offline",
         "bridge_unreachable",
@@ -806,10 +776,7 @@ def _fault_probe_evidence(
     arguments = {
         "project_id": foreign_project_id,
         "idempotency_key": (
-            "idempotency:"
-            + hashlib.sha256(
-                f"s11:fault:{code}:{foreign_project_id}".encode()
-            ).hexdigest()[:32]
+            "idempotency:" + hashlib.sha256(f"s11:fault:{code}:{foreign_project_id}".encode()).hexdigest()[:32]
         ),
         "coordinates": {
             "editor_session_id": "editor:" + "f" * 32,
@@ -839,11 +806,7 @@ def _fault_probe_evidence(
         "godot_prepare_change_set",
         arguments,
     )
-    no_mutation = (
-        is_error
-        and isinstance(rejected.get("error"), dict)
-        and client.elicitation_total == 0
-    )
+    no_mutation = is_error and isinstance(rejected.get("error"), dict) and client.elicitation_total == 0
     no_transaction = (
         status_error
         and apply_error
@@ -979,9 +942,7 @@ def _run_private_binding_fault(
             )
 
         for label in affected:
-            project_root = (
-                session_a.project_root if label == "a" else session_b.project_root
-            )
+            project_root = session_a.project_root if label == "a" else session_b.project_root
             local_workflow = workflow_a if label == "a" else workflow_b
             foreign_workflow = workflow_b if label == "a" else workflow_a
             foreign_after = cast(
@@ -998,9 +959,7 @@ def _run_private_binding_fault(
                         probe,
                         local_project_id=cast(
                             str,
-                            cast(Mapping[str, Any], local_workflow["after"])[
-                                "project_id"
-                            ],
+                            cast(Mapping[str, Any], local_workflow["after"])["project_id"],
                         ),
                         foreign_node_name=cast(
                             str,
@@ -1043,13 +1002,9 @@ def _run_private_binding_fault(
     # Fault probes use independent MCP processes. The two healthy project
     # clients stay connected, retain their bounded validation reports, and
     # must observe neither a new approval nor any state change.
-    approvals_isolated = (
-        all(result[2] for result in probe_results)
-        and after_approvals == before_approvals
-    )
+    approvals_isolated = all(result[2] for result in probe_results) and after_approvals == before_approvals
     s9.require(
-        probe_results
-        and all(result[0] in ISOLATION_CASE_EXPECTATIONS[case_id] for result in probe_results),
+        probe_results and all(result[0] in ISOLATION_CASE_EXPECTATIONS[case_id] for result in probe_results),
         f"isolation case {case_id} diagnostic differs",
     )
     record = _isolation_case(
@@ -1059,9 +1014,7 @@ def _run_private_binding_fault(
         no_cross_project_data=all(result[1] for result in probe_results),
         no_cross_project_mutation=all(result[2] for result in probe_results),
         no_cross_project_approval=approvals_isolated,
-        no_cross_project_transaction=all(
-            result[3] for result in probe_results
-        ),
+        no_cross_project_transaction=all(result[3] for result in probe_results),
         cleanup=restored,
     )
     return record, client_a, client_b
@@ -1076,8 +1029,7 @@ def _run_runtime(
     s9.require(not is_error, f"runtime start failed: {started}")
     runtime_session_id = started.get("runtime_session_id")
     s9.require(
-        isinstance(runtime_session_id, str)
-        and RUNTIME_RE.fullmatch(runtime_session_id) is not None,
+        isinstance(runtime_session_id, str) and RUNTIME_RE.fullmatch(runtime_session_id) is not None,
         "runtime start omitted its opaque session identity",
     )
     deadline = time.monotonic() + timeout
@@ -1149,10 +1101,8 @@ def _prepare_apply(
     s9.require(not is_error, f"transaction prepare failed: {prepared}")
     s9.require(
         prepared.get("state") == "previewed"
-        and s10.CHANGE_SET_RE.fullmatch(str(prepared.get("change_set_id")))
-        is not None
-        and s10.DIGEST_RE.fullmatch(str(prepared.get("preview_digest")))
-        is not None
+        and s10.CHANGE_SET_RE.fullmatch(str(prepared.get("change_set_id"))) is not None
+        and s10.DIGEST_RE.fullmatch(str(prepared.get("preview_digest"))) is not None
         and prepared.get("operation_count") == 1
         and source_before_prepare == _project_source_hashes(project_root),
         "prepared transaction identity/state differs",
@@ -1254,8 +1204,7 @@ def _validation_report(
         pages.append(item)
     report_digest = first.get("report_digest")
     s9.require(
-        isinstance(report_digest, str)
-        and s10.DIGEST_RE.fullmatch(report_digest) is not None,
+        isinstance(report_digest, str) and s10.DIGEST_RE.fullmatch(report_digest) is not None,
         "validation report digest differs",
     )
     content = ""
@@ -1279,11 +1228,7 @@ def _validation_report(
     parsed = s9.strict_json_text(content)
     checks = parsed.get("checks")
     outcomes = (
-        {
-            item.get("check"): item.get("outcome")
-            for item in checks
-            if isinstance(item, dict)
-        }
+        {item.get("check"): item.get("outcome") for item in checks if isinstance(item, dict)}
         if isinstance(checks, list)
         else {}
     )
@@ -1304,10 +1249,7 @@ def _validation_report(
             "runtime",
             "semantic_graph",
         }
-        and all(
-            outcomes[name] == "passed"
-            for name in set(outcomes) - {"runtime"}
-        )
+        and all(outcomes[name] == "passed" for name in set(outcomes) - {"runtime"})
         and outcomes.get("runtime") == "skipped",
         "validation report outcome/binding differs",
     )
@@ -1334,9 +1276,7 @@ def _wait_scene_cursor(
         if not is_error and isinstance(cursor, str) and cursor:
             return cursor
         time.sleep(0.05)
-    raise s9.WorkflowError(
-        f"scene graph did not yield a cross-project cursor probe: {last}"
-    )
+    raise s9.WorkflowError(f"scene graph did not yield a cross-project cursor probe: {last}")
 
 
 def _foreign_error(
@@ -1353,25 +1293,13 @@ def _foreign_error(
     while time.monotonic() < deadline:
         content, is_error, _ = client.tool(tool, arguments)
         error = content.get("error")
-        if (
-            is_error
-            and isinstance(error, dict)
-            and error.get("code") == expected
-        ):
+        if is_error and isinstance(error, dict) and error.get("code") == expected:
             break
-        if (
-            not is_error
-            or not isinstance(error, dict)
-            or error.get("retryable") is not True
-        ):
-            raise s9.WorkflowError(
-                f"foreign {kind} did not fail closed as {expected}: {content}"
-            )
+        if not is_error or not isinstance(error, dict) or error.get("retryable") is not True:
+            raise s9.WorkflowError(f"foreign {kind} did not fail closed as {expected}: {content}")
         time.sleep(0.05)
     else:
-        raise s9.WorkflowError(
-            f"foreign {kind} did not converge to {expected}: {content}"
-        )
+        raise s9.WorkflowError(f"foreign {kind} did not converge to {expected}: {content}")
     return {
         "kind": kind,
         "error_code": expected,
@@ -1401,8 +1329,7 @@ def _foreign_approval_error(
         timeout=timeout,
     )
     s9.require(
-        client.approval is None
-        and client.elicitation_total == elicitation_before,
+        client.approval is None and client.elicitation_total == elicitation_before,
         "foreign transaction reached or reused an approval boundary",
     )
     return record
@@ -1428,10 +1355,7 @@ def _transaction_status(
             not is_error
             and status.get("change_set_id") == transaction_id
             and status.get("state") == expected_state
-            and (
-                report_id is None
-                or status.get("validation_report_id") == report_id
-            )
+            and (report_id is None or status.get("validation_report_id") == report_id)
         ):
             return status
         time.sleep(0.05)
@@ -1541,25 +1465,15 @@ def _run_editor_restart_case(
         "godot_get_transaction_status",
         {"transaction_id": prepared_a["change_set_id"]},
     )
-    old_code = (
-        old_status.get("error", {}).get("code")
-        if isinstance(old_status.get("error"), dict)
-        else None
-    )
-    old_transaction_closed = (
-        (
-            not old_error
-            and old_status.get("state") in {"undone", "expired", "failed"}
-        )
-        or (
-            old_error
-            and old_code
-            in {
-                "transaction_not_found",
-                "transaction_expired",
-                "stale_editor_session",
-            }
-        )
+    old_code = old_status.get("error", {}).get("code") if isinstance(old_status.get("error"), dict) else None
+    old_transaction_closed = (not old_error and old_status.get("state") in {"undone", "expired", "failed"}) or (
+        old_error
+        and old_code
+        in {
+            "transaction_not_found",
+            "transaction_expired",
+            "stale_editor_session",
+        }
     )
     prepared_b = cast(Mapping[str, Any], workflow_b["prepared"])
     _transaction_status(
@@ -1578,15 +1492,12 @@ def _run_editor_restart_case(
         "action_count",
     )
     changed_sibling_fields = [
-        field
-        for field in sibling_fields
-        if not during_b[field] == before_b[field] == after_b[field]
+        field for field in sibling_fields if not during_b[field] == before_b[field] == after_b[field]
     ]
     b_preserved = not changed_sibling_fields
     s9.require(
         b_preserved,
-        "editor restart changed sibling coordinates "
-        f"(fields={changed_sibling_fields})",
+        f"editor restart changed sibling coordinates (fields={changed_sibling_fields})",
     )
     a_bound = (
         new_editor != old_editor
@@ -1609,10 +1520,7 @@ def _run_editor_restart_case(
             no_cross_project_mutation=b_preserved,
             no_cross_project_approval=approval_preserved,
             no_cross_project_transaction=old_transaction_closed,
-            cleanup=(
-                session_a.editor is not None
-                and session_a.editor.poll() is None
-            ),
+            cleanup=(session_a.editor is not None and session_a.editor.poll() is None),
         ),
         client_a,
     )
@@ -1628,8 +1536,7 @@ def _run_cache_rebuild_case(
     timeout: float,
 ) -> tuple[dict[str, Any], s10.Sprint10McpClient]:
     s9.require(
-        session_a.project_root is not None
-        and session_a.sidecar_process is not None,
+        session_a.project_root is not None and session_a.sidecar_process is not None,
         "cache rebuild fixture is incomplete",
     )
     before_a, before_b = _parallel(
@@ -1640,9 +1547,7 @@ def _run_cache_rebuild_case(
     cache = session_a.project_root / ".godot/codex/index"
     held = session_a.project_root / ".godot/codex/.s11-index-held"
     s9.require(
-        cache.is_dir()
-        and not cache.is_symlink()
-        and not held.exists(),
+        cache.is_dir() and not cache.is_symlink() and not held.exists(),
         "cache rebuild source differs",
     )
     session_a.sidecar_process.stop()
@@ -1655,11 +1560,7 @@ def _run_cache_rebuild_case(
             cast(str, before_a["project_id"]),
             timeout,
         )
-        rebuilt = (
-            cache.is_dir()
-            and not cache.is_symlink()
-            and status["static_cache"]["condition"] == "online_current"
-        )
+        rebuilt = cache.is_dir() and not cache.is_symlink() and status["static_cache"]["condition"] == "online_current"
         after_a = _read(client_a, timeout)
         during_b = _read(client_b, timeout)
         prepared_a = cast(Mapping[str, Any], workflow_a["prepared"])
@@ -1669,13 +1570,9 @@ def _run_cache_rebuild_case(
             {"transaction_id": prepared_a["change_set_id"]},
         )
         target_code = (
-            target_status.get("error", {}).get("code")
-            if isinstance(target_status.get("error"), dict)
-            else None
+            target_status.get("error", {}).get("code") if isinstance(target_status.get("error"), dict) else None
         )
-        target_transaction_closed = (
-            not target_error and target_status.get("state") == "undone"
-        ) or (
+        target_transaction_closed = (not target_error and target_status.get("state") == "undone") or (
             target_error
             and target_code
             in {
@@ -1747,21 +1644,11 @@ def _project_record(
     report_id: str,
 ) -> dict[str, Any]:
     return {
-        "project_identity_sha256": _identity_digest(
-            "project", cast(str, coordinates["project_id"])
-        ),
-        "editor_identity_sha256": _identity_digest(
-            "editor", cast(str, coordinates["editor_session_id"])
-        ),
-        "runtime_identity_sha256": _identity_digest(
-            "runtime", runtime_session_id
-        ),
-        "transaction_identity_sha256": _identity_digest(
-            "transaction", transaction_id
-        ),
-        "validation_report_identity_sha256": _identity_digest(
-            "validation_report", report_id
-        ),
+        "project_identity_sha256": _identity_digest("project", cast(str, coordinates["project_id"])),
+        "editor_identity_sha256": _identity_digest("editor", cast(str, coordinates["editor_session_id"])),
+        "runtime_identity_sha256": _identity_digest("runtime", runtime_session_id),
+        "transaction_identity_sha256": _identity_digest("transaction", transaction_id),
+        "validation_report_identity_sha256": _identity_digest("validation_report", report_id),
         "operation_seq": int(coordinates["operation_seq"]),
         "action_count": int(coordinates["action_count"]),
         "approval_provider": "mcp_action_only_form_v1",
@@ -1811,11 +1698,7 @@ def validate_report(report: Any) -> dict[str, Any]:
         "artifact binding",
     )
     s9.require(
-        all(
-            isinstance(value, str)
-            and DIGEST_RE.fullmatch(value) is not None
-            for value in artifacts.values()
-        ),
+        all(isinstance(value, str) and DIGEST_RE.fullmatch(value) is not None for value in artifacts.values()),
         "artifact binding differs",
     )
     registry = _exact(root["registry"], {"tools", "digest"}, "registry proof")
@@ -1839,16 +1722,12 @@ def validate_report(report: Any) -> dict[str, Any]:
         "readback",
         "targeted_undo",
     }
-    project_records = {
-        label: _exact(projects[label], identity_fields, f"project {label}")
-        for label in ("a", "b")
-    }
+    project_records = {label: _exact(projects[label], identity_fields, f"project {label}") for label in ("a", "b")}
     for label, project in project_records.items():
         for field in identity_fields:
             if field.endswith("_sha256"):
                 s9.require(
-                    isinstance(project[field], str)
-                    and DIGEST_RE.fullmatch(project[field]) is not None,
+                    isinstance(project[field], str) and DIGEST_RE.fullmatch(project[field]) is not None,
                     f"project {label} identity digest differs",
                 )
         for field in ("operation_seq", "action_count"):
@@ -1900,9 +1779,7 @@ def validate_report(report: Any) -> dict[str, Any]:
     for kind in distinct:
         digest_field = f"{kind}_identity_sha256"
         s9.require(
-            distinct[kind] is True
-            and project_records["a"][digest_field]
-            != project_records["b"][digest_field],
+            distinct[kind] is True and project_records["a"][digest_field] != project_records["b"][digest_field],
             f"{kind} identity is not distinct",
         )
     bindings = assertions["foreign_bindings"]
@@ -1953,10 +1830,7 @@ def validate_report(report: Any) -> dict[str, Any]:
     s9.require(
         restart["target"] == "a"
         and restart["component"] == "sidecar"
-        and all(
-            restart[field] is True
-            for field in set(restart) - {"target", "component"}
-        ),
+        and all(restart[field] is True for field in set(restart) - {"target", "component"}),
         "target restart isolation differs",
     )
     _validated_fault_matrix(assertions["fault_matrix"])
@@ -1974,8 +1848,7 @@ def validate_report(report: Any) -> dict[str, Any]:
         "cleanup",
     )
     s9.require(
-        source == {"a": True, "b": True}
-        and all(value is True for value in cleanup.values()),
+        source == {"a": True, "b": True} and all(value is True for value in cleanup.values()),
         "source integrity or cleanup differs",
     )
     return root
@@ -2038,14 +1911,12 @@ def run_live(
             ):
                 s9.require(
                     PROJECT_RE.fullmatch(str(coordinates["project_id"])) is not None
-                    and EDITOR_RE.fullmatch(str(coordinates["editor_session_id"]))
-                    is not None,
+                    and EDITOR_RE.fullmatch(str(coordinates["editor_session_id"])) is not None,
                     f"project {label} live identities are malformed",
                 )
             s9.require(
                 coordinates_a["project_id"] != coordinates_b["project_id"]
-                and coordinates_a["editor_session_id"]
-                != coordinates_b["editor_session_id"],
+                and coordinates_a["editor_session_id"] != coordinates_b["editor_session_id"],
                 "project/editor identities collided",
             )
             status_a, status_b = _parallel(
@@ -2073,20 +1944,14 @@ def run_live(
             cache_a = session_a.project_root / ".godot/codex/index"
             cache_b = session_b.project_root / ".godot/codex/index"
             s9.require(
-                client_a.project_root.resolve(strict=True)
-                == session_a.project_root.resolve(strict=True)
-                and client_b.project_root.resolve(strict=True)
-                == session_b.project_root.resolve(strict=True)
-                and session_a.project_root.resolve(strict=True)
-                != session_b.project_root.resolve(strict=True)
-                and cache_a.resolve(strict=True)
-                != cache_b.resolve(strict=True)
+                client_a.project_root.resolve(strict=True) == session_a.project_root.resolve(strict=True)
+                and client_b.project_root.resolve(strict=True) == session_b.project_root.resolve(strict=True)
+                and session_a.project_root.resolve(strict=True) != session_b.project_root.resolve(strict=True)
+                and cache_a.resolve(strict=True) != cache_b.resolve(strict=True)
                 and not cache_a.is_symlink()
                 and not cache_b.is_symlink()
-                and discovery_a["endpoint_sha256"]
-                != discovery_b["endpoint_sha256"]
-                and discovery_a["token_sha256"]
-                != discovery_b["token_sha256"]
+                and discovery_a["endpoint_sha256"] != discovery_b["endpoint_sha256"]
+                and discovery_a["token_sha256"] != discovery_b["token_sha256"]
                 and status_a["project_scope"] != status_b["project_scope"],
                 "project config/root/discovery/token/cache bindings collided",
             )
@@ -2129,8 +1994,7 @@ def run_live(
                 "b": cast(str, workflow_b["report_id"]),
             }
             s9.require(
-                transaction_ids["a"] != transaction_ids["b"]
-                and report_ids["a"] != report_ids["b"],
+                transaction_ids["a"] != transaction_ids["b"] and report_ids["a"] != report_ids["b"],
                 "transaction or validation-report identities collided",
             )
             status_b_before = _transaction_status(
@@ -2145,61 +2009,55 @@ def run_live(
             # Host/config coordinates are checked before process creation. A
             # swapped value therefore has no opportunity to discover another
             # root, open its cache/journal, or reach an approval boundary.
-            fault_matrix.extend(
-                [
-                    _preflight_negative_case(
-                        "swapped_config",
-                        lambda: _require_launch_authority(
-                            expected_root=session_a.project_root,
-                            config_root=session_b.project_root,
-                            argument_root=session_a.project_root,
-                            cwd=session_a.project_root,
-                        ),
+            fault_matrix.extend([
+                _preflight_negative_case(
+                    "swapped_config",
+                    lambda: _require_launch_authority(
+                        expected_root=session_a.project_root,
+                        config_root=session_b.project_root,
+                        argument_root=session_a.project_root,
+                        cwd=session_a.project_root,
                     ),
-                    _preflight_negative_case(
-                        "swapped_root",
-                        lambda: _require_launch_authority(
-                            expected_root=session_a.project_root,
-                            config_root=session_a.project_root,
-                            argument_root=session_b.project_root,
-                            cwd=session_a.project_root,
-                        ),
+                ),
+                _preflight_negative_case(
+                    "swapped_root",
+                    lambda: _require_launch_authority(
+                        expected_root=session_a.project_root,
+                        config_root=session_a.project_root,
+                        argument_root=session_b.project_root,
+                        cwd=session_a.project_root,
                     ),
-                    _preflight_negative_case(
-                        "swapped_cwd",
-                        lambda: _require_launch_authority(
-                            expected_root=session_a.project_root,
-                            config_root=session_a.project_root,
-                            argument_root=session_a.project_root,
-                            cwd=session_b.project_root,
-                        ),
+                ),
+                _preflight_negative_case(
+                    "swapped_cwd",
+                    lambda: _require_launch_authority(
+                        expected_root=session_a.project_root,
+                        config_root=session_a.project_root,
+                        argument_root=session_a.project_root,
+                        cwd=session_b.project_root,
                     ),
-                    _preflight_negative_case(
-                        "package_mismatch",
-                        lambda: _require_package_authority(
-                            sidecar,
-                            expected_sha256=_different_digest(
-                                observed_sidecar_sha256
-                            ),
-                            expected_version=observed_package_version,
-                            observed_sha256=observed_sidecar_sha256,
-                            observed_version=observed_package_version,
-                        ),
+                ),
+                _preflight_negative_case(
+                    "package_mismatch",
+                    lambda: _require_package_authority(
+                        sidecar,
+                        expected_sha256=_different_digest(observed_sidecar_sha256),
+                        expected_version=observed_package_version,
+                        observed_sha256=observed_sidecar_sha256,
+                        observed_version=observed_package_version,
                     ),
-                    _preflight_negative_case(
-                        "version_mismatch",
-                        lambda: _require_package_authority(
-                            sidecar,
-                            expected_sha256=observed_sidecar_sha256,
-                            expected_version=(
-                                "1" if observed_package_version == "0" else "0"
-                            ),
-                            observed_sha256=observed_sidecar_sha256,
-                            observed_version=observed_package_version,
-                        ),
+                ),
+                _preflight_negative_case(
+                    "version_mismatch",
+                    lambda: _require_package_authority(
+                        sidecar,
+                        expected_sha256=observed_sidecar_sha256,
+                        expected_version=("1" if observed_package_version == "0" else "0"),
+                        observed_sha256=observed_sidecar_sha256,
+                        observed_version=observed_package_version,
                     ),
-                ]
-            )
+                ),
+            ])
 
             metadata_faults: list[dict[str, Any]] = []
             for case_id in (
@@ -2221,13 +2079,10 @@ def run_live(
                 )
                 metadata_faults.append(record)
 
-            foreign_project_arguments = dict(
-                s9.operation_arguments("create_node", coordinates_a)
-            )
+            foreign_project_arguments = dict(s9.operation_arguments("create_node", coordinates_a))
             foreign_project_arguments["project_id"] = coordinates_b["project_id"]
             foreign_project_arguments["idempotency_key"] = (
-                "idempotency:"
-                + hashlib.sha256(b"s11:foreign-project").hexdigest()[:32]
+                "idempotency:" + hashlib.sha256(b"s11:foreign-project").hexdigest()[:32]
             )
             _, cursor_b = _parallel(
                 lambda: _wait_scene_cursor(client_a, timeout),
@@ -2310,9 +2165,7 @@ def run_live(
                 transaction_id=transaction_ids["b"],
                 preview_digest=cast(
                     str,
-                    cast(Mapping[str, Any], workflow_b["prepared"])[
-                        "preview_digest"
-                    ],
+                    cast(Mapping[str, Any], workflow_b["prepared"])["preview_digest"],
                 ),
             )
             (
@@ -2333,8 +2186,7 @@ def run_live(
 
             client_a = session_a.start_sidecar()
             s9.require(
-                session_a.sidecar_process is not None
-                and isinstance(client_a, s10.Sprint10McpClient),
+                session_a.sidecar_process is not None and isinstance(client_a, s10.Sprint10McpClient),
                 "project A sidecar did not restart",
             )
             after_fault_a_pid = session_a.sidecar_process.process.pid
@@ -2362,9 +2214,7 @@ def run_live(
                 transaction_id=transaction_ids["b"],
                 preview_digest=cast(
                     str,
-                    cast(Mapping[str, Any], workflow_b["prepared"])[
-                        "preview_digest"
-                    ],
+                    cast(Mapping[str, Any], workflow_b["prepared"])["preview_digest"],
                 ),
             )
             (
@@ -2390,9 +2240,7 @@ def run_live(
                 },
             )
             s9.require(
-                not recovered_a_error
-                and recovered_a_tree.get("runtime_session_id")
-                == runtime_ids["a"],
+                not recovered_a_error and recovered_a_tree.get("runtime_session_id") == runtime_ids["a"],
                 f"project A runtime did not reconnect: {recovered_a_tree}",
             )
 
@@ -2412,8 +2260,7 @@ def run_live(
             ):
                 s9.require(
                     after["project_id"] == committed["project_id"]
-                    and after["editor_session_id"]
-                    == committed["editor_session_id"]
+                    and after["editor_session_id"] == committed["editor_session_id"]
                     and after["scene_id"] == committed["scene_id"]
                     and after["operation_seq"] == committed["operation_seq"]
                     and after["action_count"] == committed["action_count"],
@@ -2466,18 +2313,13 @@ def run_live(
                 set(case_records) == set(ISOLATION_CASE_ORDER),
                 "isolation fault matrix construction differs",
             )
-            fault_matrix = [
-                case_records[case_id] for case_id in ISOLATION_CASE_ORDER
-            ]
+            fault_matrix = [case_records[case_id] for case_id in ISOLATION_CASE_ORDER]
 
             source_after = {
                 "a": _project_source_hashes(session_a.project_root),
                 "b": _project_source_hashes(session_b.project_root),
             }
-            source_integrity = {
-                label: source_before[label] == source_after[label]
-                for label in ("a", "b")
-            }
+            source_integrity = {label: source_before[label] == source_after[label] for label in ("a", "b")}
             s9.require(
                 all(source_integrity.values()),
                 "multi-project probes changed project-content bytes",
@@ -2486,8 +2328,7 @@ def run_live(
                 status.get("change_set_id") == transaction_ids["b"]
                 and status.get("state") == "committed"
                 and status.get("validation_report_id") == report_ids["b"]
-                and status.get("preview_digest")
-                == status_b_before.get("preview_digest")
+                and status.get("preview_digest") == status_b_before.get("preview_digest")
                 for status in (status_b_during, status_b_after)
             )
             body = {
@@ -2531,14 +2372,11 @@ def run_live(
                         == "mcp_action_only_form_v1"
                     ),
                     "validation_readback": (
-                        workflow_a["report"]["outcome"] == "passed"
-                        and workflow_b["report"]["outcome"] == "passed"
+                        workflow_a["report"]["outcome"] == "passed" and workflow_b["report"]["outcome"] == "passed"
                     ),
                     "targeted_undo": (
-                        workflow_a["node_name"]
-                        not in cast(set[str], restored_a["node_paths"])
-                        and workflow_b["node_name"]
-                        not in cast(set[str], restored_b["node_paths"])
+                        workflow_a["node_name"] not in cast(set[str], restored_a["node_paths"])
+                        and workflow_b["node_name"] not in cast(set[str], restored_b["node_paths"])
                     ),
                     "identity_distinct": {
                         "project": True,
@@ -2551,54 +2389,35 @@ def run_live(
                     "target_restart": {
                         "target": "a",
                         "component": "sidecar",
-                        "process_instance_changed": (
-                            before_fault_a_pid != after_fault_a_pid
-                        ),
+                        "process_instance_changed": (before_fault_a_pid != after_fault_a_pid),
                         "target_reconnected": True,
                         "target_identity_preserved": (
-                            reconnected_a["project_id"]
-                            == coordinates_a["project_id"]
-                            and reconnected_a["editor_session_id"]
-                            == coordinates_a["editor_session_id"]
-                            and recovered_a_tree["runtime_session_id"]
-                            == runtime_ids["a"]
+                            reconnected_a["project_id"] == coordinates_a["project_id"]
+                            and reconnected_a["editor_session_id"] == coordinates_a["editor_session_id"]
+                            and recovered_a_tree["runtime_session_id"] == runtime_ids["a"]
                         ),
-                        "sibling_process_preserved": (
-                            before_fault_b_pid == after_fault_b_pid
-                        ),
+                        "sibling_process_preserved": (before_fault_b_pid == after_fault_b_pid),
                         "sibling_editor_preserved": (
-                            sibling_during_fault["editor_session_id"]
-                            == coordinates_b["editor_session_id"]
-                            and sibling_after["editor_session_id"]
-                            == coordinates_b["editor_session_id"]
+                            sibling_during_fault["editor_session_id"] == coordinates_b["editor_session_id"]
+                            and sibling_after["editor_session_id"] == coordinates_b["editor_session_id"]
                         ),
                         "sibling_runtime_preserved": (
                             sibling_tree_after_error is False
-                            and sibling_tree_after.get("runtime_session_id")
-                            == runtime_ids["b"]
+                            and sibling_tree_after.get("runtime_session_id") == runtime_ids["b"]
                         ),
-                        "sibling_transaction_preserved": (
-                            sibling_status_preserved
-                        ),
+                        "sibling_transaction_preserved": (sibling_status_preserved),
                         "sibling_validation_report_preserved": (
-                            report_b_during == workflow_b["report"]
-                            and report_b_after == workflow_b["report"]
+                            report_b_during == workflow_b["report"] and report_b_after == workflow_b["report"]
                         ),
                         "sibling_readback_preserved": (
-                            sibling_coordinates_during
-                            == workflow_b["after"]
-                            and sibling_coordinates_after
-                            == workflow_b["after"]
+                            sibling_coordinates_during == workflow_b["after"]
+                            and sibling_coordinates_after == workflow_b["after"]
                         ),
                         "sibling_revisions_preserved": (
-                            sibling_during_fault["operation_seq"]
-                            == workflow_b["after"]["operation_seq"]
-                            and sibling_after["operation_seq"]
-                            == workflow_b["after"]["operation_seq"]
-                            and sibling_during_fault["action_count"]
-                            == workflow_b["after"]["action_count"]
-                            and sibling_after["action_count"]
-                            == workflow_b["after"]["action_count"]
+                            sibling_during_fault["operation_seq"] == workflow_b["after"]["operation_seq"]
+                            and sibling_after["operation_seq"] == workflow_b["after"]["operation_seq"]
+                            and sibling_during_fault["action_count"] == workflow_b["after"]["action_count"]
+                            and sibling_after["action_count"] == workflow_b["after"]["action_count"]
                         ),
                     },
                     "fault_matrix": fault_matrix,
@@ -2614,19 +2433,13 @@ def run_live(
     body["cleanup"] = {
         "runtime_a_stopped": runtime_stopped["a"],
         "runtime_b_stopped": runtime_stopped["b"],
-        "editor_a_stopped": (
-            session_a.editor is None or session_a.editor.poll() is not None
-        ),
-        "editor_b_stopped": (
-            session_b.editor is None or session_b.editor.poll() is not None
-        ),
+        "editor_a_stopped": (session_a.editor is None or session_a.editor.poll() is not None),
+        "editor_b_stopped": (session_b.editor is None or session_b.editor.poll() is not None),
         "sidecar_a_stopped": (
-            session_a.sidecar_process is None
-            or session_a.sidecar_process.process.poll() is not None
+            session_a.sidecar_process is None or session_a.sidecar_process.process.poll() is not None
         ),
         "sidecar_b_stopped": (
-            session_b.sidecar_process is None
-            or session_b.sidecar_process.process.poll() is not None
+            session_b.sidecar_process is None or session_b.sidecar_process.process.poll() is not None
         ),
     }
     return validate_report(body)
@@ -2653,13 +2466,16 @@ def main() -> int:
             expected_sidecar_sha256=arguments.expected_sidecar_sha256,
             expected_package_version=arguments.expected_package_version,
         )
-        encoded = json.dumps(
-            report,
-            ensure_ascii=False,
-            indent=2,
-            allow_nan=False,
-            sort_keys=True,
-        ) + "\n"
+        encoded = (
+            json.dumps(
+                report,
+                ensure_ascii=False,
+                indent=2,
+                allow_nan=False,
+                sort_keys=True,
+            )
+            + "\n"
+        )
         if arguments.report is not None:
             acquisition_paths.atomic_write_new_file(
                 arguments.report,
