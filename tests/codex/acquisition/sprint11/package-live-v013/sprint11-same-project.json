@@ -1,0 +1,34 @@
+{
+  "artifacts": {
+    "godot_sha256": "sha256:dea4ace0e2885582e5dd9397a4f5ab4b2130df7000825123db08ef9d318a5056",
+    "sidecar_sha256": "sha256:9edef6fb6a1e7bda5d46bafd51c2cd3b22b458d4caf5bbe78df5ce98396a6cc2"
+  },
+  "assertions": {
+    "busy_not_syncing": true,
+    "busy_projection_fail_closed": true,
+    "crash_takeover": true,
+    "diagnostic_only_standby": true,
+    "exactly_one_owner": true,
+    "graceful_takeover": true,
+    "takeover_within_90_seconds": true,
+    "transaction_coordinator_follows_index_lease": true
+  },
+  "bridge_rpc": "1.8",
+  "cleanup": {
+    "editor_stopped": true,
+    "owner_stopped": true,
+    "standby_stopped": true,
+    "successor_stopped": true
+  },
+  "package_version": "0.1.3",
+  "platform": "macos-arm64",
+  "protocol": "2025-11-25",
+  "redaction": true,
+  "registry": {
+    "digest": "sha256:95b15688c07f089578c364856962b39d3367fc2ecd371bb3b1a6f7d8a39848c7",
+    "tools": 41
+  },
+  "schema_version": "s11-same-project-live/1.1",
+  "source_unchanged": true,
+  "status": "passed"
+}
