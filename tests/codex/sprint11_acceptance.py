@@ -2467,30 +2467,30 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         "host_name": "codex-desktop",
         "host_identifier": "com.openai.codex",
         "host_artifact_kind": "macos_bundle_executable",
-        "host_version": "26.721.81911",
-        "host_build": "5973",
+        "host_version": "26.727.40816",
+        "host_build": "6067",
         "host_commit": None,
         "host_artifact_sha256": (
-            "sha256:83d9925b3ded1c65b6f1968ae79b72313"
-            "f1b6b9d27c61131b438b49ab8e2b406"
+            "sha256:f9aad3bbf4ab357f9c2e7d3503b42c86"
+            "b2f43df60349bf8609fc373f46e446eb"
         ),
         "host_metadata_sha256": None,
         "host_code_signature": {
             "mode": "deep_strict",
             "identifier": "com.openai.codex",
             "team_id": "2DC432GLL2",
-            "cdhash": "6e85f197aec22c1a0552f1aca1b3d1f3707946ec",
+            "cdhash": "5f9c4b57e1aac976ebb4d686ac4e51244d24eac8",
         },
-        "client_version": "0.146.0-alpha.3.1",
+        "client_version": "0.146.0-alpha.9.2",
         "client_artifact_sha256": (
-            "sha256:fb2b6b35789e59c885cf4d2aee124758"
-            "09dd67b2c10df580e638122fd6b3438e"
+            "sha256:68474c6192406b8a0278243c8283b87a"
+            "84798a69fb498f30c3715861f8082542"
         ),
         "client_code_signature": {
             "mode": "strict",
             "identifier": "codex",
             "team_id": "2DC432GLL2",
-            "cdhash": "b81d53d6df5ab26ce419cf2637a859d8c7f1f56e",
+            "cdhash": "dce9780d114a670768798d0dc0de4a96b422c309",
         },
         "ide_host_version": None,
         "ide_shell_identifier": None,
@@ -2502,30 +2502,30 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         "host_name": "codex-cli",
         "host_identifier": "codex-cli",
         "host_artifact_kind": "standalone_executable",
-        "host_version": "0.146.0-alpha.3.1",
-        "host_build": "0.146.0-alpha.3.1",
+        "host_version": "0.146.0-alpha.9.2",
+        "host_build": "0.146.0-alpha.9.2",
         "host_commit": None,
         "host_artifact_sha256": (
-            "sha256:fb2b6b35789e59c885cf4d2aee124758"
-            "09dd67b2c10df580e638122fd6b3438e"
+            "sha256:68474c6192406b8a0278243c8283b87a"
+            "84798a69fb498f30c3715861f8082542"
         ),
         "host_metadata_sha256": None,
         "host_code_signature": {
             "mode": "strict",
             "identifier": "codex",
             "team_id": "2DC432GLL2",
-            "cdhash": "b81d53d6df5ab26ce419cf2637a859d8c7f1f56e",
+            "cdhash": "dce9780d114a670768798d0dc0de4a96b422c309",
         },
-        "client_version": "0.146.0-alpha.3.1",
+        "client_version": "0.146.0-alpha.9.2",
         "client_artifact_sha256": (
-            "sha256:fb2b6b35789e59c885cf4d2aee124758"
-            "09dd67b2c10df580e638122fd6b3438e"
+            "sha256:68474c6192406b8a0278243c8283b87a"
+            "84798a69fb498f30c3715861f8082542"
         ),
         "client_code_signature": {
             "mode": "strict",
             "identifier": "codex",
             "team_id": "2DC432GLL2",
-            "cdhash": "b81d53d6df5ab26ce419cf2637a859d8c7f1f56e",
+            "cdhash": "dce9780d114a670768798d0dc0de4a96b422c309",
         },
         "ide_host_version": None,
         "ide_shell_identifier": None,
@@ -2624,7 +2624,7 @@ def validate_host_coordinate_profile(
         profile["schema_version"]
         == "godot-codex-host-coordinate-profile/1.0"
         and profile["profile_id"]
-        == "external-codex-beta-macos-arm64-hosts-v5",
+        == "external-codex-beta-macos-arm64-hosts-v6",
         "host coordinate profile identity differs",
     )
     matrix_binding = _exact_fields(

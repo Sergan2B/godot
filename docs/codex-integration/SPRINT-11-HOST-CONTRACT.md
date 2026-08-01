@@ -58,8 +58,8 @@ The checked contract establishes:
 - App, CLI, and IDE share the Codex configuration layers;
 - project `.codex/config.toml` is loaded only for a trusted project;
 - ordinary relative project-config paths resolve from the owning `.codex`
-  directory, but the qualification-candidate Codex `0.146.0-alpha.3.1` MCP
-  launcher was observed resolving its `cwd` from the task root; setup
+  directory, but the qualification-candidate Codex `0.146.0-alpha.9.2` MCP
+  launcher resolves its `cwd` from the task root; setup
   therefore uses an absolute, canonical project-root `cwd`;
 - the official IDE extension identifier is `openai.chatgpt`;
 - MCP stdio configuration supports command, args, cwd, explicit per-server
@@ -73,7 +73,7 @@ A historical locally generated app-server JSON Schema from Codex
 `0.145.0-alpha.30` contains the same request, response, capability, and
 `openai/form` definitions. That older coordinate is not the current
 qualification candidate and proves neither implementation nor a UI workflow
-for the current `0.146.0-alpha.3.1` CLI.
+for the current `0.146.0-alpha.9.2` CLI.
 
 ## 3. Qualification candidate matrix
 
@@ -84,29 +84,29 @@ any Markdown/JSON drift.
 <!-- BEGIN S11 HOST COORDINATE AUTHORITY -->
 | Surface | Host identifier | Host version/build | Host artifact SHA-256 | Client version/SHA-256 | IDE shell | Qualification |
 |---|---|---|---|---|---|---|
-| app | `com.openai.codex` | `26.721.81911` / `5973` | `sha256:83d9925b3ded1c65b6f1968ae79b72313f1b6b9d27c61131b438b49ab8e2b406` | `0.146.0-alpha.3.1` / `sha256:fb2b6b35789e59c885cf4d2aee12475809dd67b2c10df580e638122fd6b3438e` | — | candidate |
-| cli | `codex-cli` | `0.146.0-alpha.3.1` / `0.146.0-alpha.3.1` | `sha256:fb2b6b35789e59c885cf4d2aee12475809dd67b2c10df580e638122fd6b3438e` | `0.146.0-alpha.3.1` / `sha256:fb2b6b35789e59c885cf4d2aee12475809dd67b2c10df580e638122fd6b3438e` | — | candidate |
+| app | `com.openai.codex` | `26.727.40816` / `6067` | `sha256:f9aad3bbf4ab357f9c2e7d3503b42c86b2f43df60349bf8609fc373f46e446eb` | `0.146.0-alpha.9.2` / `sha256:68474c6192406b8a0278243c8283b87a84798a69fb498f30c3715861f8082542` | — | candidate |
+| cli | `codex-cli` | `0.146.0-alpha.9.2` / `0.146.0-alpha.9.2` | `sha256:68474c6192406b8a0278243c8283b87a84798a69fb498f30c3715861f8082542` | `0.146.0-alpha.9.2` / `sha256:68474c6192406b8a0278243c8283b87a84798a69fb498f30c3715861f8082542` | — | candidate |
 | ide | `openai.chatgpt` | `26.721.41059` / `26.721.41059` | `sha256:ea66cea39f5c40d83079fe200251ac698afe285e4cb30d335e4ee6517ee7b8aa` | `0.146.0-alpha.3.1` / `sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4` | com.microsoft.VSCode 1.130.0 `sha256:e1e3268741a2658a22b31e82b58a42fa48be73f64fc2de006be48a2ba136b930` | candidate |
 <!-- END S11 HOST COORDINATE AUTHORITY -->
 
 | Component | Exact observed coordinate | Candidate state |
 |---|---|---|
 | OS | macOS `26.5.2` build `25F84`, `arm64` | candidate |
-| Codex desktop | bundle `com.openai.codex`, version `26.721.81911`, build `5973`, team `2DC432GLL2` | static capability proven; live workflow pending |
-| App-bundled Codex CLI | `0.146.0-alpha.3.1`, `arm64` | action-only empty form live-proved exact `accept`, `decline`, `cancel`, and `timeout`; full packaged surface workflow pending |
-| App-bundled CLI artifact | `sha256:fb2b6b35789e59c885cf4d2aee12475809dd67b2c10df580e638122fd6b3438e` | candidate artifact identity |
+| Codex desktop | bundle `com.openai.codex`, version `26.727.40816`, build `6067`, team `2DC432GLL2` | static capability proven; live workflow pending |
+| App-bundled Codex CLI | `0.146.0-alpha.9.2`, `arm64` | full packaged surface workflow pending |
+| App-bundled CLI artifact | `sha256:68474c6192406b8a0278243c8283b87a84798a69fb498f30c3715861f8082542` | candidate artifact identity |
 | VS Code Stable | `1.130.0`, commit `1b6a188127eeaf9194f945eb6eb89a657e93c54c`, `arm64`, team `UBF8T346G9` | candidate |
 | Official Codex extension | `openai.chatgpt@26.721.41059`, `darwin-arm64` | installed candidate; live workflow pending |
 | Extension package | `sha256:fa2a88ea55413183654f5613b14e744517ad7626d26a673403bdde83c73adea7` | candidate artifact identity |
 | Extension Codex CLI | `bin/macos-aarch64/codex`, `0.146.0-alpha.3.1`, `sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4`, team `2DC432GLL2` | candidate embedded client |
 | MCP protocol | `2025-11-25`; form-compatible floor `2025-06-18` | candidate |
 | Bridge | RPC `1.8` exact profile | candidate |
-| Godot × Codex package | workspace `0.1.5` | same-project lease contention, long project-root UDS transport, accepted-socket subprocess inheritance, and full-beta doctor registry probing fixed; independently installable host-surface bundle added |
+| Godot × Codex package | workspace `0.1.6` | same-project lease contention, long project-root UDS transport, accepted-socket subprocess inheritance, and full-beta doctor registry probing fixed; independently installable host-surface bundle added |
 | Godot Bridge prerequisite | `bin/godot.macos.editor.dev.arm64`, `4.8.dev.codex.336fc9a13`, `sha256:2166f3c6b7784cc7259a08a9636aafe89c8d6bebcbdc05c2b1d8d76933373dff` | exact local candidate; detached package binding pending |
 
 ### 3.1 Independent host-surface compatibility updates
 
-Package `0.1.5` keeps package, Godot, protocol, schema, registry, Bridge, and
+Package `0.1.6` keeps package, Godot, protocol, schema, registry, Bridge, and
 Cursor coordinates embedded and immutable. A separately released
 `godot-codex-surface-compatibility-bundle/1.0` may replace only the complete
 App/CLI/IDE surface snapshot for that exact embedded matrix. This permits a
@@ -173,8 +173,9 @@ Only the exact host `accept` action is receipt-eligible.
 Earlier working notes recorded four action-only outcomes against
 `0.145.0-alpha.30`. That result is historical only and does not qualify or
 substitute for the current candidate. The independent current-coordinate
-probes summarized above prove `cancel` and `timeout` for
-`0.146.0-alpha.3.1`.
+probes summarized above prove `cancel` and `timeout` for the historical
+`0.146.0-alpha.3.1` coordinate; the current `0.146.0-alpha.9.2` coordinate
+requires a fresh four-outcome capture.
 
 The current four-outcome result proves the isolated action boundary for this
 CLI coordinate, but not App, IDE, the full packaged workflow, or human

@@ -136,20 +136,20 @@ IDE extension.
 - The required IDE surface is the official Codex extension on VS Code Stable.
   Cursor and other compatible editors may be recorded as `not_tested`, but
   they do not substitute for the required VS Code gate.
-- Qualification candidates refreshed on 2026-07-30 are Codex desktop app
-  `com.openai.codex` `26.721.81911` build `5973` (team `2DC432GLL2`),
-  its bundled Codex CLI `0.146.0-alpha.3.1`
-  (`sha256:fb2b6b35789e59c885cf4d2aee12475809dd67b2c10df580e638122fd6b3438e`),
+- Qualification candidates refreshed on 2026-08-01 are Codex desktop app
+  `com.openai.codex` `26.727.40816` build `6067` (team `2DC432GLL2`),
+  its bundled Codex CLI `0.146.0-alpha.9.2`
+  (`sha256:68474c6192406b8a0278243c8283b87a84798a69fb498f30c3715861f8082542`),
   VS Code Stable `1.130.0` commit
   `1b6a188127eeaf9194f945eb6eb89a657e93c54c`, and official extension
   `openai.chatgpt@26.721.41059`. The extension embeds Codex CLI
   `0.146.0-alpha.3.1` at `bin/macos-aarch64/codex`
   (`sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4`).
   These are observations, not support promises; S11-01 records the exact
-  coordinates used by final evidence. On the current App-bundled CLI,
-  action-only `accept`, `decline`, `cancel`, and `timeout` are live-proven.
-  This isolated lifecycle proof does not qualify the App, IDE, or full
-  packaged CLI surface workflow.
+  coordinates used by final evidence. The current App-bundled CLI still
+  requires a fresh action-only `accept`, `decline`, `cancel`, and `timeout`
+  capture. The historical isolated lifecycle proof does not qualify the App,
+  IDE, or full packaged CLI surface workflow.
 - MCP server instructions become normative workflow guidance. Their first 512
   characters explain project binding, connection status, offline limits, and
   the requirement to preview/approve writes. Instructions cannot grant
@@ -465,7 +465,7 @@ The TOML editor atomically merges only
   non-host fallback;
 - `args = ["--project-root", "."]`;
 - `cwd = "<canonical-project-root>"` because the qualification-candidate Codex
-  `0.146.0-alpha.3.1` host resolves MCP `cwd` from the task root in practice;
+  `0.146.0-alpha.9.2` host resolves MCP `cwd` from the task root in practice;
   the absolute, setup-bound root removes config/task-relative ambiguity and
   keeps `--project-root .` exact even when a task starts in a nested directory;
 - `required = true`;
