@@ -1,9 +1,9 @@
 {
   "schema_version": "godot-codex-host-coordinate-profile/1.0",
-  "profile_id": "external-codex-beta-macos-arm64-hosts-v6",
+  "profile_id": "external-codex-beta-macos-arm64-hosts-v7",
   "compatibility_matrix": {
     "path": "godot-codex-mcp/product/compatibility-matrix.v1.json",
-    "sha256": "sha256:e849dd10788f26821970bba344711b648e74a5dafac22e56e4087be8a2daec2a"
+    "sha256": "sha256:83e63d9915a0f98b8da5d2b6e76792613185d16e945f47897bf43c8032aedd6e"
   },
   "server_instructions": {
     "path": "godot-codex-mcp/product/server-instructions.v1.txt",
