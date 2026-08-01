@@ -1009,11 +1009,13 @@ class FaultHarnessTests(unittest.TestCase):
             self.assertEqual(harness._package_snapshot(package), before)
 
     def configure_project(self, project: Path) -> bytes:
+        project_root = json.dumps(str(project.resolve()))
         config = (
             "[mcp_servers.godot_editor]\n"
+            f"# godot-codex-setup-owner: {D2}\n"
             'command = "/disposable/current/bin/godot-codex-mcp"\n'
             'args = ["--project-root", "."]\n'
-            'cwd = ".."\n'
+            f"cwd = {project_root}\n"
             "required = true\n"
             "startup_timeout_sec = 10\n"
             "tool_timeout_sec = 60\n"
@@ -1027,13 +1029,15 @@ class FaultHarnessTests(unittest.TestCase):
         codex.mkdir(parents=True, mode=0o700)
         stanza = config.decode().rstrip(" \t\r\n")
         receipt = {
-            "schema_version": "godot-codex-setup-receipt/1.0",
+            "schema_version": "godot-codex-setup-receipt/1.1",
             "project_id": harness._project_id(project.resolve()),
             "package_version": "1.0.0",
             "profile": "read-only",
             "guidance": "none",
+            "package_identity_digest": D,
             "launcher_path_sha256": D,
             "launcher_file_sha256": D,
+            "config_ownership_marker": D2,
             "config_table_digest": harness._digest_bytes(stanza.encode()),
             "config_created": True,
             "config_file_mode": 0o600,
@@ -1060,7 +1064,8 @@ class FaultHarnessTests(unittest.TestCase):
                 state_directory=run / "fault",
             )
             drifted = (project / ".codex/config.toml").read_text()
-            self.assertIn('cwd = "."', drifted)
+            self.assertIn("required = false", drifted)
+            self.assertIn(f"cwd = {json.dumps(str(project.resolve()))}", drifted)
             reset = harness.recover_fault(
                 run_root=run,
                 state_directory=run / "fault",
@@ -1071,6 +1076,27 @@ class FaultHarnessTests(unittest.TestCase):
             self.assertEqual(
                 ready["pre_state_sha256"], reset["post_state_sha256"]
             )
+
+    def test_invalid_config_rejects_legacy_receipt_before_state_creation(self) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="s11u.") as directory:
+            run = self.create_run(Path(directory))
+            project = self.create_project(run)
+            config = self.configure_project(project)
+            receipt_path = project / ".godot/codex/setup-receipt-v1.json"
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            receipt["schema_version"] = "godot-codex-setup-receipt/1.0"
+            receipt.pop("package_identity_digest")
+            receipt.pop("config_ownership_marker")
+            receipt_path.write_bytes(harness._canonical_json(receipt))
+            state_directory = run / "fault"
+            with self.assertRaises(harness.FaultHarnessError):
+                harness.inject_invalid_config(
+                    run_root=run,
+                    project_root=project,
+                    state_directory=state_directory,
+                )
+            self.assertEqual((project / ".codex/config.toml").read_bytes(), config)
+            self.assertFalse(state_directory.exists())
 
     def test_symlink_target_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory(dir="/tmp", prefix="s11u.") as directory:

@@ -925,7 +925,12 @@ def _config_snapshot(project: Path) -> tuple[dict[str, Any], bytes, dict[str, An
         if isinstance(document.get("mcp_servers"), dict)
         else None
     )
-    if not isinstance(table, dict) or table.get("cwd") != "..":
+    if (
+        not isinstance(table, dict)
+        or table.get("cwd") != str(project)
+        or table.get("args") != ["--project-root", "."]
+        or table.get("required") is not True
+    ):
         raise FaultHarnessError("owned config is not in the healthy pre-fault state")
     _, _, stanza = _config_stanza(text)
     metadata = os.lstat(config)
@@ -935,8 +940,10 @@ def _config_snapshot(project: Path) -> tuple[dict[str, Any], bytes, dict[str, An
         "package_version",
         "profile",
         "guidance",
+        "package_identity_digest",
         "launcher_path_sha256",
         "launcher_file_sha256",
+        "config_ownership_marker",
         "config_table_digest",
         "config_created",
         "config_file_mode",
@@ -949,16 +956,20 @@ def _config_snapshot(project: Path) -> tuple[dict[str, Any], bytes, dict[str, An
     }
     if (
         set(receipt) != expected_receipt_fields
-        or receipt.get("schema_version") != "godot-codex-setup-receipt/1.0"
+        or receipt.get("schema_version") != "godot-codex-setup-receipt/1.1"
         or receipt.get("project_id") != _project_id(project)
         or receipt.get("config_table_digest") != _config_stanza_digest(stanza)
+        or f"# godot-codex-setup-owner: {receipt.get('config_ownership_marker')}"
+        not in stanza.splitlines()
         or receipt.get("config_file_mode") != stat.S_IMODE(metadata.st_mode)
         or any(
             not isinstance(receipt.get(field), str)
             or DIGEST.fullmatch(cast(str, receipt[field])) is None
             for field in (
+                "package_identity_digest",
                 "launcher_path_sha256",
                 "launcher_file_sha256",
+                "config_ownership_marker",
                 "config_table_digest",
                 "plan_digest",
             )
@@ -989,14 +1000,14 @@ def inject_invalid_config(
 ) -> dict[str, Any]:
     root = _require_run_root(run_root)
     project = _project_root(project_root, root)
-    state_dir = _new_state_directory(state_directory, root)
     snapshot, config_bytes, _receipt = _config_snapshot(project)
+    state_dir = _new_state_directory(state_directory, root)
     text = config_bytes.decode("utf-8")
     start, end, stanza = _config_stanza(text)
-    healthy = 'cwd = ".."'
+    healthy = "required = true"
     if stanza.count(healthy) != 1:
-        raise FaultHarnessError("owned cwd field is not uniquely replaceable")
-    drifted_stanza = stanza.replace(healthy, 'cwd = "."', 1)
+        raise FaultHarnessError("owned required field is not uniquely replaceable")
+    drifted_stanza = stanza.replace(healthy, "required = false", 1)
     drifted_text = text[:start] + drifted_stanza + text[end:]
     tomllib.loads(drifted_text)
     drifted_bytes = drifted_text.encode("utf-8")
