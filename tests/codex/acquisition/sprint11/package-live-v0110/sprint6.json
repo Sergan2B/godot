@@ -1,0 +1,241 @@
+{
+  "accuracy": {
+    "deduplication": {
+      "evidence_count": 2,
+      "evidence_sources": [
+        "scene_node_attachment",
+        "scene_relation"
+      ],
+      "fact_count": 1
+    },
+    "dynamic_false_exact": 0,
+    "queries": {
+      "resource_profile": {
+        "actual_pairs": [
+          [
+            "preloads",
+            "exact"
+          ]
+        ],
+        "expected_pairs": [
+          [
+            "preloads",
+            "exact"
+          ]
+        ],
+        "missing_pairs": [],
+        "target_entity_id": "godot:resource:uid:v1:LSPa_ayTJ9m8T6kCZADSZgbEVojbgOBTOXPCM65cjEA",
+        "unexpected_pairs": [],
+        "usage_count": 1
+      },
+      "scene_child": {
+        "actual_pairs": [
+          [
+            "instantiates",
+            "exact"
+          ]
+        ],
+        "expected_pairs": [
+          [
+            "instantiates",
+            "exact"
+          ]
+        ],
+        "missing_pairs": [],
+        "target_entity_id": "godot:scene:uid:v1:1wBMaFCEKpbv3eZAkQKkdBNvFZW3DFoW3lcwVWmUlA8",
+        "unexpected_pairs": [],
+        "usage_count": 1
+      },
+      "signal_healed": {
+        "actual_pairs": [
+          [
+            "connects_signal",
+            "exact"
+          ],
+          [
+            "references_symbol",
+            "exact"
+          ]
+        ],
+        "expected_pairs": [
+          [
+            "connects_signal",
+            "exact"
+          ],
+          [
+            "references_symbol",
+            "exact"
+          ]
+        ],
+        "missing_pairs": [],
+        "target_entity_id": "godot:signal:v1:8467cddfbd6e8dbeef068d48e70aa442a717168282fd33191cc015ad5c9195a3",
+        "unexpected_pairs": [],
+        "usage_count": 2
+      },
+      "symbol_take_damage": {
+        "actual_pairs": [
+          [
+            "calls",
+            "exact"
+          ],
+          [
+            "overrides",
+            "exact"
+          ]
+        ],
+        "expected_pairs": [
+          [
+            "calls",
+            "exact"
+          ],
+          [
+            "overrides",
+            "exact"
+          ]
+        ],
+        "missing_pairs": [],
+        "target_entity_id": "godot:script-symbol:named:v1:HrTHg8EuZPMAvp7hStlhe2C7NNiAEHbDK5VKdP3AQAk",
+        "unexpected_pairs": [],
+        "usage_count": 2
+      }
+    },
+    "resolvable_recall": 1.0,
+    "resolvable_truth_matched": 6,
+    "resolvable_truth_total": 6,
+    "zero_false_exact": true
+  },
+  "artifacts": {
+    "fixture_manifest_sha256": "sha256:b1a297a71144c5e0ecbbd1bfe8b3f648d18b911231bc5e909fb00c0f5df8bde4",
+    "godot_sha256": "sha256:2166f3c6b7784cc7259a08a9636aafe89c8d6bebcbdc05c2b1d8d76933373dff",
+    "golden_usages_sha256": "sha256:7ebcf1ac3fc94f0904824b18e13f1a582c49d924663954126808f8dd09213848",
+    "sidecar_sha256": "sha256:38923ee0ccdff6bdd02293146946818a31262ca0df59a8b01267ab1ccc647604"
+  },
+  "cleanup": {
+    "bridge_runtime_files_absent": true,
+    "editor_processes_stopped": true,
+    "sidecar_processes_stopped": true,
+    "temporary_workspace_removed": true
+  },
+  "coordinates": {
+    "generation_id": "generation:script:sha256:4315e6880df0686161aefa084d5fbb559e8ba530edd41d22beb787473aa6187f",
+    "index_revision": 8,
+    "resource_revision": 3,
+    "scene_graph_revision": 2,
+    "script_graph_revision": 3
+  },
+  "linux": "not_run",
+  "live_phases": {
+    "base": {
+      "index_revision": 3,
+      "resource_target_entity_id": "godot:resource:uid:v1:LSPa_ayTJ9m8T6kCZADSZgbEVojbgOBTOXPCM65cjEA",
+      "status": "passed"
+    },
+    "resource_uid_rename": {
+      "identity_preserved": true,
+      "index_revision": 6,
+      "resource_target_entity_id": "godot:resource:uid:v1:LSPa_ayTJ9m8T6kCZADSZgbEVojbgOBTOXPCM65cjEA",
+      "status": "passed"
+    },
+    "symbol_rename": {
+      "index_revision": 8,
+      "old_selector_not_found": true,
+      "status": "passed",
+      "symbol_target_entity_id": "godot:script-symbol:named:v1:GXBauvvAvE8vHII-7VLpVwMZzCey4iiu8oR7frE8Vbc"
+    }
+  },
+  "mcp_contract": {
+    "closed_input_schemas": true,
+    "cross_filter_cursor_rejected": true,
+    "cross_selector_cursor_rejected": true,
+    "exact_ten_tool_registry": true,
+    "fixed_project_resource": true,
+    "limit_bounds_rejected": true,
+    "read_only_annotations": true,
+    "scene_resource_template": true,
+    "signed_cursor_tampering_rejected": true,
+    "subscriptions_disabled": true
+  },
+  "performance": {
+    "control_ping_p95_ms": 0.634,
+    "control_ping_samples_ms": [
+      11.642,
+      0.477,
+      0.433,
+      0.468,
+      0.634,
+      0.536,
+      0.449,
+      0.453,
+      0.478,
+      0.445,
+      0.367,
+      0.383,
+      0.38,
+      0.38,
+      0.463,
+      0.358,
+      0.388,
+      0.383,
+      0.352,
+      0.375
+    ],
+    "find_usages_p95_ms": 0.651,
+    "find_usages_samples_ms": [
+      0.483,
+      0.372,
+      0.651,
+      0.376,
+      0.413,
+      0.543,
+      0.363
+    ],
+    "summary_p95_ms": 0.976,
+    "summary_samples_ms": [
+      0.976,
+      0.481,
+      0.676,
+      0.676,
+      0.827,
+      1.219,
+      0.845,
+      0.745,
+      0.693,
+      0.62,
+      0.646,
+      0.656,
+      0.57,
+      0.591,
+      0.569,
+      0.545,
+      0.496,
+      0.632,
+      0.519,
+      0.646
+    ]
+  },
+  "platform": "macos-arm64",
+  "profile": "model_free_live_smoke",
+  "redaction": {
+    "absolute_paths_absent": true,
+    "bridge_endpoints_absent": true,
+    "secret_material_absent": true,
+    "source_bytes_absent": true
+  },
+  "remote_ci": "not_run",
+  "schema_version": 1,
+  "sprint": 6,
+  "status": "passed",
+  "summaries": {
+    "project_budget": 4096,
+    "project_bytes": 4051,
+    "scene_budget": 2048,
+    "scene_bytes": 2031
+  },
+  "versions": {
+    "bridge_rpc": "1.4",
+    "logical_schema": "1.3",
+    "mcp_protocol": "2025-11-25",
+    "physical_store": "segment-v3"
+  },
+  "windows": "not_run"
+}
