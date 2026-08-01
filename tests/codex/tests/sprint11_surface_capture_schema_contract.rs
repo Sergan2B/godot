@@ -48,7 +48,10 @@ fn build_fixture_documents() -> Value {
         "documents = {name: bundle[name] for name in ('metadata', 'capture', 'journal')}\n",
         "print(json.dumps(documents, allow_nan=False, separators=(',', ':'), sort_keys=True))\n",
     );
-    let output = Command::new("python3")
+    let python = std::env::var_os("S11_PYTHON_EXECUTABLE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("python3"));
+    let output = Command::new(python)
         .args(["-E", "-s", "-S", "-c", script])
         .current_dir(repository_root())
         .stdin(Stdio::null())

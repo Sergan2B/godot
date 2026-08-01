@@ -1026,6 +1026,7 @@ def _closed_gate_environment(temporary_root: Path) -> dict[str, str]:
         and temporary_root.is_absolute(),
         "gate tool homes are unavailable",
     )
+    python = _gate_executable("{python}")
     return {
         "CARGO_HOME": str(cargo_home),
         "CARGO_NET_OFFLINE": "true",
@@ -1040,6 +1041,7 @@ def _closed_gate_environment(temporary_root: Path) -> dict[str, str]:
         "PYTHONNOUSERSITE": "1",
         "RUSTUP_HOME": str(rustup_home),
         "RUSTUP_TOOLCHAIN": _pinned_rust_toolchain(),
+        "S11_PYTHON_EXECUTABLE": str(python),
         "TMPDIR": str(temporary_root),
         "TZ": "UTC",
         "USER": account.pw_name,

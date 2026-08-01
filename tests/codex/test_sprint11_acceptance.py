@@ -1129,6 +1129,15 @@ class Sprint11AcceptanceTests(unittest.TestCase):
             self.assertRegex(cargo.command_sha256, r"^sha256:[0-9a-f]{64}$")
             self.assertRegex(python.command_sha256, r"^sha256:[0-9a-f]{64}$")
 
+    def test_closed_gate_exports_the_validated_python_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            environment = acceptance._closed_gate_environment(Path(directory))
+
+        self.assertEqual(
+            Path(environment["S11_PYTHON_EXECUTABLE"]).resolve(strict=True),
+            Path(sys.executable).resolve(strict=True),
+        )
+
     @unittest.skipUnless(os.name == "posix", "POSIX process scope contract")
     def test_gate_runner_rejects_a_detached_session(self) -> None:
         with tempfile.TemporaryDirectory(
