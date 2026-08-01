@@ -840,10 +840,47 @@ class Sprint11AcceptanceTests(unittest.TestCase):
             for group in acceptance.AUTOMATED_GATE_GROUPS
             if group.group_id == "connection_offline_contracts"
         )
-        offline_argv = offline_group.commands[0].argv
         self.assertIn(
             ("-p", "godot-codex-mcp"),
-            tuple(zip(offline_argv, offline_argv[1:], strict=False)),
+            {
+                pair
+                for command in offline_group.commands
+                for pair in zip(command.argv, command.argv[1:], strict=False)
+            },
+        )
+        self.assertTrue(
+            any(
+                command.argv[-2:] == ("--test", "surface_capture_process")
+                for command in offline_group.commands
+            )
+        )
+        self.assertTrue(
+            any(
+                command.argv[-6:]
+                == (
+                    "--bin",
+                    "godot-codex-mcp",
+                    "--test",
+                    "doctor_probe",
+                    "--test",
+                    "offline_subprocess",
+                )
+                for command in offline_group.commands
+            )
+        )
+        rust_quality_group = next(
+            group
+            for group in acceptance.AUTOMATED_GATE_GROUPS
+            if group.group_id == "rust_quality"
+        )
+        workspace_test = next(
+            command
+            for command in rust_quality_group.commands
+            if command.argv[:4] == ("cargo", "test", "--locked", "--workspace")
+        )
+        self.assertIn(
+            ("--exclude", "godot-codex-mcp"),
+            tuple(zip(workspace_test.argv, workspace_test.argv[1:], strict=False)),
         )
         product_group = next(
             group

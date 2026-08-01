@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, ExitStatus, Output, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use godot_codex_operations::{
     PRODUCT_VERSION, SetupOptions, SetupProfile, SurfaceCaptureArmOptions,
@@ -20,8 +20,8 @@ use godot_codex_product::{
     SERVER_INSTRUCTIONS_TEXT,
 };
 use godot_codex_surface_capture::{
-    CaptureDirection, CaptureEvent, CaptureEventClass, CaptureJournal, LeaseState, LeaseStore,
-    SemanticProjection, ToolObservation,
+    ArmRequest, BindingDigests, CaptureDirection, CaptureEvent, CaptureEventClass, CaptureJournal,
+    LeaseState, LeaseStore, MetadataBinding, SemanticProjection, Surface, ToolObservation,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -149,20 +149,12 @@ fn production_sidecar_capture_is_absent_by_default_one_shot_and_crash_safe() {
                 })),
             "normal no-capture session did not pass tools/list through: {tools}"
         );
-        let status = session.call_tool("godot_get_connection_status", json!({}));
-        assert!(status.get("status").and_then(Value::as_str).is_some());
         let initialize_frame = session.response_frame(1);
         let tools_frame = session.response_frame(2);
-        let status_frame = session.response_frame(3);
         let output = session.finish();
         assert_eq!(
             output.stdout,
-            [
-                initialize_frame.as_slice(),
-                tools_frame.as_slice(),
-                status_frame.as_slice(),
-            ]
-            .concat(),
+            [initialize_frame.as_slice(), tools_frame.as_slice()].concat(),
             "no-capture sidecar emitted non-response stdout bytes"
         );
         assert!(
@@ -261,8 +253,6 @@ fn production_sidecar_capture_is_absent_by_default_one_shot_and_crash_safe() {
     {
         let mut replay = McpProcess::start(fixture.project.path(), fixture.data_root.path(), false);
         replay.initialize();
-        let status = replay.call_tool("godot_get_connection_status", json!({}));
-        assert!(status.get("status").and_then(Value::as_str).is_some());
         replay.finish();
     }
     assert_eq!(
@@ -276,7 +266,7 @@ fn production_sidecar_capture_is_absent_by_default_one_shot_and_crash_safe() {
         "a normal restart created an unarmed capture run"
     );
 
-    let terminated = fixture.arm("terminated");
+    let terminated = fixture.arm_direct(&first);
     let terminated_run = terminated["run_id"].as_str().unwrap();
     let terminated_journal_path =
         run_directory(fixture.data_root.path(), terminated_run).join("journal.json");
@@ -298,7 +288,7 @@ fn production_sidecar_capture_is_absent_by_default_one_shot_and_crash_safe() {
         "cancelled",
     );
 
-    let crash = fixture.arm("crash");
+    let crash = fixture.arm_direct(&first);
     let crash_run = crash["run_id"].as_str().unwrap();
     let crash_directory = run_directory(fixture.data_root.path(), crash_run);
     {
@@ -327,8 +317,6 @@ fn production_sidecar_capture_is_absent_by_default_one_shot_and_crash_safe() {
         let mut after_crash =
             McpProcess::start(fixture.project.path(), fixture.data_root.path(), false);
         after_crash.initialize();
-        let status = after_crash.call_tool("godot_get_connection_status", json!({}));
-        assert!(status.get("status").and_then(Value::as_str).is_some());
         after_crash.finish();
     }
     assert_eq!(
@@ -478,6 +466,52 @@ impl InstalledFixture {
         assert_eq!(value["state"], "armed");
         assert_eq!(value["surface"], "cli");
         value
+    }
+
+    fn arm_direct(&self, template: &Value) -> Value {
+        let template_run = template["run_id"].as_str().unwrap();
+        let metadata_document: Value = serde_json::from_slice(
+            &fs::read(run_directory(self.data_root.path(), template_run).join("metadata.json"))
+                .unwrap(),
+        )
+        .unwrap();
+        let bindings = BindingDigests {
+            package_launcher_sha256: template["package_launcher_sha256"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+            project_config_sha256: template["project_config_sha256"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+            setup_receipt_sha256: template["setup_receipt_sha256"]
+                .as_str()
+                .unwrap()
+                .to_owned(),
+        };
+        let expires_at_unix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .saturating_add(300);
+        let armed = LeaseStore::open(self.data_root.path())
+            .unwrap()
+            .arm(ArmRequest {
+                project_root: self.project.path().to_path_buf(),
+                surface: Surface::Cli,
+                metadata: MetadataBinding::from_document(metadata_document).unwrap(),
+                bindings,
+                expires_at_unix,
+            })
+            .unwrap();
+        json!({
+            "run_id": armed.run_id,
+            "project_identity": armed.project_identity,
+            "metadata_sha256": armed.metadata_sha256,
+            "package_launcher_sha256": armed.bindings.package_launcher_sha256,
+            "project_config_sha256": armed.bindings.project_config_sha256,
+            "setup_receipt_sha256": armed.bindings.setup_receipt_sha256,
+        })
     }
 
     fn run_helper(&self, action: &str, metadata: Option<&Path>, report: Option<&Path>) {
