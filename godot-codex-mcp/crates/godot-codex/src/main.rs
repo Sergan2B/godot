@@ -1242,20 +1242,30 @@ mod tests {
             .to_owned()
     }
 
-    fn setup_options(project: &TempDir, plans: &TempDir, package: &TempDir) -> SetupOptions {
+    fn write_test_package(package: &TempDir) {
         std::fs::create_dir(package.path().join("bin")).unwrap();
         std::fs::write(
             package.path().join("package-manifest.json"),
             format!(r#"{{"package_version":"{PRODUCT_VERSION}"}}"#),
         )
         .unwrap();
-        let sidecar = package.path().join("bin/godot-codex-mcp");
-        std::fs::write(&sidecar, b"test-sidecar").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o755)).unwrap();
+        for (name, contents) in [
+            ("godot-codex-mcp", b"test-sidecar".as_slice()),
+            ("godot-codex", b"test-operations".as_slice()),
+        ] {
+            let executable = package.path().join("bin").join(name);
+            std::fs::write(&executable, contents).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755))
+                    .unwrap();
+            }
         }
+    }
+
+    fn setup_options(project: &TempDir, plans: &TempDir, package: &TempDir) -> SetupOptions {
+        write_test_package(package);
         let mut options = SetupOptions::new(project.path(), SetupProfile::ReadOnly);
         options.plan_store = Some(plans.path().join("plans"));
         options.package_directory = Some(package.path().to_path_buf());
@@ -1969,23 +1979,8 @@ mod tests {
         std::fs::write(project.path().join("project.godot"), "[application]\n").unwrap();
         let plans = TempDir::new().unwrap();
         let package = TempDir::new().unwrap();
-        std::fs::create_dir(package.path().join("bin")).unwrap();
-        std::fs::write(
-            package.path().join("package-manifest.json"),
-            format!(r#"{{"package_version":"{PRODUCT_VERSION}"}}"#),
-        )
-        .unwrap();
-        let sidecar = package.path().join("bin/godot-codex-mcp");
-        std::fs::write(&sidecar, b"test-sidecar").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        let plan_store = plans.path().join("plans");
-        let mut options = SetupOptions::new(project.path(), SetupProfile::ReadOnly);
-        options.plan_store = Some(plan_store.clone());
-        options.package_directory = Some(package.path().to_path_buf());
+        let options = setup_options(&project, &plans, &package);
+        let plan_store = options.plan_store.clone().unwrap();
         let command = Command::SetupPreview {
             options,
             dry_run: false,
@@ -2028,23 +2023,8 @@ mod tests {
         std::fs::write(project.path().join("project.godot"), "[application]\n").unwrap();
         let plans = TempDir::new().unwrap();
         let package = TempDir::new().unwrap();
-        std::fs::create_dir(package.path().join("bin")).unwrap();
-        std::fs::write(
-            package.path().join("package-manifest.json"),
-            format!(r#"{{"package_version":"{PRODUCT_VERSION}"}}"#),
-        )
-        .unwrap();
-        let sidecar = package.path().join("bin/godot-codex-mcp");
-        std::fs::write(&sidecar, b"test-sidecar").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        let plan_store = plans.path().join("plans");
-        let mut options = SetupOptions::new(project.path(), SetupProfile::ReadOnly);
-        options.plan_store = Some(plan_store.clone());
-        options.package_directory = Some(package.path().to_path_buf());
+        let options = setup_options(&project, &plans, &package);
+        let plan_store = options.plan_store.clone().unwrap();
 
         for answer in [b"n\n".as_slice(), b"".as_slice()] {
             let mut output = Vec::new();
@@ -2155,23 +2135,8 @@ mod tests {
         std::fs::write(project.path().join("project.godot"), "[application]\n").unwrap();
         let plans = TempDir::new().unwrap();
         let package = TempDir::new().unwrap();
-        std::fs::create_dir(package.path().join("bin")).unwrap();
-        std::fs::write(
-            package.path().join("package-manifest.json"),
-            format!(r#"{{"package_version":"{PRODUCT_VERSION}"}}"#),
-        )
-        .unwrap();
-        let sidecar = package.path().join("bin/godot-codex-mcp");
-        std::fs::write(&sidecar, b"test-sidecar").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        let plan_store = plans.path().join("plans");
-        let mut setup = SetupOptions::new(project.path(), SetupProfile::ReadOnly);
-        setup.plan_store = Some(plan_store.clone());
-        setup.package_directory = Some(package.path().to_path_buf());
+        let setup = setup_options(&project, &plans, &package);
+        let plan_store = setup.plan_store.clone().unwrap();
         let setup_preview = prepare_setup(&setup).unwrap();
         apply_setup_plan(&setup_preview.plan_digest, Some(&plan_store)).unwrap();
 
