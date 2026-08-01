@@ -1,8 +1,8 @@
 {
   "schema_version": "godot-codex-compatibility-matrix/1.0",
-  "matrix_id": "external-codex-beta-macos-arm64-v7",
+  "matrix_id": "external-codex-beta-macos-arm64-v8",
   "package": {
-    "version": "0.1.7",
+    "version": "0.1.8",
     "target": {
       "os": "macos",
       "architecture": "arm64"

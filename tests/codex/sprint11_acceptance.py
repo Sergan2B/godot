@@ -248,7 +248,7 @@ DOCUMENTED_HOST_ACQUISITION_COMMAND = """python3 tests/codex/sprint11_external_a
   --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64" \\
   --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json" \\
   --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex" \\
-  --output-root tests/codex/acquisition/sprint11/host-provenance-v017"""
+  --output-root tests/codex/acquisition/sprint11/host-provenance-v018"""
 
 SPRINT10_SOURCE_COMMIT = "b225f77acf48648ef6f59a76ff5a7dbb824da7bb"
 SPRINT10_EVIDENCE_COMMIT = "815bccedddcd7c64a387dc8e9d5de2e941003fea"
@@ -2624,7 +2624,7 @@ def validate_host_coordinate_profile(
         profile["schema_version"]
         == "godot-codex-host-coordinate-profile/1.0"
         and profile["profile_id"]
-        == "external-codex-beta-macos-arm64-hosts-v7",
+        == "external-codex-beta-macos-arm64-hosts-v8",
         "host coordinate profile identity differs",
     )
     matrix_binding = _exact_fields(
