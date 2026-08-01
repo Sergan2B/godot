@@ -3191,7 +3191,7 @@ fn render_guidance(template: &str, launcher: &LauncherResolution) -> Result<Stri
     if !template.contains(DEFAULT_OPERATIONS_LAUNCHER) {
         return Err(SetupError::PackageInvalid);
     }
-    let quoted = shell_quote(&operations);
+    let quoted = shell_quote(operations);
     Ok(template.replace(DEFAULT_OPERATIONS_LAUNCHER, &quoted))
 }
 
@@ -3202,7 +3202,7 @@ fn redact_operations_launcher(
     let operations = launcher
         .operations_command_text()
         .map_err(|_| SetupError::PackageInvalid)?;
-    Ok(rendered.replace(&shell_quote(&operations), REDACTED_OPERATIONS_LAUNCHER))
+    Ok(rendered.replace(&shell_quote(operations), REDACTED_OPERATIONS_LAUNCHER))
 }
 
 fn shell_quote(value: &str) -> String {
@@ -4415,7 +4415,7 @@ mod tests {
         let preview = prepare_setup(&options).unwrap();
         let preview_json = serde_json::to_string(&preview).unwrap();
         assert!(preview_json.contains("<package-operations-launcher>"));
-        assert!(!preview_json.contains(&operations));
+        assert!(!preview_json.contains(operations));
         assert!(
             !preview_json.contains(
                 options
@@ -4428,7 +4428,7 @@ mod tests {
         );
 
         apply_setup_plan(&preview.plan_digest, options.plan_store.as_deref()).unwrap();
-        let expected = shell_quote(&operations);
+        let expected = shell_quote(operations);
         for path in [AGENTS_PATH, SKILL_PATH] {
             let guidance = fs::read_to_string(project.path().join(path)).unwrap();
             assert!(guidance.contains(&expected));
@@ -4449,7 +4449,7 @@ mod tests {
         let removal = prepare_setup_remove(&remove_options(&options)).unwrap();
         let removal_json = serde_json::to_string(&removal).unwrap();
         assert!(removal_json.contains("<receipt-owned guidance digest=sha256:"));
-        assert!(!removal_json.contains(&operations));
+        assert!(!removal_json.contains(operations));
     }
 
     #[test]
