@@ -39,6 +39,9 @@ const AGENTS_BEGIN: &str = "<!-- BEGIN GODOT CODEX SETUP v1 -->";
 const AGENTS_END: &str = "<!-- END GODOT CODEX SETUP v1 -->";
 const CONFIG_OWNERSHIP_PREFIX: &str = "# godot-codex-setup-owner: ";
 const MISSING_DIGEST: &str = "sha256:missing";
+const DEFAULT_OPERATIONS_LAUNCHER: &str =
+    r#""$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex""#;
+const REDACTED_OPERATIONS_LAUNCHER: &str = "\"<package-operations-launcher>\"";
 
 const CANONICAL_AGENTS_GUIDANCE: &str =
     include_str!("../../../../docs/codex-integration/templates/AGENTS.godot.md");
@@ -598,11 +601,13 @@ pub fn prepare_setup_for_consent(options: &SetupOptions) -> Result<PendingSetup,
         &project_root,
         options.guidance.agents(),
         previous_receipt.as_ref(),
+        &launcher,
     )?;
     let (skill_change, skill_file_digest) = plan_skill(
         &project_root,
         options.guidance.skill(),
         previous_receipt.as_ref(),
+        &launcher,
     )?;
     let agents_file_mode = agents_change
         .iter()
@@ -1662,13 +1667,11 @@ fn plan_remove_changes(
         desired_mode: receipt.config_file_mode,
     }];
 
-    if receipt.agents_block_digest.is_some() {
+    if let Some(agents_digest) = receipt.agents_block_digest.as_deref() {
         let path = root.join(AGENTS_PATH);
         let before = file_state(&path, MAX_GUIDANCE_BYTES)?;
         let current = read_utf8(&path, MAX_GUIDANCE_BYTES)?;
-        let owned_block = extract_agents_block(&current)?
-            .ok_or(SetupError::OwnershipConflict)?
-            .to_owned();
+        extract_agents_block(&current)?.ok_or(SetupError::OwnershipConflict)?;
         let desired = remove_agents_block(
             &current,
             receipt.agents_separator.as_deref().unwrap_or_default(),
@@ -1678,7 +1681,7 @@ fn plan_remove_changes(
             path: AGENTS_PATH.to_owned(),
             before,
             desired: (!desired.is_empty()).then_some(desired),
-            display_before: owned_block,
+            display_before: format!("<receipt-owned guidance digest={agents_digest}>\n"),
             display_after: "<absent>\n".to_owned(),
             private: false,
             desired_mode: receipt.agents_file_mode.ok_or(SetupError::ReceiptInvalid)?,
@@ -1935,6 +1938,7 @@ fn plan_agents(
     root: &Path,
     requested: bool,
     receipt: Option<&SetupReceipt>,
+    launcher: &LauncherResolution,
 ) -> Result<PlannedAgents, SetupError> {
     let path = root.join(AGENTS_PATH);
     let before = file_state(&path, MAX_GUIDANCE_BYTES)?;
@@ -1957,7 +1961,7 @@ fn plan_agents(
     }
 
     if requested {
-        let block = canonical_agents_block();
+        let block = canonical_agents_block(launcher)?;
         let (desired, separator) = if existing_block.is_some() {
             (
                 replace_agents_block(&current, &block)?,
@@ -1976,8 +1980,11 @@ fn plan_agents(
                 desired_mode: desired_mode(&before, false),
                 before,
                 desired: Some(desired),
-                display_before: existing_block.unwrap_or("<absent>\n").to_owned(),
-                display_after: block,
+                display_before: previously_owned.map_or_else(
+                    || existing_block.unwrap_or("<absent>\n").to_owned(),
+                    |digest| format!("<receipt-owned guidance digest={digest}>\n"),
+                ),
+                display_after: redact_operations_launcher(&block, launcher)?,
                 private: false,
             }],
             Some(block_digest),
@@ -2013,6 +2020,7 @@ fn plan_skill(
     root: &Path,
     requested: bool,
     receipt: Option<&SetupReceipt>,
+    launcher: &LauncherResolution,
 ) -> Result<(Vec<PlannedChange>, Option<String>), SetupError> {
     let path = root.join(SKILL_PATH);
     let before = file_state(&path, MAX_GUIDANCE_BYTES)?;
@@ -2029,23 +2037,27 @@ fn plan_skill(
     }
 
     if requested {
+        let desired_skill = render_guidance(CANONICAL_SKILL, launcher)?;
         if let Some(existing) = &current {
-            if existing != CANONICAL_SKILL {
+            if existing != &desired_skill && previously_owned.is_none() {
                 return Err(SetupError::GuidanceConflict);
             }
-            if previously_owned.is_none() {
+            if existing == &desired_skill && previously_owned.is_none() {
                 return Ok((Vec::new(), None));
             }
         }
-        let digest = digest_text(CANONICAL_SKILL);
+        let digest = digest_text(&desired_skill);
         return Ok((
             vec![PlannedChange {
                 path: SKILL_PATH.to_owned(),
                 desired_mode: desired_mode(&before, false),
                 before,
-                desired: Some(CANONICAL_SKILL.to_owned()),
-                display_before: current.unwrap_or_else(|| "<absent>\n".to_owned()),
-                display_after: CANONICAL_SKILL.to_owned(),
+                desired: Some(desired_skill.clone()),
+                display_before: previously_owned.map_or_else(
+                    || current.unwrap_or_else(|| "<absent>\n".to_owned()),
+                    |owned_digest| format!("<receipt-owned guidance digest={owned_digest}>\n"),
+                ),
+                display_after: redact_operations_launcher(&desired_skill, launcher)?,
                 private: false,
             }],
             Some(digest),
@@ -2821,14 +2833,18 @@ fn verify_supported_target() -> Result<(), SetupError> {
 }
 
 fn current_package_identity_digest(package_override: Option<&Path>) -> Result<String, SetupError> {
-    let operations_path =
+    let current_operations =
         fs::canonicalize(std::env::current_exe().map_err(|_| SetupError::PlanInputsChanged)?)
             .map_err(|_| SetupError::PlanInputsChanged)?;
-    let inferred_root = operations_path
+    let inferred_root = current_operations
         .parent()
         .and_then(Path::parent)
         .filter(|root| root.join("package-manifest.json").is_file());
     let package_root = package_override.or(inferred_root);
+    let operations_path = package_root.map_or_else(
+        || current_operations.clone(),
+        |root| root.join("bin/godot-codex"),
+    );
     let sidecar_path = package_root.map_or_else(
         || {
             operations_path
@@ -3160,9 +3176,46 @@ fn now_epoch_seconds() -> Result<u64, SetupError> {
         .map_err(|_| SetupError::PlanStoreUnavailable)
 }
 
-fn canonical_agents_block() -> String {
-    let guidance = CANONICAL_AGENTS_GUIDANCE.trim();
-    format!("{AGENTS_BEGIN}\n{guidance}\n{AGENTS_END}\n")
+fn canonical_agents_block(launcher: &LauncherResolution) -> Result<String, SetupError> {
+    let guidance = render_guidance(CANONICAL_AGENTS_GUIDANCE.trim(), launcher)?;
+    Ok(format!("{AGENTS_BEGIN}\n{guidance}\n{AGENTS_END}\n"))
+}
+
+fn render_guidance(template: &str, launcher: &LauncherResolution) -> Result<String, SetupError> {
+    let operations = launcher
+        .operations_command_text()
+        .map_err(|_| SetupError::PackageInvalid)?;
+    if operations.chars().any(char::is_control) {
+        return Err(SetupError::PackageInvalid);
+    }
+    if !template.contains(DEFAULT_OPERATIONS_LAUNCHER) {
+        return Err(SetupError::PackageInvalid);
+    }
+    let quoted = shell_quote(&operations);
+    Ok(template.replace(DEFAULT_OPERATIONS_LAUNCHER, &quoted))
+}
+
+fn redact_operations_launcher(
+    rendered: &str,
+    launcher: &LauncherResolution,
+) -> Result<String, SetupError> {
+    let operations = launcher
+        .operations_command_text()
+        .map_err(|_| SetupError::PackageInvalid)?;
+    Ok(rendered.replace(&shell_quote(&operations), REDACTED_OPERATIONS_LAUNCHER))
+}
+
+fn shell_quote(value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('"');
+    for character in value.chars() {
+        if matches!(character, '\\' | '"' | '$' | '`') {
+            quoted.push('\\');
+        }
+        quoted.push(character);
+    }
+    quoted.push('"');
+    quoted
 }
 
 fn extract_agents_block(value: &str) -> Result<Option<&str>, SetupError> {
@@ -3684,10 +3737,13 @@ mod tests {
         .unwrap();
         let sidecar = package.join("bin/godot-codex-mcp");
         fs::write(&sidecar, sidecar_bytes).unwrap();
+        let operations = package.join("bin/godot-codex");
+        fs::write(&operations, b"test-operations").unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o755)).unwrap();
+            fs::set_permissions(&operations, fs::Permissions::from_mode(0o755)).unwrap();
         }
         package
     }
@@ -4345,6 +4401,55 @@ mod tests {
             assert_eq!(report.status, "removed");
             assert!(!project.path().join(RECEIPT_PATH).exists());
         }
+    }
+
+    #[test]
+    fn isolated_package_guidance_uses_the_paired_operations_launcher() {
+        let project = project();
+        let store = TempDir::new().unwrap();
+        let mut options = options(&project, &store);
+        options.guidance = GuidanceMode::All;
+        let launcher = resolve_launcher(options.package_directory.as_deref()).unwrap();
+        let operations = launcher.operations_command_text().unwrap();
+
+        let preview = prepare_setup(&options).unwrap();
+        let preview_json = serde_json::to_string(&preview).unwrap();
+        assert!(preview_json.contains("<package-operations-launcher>"));
+        assert!(!preview_json.contains(&operations));
+        assert!(
+            !preview_json.contains(
+                options
+                    .package_directory
+                    .as_ref()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+            )
+        );
+
+        apply_setup_plan(&preview.plan_digest, options.plan_store.as_deref()).unwrap();
+        let expected = shell_quote(&operations);
+        for path in [AGENTS_PATH, SKILL_PATH] {
+            let guidance = fs::read_to_string(project.path().join(path)).unwrap();
+            assert!(guidance.contains(&expected));
+            assert!(!guidance.contains(DEFAULT_OPERATIONS_LAUNCHER));
+        }
+
+        let config = fs::read_to_string(project.path().join(CONFIG_PATH)).unwrap();
+        let document = config.parse::<DocumentMut>().unwrap();
+        let sidecar = config_table_item(&document).unwrap()["command"]
+            .as_str()
+            .unwrap();
+        assert_eq!(
+            Path::new(sidecar).parent(),
+            Path::new(&operations).parent(),
+            "guidance and MCP config must select binaries from one package bin directory"
+        );
+
+        let removal = prepare_setup_remove(&remove_options(&options)).unwrap();
+        let removal_json = serde_json::to_string(&removal).unwrap();
+        assert!(removal_json.contains("<receipt-owned guidance digest=sha256:"));
+        assert!(!removal_json.contains(&operations));
     }
 
     #[test]
@@ -5724,11 +5829,14 @@ mod tests {
         let package = TempDir::new().unwrap();
         fs::create_dir(package.path().join("bin")).unwrap();
         let sidecar = package.path().join("bin/godot-codex-mcp");
+        let operations = package.path().join("bin/godot-codex");
         fs::write(&sidecar, b"sidecar-v1").unwrap();
+        fs::write(&operations, b"operations-v1").unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o755)).unwrap();
+            fs::set_permissions(&operations, fs::Permissions::from_mode(0o755)).unwrap();
         }
         fs::write(
             package.path().join("package-manifest.json"),
@@ -5739,6 +5847,14 @@ mod tests {
         options.package_directory = Some(package.path().to_path_buf());
         let preview = prepare_setup(&options).unwrap();
         fs::write(package.path().join("bin/godot-codex-mcp"), b"sidecar-v2").unwrap();
+        assert_eq!(
+            apply_setup_plan(&preview.plan_digest, options.plan_store.as_deref()),
+            Err(SetupError::PlanInputsChanged)
+        );
+        assert!(!project.path().join(CONFIG_PATH).exists());
+
+        let preview = prepare_setup(&options).unwrap();
+        fs::write(package.path().join("bin/godot-codex"), b"operations-v2").unwrap();
         assert_eq!(
             apply_setup_plan(&preview.plan_digest, options.plan_store.as_deref()),
             Err(SetupError::PlanInputsChanged)

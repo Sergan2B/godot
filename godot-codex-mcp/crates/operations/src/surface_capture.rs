@@ -1012,11 +1012,14 @@ mod tests {
         )
         .unwrap();
         let sidecar = package.path().join("bin/godot-codex-mcp");
+        let operations = package.path().join("bin/godot-codex");
         fs::write(&sidecar, b"surface-capture-sidecar").unwrap();
+        fs::write(&operations, b"surface-capture-operations").unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
             fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o755)).unwrap();
+            fs::set_permissions(&operations, fs::Permissions::from_mode(0o755)).unwrap();
         }
         let private = TempDir::new().unwrap();
         let data_root = private.path().join("data");

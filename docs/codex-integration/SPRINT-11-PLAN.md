@@ -137,9 +137,9 @@ IDE extension.
   Cursor and other compatible editors may be recorded as `not_tested`, but
   they do not substitute for the required VS Code gate.
 - Qualification candidates refreshed on 2026-08-01 are Codex desktop app
-  `com.openai.codex` `26.727.40816` build `6067` (team `2DC432GLL2`),
+  `com.openai.codex` `26.727.51351` build `6119` (team `2DC432GLL2`),
   its bundled Codex CLI `0.146.0-alpha.9.2`
-  (`sha256:68474c6192406b8a0278243c8283b87a84798a69fb498f30c3715861f8082542`),
+  (`sha256:d96ae1ca1ff6fc8587842fa04c92d3ee4d31651a811c2f89b65fcfd9c28473e2`),
   VS Code Stable `1.130.0` commit
   `1b6a188127eeaf9194f945eb6eb89a657e93c54c`, and official extension
   `openai.chatgpt@26.721.41059`. The extension embeds Codex CLI
@@ -1035,7 +1035,7 @@ python3 tests/codex/sprint11_external_acquisitions.py host-provenance \
   --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64" \
   --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json" \
   --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex" \
-  --output-root tests/codex/acquisition/sprint11/host-provenance-v018
+  --output-root tests/codex/acquisition/sprint11/host-provenance-v019
 ```
 
 The repository-local output directory is new and contains two authorities

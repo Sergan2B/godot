@@ -18,6 +18,7 @@ const MANIFEST_NAME: &str = "package-manifest.json";
 const CHECKSUMS_NAME: &str = "checksums.sha256";
 const OWNERSHIP_MARKER: &str = ".godot-codex-owned";
 const SIDECAR_RELATIVE: &str = "bin/godot-codex-mcp";
+const OPERATIONS_RELATIVE: &str = "bin/godot-codex";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LauncherError {
@@ -35,6 +36,7 @@ pub(crate) enum LauncherError {
 #[derive(Clone)]
 pub(crate) struct LauncherResolution {
     command: PathBuf,
+    operations_command: PathBuf,
     package_root: PathBuf,
     installed_data_root: Option<PathBuf>,
     path_digest: String,
@@ -48,6 +50,15 @@ impl LauncherResolution {
 
     pub(crate) fn command_text(&self) -> Result<&str, LauncherError> {
         self.command.to_str().ok_or(LauncherError::Unsafe)
+    }
+
+    /// Stable package-owned operations launcher paired with the configured
+    /// sidecar. Setup guidance must use this exact sibling so an isolated
+    /// `GODOT_CODEX_DATA_ROOT` cannot silently fall back to a global install.
+    pub(crate) fn operations_command_text(&self) -> Result<&str, LauncherError> {
+        self.operations_command
+            .to_str()
+            .ok_or(LauncherError::Unsafe)
     }
 
     pub(crate) fn package_root(&self) -> &Path {
@@ -131,9 +142,12 @@ fn resolve_unpacked_launcher(package_root: &Path) -> Result<LauncherResolution, 
     }
 
     let command = package_root.join(SIDECAR_RELATIVE);
+    let operations_command = package_root.join(OPERATIONS_RELATIVE);
     let (path_digest, file_digest) = launcher_identity_for_command(&command)?;
+    read_executable_bounded(&operations_command, MAX_PACKAGE_FILE_BYTES)?;
     Ok(LauncherResolution {
         command,
+        operations_command,
         package_root,
         installed_data_root: None,
         path_digest,
@@ -225,10 +239,20 @@ fn resolve_installed_launcher_at(
         return Err(LauncherError::InvalidPackage);
     }
     let file_digest = digest_executable_file(&resolved_command, MAX_PACKAGE_FILE_BYTES)?;
+    let operations_command = current.join(OPERATIONS_RELATIVE);
+    let resolved_operations =
+        fs::canonicalize(&operations_command).map_err(|_| LauncherError::InvalidPackage)?;
+    if resolved_operations
+        != fs::canonicalize(exact_target.join(OPERATIONS_RELATIVE))
+            .map_err(|_| LauncherError::InvalidPackage)?
+    {
+        return Err(LauncherError::InvalidPackage);
+    }
     Ok(LauncherResolution {
         path_digest: digest_path(&command)?,
         file_digest,
         command,
+        operations_command,
         package_root: exact_target,
         installed_data_root: Some(data_root.to_path_buf()),
     })
@@ -461,6 +485,10 @@ mod tests {
             &package.path().join(SIDECAR_RELATIVE),
             b"exact-unpacked-sidecar",
         );
+        write_executable(
+            &package.path().join(OPERATIONS_RELATIVE),
+            b"exact-unpacked-operations",
+        );
         let resolved = resolve_unpacked_launcher(package.path()).unwrap();
         assert!(resolved.command().is_absolute());
         assert_eq!(
@@ -486,6 +514,10 @@ mod tests {
         .unwrap();
         let actual = package.path().join("actual-sidecar");
         write_executable(&actual, b"sidecar");
+        write_executable(
+            &package.path().join(OPERATIONS_RELATIVE),
+            b"exact-unpacked-operations",
+        );
         fs::create_dir_all(package.path().join("bin")).unwrap();
         symlink(&actual, package.path().join(SIDECAR_RELATIVE)).unwrap();
         assert!(matches!(

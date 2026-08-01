@@ -1,14 +1,14 @@
 {
   "schema_version": "godot-codex-host-coordinate-profile/1.0",
-  "profile_id": "external-codex-beta-macos-arm64-hosts-v8",
+  "profile_id": "external-codex-beta-macos-arm64-hosts-v9",
   "compatibility_matrix": {
     "path": "godot-codex-mcp/product/compatibility-matrix.v1.json",
-    "sha256": "sha256:fb5c0c6107f2715a9854dbc8882fccb760a42060e3bf97684c6f5de49803fa7a"
+    "sha256": "sha256:b8f1361548177ccf9c93efce9be5210325f9e62203ee45150cbebc358ea72518"
   },
   "server_instructions": {
     "path": "godot-codex-mcp/product/server-instructions.v1.txt",
-    "file_sha256": "sha256:79b88caa3081e95610f6bf234ac14875f6058cf7b420b8af4019b2d39d5a84b0",
-    "wire_sha256": "sha256:49d16288b4d215746a1d55f3717e815aba199f36a3c1dbfc2977b8f79319da35"
+    "file_sha256": "sha256:3f1297e96775d883d7359e20b84a69c3e2e4b7b601cd3d2fa4cbd027123e56a0",
+    "wire_sha256": "sha256:e609a3442b811bfd65e317f092483e3cda7384f5924ba71c1a9dc7f173ec239d"
   },
   "surfaces": [
     {
@@ -16,19 +16,19 @@
       "host_name": "codex-desktop",
       "host_identifier": "com.openai.codex",
       "host_artifact_kind": "macos_bundle_executable",
-      "host_version": "26.727.40816",
-      "host_build": "6067",
+      "host_version": "26.727.51351",
+      "host_build": "6119",
       "host_commit": null,
-      "host_artifact_sha256": "sha256:f9aad3bbf4ab357f9c2e7d3503b42c86b2f43df60349bf8609fc373f46e446eb",
+      "host_artifact_sha256": "sha256:e184ce460ed0565166e295507ad9ae6d7003fa8bd5d2e2f2f9ee8b5602feb2d4",
       "host_metadata_sha256": null,
       "host_code_signature": {
         "mode": "deep_strict",
         "identifier": "com.openai.codex",
         "team_id": "2DC432GLL2",
-        "cdhash": "5f9c4b57e1aac976ebb4d686ac4e51244d24eac8"
+        "cdhash": "9f7d645ec76f3543f788f58b1039b9069201fca2"
       },
       "client_version": "0.146.0-alpha.9.2",
-      "client_artifact_sha256": "sha256:68474c6192406b8a0278243c8283b87a84798a69fb498f30c3715861f8082542",
+      "client_artifact_sha256": "sha256:d96ae1ca1ff6fc8587842fa04c92d3ee4d31651a811c2f89b65fcfd9c28473e2",
       "client_code_signature": {
         "mode": "strict",
         "identifier": "codex",
@@ -50,7 +50,7 @@
       "host_version": "0.146.0-alpha.9.2",
       "host_build": "0.146.0-alpha.9.2",
       "host_commit": null,
-      "host_artifact_sha256": "sha256:68474c6192406b8a0278243c8283b87a84798a69fb498f30c3715861f8082542",
+      "host_artifact_sha256": "sha256:d96ae1ca1ff6fc8587842fa04c92d3ee4d31651a811c2f89b65fcfd9c28473e2",
       "host_metadata_sha256": null,
       "host_code_signature": {
         "mode": "strict",
@@ -59,7 +59,7 @@
         "cdhash": "dce9780d114a670768798d0dc0de4a96b422c309"
       },
       "client_version": "0.146.0-alpha.9.2",
-      "client_artifact_sha256": "sha256:68474c6192406b8a0278243c8283b87a84798a69fb498f30c3715861f8082542",
+      "client_artifact_sha256": "sha256:d96ae1ca1ff6fc8587842fa04c92d3ee4d31651a811c2f89b65fcfd9c28473e2",
       "client_code_signature": {
         "mode": "strict",
         "identifier": "codex",

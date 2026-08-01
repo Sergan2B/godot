@@ -339,16 +339,36 @@ def _semantic_checks() -> dict[str, Callable[[str], bool]]:
 
     def absolute_package_launcher(text: str) -> bool:
         normalized = _normalized(text.replace("\\\n", " "))
+        exact_installed_launcher = OPERATIONS_LAUNCHER.lower() in normalized
+        configured_sibling_launcher = _has_nearby_terms(
+            text,
+            (
+                ("configured absolute", "server's configured"),
+                ("godot-codex-mcp",),
+                ("godot-codex",),
+                ("same `bin` directory", "same bin directory", "sibling"),
+            ),
+            maximum_span=420,
+        )
         return (
-            OPERATIONS_LAUNCHER.lower() in normalized
+            (exact_installed_launcher or configured_sibling_launcher)
             and "doctor" in normalized
             and "setup" in normalized
             and _has_nearby_terms(
                 text,
                 (
                     ("package-owned", "installed stable package", "installer-owned"),
-                    ("absolute launcher", "absolute stable launcher"),
-                    ("path basename", "checkout binary", "checkout-relative"),
+                    (
+                        "absolute launcher",
+                        "absolute stable launcher",
+                        "absolute operations launcher",
+                    ),
+                    (
+                        "path basename",
+                        "checkout binary",
+                        "checkout-relative",
+                        "default-global launcher",
+                    ),
                 ),
                 maximum_span=1_500,
             )

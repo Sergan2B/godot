@@ -248,7 +248,7 @@ DOCUMENTED_HOST_ACQUISITION_COMMAND = """python3 tests/codex/sprint11_external_a
   --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64" \\
   --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json" \\
   --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex" \\
-  --output-root tests/codex/acquisition/sprint11/host-provenance-v018"""
+  --output-root tests/codex/acquisition/sprint11/host-provenance-v019"""
 
 SPRINT10_SOURCE_COMMIT = "b225f77acf48648ef6f59a76ff5a7dbb824da7bb"
 SPRINT10_EVIDENCE_COMMIT = "815bccedddcd7c64a387dc8e9d5de2e941003fea"
@@ -2467,24 +2467,24 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         "host_name": "codex-desktop",
         "host_identifier": "com.openai.codex",
         "host_artifact_kind": "macos_bundle_executable",
-        "host_version": "26.727.40816",
-        "host_build": "6067",
+        "host_version": "26.727.51351",
+        "host_build": "6119",
         "host_commit": None,
         "host_artifact_sha256": (
-            "sha256:f9aad3bbf4ab357f9c2e7d3503b42c86"
-            "b2f43df60349bf8609fc373f46e446eb"
+            "sha256:e184ce460ed0565166e295507ad9ae6d7"
+            "003fa8bd5d2e2f2f9ee8b5602feb2d4"
         ),
         "host_metadata_sha256": None,
         "host_code_signature": {
             "mode": "deep_strict",
             "identifier": "com.openai.codex",
             "team_id": "2DC432GLL2",
-            "cdhash": "5f9c4b57e1aac976ebb4d686ac4e51244d24eac8",
+            "cdhash": "9f7d645ec76f3543f788f58b1039b9069201fca2",
         },
         "client_version": "0.146.0-alpha.9.2",
         "client_artifact_sha256": (
-            "sha256:68474c6192406b8a0278243c8283b87a"
-            "84798a69fb498f30c3715861f8082542"
+            "sha256:d96ae1ca1ff6fc8587842fa04c92d3ee"
+            "4d31651a811c2f89b65fcfd9c28473e2"
         ),
         "client_code_signature": {
             "mode": "strict",
@@ -2506,8 +2506,8 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         "host_build": "0.146.0-alpha.9.2",
         "host_commit": None,
         "host_artifact_sha256": (
-            "sha256:68474c6192406b8a0278243c8283b87a"
-            "84798a69fb498f30c3715861f8082542"
+            "sha256:d96ae1ca1ff6fc8587842fa04c92d3ee"
+            "4d31651a811c2f89b65fcfd9c28473e2"
         ),
         "host_metadata_sha256": None,
         "host_code_signature": {
@@ -2518,8 +2518,8 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         },
         "client_version": "0.146.0-alpha.9.2",
         "client_artifact_sha256": (
-            "sha256:68474c6192406b8a0278243c8283b87a"
-            "84798a69fb498f30c3715861f8082542"
+            "sha256:d96ae1ca1ff6fc8587842fa04c92d3ee"
+            "4d31651a811c2f89b65fcfd9c28473e2"
         ),
         "client_code_signature": {
             "mode": "strict",
@@ -2624,7 +2624,7 @@ def validate_host_coordinate_profile(
         profile["schema_version"]
         == "godot-codex-host-coordinate-profile/1.0"
         and profile["profile_id"]
-        == "external-codex-beta-macos-arm64-hosts-v8",
+        == "external-codex-beta-macos-arm64-hosts-v9",
         "host coordinate profile identity differs",
     )
     matrix_binding = _exact_fields(

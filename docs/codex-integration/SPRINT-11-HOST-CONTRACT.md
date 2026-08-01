@@ -84,29 +84,29 @@ any Markdown/JSON drift.
 <!-- BEGIN S11 HOST COORDINATE AUTHORITY -->
 | Surface | Host identifier | Host version/build | Host artifact SHA-256 | Client version/SHA-256 | IDE shell | Qualification |
 |---|---|---|---|---|---|---|
-| app | `com.openai.codex` | `26.727.40816` / `6067` | `sha256:f9aad3bbf4ab357f9c2e7d3503b42c86b2f43df60349bf8609fc373f46e446eb` | `0.146.0-alpha.9.2` / `sha256:68474c6192406b8a0278243c8283b87a84798a69fb498f30c3715861f8082542` | — | candidate |
-| cli | `codex-cli` | `0.146.0-alpha.9.2` / `0.146.0-alpha.9.2` | `sha256:68474c6192406b8a0278243c8283b87a84798a69fb498f30c3715861f8082542` | `0.146.0-alpha.9.2` / `sha256:68474c6192406b8a0278243c8283b87a84798a69fb498f30c3715861f8082542` | — | candidate |
+| app | `com.openai.codex` | `26.727.51351` / `6119` | `sha256:e184ce460ed0565166e295507ad9ae6d7003fa8bd5d2e2f2f9ee8b5602feb2d4` | `0.146.0-alpha.9.2` / `sha256:d96ae1ca1ff6fc8587842fa04c92d3ee4d31651a811c2f89b65fcfd9c28473e2` | — | candidate |
+| cli | `codex-cli` | `0.146.0-alpha.9.2` / `0.146.0-alpha.9.2` | `sha256:d96ae1ca1ff6fc8587842fa04c92d3ee4d31651a811c2f89b65fcfd9c28473e2` | `0.146.0-alpha.9.2` / `sha256:d96ae1ca1ff6fc8587842fa04c92d3ee4d31651a811c2f89b65fcfd9c28473e2` | — | candidate |
 | ide | `openai.chatgpt` | `26.721.41059` / `26.721.41059` | `sha256:ea66cea39f5c40d83079fe200251ac698afe285e4cb30d335e4ee6517ee7b8aa` | `0.146.0-alpha.3.1` / `sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4` | com.microsoft.VSCode 1.130.0 `sha256:e1e3268741a2658a22b31e82b58a42fa48be73f64fc2de006be48a2ba136b930` | candidate |
 <!-- END S11 HOST COORDINATE AUTHORITY -->
 
 | Component | Exact observed coordinate | Candidate state |
 |---|---|---|
 | OS | macOS `26.5.2` build `25F84`, `arm64` | candidate |
-| Codex desktop | bundle `com.openai.codex`, version `26.727.40816`, build `6067`, team `2DC432GLL2` | static capability proven; live workflow pending |
+| Codex desktop | bundle `com.openai.codex`, version `26.727.51351`, build `6119`, team `2DC432GLL2` | static capability proven; live workflow pending |
 | App-bundled Codex CLI | `0.146.0-alpha.9.2`, `arm64` | full packaged surface workflow pending |
-| App-bundled CLI artifact | `sha256:68474c6192406b8a0278243c8283b87a84798a69fb498f30c3715861f8082542` | candidate artifact identity |
+| App-bundled CLI artifact | `sha256:d96ae1ca1ff6fc8587842fa04c92d3ee4d31651a811c2f89b65fcfd9c28473e2` | candidate artifact identity |
 | VS Code Stable | `1.130.0`, commit `1b6a188127eeaf9194f945eb6eb89a657e93c54c`, `arm64`, team `UBF8T346G9` | candidate |
 | Official Codex extension | `openai.chatgpt@26.721.41059`, `darwin-arm64` | installed candidate; live workflow pending |
 | Extension package | `sha256:fa2a88ea55413183654f5613b14e744517ad7626d26a673403bdde83c73adea7` | candidate artifact identity |
 | Extension Codex CLI | `bin/macos-aarch64/codex`, `0.146.0-alpha.3.1`, `sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4`, team `2DC432GLL2` | candidate embedded client |
 | MCP protocol | `2025-11-25`; form-compatible floor `2025-06-18` | candidate |
 | Bridge | RPC `1.8` exact profile | candidate |
-| Godot × Codex package | workspace `0.1.8` | same-project lease contention, long project-root UDS transport, accepted-socket subprocess inheritance, full-beta doctor registry probing, current host-measurement guidance, and the receipt-1.1 config fault harness fixed; independently installable host-surface bundle added |
+| Godot × Codex package | workspace `0.1.9` | same-project lease contention, long project-root UDS transport, accepted-socket subprocess inheritance, full-beta doctor registry probing, current host-measurement guidance, receipt-1.1 config fault harness, and isolated-install package-owned guidance launcher fixed; independently installable host-surface bundle added |
 | Godot Bridge prerequisite | `bin/godot.macos.editor.dev.arm64`, `4.8.dev.codex.336fc9a13`, `sha256:2166f3c6b7784cc7259a08a9636aafe89c8d6bebcbdc05c2b1d8d76933373dff` | exact local candidate; detached package binding pending |
 
 ### 3.1 Independent host-surface compatibility updates
 
-Package `0.1.8` keeps package, Godot, protocol, schema, registry, Bridge, and
+Package `0.1.9` keeps package, Godot, protocol, schema, registry, Bridge, and
 Cursor coordinates embedded and immutable. A separately released
 `godot-codex-surface-compatibility-bundle/1.0` may replace only the complete
 App/CLI/IDE surface snapshot for that exact embedded matrix. This permits a
@@ -266,7 +266,7 @@ python3 tests/codex/sprint11_external_acquisitions.py host-provenance \
   --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64" \
   --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json" \
   --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex" \
-  --output-root tests/codex/acquisition/sprint11/host-provenance-v018
+  --output-root tests/codex/acquisition/sprint11/host-provenance-v019
 ```
 
 The output directory must not already exist. `receipt.json` is the

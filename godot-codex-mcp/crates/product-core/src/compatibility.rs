@@ -1220,7 +1220,7 @@ mod tests {
         let expected = [
             (
                 SurfaceKind::App,
-                "26.727.40816",
+                "26.727.51351",
                 None,
                 SurfaceQualification::Candidate,
             ),

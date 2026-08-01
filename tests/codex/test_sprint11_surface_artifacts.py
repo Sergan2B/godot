@@ -1223,7 +1223,7 @@ class Sprint11SurfaceArtifactTests(unittest.TestCase):
         document = json.loads(superseded)
         self.assertEqual(
             document["package_version"],
-            "0.1.1",
+            "0.1.2",
         )
         self.assertNotEqual(document["source_commit"], self.inputs.source_commit)
         self.inputs.package_manifest.write_bytes(superseded)
