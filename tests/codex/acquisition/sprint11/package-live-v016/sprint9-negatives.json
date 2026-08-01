@@ -1,0 +1,76 @@
+{
+  "artifacts": {
+    "godot_sha256": "sha256:2166f3c6b7784cc7259a08a9636aafe89c8d6bebcbdc05c2b1d8d76933373dff",
+    "sidecar_sha256": "sha256:8f761fab0540e0fec8634399ecbda488c6d64dee8ca93d7fc2e1f8896107172d"
+  },
+  "bridge_frame": {
+    "budget_usec": 2000,
+    "max_elapsed_usec": 0,
+    "over_budget_count": 0
+  },
+  "cleanup": true,
+  "elicitation_count": 4,
+  "fault_count": 0,
+  "faults": {},
+  "latency_ms": {},
+  "native_action_count": 0,
+  "negatives": {
+    "approval": [
+      {
+        "decision": "confirm_false",
+        "elicitation_count": 1,
+        "error": "approval_invalid",
+        "native_actions": 0,
+        "source_unchanged": true
+      },
+      {
+        "decision": "decline",
+        "elicitation_count": 1,
+        "error": "approval_declined",
+        "native_actions": 0,
+        "source_unchanged": true
+      },
+      {
+        "decision": "cancel",
+        "elicitation_count": 1,
+        "error": "approval_cancelled",
+        "native_actions": 0,
+        "source_unchanged": true
+      },
+      {
+        "decision": "unsupported",
+        "elicitation_count": 0,
+        "error": "approval_host_unsupported",
+        "native_actions": 0,
+        "source_unchanged": true
+      }
+    ],
+    "committed_replay": {
+      "elicitation_count": 1,
+      "latched_status_or_replay_forbidden": true,
+      "transaction_native_actions": 1
+    },
+    "expired_preview": {
+      "elicitation_count": 0,
+      "error": "transaction_expired",
+      "native_actions": 0
+    },
+    "idempotency": {
+      "idempotency_conflict": true,
+      "idempotent_reprepare": true,
+      "tampered_digest_preapproval_rejection": true,
+      "wrong_binding_preapproval_rejection": true,
+      "wrong_revision_preapproval_rejection": true
+    }
+  },
+  "operation_count": 0,
+  "operations": [],
+  "platform": "macos-arm64",
+  "protocol": "2025-11-25",
+  "redaction": true,
+  "schema_version": "s9-model-free-workflow/1.0",
+  "source_unchanged": true,
+  "status": "passed",
+  "tool_registry": 41,
+  "transaction_identity_unique": true
+}
