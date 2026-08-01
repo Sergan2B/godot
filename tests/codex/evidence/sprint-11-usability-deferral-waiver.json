@@ -23,10 +23,10 @@
     "synthetic_substitute_allowed": false
   },
   "package": {
-    "archive_sha256": "sha256:79772da4a9187f3582c3c5a7d504603395b7a83fb829c6f7f641298c9283b7ef",
+    "archive_sha256": "sha256:4eb226c90098321179064a16d8f2788f59874f1672906a7bfcdb5e5103115dd4",
     "manifest_path": "tests/codex/acquisition/sprint11/package-v019/sprint11-package-manifest.json",
-    "manifest_sha256": "sha256:ddb3673381a760081098a73907c911ac8fda8b6ce7039ed02bfe7c48c554750c",
-    "source_commit": "ad04d3fc0707bf9a8af3fd09692baf194c340f16",
+    "manifest_sha256": "sha256:04f3d88c62535d5c9d0a4c0f154ccf10e80aa4435808b362cd8ca8f823c4a49f",
+    "source_commit": "bbf1c252a8804a6c28bb4986dd4da7e347de8d32",
     "version": "0.1.9"
   },
   "risk": {
