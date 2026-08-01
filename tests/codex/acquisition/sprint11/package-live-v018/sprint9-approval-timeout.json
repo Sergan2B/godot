@@ -1,0 +1,38 @@
+{
+  "artifacts": {
+    "godot_sha256": "sha256:2166f3c6b7784cc7259a08a9636aafe89c8d6bebcbdc05c2b1d8d76933373dff",
+    "sidecar_sha256": "sha256:44635d0dac505caf6db50e3c78b4af872a75a72ec0e358e0d672afdb6469fcdd"
+  },
+  "bridge_frame": {
+    "budget_usec": 2000,
+    "max_elapsed_usec": 0,
+    "over_budget_count": 0
+  },
+  "cleanup": true,
+  "elicitation_count": 1,
+  "fault_count": 0,
+  "faults": {},
+  "latency_ms": {},
+  "native_action_count": 0,
+  "negatives": {
+    "approval": [
+      {
+        "decision": "timeout",
+        "elicitation_count": 1,
+        "error": "approval_timeout",
+        "native_actions": 0,
+        "source_unchanged": true
+      }
+    ]
+  },
+  "operation_count": 0,
+  "operations": [],
+  "platform": "macos-arm64",
+  "protocol": "2025-11-25",
+  "redaction": true,
+  "schema_version": "s9-model-free-workflow/1.0",
+  "source_unchanged": true,
+  "status": "passed",
+  "tool_registry": 41,
+  "transaction_identity_unique": true
+}
