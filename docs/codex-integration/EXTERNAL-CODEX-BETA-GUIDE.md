@@ -26,9 +26,9 @@ Windows, Linux, remote CI, Cursor, the embedded Dock, signing/notarization, and
 Stable 1.0 are outside this beta coordinate unless a later matrix says
 otherwise.
 
-Packages `0.1.0` through `0.1.8`, plus every operator workspace created for
+Packages `0.1.0` through `0.1.9`, plus every operator workspace created for
 their Sprint 11 acceptance, are superseded by the independently issued
-`0.1.9` candidate. Packages `0.1.2` through `0.1.8` remain immutable historical
+`0.1.10` candidate. Packages `0.1.2` through `0.1.9` remain immutable historical
 evidence: `0.1.2` cannot qualify long project roots, while `0.1.3` allowed
 accepted Bridge UDS descriptors to survive into a launched game process, and
 `0.1.4` rejected its own full-beta MCP registry during `doctor`. Package
@@ -38,10 +38,12 @@ host measurement. Package `0.1.7` carries an operator fault harness for the
 obsolete relative-cwd setup receipt and cannot execute the required current
 `invalid_project_config` scenario. Package `0.1.8` is bound to Codex Desktop
 `26.727.40816` and its generated isolated-install guidance can select the
-default-global operations launcher instead of the configured package. Do not
-replace old binaries in place, reuse an old detached manifest, or relabel old
-evidence. Install `0.1.9` into a clean operator root and repeat App, CLI, and
-IDE technical acceptance from the beginning.
+default-global operations launcher instead of the configured package. Package
+`0.1.9` allowed a copied project config to redirect MCP startup through its
+embedded absolute foreign project `cwd`. Do not replace old binaries in place,
+reuse an old detached manifest, or relabel old evidence. Install `0.1.10` into
+a clean operator root and repeat App, CLI, and IDE technical acceptance from
+the beginning.
 
 ## Install and verify
 
@@ -56,11 +58,14 @@ IDE technical acceptance from the beginning.
    ```
 
 3. Keep the installer-owned `current` link intact. Project setup writes the
-   absolute stable launcher
-   `~/Library/Application Support/GodotCodex/current/bin/godot-codex-mcp`;
-   App and IDE startup never depends on a shell `PATH`. Setup and doctor reject
-   a basename, a checkout-relative binary, a `current` link to another
-   version, or a package whose ownership/checksum proof changed.
+   absolute stable operations launcher
+   `~/Library/Application Support/GodotCodex/current/bin/godot-codex` with the
+   package-owned `mcp` prelaunch command and host-relative `cwd = "."`; App and
+   IDE startup never depends on a shell `PATH`. Before starting the sidecar,
+   prelaunch proves the task's nearest Godot root, receipt-owned config, and
+   exact installed package. Setup and doctor reject a basename, a
+   checkout-relative binary, a `current` link to another version, or a package
+   whose ownership/checksum proof changed.
 4. Verify both commands:
 
    ```sh
@@ -87,7 +92,7 @@ and discovery/authentication material.
 
 ## Update Codex host compatibility without replacing the package
 
-Package `0.1.9` can consume a later, independently released App/CLI/IDE
+Package `0.1.10` can consume a later, independently released App/CLI/IDE
 compatibility bundle while keeping the sidecar, Godot, protocol, schemas,
 registry, and Bridge contract unchanged. Obtain all three release inputs from
 the same trusted channel:
@@ -443,7 +448,7 @@ Git-bound App/CLI/IDE operator attestation; the five-fault human operator
 protocol alone does not cover those host-owned coordinates.
 
 `S11_CAPTURE_PROJECT_ROOT` must now be configured independently by the verified
-`0.1.9` package under `S11_CAPTURE_DATA_ROOT`; the fault-phase config or receipt
+`0.1.10` package under `S11_CAPTURE_DATA_ROOT`; the fault-phase config or receipt
 is not reusable. Run doctor from that measured capture package. A
 `project_config_invalid`, wrong package/receipt, symlinked root, or fixture
 digest mismatch is a stop condition:

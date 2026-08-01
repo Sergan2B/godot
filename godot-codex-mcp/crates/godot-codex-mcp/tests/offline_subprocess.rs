@@ -740,14 +740,9 @@ fn installed_package() -> TempDir {
 }
 
 fn write_project_config(project_root: &Path, data_root: &Path) {
-    let command = data_root
-        .join("current")
-        .join("bin")
-        .join("godot-codex-mcp");
+    let command = data_root.join("current").join("bin").join("godot-codex");
     let command = serde_json::to_string(command.to_str().unwrap()).unwrap();
     let data_root = serde_json::to_string(data_root.to_str().unwrap()).unwrap();
-    let canonical_project_root = fs::canonicalize(project_root).unwrap();
-    let command_cwd = serde_json::to_string(canonical_project_root.to_str().unwrap()).unwrap();
     let enabled = READ_ONLY_TOOLS
         .iter()
         .map(|tool| format!("  {},", serde_json::to_string(tool).unwrap()))
@@ -756,8 +751,8 @@ fn write_project_config(project_root: &Path, data_root: &Path) {
     let config = format!(
         "[mcp_servers.godot_editor]\n\
          command = {command}\n\
-         args = [\"--project-root\", \".\"]\n\
-         cwd = {command_cwd}\n\
+         args = [\"mcp\", \"--project-root\", \".\"]\n\
+         cwd = \".\"\n\
          env = {{ GODOT_CODEX_DATA_ROOT = {data_root} }}\n\
          required = true\n\
          startup_timeout_sec = 10\n\

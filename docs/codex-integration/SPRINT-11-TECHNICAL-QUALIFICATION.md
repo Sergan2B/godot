@@ -23,7 +23,7 @@ The machine-readable decision is
 
 ## Claim boundary
 
-The technical track may describe package `0.1.9` as an **engineering
+The technical track may describe package `0.1.10` as an **engineering
 candidate** or **private alpha** after its remaining technical gates pass. It
 must not describe the package as:
 
@@ -45,7 +45,7 @@ participant requirement remain unchanged and fail closed.
 
 The technical track still requires:
 
-- the frozen `0.1.9` package and exact Godot prerequisite;
+- the frozen `0.1.10` package and exact Godot prerequisite;
 - all automated package, previous-sprint, same-project takeover, multi-project,
   redaction, cleanup, and reproducibility gates;
 - fresh official Codex App, CLI, and IDE runs using the canonical prompt pack;

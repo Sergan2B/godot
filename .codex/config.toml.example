@@ -6,9 +6,9 @@
 # not inherit a shell PATH, so a basename is intentionally unsupported.
 
 [mcp_servers.godot_editor]
-command = "/Users/<username>/Library/Application Support/GodotCodex/current/bin/godot-codex-mcp"
-args = ["--project-root", "."]
-cwd = ".."
+command = "/Users/<username>/Library/Application Support/GodotCodex/current/bin/godot-codex"
+args = ["mcp", "--project-root", "."]
+cwd = "."
 required = true
 startup_timeout_sec = 10
 tool_timeout_sec = 60

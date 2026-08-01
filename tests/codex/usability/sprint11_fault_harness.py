@@ -927,8 +927,8 @@ def _config_snapshot(project: Path) -> tuple[dict[str, Any], bytes, dict[str, An
     )
     if (
         not isinstance(table, dict)
-        or table.get("cwd") != str(project)
-        or table.get("args") != ["--project-root", "."]
+        or table.get("cwd") != "."
+        or table.get("args") != ["mcp", "--project-root", "."]
         or table.get("required") is not True
     ):
         raise FaultHarnessError("owned config is not in the healthy pre-fault state")

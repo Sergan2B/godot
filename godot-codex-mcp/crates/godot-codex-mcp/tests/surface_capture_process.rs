@@ -431,14 +431,14 @@ impl InstalledFixture {
         fixture.run_helper("setup", None, None);
 
         let config = fs::read_to_string(fixture.project.path().join(CONFIG_PATH)).unwrap();
-        let expected_launcher = fixture.data_root.path().join("current/bin/godot-codex-mcp");
+        let expected_launcher = fixture.data_root.path().join("current/bin/godot-codex");
         assert!(
             config.contains(expected_launcher.to_str().unwrap()),
             "setup did not bind the stable installed current launcher"
         );
         assert!(
-            config.contains("args = [\"--project-root\", \".\"]"),
-            "setup did not preserve the exact sidecar arguments"
+            config.contains("args = [\"mcp\", \"--project-root\", \".\"]"),
+            "setup did not preserve the exact prelaunch arguments"
         );
         assert!(
             config.contains("GODOT_CODEX_DATA_ROOT"),

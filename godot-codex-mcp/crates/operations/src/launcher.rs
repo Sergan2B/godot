@@ -48,10 +48,6 @@ impl LauncherResolution {
         &self.command
     }
 
-    pub(crate) fn command_text(&self) -> Result<&str, LauncherError> {
-        self.command.to_str().ok_or(LauncherError::Unsafe)
-    }
-
     /// Stable package-owned operations launcher paired with the configured
     /// sidecar. Setup guidance must use this exact sibling so an isolated
     /// `GODOT_CODEX_DATA_ROOT` cannot silently fall back to a global install.
@@ -59,6 +55,10 @@ impl LauncherResolution {
         self.operations_command
             .to_str()
             .ok_or(LauncherError::Unsafe)
+    }
+
+    pub(crate) fn operations_command(&self) -> &Path {
+        &self.operations_command
     }
 
     pub(crate) fn package_root(&self) -> &Path {

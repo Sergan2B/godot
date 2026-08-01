@@ -1009,13 +1009,12 @@ class FaultHarnessTests(unittest.TestCase):
             self.assertEqual(harness._package_snapshot(package), before)
 
     def configure_project(self, project: Path) -> bytes:
-        project_root = json.dumps(str(project.resolve()))
         config = (
             "[mcp_servers.godot_editor]\n"
             f"# godot-codex-setup-owner: {D2}\n"
-            'command = "/disposable/current/bin/godot-codex-mcp"\n'
-            'args = ["--project-root", "."]\n'
-            f"cwd = {project_root}\n"
+            'command = "/disposable/current/bin/godot-codex"\n'
+            'args = ["mcp", "--project-root", "."]\n'
+            'cwd = "."\n'
             "required = true\n"
             "startup_timeout_sec = 10\n"
             "tool_timeout_sec = 60\n"
@@ -1065,7 +1064,7 @@ class FaultHarnessTests(unittest.TestCase):
             )
             drifted = (project / ".codex/config.toml").read_text()
             self.assertIn("required = false", drifted)
-            self.assertIn(f"cwd = {json.dumps(str(project.resolve()))}", drifted)
+            self.assertIn('cwd = "."', drifted)
             reset = harness.recover_fault(
                 run_root=run,
                 state_directory=run / "fault",

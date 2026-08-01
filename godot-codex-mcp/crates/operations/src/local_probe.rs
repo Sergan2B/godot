@@ -529,7 +529,7 @@ fn effective_codex_config(
         && serde_json::from_slice::<Value>(&output.stdout)
             .ok()
             .is_some_and(|value| {
-                effective_config_value(&value, expected_launcher, expected_data_root, project_root)
+                effective_config_value(&value, expected_launcher, expected_data_root)
             })
 }
 
@@ -537,7 +537,6 @@ fn effective_config_value(
     value: &Value,
     expected_launcher: &Path,
     expected_data_root: Option<&Path>,
-    expected_project_root: &Path,
 ) -> bool {
     let Some(object) = value.as_object() else {
         return false;
@@ -572,8 +571,8 @@ fn effective_config_value(
         && object.get("tool_timeout_sec").and_then(Value::as_f64) == Some(60.0)
         && transport.get("type").and_then(Value::as_str) == Some("stdio")
         && transport.get("command").and_then(Value::as_str) == Some(expected_launcher)
-        && string_array(transport.get("args")) == Some(vec!["--project-root", "."])
-        && transport.get("cwd").and_then(Value::as_str) == expected_project_root.to_str()
+        && string_array(transport.get("args")) == Some(vec!["mcp", "--project-root", "."])
+        && transport.get("cwd").and_then(Value::as_str) == Some(".")
         && exact_environment
         && exact_tools
 }
@@ -1451,8 +1450,8 @@ mod tests {
             "transport": {
                 "type": "stdio",
                 "command": TEST_LAUNCHER,
-                "args": ["--project-root", "."],
-                "cwd": temp.path()
+                "args": ["mcp", "--project-root", "."],
+                "cwd": "."
             },
             "enabled_tools": tools,
             "startup_timeout_sec": 10.0,
@@ -1522,8 +1521,8 @@ mod tests {
             "transport": {
                 "type": "stdio",
                 "command": TEST_LAUNCHER,
-                "args": ["--project-root", "."],
-                "cwd": temp.path()
+                "args": ["mcp", "--project-root", "."],
+                "cwd": "."
             },
             "enabled_tools": tools,
             "startup_timeout_sec": 10.0,
@@ -1598,8 +1597,8 @@ mod tests {
             "transport": {
                 "type": "stdio",
                 "command": TEST_LAUNCHER,
-                "args": ["--project-root", "."],
-                "cwd": temp.path()
+                "args": ["mcp", "--project-root", "."],
+                "cwd": "."
             },
             "enabled_tools": tools,
             "startup_timeout_sec": 10.0,
@@ -2054,8 +2053,8 @@ for raw in sys.stdin:
             "transport": {
                 "type": "stdio",
                 "command": TEST_LAUNCHER,
-                "args": ["--project-root", "."],
-                "cwd": "/project/root"
+                "args": ["mcp", "--project-root", "."],
+                "cwd": "."
             },
             "enabled_tools": tools,
             "startup_timeout_sec": 10.0,
@@ -2064,30 +2063,26 @@ for raw in sys.stdin:
         assert!(effective_config_value(
             &value,
             Path::new(TEST_LAUNCHER),
-            None,
-            Path::new("/project/root")
+            None
         ));
         let mut with_environment = value.clone();
         with_environment["transport"]["env"] = json!({"GODOT_CODEX_DATA_ROOT": "/package"});
         assert!(effective_config_value(
             &with_environment,
             Path::new(TEST_LAUNCHER),
-            Some(Path::new("/package")),
-            Path::new("/project/root")
+            Some(Path::new("/package"))
         ));
         assert!(!effective_config_value(
             &with_environment,
             Path::new(TEST_LAUNCHER),
-            None,
-            Path::new("/project/root")
+            None
         ));
         let mut wrong = value;
-        wrong["transport"]["cwd"] = Value::String(".".to_owned());
+        wrong["transport"]["cwd"] = Value::String("/project/root".to_owned());
         assert!(!effective_config_value(
             &wrong,
             Path::new(TEST_LAUNCHER),
-            None,
-            Path::new("/project/root")
+            None
         ));
         let basename = json!({
             "name": "godot_editor",
@@ -2095,8 +2090,8 @@ for raw in sys.stdin:
             "transport": {
                 "type": "stdio",
                 "command": "godot-codex-mcp",
-                "args": ["--project-root", "."],
-                "cwd": "/project/root"
+                "args": ["mcp", "--project-root", "."],
+                "cwd": "."
             },
             "enabled_tools": READ_ONLY_TOOLS,
             "startup_timeout_sec": 10.0,
@@ -2105,8 +2100,7 @@ for raw in sys.stdin:
         assert!(!effective_config_value(
             &basename,
             Path::new(TEST_LAUNCHER),
-            None,
-            Path::new("/project/root")
+            None
         ));
     }
 

@@ -23,7 +23,7 @@
     {
       "id": "sprint11-human-fault-harness-v1",
       "path": "tests/codex/usability/sprint11_fault_harness.py",
-      "sha256": "sha256:20110beeed691fe575273a33d1d78f9c6594b2aa711a3f675cc32a16475aac83"
+      "sha256": "sha256:9a709baf0f3491c7ca82878fbf32fd0a17b1e32ac80942800ab2d62bd382004d"
     },
     {
       "id": "s11-human-acquisition-authority-schema-v1",

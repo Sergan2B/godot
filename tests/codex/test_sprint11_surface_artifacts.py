@@ -247,8 +247,8 @@ class PreparedInputs:
         config.parent.mkdir()
         config.write_text(
             "[mcp_servers.godot_editor]\n"
-            "command = \"/private/not-retained/godot-codex-mcp\"\n"
-            "args = [\"--project-root\", \".\"]\n",
+            "command = \"/private/not-retained/godot-codex\"\n"
+            "args = [\"mcp\", \"--project-root\", \".\"]\n",
             encoding="utf-8",
         )
         receipt = {

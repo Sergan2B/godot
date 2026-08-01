@@ -511,7 +511,7 @@ fn run_doctor_inner(
                 startup
                     .launcher
                     .as_ref()
-                    .map(LauncherResolution::command)
+                    .map(LauncherResolution::operations_command)
                     .unwrap_or_else(|| Path::new("")),
                 startup
                     .launcher
@@ -775,7 +775,11 @@ fn inspect_product_startup(
                 let Some(launcher) = launcher.as_ref() else {
                     return ConfigurationCondition::Invalid;
                 };
-                match check_config(root, launcher.command(), launcher.installed_data_root()) {
+                match check_config(
+                    root,
+                    launcher.operations_command(),
+                    launcher.installed_data_root(),
+                ) {
                     Ok(()) => ConfigurationCondition::Ready,
                     Err(DiagnosticCode::ProjectConfigMissing) => ConfigurationCondition::Missing,
                     Err(DiagnosticCode::ProjectConfigNotEffective) => {
@@ -1092,8 +1096,8 @@ fn check_config(
         .to_str()
         .ok_or(DiagnosticCode::ProjectConfigInvalid)?;
     if table.get("command").and_then(|item| item.as_str()) != Some(expected_launcher)
-        || string_array(table.get("args")) != Some(vec!["--project-root", "."])
-        || table.get("cwd").and_then(|item| item.as_str()) != project_root.to_str()
+        || string_array(table.get("args")) != Some(vec!["mcp", "--project-root", "."])
+        || table.get("cwd").and_then(|item| item.as_str()) != Some(".")
         || config_data_root(table.get("env")) != expected_data_root.and_then(Path::to_str)
         || table.get("required").and_then(|item| item.as_bool()) != Some(true)
         || table
@@ -2007,9 +2011,8 @@ mod tests {
         fs::write(
             root.join(".codex/config.toml"),
             format!(
-                "[mcp_servers.godot_editor]\ncommand = {:?}\nargs = [\"--project-root\", \".\"]\ncwd = {:?}\nrequired = true\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\nenabled_tools = [\n{enabled}]\n{approval}",
+                "[mcp_servers.godot_editor]\ncommand = {:?}\nargs = [\"mcp\", \"--project-root\", \".\"]\ncwd = \".\"\nrequired = true\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\nenabled_tools = [\n{enabled}]\n{approval}",
                 launcher.to_str().unwrap(),
-                root.to_str().unwrap(),
             ),
         )
         .unwrap();
@@ -2338,9 +2341,11 @@ mod tests {
             &launcher,
         );
         let path = temp.path().join(".codex/config.toml");
-        let changed = fs::read_to_string(&path)
-            .unwrap()
-            .replace(temp.path().to_str().unwrap(), ".");
+        let changed = fs::read_to_string(&path).unwrap().replacen(
+            "cwd = \".\"",
+            &format!("cwd = {:?}", temp.path().to_str().unwrap()),
+            1,
+        );
         fs::write(&path, changed).unwrap();
         assert_eq!(
             check_config(temp.path(), &launcher, None),

@@ -345,7 +345,7 @@ def synthetic_report(
             "platform": "macos-arm64",
             "protocol": "2025-11-25",
             "bridge_rpc": "1.8",
-            "package_version": "0.1.9",
+            "package_version": "0.1.10",
             "artifacts": artifacts,
             "registry": {
                 "tools": 41,
@@ -599,9 +599,9 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
             config = (
                 "[mcp_servers.godot_editor]\n"
                 f"# godot-codex-setup-owner: {ownership_marker}\n"
-                f'command = "{data_root}/current/bin/godot-codex-mcp"\n'
-                'args = ["--project-root", "."]\n'
-                f'cwd = "{project_path.resolve()}"\n'
+                f'command = "{data_root}/current/bin/godot-codex"\n'
+                'args = ["mcp", "--project-root", "."]\n'
+                'cwd = "."\n'
                 "required = true\n"
                 "startup_timeout_sec = 10\n"
                 "tool_timeout_sec = 60\n"
@@ -931,9 +931,9 @@ class Sprint11PackagedRegressionTests(unittest.TestCase):
             (applied_root / ".godot/codex").mkdir(parents=True)
             config_text = (
                 "[mcp_servers.godot_editor]\n"
-                'command = "/private/package/godot-codex-mcp"\n'
-                'args = ["--project-root", "."]\n'
-                'cwd = "/private/project"\n'
+                'command = "/private/package/godot-codex"\n'
+                'args = ["mcp", "--project-root", "."]\n'
+                'cwd = "."\n'
                 'env = { GODOT_CODEX_DATA_ROOT = "/private/data" }\n'
             )
             receipt_text = "{}"

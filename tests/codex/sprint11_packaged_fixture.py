@@ -1350,9 +1350,9 @@ def _validate_applied_project(
             )
         )
         and server.get("command")
-        == str(data_root / "current/bin/godot-codex-mcp")
-        and server.get("args") == ["--project-root", "."]
-        and server.get("cwd") == str(project_root.resolve(strict=True))
+        == str(data_root / "current/bin/godot-codex")
+        and server.get("args") == ["mcp", "--project-root", "."]
+        and server.get("cwd") == "."
         and server.get("env")
         == {"GODOT_CODEX_DATA_ROOT": str(data_root)}
         and server.get("required") is True

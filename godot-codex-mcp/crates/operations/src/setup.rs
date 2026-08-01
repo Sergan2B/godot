@@ -276,6 +276,37 @@ pub enum SetupError {
     TransactionRecoveryRequired,
 }
 
+/// Closed prelaunch failures emitted before the MCP sidecar can open project
+/// state. Error text is stable and contains no native path or receipt data.
+#[derive(Clone, Debug, Error, PartialEq, Eq)]
+pub enum McpLaunchError {
+    #[error("project_binding_mismatch")]
+    ProjectBindingMismatch,
+    #[error("package_binding_mismatch")]
+    PackageBindingMismatch,
+    #[error("package_version_mismatch")]
+    PackageVersionMismatch,
+}
+
+/// Exact sidecar and canonical project coordinate authorized by prelaunch.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct McpLaunch {
+    sidecar: PathBuf,
+    project_root: PathBuf,
+}
+
+impl McpLaunch {
+    #[must_use]
+    pub fn sidecar(&self) -> &Path {
+        &self.sidecar
+    }
+
+    #[must_use]
+    pub fn project_root(&self) -> &Path {
+        &self.project_root
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 struct FileState {
@@ -1737,7 +1768,7 @@ fn plan_config(
     let desired_item = desired_config_item(
         profile,
         launcher
-            .command_text()
+            .operations_command_text()
             .map_err(|_| SetupError::PackageInvalid)?,
         launcher.installed_data_root(),
         &ownership_marker,
@@ -1804,7 +1835,7 @@ fn plan_repair_config(
         }
     }
     let launcher_command = launcher
-        .command_text()
+        .operations_command_text()
         .map_err(|_| SetupError::PackageInvalid)?;
     if stanza_present && !exact_owned_stanza {
         let stanza = existing_stanza.ok_or(SetupError::OwnershipConflict)?;
@@ -1816,7 +1847,6 @@ fn plan_repair_config(
                 receipt,
                 launcher_command,
                 launcher.installed_data_root(),
-                root,
             )
         {
             return Err(SetupError::OwnershipConflict);
@@ -1870,7 +1900,6 @@ fn repairable_config_shape(
     receipt: &SetupReceipt,
     expected_command: &str,
     expected_data_root: Option<&Path>,
-    expected_root: &Path,
 ) -> bool {
     let Some(table) = item.as_table() else {
         return false;
@@ -1901,16 +1930,17 @@ fn repairable_config_shape(
         .get("args")
         .and_then(Item::as_array)
         .is_some_and(|args| {
-            args.len() == 2
-                && args.get(0).and_then(toml_edit::Value::as_str) == Some("--project-root")
-                && args.get(1).and_then(toml_edit::Value::as_str) == Some(".")
+            args.len() == 3
+                && args.get(0).and_then(toml_edit::Value::as_str) == Some("mcp")
+                && args.get(1).and_then(toml_edit::Value::as_str) == Some("--project-root")
+                && args.get(2).and_then(toml_edit::Value::as_str) == Some(".")
         });
     let enabled_tools_have_string_shape = table
         .get("enabled_tools")
         .and_then(Item::as_array)
         .is_some_and(|tools| tools.iter().all(|value| value.as_str().is_some()));
     if !args_are_exact
-        || table.get("cwd").and_then(Item::as_str) != expected_root.to_str()
+        || table.get("cwd").and_then(Item::as_str) != Some(".")
         || config_data_root(table) != expected_data_root.and_then(Path::to_str)
         || table.get("required").and_then(Item::as_bool).is_none()
         || table
@@ -2165,8 +2195,7 @@ fn desired_config_item(
     project_root: &Path,
 ) -> Result<Item, SetupError> {
     parse_digest(ownership_marker).map_err(|_| SetupError::ReceiptInvalid)?;
-    let project_root = project_root.to_str().ok_or(SetupError::PathUnsafe)?;
-    if !Path::new(project_root).is_absolute() {
+    if !project_root.is_absolute() || project_root.to_str().is_none() {
         return Err(SetupError::PathUnsafe);
     }
     let tools = match profile {
@@ -2174,7 +2203,7 @@ fn desired_config_item(
         SetupProfile::FullBeta => FULL_BETA_TOOLS,
     };
     let mut source = format!(
-        "[mcp_servers.godot_editor]\n{CONFIG_OWNERSHIP_PREFIX}{ownership_marker}\ncommand = \"/package/launcher\"\nargs = [\"--project-root\", \".\"]\ncwd = \"/project/root\"\nrequired = true\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\n"
+        "[mcp_servers.godot_editor]\n{CONFIG_OWNERSHIP_PREFIX}{ownership_marker}\ncommand = \"/package/launcher\"\nargs = [\"mcp\", \"--project-root\", \".\"]\ncwd = \".\"\nrequired = true\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\n"
     );
     if let Some(data_root) = installed_data_root {
         let data_root = data_root.to_str().ok_or(SetupError::PathUnsafe)?;
@@ -2199,7 +2228,6 @@ fn desired_config_item(
         .parse::<DocumentMut>()
         .map_err(|_| SetupError::ConfigInvalid)?;
     document["mcp_servers"]["godot_editor"]["command"] = toml_edit::value(launcher);
-    document["mcp_servers"]["godot_editor"]["cwd"] = toml_edit::value(project_root);
     document
         .get("mcp_servers")
         .and_then(|item| item.get("godot_editor"))
@@ -2409,6 +2437,73 @@ pub(crate) fn verify_surface_capture_setup_state(
         config,
         receipt: receipt_bytes,
     })
+}
+
+/// Verifies the host-owned working directory, setup receipt, exact installed
+/// package, and generated project config before authorizing the sidecar.
+///
+/// Relative host CWD is intentional: copying a complete project config cannot
+/// redirect the launcher to the copied config's original absolute root.
+pub fn prepare_mcp_launch(requested_root: &Path) -> Result<McpLaunch, McpLaunchError> {
+    let working_directory =
+        std::env::current_dir().map_err(|_| McpLaunchError::ProjectBindingMismatch)?;
+    prepare_mcp_launch_with(requested_root, &working_directory, None)
+}
+
+fn prepare_mcp_launch_with(
+    requested_root: &Path,
+    working_directory: &Path,
+    package_directory: Option<&Path>,
+) -> Result<McpLaunch, McpLaunchError> {
+    let working_root = nearest_project_root(working_directory)?;
+    let requested_root = nearest_project_root(requested_root)?;
+    if requested_root != working_root {
+        return Err(McpLaunchError::ProjectBindingMismatch);
+    }
+
+    let project_id =
+        project_id_for_path(&working_root).map_err(|_| McpLaunchError::ProjectBindingMismatch)?;
+    let receipt_path = working_root.join(RECEIPT_PATH);
+    let receipt =
+        read_receipt(&receipt_path).map_err(|_| McpLaunchError::ProjectBindingMismatch)?;
+    verify_owned_state(&working_root, &project_id, &receipt)
+        .map_err(|_| McpLaunchError::ProjectBindingMismatch)?;
+
+    let launcher =
+        resolve_launcher(package_directory).map_err(|_| McpLaunchError::PackageBindingMismatch)?;
+    if receipt.package_version != PRODUCT_VERSION {
+        return Err(McpLaunchError::PackageVersionMismatch);
+    }
+    let package_identity_digest = match package_directory {
+        Some(package_directory) => current_package_identity_digest(Some(package_directory)),
+        None => installed_package_identity_digest(launcher.package_root()),
+    }
+    .map_err(|_| McpLaunchError::PackageBindingMismatch)?;
+    if receipt.package_identity_digest != package_identity_digest
+        || receipt.launcher_path_sha256 != launcher.path_digest()
+        || receipt.launcher_file_sha256 != launcher.file_digest()
+    {
+        return Err(McpLaunchError::PackageBindingMismatch);
+    }
+
+    verify_surface_capture_setup_state(&working_root, &project_id, &launcher, package_directory)
+        .map_err(|_| McpLaunchError::ProjectBindingMismatch)?;
+    Ok(McpLaunch {
+        sidecar: launcher.command().to_path_buf(),
+        project_root: working_root,
+    })
+}
+
+fn nearest_project_root(path: &Path) -> Result<PathBuf, McpLaunchError> {
+    let canonical = fs::canonicalize(path).map_err(|_| McpLaunchError::ProjectBindingMismatch)?;
+    if !canonical.is_dir() {
+        return Err(McpLaunchError::ProjectBindingMismatch);
+    }
+    canonical
+        .ancestors()
+        .find(|ancestor| ancestor.join("project.godot").is_file())
+        .map(Path::to_path_buf)
+        .ok_or(McpLaunchError::ProjectBindingMismatch)
 }
 
 fn committed_plan_state(plan: &SetupPlan, digest: &str) -> Result<bool, SetupError> {
@@ -3822,6 +3917,96 @@ mod tests {
         );
     }
 
+    #[test]
+    fn mcp_prelaunch_accepts_exact_root_and_nested_host_cwd() {
+        let (project, _store, setup) = installed(SetupProfile::FullBeta, GuidanceMode::None);
+        let nested = project.path().join("nested/deeper");
+        fs::create_dir_all(&nested).unwrap();
+        let launch =
+            prepare_mcp_launch_with(project.path(), &nested, setup.package_directory.as_deref())
+                .unwrap();
+        assert_eq!(
+            launch.project_root(),
+            fs::canonicalize(project.path()).unwrap()
+        );
+        assert_eq!(
+            launch.sidecar(),
+            fs::canonicalize(
+                setup
+                    .package_directory
+                    .as_ref()
+                    .unwrap()
+                    .join("bin/godot-codex-mcp")
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn mcp_prelaunch_rejects_foreign_config_root_and_cwd_without_fallback() {
+        let (project_a, _store_a, setup_a) = installed(SetupProfile::FullBeta, GuidanceMode::None);
+        let (project_b, _store_b, _setup_b) = installed(SetupProfile::FullBeta, GuidanceMode::None);
+
+        assert_eq!(
+            prepare_mcp_launch_with(
+                project_b.path(),
+                project_a.path(),
+                setup_a.package_directory.as_deref(),
+            ),
+            Err(McpLaunchError::ProjectBindingMismatch)
+        );
+        assert_eq!(
+            prepare_mcp_launch_with(
+                project_a.path(),
+                project_b.path(),
+                setup_a.package_directory.as_deref(),
+            ),
+            Err(McpLaunchError::ProjectBindingMismatch)
+        );
+
+        let config_a = project_a.path().join(CONFIG_PATH);
+        let original_a = fs::read(&config_a).unwrap();
+        let config_b = fs::read(project_b.path().join(CONFIG_PATH)).unwrap();
+        fs::write(&config_a, &config_b).unwrap();
+        assert_eq!(
+            prepare_mcp_launch_with(
+                project_a.path(),
+                project_a.path(),
+                setup_a.package_directory.as_deref(),
+            ),
+            Err(McpLaunchError::ProjectBindingMismatch)
+        );
+        assert_eq!(
+            fs::read(project_b.path().join(CONFIG_PATH)).unwrap(),
+            config_b
+        );
+        fs::write(config_a, original_a).unwrap();
+    }
+
+    #[test]
+    fn mcp_prelaunch_rejects_package_digest_and_version_before_sidecar() {
+        let (project, _store, setup) = installed(SetupProfile::FullBeta, GuidanceMode::None);
+        let package = setup.package_directory.as_ref().unwrap();
+        let sidecar = package.join("bin/godot-codex-mcp");
+        let original_sidecar = fs::read(&sidecar).unwrap();
+        fs::write(&sidecar, b"different-sidecar").unwrap();
+        assert_eq!(
+            prepare_mcp_launch_with(project.path(), project.path(), Some(package)),
+            Err(McpLaunchError::PackageBindingMismatch)
+        );
+        fs::write(&sidecar, original_sidecar).unwrap();
+
+        let receipt_path = project.path().join(RECEIPT_PATH);
+        let mut receipt: SetupReceipt =
+            serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+        receipt.package_version = "0.0.0".to_owned();
+        fs::write(&receipt_path, serde_json::to_vec_pretty(&receipt).unwrap()).unwrap();
+        assert_eq!(
+            prepare_mcp_launch_with(project.path(), project.path(), Some(package)),
+            Err(McpLaunchError::PackageVersionMismatch)
+        );
+    }
+
     fn repair_options(options: &SetupOptions) -> RepairOptions {
         RepairOptions {
             project_root: options.project_root.clone(),
@@ -4194,22 +4379,21 @@ mod tests {
                     .package_directory
                     .as_ref()
                     .unwrap()
-                    .join("bin/godot-codex-mcp"),
+                    .join("bin/godot-codex"),
             )
             .unwrap();
             assert_eq!(
                 table["command"].as_str().map(Path::new),
                 Some(expected_launcher.as_path())
             );
-            let canonical_root = fs::canonicalize(project.path()).unwrap();
-            assert_eq!(table["cwd"].as_str(), canonical_root.to_str());
+            assert_eq!(table["cwd"].as_str(), Some("."));
             let args = table["args"]
                 .as_array()
                 .unwrap()
                 .iter()
                 .map(|value| value.as_str().unwrap())
                 .collect::<Vec<_>>();
-            assert_eq!(args, ["--project-root", "."]);
+            assert_eq!(args, ["mcp", "--project-root", "."]);
             let tools = table["enabled_tools"]
                 .as_array()
                 .unwrap()
@@ -4780,8 +4964,8 @@ mod tests {
         let config_path = project.path().join(CONFIG_PATH);
         let current = fs::read_to_string(&config_path).unwrap();
         let replacement = current.replacen(
-            "args = [\"--project-root\", \".\"]",
-            "args = [\"--project-root\"]",
+            "args = [\"mcp\", \"--project-root\", \".\"]",
+            "args = [\"mcp\", \"--project-root\"]",
             1,
         );
         assert_ne!(replacement, current);

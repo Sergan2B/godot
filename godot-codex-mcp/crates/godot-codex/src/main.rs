@@ -9,7 +9,7 @@ use godot_codex_operations::{
     SurfaceCaptureArmOptions, SurfaceCaptureArmReport, SurfaceCaptureError, SurfaceCaptureSurface,
     SurfaceSelection, abandon_surface_capture, apply_compatibility_install, apply_setup_plan,
     arm_surface_capture, cancel_surface_capture, compatibility_bundle_status,
-    consume_surface_capture, prepare_compatibility_install, prepare_setup,
+    consume_surface_capture, prepare_compatibility_install, prepare_mcp_launch, prepare_setup,
     prepare_setup_for_consent, prepare_setup_remove, prepare_setup_remove_for_consent,
     prepare_setup_repair, prepare_setup_repair_for_consent, run_doctor, surface_capture_status,
 };
@@ -17,6 +17,7 @@ use godot_codex_operations::{
 const USAGE: &str = "\
 usage:
   \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" version
+  \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" mcp --project-root <path>
   \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" doctor --project-root <path> [--surface auto|app|cli|ide] [--require-editor] [--json] [--show-paths]
   \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" setup --project-root <path> --profile read-only|full-beta [--guidance none|agents|skill|all] [--dry-run] [--json]
   \"$HOME/Library/Application Support/GodotCodex/current/bin/godot-codex\" setup --repair --project-root <path> [--dry-run] [--json]
@@ -89,6 +90,9 @@ These commands never change project files, host trust, or Codex config.";
 enum Command {
     Help(&'static str),
     Version,
+    McpLaunch {
+        project_root: PathBuf,
+    },
     Doctor {
         options: DoctorOptions,
         json: bool,
@@ -163,11 +167,29 @@ fn parse_command(arguments: impl IntoIterator<Item = OsString>) -> Result<Comman
             }
         }
         Some("doctor") => parse_doctor(arguments),
+        Some("mcp") => parse_mcp_launch(arguments),
         Some("setup") => parse_setup(arguments),
         Some("compatibility") => parse_compatibility(arguments),
         Some("surface-capture") => parse_surface_capture(arguments),
         _ => Err(USAGE.to_owned()),
     }
+}
+
+fn parse_mcp_launch(mut arguments: VecDeque<OsString>) -> Result<Command, String> {
+    let mut project_root = None;
+    while let Some(argument) = arguments.pop_front() {
+        match argument.to_str() {
+            Some("--project-root") => set_once(
+                &mut project_root,
+                PathBuf::from(required_value(&mut arguments, "--project-root")?),
+                "--project-root",
+            )?,
+            _ => return Err("unknown or duplicate mcp argument".to_owned()),
+        }
+    }
+    Ok(Command::McpLaunch {
+        project_root: project_root.ok_or_else(|| "--project-root is required".to_owned())?,
+    })
 }
 
 fn parse_command_for_execution(
@@ -688,6 +710,10 @@ fn run(
             let _ = writeln!(output, "godot-codex {PRODUCT_VERSION}");
             0
         }
+        Command::McpLaunch { .. } => {
+            let _ = writeln!(error, "godot-codex: mcp launch requires process execution");
+            70
+        }
         Command::Doctor { options, json } => {
             let report = run_doctor(&options);
             if json {
@@ -1146,6 +1172,38 @@ fn render_error(error: &mut dyn Write, json: bool, message: &str) {
     }
 }
 
+fn run_mcp_launcher(project_root: &std::path::Path) -> i32 {
+    let launch = match prepare_mcp_launch(project_root) {
+        Ok(launch) => launch,
+        Err(error) => {
+            eprintln!("godot-codex: mcp prelaunch rejected: {error}");
+            return 78;
+        }
+    };
+    let mut command = std::process::Command::new(launch.sidecar());
+    command
+        .arg("--project-root")
+        .arg(launch.project_root())
+        .current_dir(launch.project_root());
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+
+        let error = command.exec();
+        eprintln!("godot-codex: mcp sidecar execution failed: {error}");
+        126
+    }
+    #[cfg(not(unix))]
+    {
+        command
+            .status()
+            .ok()
+            .and_then(|status| status.code())
+            .unwrap_or(126)
+    }
+}
+
 fn main() {
     let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
     let command = match parse_command_for_execution(
@@ -1156,6 +1214,9 @@ fn main() {
         Ok(command) => command,
         Err(exit_code) => std::process::exit(exit_code),
     };
+    if let Command::McpLaunch { project_root } = &command {
+        std::process::exit(run_mcp_launcher(project_root));
+    }
     let interactive = io::stdin().is_terminal();
     let exit_code = run(
         command,
@@ -1329,6 +1390,37 @@ mod tests {
         assert_eq!(
             parse_command([OsString::from("version")]),
             Ok(Command::Version)
+        );
+        assert_eq!(
+            parse_command([
+                OsString::from("mcp"),
+                OsString::from("--project-root"),
+                OsString::from("."),
+            ]),
+            Ok(Command::McpLaunch {
+                project_root: PathBuf::from("."),
+            })
+        );
+        assert!(parse_command([OsString::from("mcp")]).is_err());
+        assert!(
+            parse_command([
+                OsString::from("mcp"),
+                OsString::from("--project-root"),
+                OsString::from("."),
+                OsString::from("--project-root"),
+                OsString::from("foreign"),
+            ])
+            .is_err()
+        );
+        assert!(
+            parse_command([
+                OsString::from("mcp"),
+                OsString::from("--project-root"),
+                OsString::from("."),
+                OsString::from("--fallback"),
+                OsString::from("foreign"),
+            ])
+            .is_err()
         );
         assert!(parse_command([OsString::from("doctor")]).is_err());
         assert!(

@@ -26,10 +26,11 @@ pub use doctor::{
 };
 pub use godot_codex_surface_capture::{ArmDisposition, LeaseState};
 pub use setup::{
-    GuidanceMode, PendingSetup, RemoveOptions, RepairOptions, SetupAction, SetupChange, SetupError,
-    SetupMode, SetupOptions, SetupPreview, SetupProfile, SetupReport, apply_setup_plan,
-    default_plan_store, prepare_setup, prepare_setup_for_consent, prepare_setup_remove,
-    prepare_setup_remove_for_consent, prepare_setup_repair, prepare_setup_repair_for_consent,
+    GuidanceMode, McpLaunch, McpLaunchError, PendingSetup, RemoveOptions, RepairOptions,
+    SetupAction, SetupChange, SetupError, SetupMode, SetupOptions, SetupPreview, SetupProfile,
+    SetupReport, apply_setup_plan, default_plan_store, prepare_mcp_launch, prepare_setup,
+    prepare_setup_for_consent, prepare_setup_remove, prepare_setup_remove_for_consent,
+    prepare_setup_repair, prepare_setup_repair_for_consent,
 };
 pub use surface_capture::{
     SurfaceCaptureAbandonReport, SurfaceCaptureArmOptions, SurfaceCaptureArmReport,

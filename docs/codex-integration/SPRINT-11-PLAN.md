@@ -452,22 +452,26 @@ profile, or plan invalidates it.
 The TOML editor atomically merges only
 `[mcp_servers.godot_editor]`, using:
 
-- an exact absolute `command` owned by the package: installed layouts use
-  `<data-root>/current/bin/godot-codex-mcp` only after `current` resolves to
+- an exact absolute prelaunch `command` owned by the package: installed layouts use
+  `<data-root>/current/bin/godot-codex` only after `current` resolves to
   `<data-root>/versions/<exact-package-version>` and package ownership and
   checksums verify; an explicitly supplied unpacked package uses its canonical
-  sibling `bin/godot-codex-mcp`;
+  sibling `bin/godot-codex`. The `mcp` subcommand verifies the host project,
+  setup receipt, config, and exact sidecar package before replacing itself with
+  `bin/godot-codex-mcp`;
 - installed layouts include the exact owned
   `env = { GODOT_CODEX_DATA_ROOT = "<data-root>" }` projection. Codex hosts
   forward this per-server value even when they intentionally do not preserve
   an installer shell environment. The sidecar also derives the same root from
   a canonical `versions/<exact-package-version>/bin` executable as a bounded
   non-host fallback;
-- `args = ["--project-root", "."]`;
-- `cwd = "<canonical-project-root>"` because the qualification-candidate Codex
-  `0.146.0-alpha.9.2` host resolves MCP `cwd` from the task root in practice;
-  the absolute, setup-bound root removes config/task-relative ambiguity and
-  keeps `--project-root .` exact even when a task starts in a nested directory;
+- `args = ["mcp", "--project-root", "."]`;
+- `cwd = "."`, resolved by the host from the active task coordinate. The
+  prelaunch command walks only upward from that host-owned coordinate to the
+  nearest Godot root and requires the requested root to match it. A config
+  copied from another project therefore cannot redirect the task through an
+  embedded absolute `cwd`, while nested task directories still resolve to the
+  same canonical project;
 - `required = true`;
 - bounded startup/tool timeouts appropriate for validation;
 - the exact generated tool allowlist;
