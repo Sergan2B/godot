@@ -447,7 +447,7 @@ dependencies = [
 
 [[package]]
 name = "godot-codex"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "godot-codex-operations",
  "serde",
@@ -457,7 +457,7 @@ dependencies = [
 
 [[package]]
 name = "godot-codex-bridge-client"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "base64",
  "getrandom 0.4.3",
@@ -474,7 +474,7 @@ dependencies = [
 
 [[package]]
 name = "godot-codex-index-store"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "serde",
  "serde_json",
@@ -485,7 +485,7 @@ dependencies = [
 
 [[package]]
 name = "godot-codex-mcp"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "godot-codex-bridge-client",
  "godot-codex-index-store",
@@ -507,7 +507,7 @@ dependencies = [
 
 [[package]]
 name = "godot-codex-mcp-server"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "base64",
  "getrandom 0.4.3",
@@ -532,7 +532,7 @@ dependencies = [
 
 [[package]]
 name = "godot-codex-operations"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "base64",
  "getrandom 0.4.3",
@@ -555,7 +555,7 @@ dependencies = [
 
 [[package]]
 name = "godot-codex-product"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "schemars",
  "serde",
@@ -566,7 +566,7 @@ dependencies = [
 
 [[package]]
 name = "godot-codex-resource-indexer"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "base64",
  "godot-codex-bridge-client",
@@ -582,7 +582,7 @@ dependencies = [
 
 [[package]]
 name = "godot-codex-semantic-model"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "serde",
  "serde_json",
@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "godot-codex-surface-capture"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "getrandom 0.4.3",
  "rmcp",
@@ -607,7 +607,7 @@ dependencies = [
 
 [[package]]
 name = "godot-codex-transactions"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "getrandom 0.4.3",
  "godot-codex-bridge-client",
