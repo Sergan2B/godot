@@ -126,7 +126,7 @@ class Sprint11UsabilityDeferralTest(unittest.TestCase):
             },
             "package",
         )
-        self.assertEqual(package["version"], "0.1.10")
+        self.assertEqual(package["version"], "0.1.11")
         manifest_path = REPOSITORY_ROOT / package["manifest_path"]
         manifest_bytes = manifest_path.read_bytes()
         self.assertEqual(
