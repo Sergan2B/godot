@@ -572,7 +572,7 @@ fn effective_config_value(
         && transport.get("type").and_then(Value::as_str) == Some("stdio")
         && transport.get("command").and_then(Value::as_str) == Some(expected_launcher)
         && string_array(transport.get("args")) == Some(vec!["mcp", "--project-root", "."])
-        && transport.get("cwd").and_then(Value::as_str) == Some(".")
+        && transport.get("cwd").is_none_or(Value::is_null)
         && exact_environment
         && exact_tools
 }
@@ -1451,7 +1451,7 @@ mod tests {
                 "type": "stdio",
                 "command": TEST_LAUNCHER,
                 "args": ["mcp", "--project-root", "."],
-                "cwd": "."
+                "cwd": null
             },
             "enabled_tools": tools,
             "startup_timeout_sec": 10.0,
@@ -1522,7 +1522,7 @@ mod tests {
                 "type": "stdio",
                 "command": TEST_LAUNCHER,
                 "args": ["mcp", "--project-root", "."],
-                "cwd": "."
+                "cwd": null
             },
             "enabled_tools": tools,
             "startup_timeout_sec": 10.0,
@@ -1598,7 +1598,7 @@ mod tests {
                 "type": "stdio",
                 "command": TEST_LAUNCHER,
                 "args": ["mcp", "--project-root", "."],
-                "cwd": "."
+                "cwd": null
             },
             "enabled_tools": tools,
             "startup_timeout_sec": 10.0,
@@ -2054,7 +2054,7 @@ for raw in sys.stdin:
                 "type": "stdio",
                 "command": TEST_LAUNCHER,
                 "args": ["mcp", "--project-root", "."],
-                "cwd": "."
+                "cwd": null
             },
             "enabled_tools": tools,
             "startup_timeout_sec": 10.0,
@@ -2091,7 +2091,7 @@ for raw in sys.stdin:
                 "type": "stdio",
                 "command": "godot-codex-mcp",
                 "args": ["mcp", "--project-root", "."],
-                "cwd": "."
+                "cwd": null
             },
             "enabled_tools": READ_ONLY_TOOLS,
             "startup_timeout_sec": 10.0,

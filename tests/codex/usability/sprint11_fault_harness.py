@@ -927,7 +927,7 @@ def _config_snapshot(project: Path) -> tuple[dict[str, Any], bytes, dict[str, An
     )
     if (
         not isinstance(table, dict)
-        or table.get("cwd") != "."
+        or "cwd" in table
         or table.get("args") != ["mcp", "--project-root", "."]
         or table.get("required") is not True
     ):

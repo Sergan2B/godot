@@ -1014,7 +1014,6 @@ class FaultHarnessTests(unittest.TestCase):
             f"# godot-codex-setup-owner: {D2}\n"
             'command = "/disposable/current/bin/godot-codex"\n'
             'args = ["mcp", "--project-root", "."]\n'
-            'cwd = "."\n'
             "required = true\n"
             "startup_timeout_sec = 10\n"
             "tool_timeout_sec = 60\n"
@@ -1064,7 +1063,7 @@ class FaultHarnessTests(unittest.TestCase):
             )
             drifted = (project / ".codex/config.toml").read_text()
             self.assertIn("required = false", drifted)
-            self.assertIn('cwd = "."', drifted)
+            self.assertNotIn("cwd", drifted)
             reset = harness.recover_fault(
                 run_root=run,
                 state_directory=run / "fault",

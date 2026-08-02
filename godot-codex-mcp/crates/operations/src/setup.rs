@@ -1907,7 +1907,6 @@ fn repairable_config_shape(
     let base_keys = [
         "command",
         "args",
-        "cwd",
         "required",
         "startup_timeout_sec",
         "tool_timeout_sec",
@@ -1940,7 +1939,6 @@ fn repairable_config_shape(
         .and_then(Item::as_array)
         .is_some_and(|tools| tools.iter().all(|value| value.as_str().is_some()));
     if !args_are_exact
-        || table.get("cwd").and_then(Item::as_str) != Some(".")
         || config_data_root(table) != expected_data_root.and_then(Path::to_str)
         || table.get("required").and_then(Item::as_bool).is_none()
         || table
@@ -2203,7 +2201,7 @@ fn desired_config_item(
         SetupProfile::FullBeta => FULL_BETA_TOOLS,
     };
     let mut source = format!(
-        "[mcp_servers.godot_editor]\n{CONFIG_OWNERSHIP_PREFIX}{ownership_marker}\ncommand = \"/package/launcher\"\nargs = [\"mcp\", \"--project-root\", \".\"]\ncwd = \".\"\nrequired = true\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\n"
+        "[mcp_servers.godot_editor]\n{CONFIG_OWNERSHIP_PREFIX}{ownership_marker}\ncommand = \"/package/launcher\"\nargs = [\"mcp\", \"--project-root\", \".\"]\nrequired = true\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\n"
     );
     if let Some(data_root) = installed_data_root {
         let data_root = data_root.to_str().ok_or(SetupError::PathUnsafe)?;
@@ -4386,7 +4384,7 @@ mod tests {
                 table["command"].as_str().map(Path::new),
                 Some(expected_launcher.as_path())
             );
-            assert_eq!(table["cwd"].as_str(), Some("."));
+            assert!(table.get("cwd").is_none());
             let args = table["args"]
                 .as_array()
                 .unwrap()

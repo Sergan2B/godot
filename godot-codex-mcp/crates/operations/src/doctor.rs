@@ -1097,7 +1097,6 @@ fn check_config(
         .ok_or(DiagnosticCode::ProjectConfigInvalid)?;
     if table.get("command").and_then(|item| item.as_str()) != Some(expected_launcher)
         || string_array(table.get("args")) != Some(vec!["mcp", "--project-root", "."])
-        || table.get("cwd").and_then(|item| item.as_str()) != Some(".")
         || config_data_root(table.get("env")) != expected_data_root.and_then(Path::to_str)
         || table.get("required").and_then(|item| item.as_bool()) != Some(true)
         || table
@@ -1124,7 +1123,7 @@ fn check_config(
         return Err(DiagnosticCode::ProjectConfigInvalid);
     }
     let expected_keys =
-        if approval.is_some() { 8 } else { 7 } + usize::from(expected_data_root.is_some());
+        if approval.is_some() { 7 } else { 6 } + usize::from(expected_data_root.is_some());
     if table.len() != expected_keys {
         return Err(DiagnosticCode::ProjectConfigInvalid);
     }
@@ -2011,7 +2010,7 @@ mod tests {
         fs::write(
             root.join(".codex/config.toml"),
             format!(
-                "[mcp_servers.godot_editor]\ncommand = {:?}\nargs = [\"mcp\", \"--project-root\", \".\"]\ncwd = \".\"\nrequired = true\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\nenabled_tools = [\n{enabled}]\n{approval}",
+                "[mcp_servers.godot_editor]\ncommand = {:?}\nargs = [\"mcp\", \"--project-root\", \".\"]\nrequired = true\nstartup_timeout_sec = 10\ntool_timeout_sec = 60\nenabled_tools = [\n{enabled}]\n{approval}",
                 launcher.to_str().unwrap(),
             ),
         )
@@ -2342,8 +2341,8 @@ mod tests {
         );
         let path = temp.path().join(".codex/config.toml");
         let changed = fs::read_to_string(&path).unwrap().replacen(
-            "cwd = \".\"",
-            &format!("cwd = {:?}", temp.path().to_str().unwrap()),
+            "required = true",
+            &format!("cwd = {:?}\nrequired = true", temp.path().to_str().unwrap()),
             1,
         );
         fs::write(&path, changed).unwrap();

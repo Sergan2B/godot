@@ -466,12 +466,13 @@ The TOML editor atomically merges only
   a canonical `versions/<exact-package-version>/bin` executable as a bounded
   non-host fallback;
 - `args = ["mcp", "--project-root", "."]`;
-- `cwd = "."`, resolved by the host from the active task coordinate. The
-  prelaunch command walks only upward from that host-owned coordinate to the
-  nearest Godot root and requires the requested root to match it. A config
-  copied from another project therefore cannot redirect the task through an
-  embedded absolute `cwd`, while nested task directories still resolve to the
-  same canonical project;
+- no explicit `cwd`. Codex uses the active task runtime directory as the stdio
+  fallback only when this field is absent; a relative `cwd = "."` is resolved
+  from the long-lived host process instead and is therefore forbidden. The
+  prelaunch command walks only upward from the host-owned task coordinate to
+  the nearest Godot root and requires the requested root to match it. A copied
+  config therefore cannot redirect the task through an embedded `cwd`, while
+  nested task directories still resolve to the same canonical project;
 - `required = true`;
 - bounded startup/tool timeouts appropriate for validation;
 - the exact generated tool allowlist;

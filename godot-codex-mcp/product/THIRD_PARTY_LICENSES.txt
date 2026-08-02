@@ -1,7 +1,7 @@
 Godot Codex third-party license bundle
 Generated deterministically from the frozen macOS arm64 production dependency graph.
 Target: aarch64-apple-darwin
-Cargo.lock SHA-256: dac430be14697d6ab60ae85b2a09e9025e0130a304a65db664da78b4ce5acc7d
+Cargo.lock SHA-256: 1eb62e79e6d00730e11cfad08790ea6748ec7bcccef2f9696059fa061c81d05d
 External packages: 152
 
 ==============================================================================

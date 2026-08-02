@@ -752,7 +752,6 @@ fn write_project_config(project_root: &Path, data_root: &Path) {
         "[mcp_servers.godot_editor]\n\
          command = {command}\n\
          args = [\"mcp\", \"--project-root\", \".\"]\n\
-         cwd = \".\"\n\
          env = {{ GODOT_CODEX_DATA_ROOT = {data_root} }}\n\
          required = true\n\
          startup_timeout_sec = 10\n\

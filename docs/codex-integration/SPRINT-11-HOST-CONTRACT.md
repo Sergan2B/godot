@@ -57,11 +57,11 @@ The checked contract establishes:
 
 - App, CLI, and IDE share the Codex configuration layers;
 - project `.codex/config.toml` is loaded only for a trusted project;
-- the qualification-candidate Codex `0.146.0-alpha.9.2` MCP launcher resolves
-  a relative `cwd` from the task root; setup therefore uses `cwd = "."` and a
-  package-owned prelaunch command which resolves the nearest Godot root from
-  that host-owned coordinate and verifies the setup receipt before starting
-  the sidecar;
+- the qualification-candidate Codex `0.146.0-alpha.9.2` MCP launcher uses the
+  task runtime directory only as the fallback when stdio `cwd` is omitted;
+  setup therefore forbids an explicit relative `cwd` and uses a package-owned
+  prelaunch command which resolves the nearest Godot root from that host-owned
+  coordinate and verifies the setup receipt before starting the sidecar;
 - the official IDE extension identifier is `openai.chatgpt`;
 - MCP stdio configuration supports command, args, cwd, explicit per-server
   environment, required state, enabled/disabled tools, timeouts, and approval
@@ -102,12 +102,12 @@ any Markdown/JSON drift.
 | Extension Codex CLI | `bin/macos-aarch64/codex`, `0.146.0-alpha.3.1`, `sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4`, team `2DC432GLL2` | candidate embedded client |
 | MCP protocol | `2025-11-25`; form-compatible floor `2025-06-18` | candidate |
 | Bridge | RPC `1.8` exact profile | candidate |
-| Godot × Codex package | workspace `0.1.10` | same-project lease contention, long project-root UDS transport, accepted-socket subprocess inheritance, full-beta doctor registry probing, current host-measurement guidance, receipt-1.1 config fault harness, isolated-install package-owned guidance, and fail-closed project-bound MCP prelaunch fixed; independently installable host-surface bundle added |
+| Godot × Codex package | workspace `0.1.11` | same-project lease contention, long project-root UDS transport, accepted-socket subprocess inheritance, full-beta doctor registry probing, current host-measurement guidance, receipt-1.1 config fault harness, isolated-install package-owned guidance, and App-safe fail-closed project-bound MCP prelaunch fixed; independently installable host-surface bundle added |
 | Godot Bridge prerequisite | `bin/godot.macos.editor.dev.arm64`, `4.8.dev.codex.336fc9a13`, `sha256:2166f3c6b7784cc7259a08a9636aafe89c8d6bebcbdc05c2b1d8d76933373dff` | exact local candidate; detached package binding pending |
 
 ### 3.1 Independent host-surface compatibility updates
 
-Package `0.1.10` keeps package, Godot, protocol, schema, registry, Bridge, and
+Package `0.1.11` keeps package, Godot, protocol, schema, registry, Bridge, and
 Cursor coordinates embedded and immutable. A separately released
 `godot-codex-surface-compatibility-bundle/1.0` may replace only the complete
 App/CLI/IDE surface snapshot for that exact embedded matrix. This permits a
@@ -206,8 +206,8 @@ human usability remain pending. Root/cwd semantics, effective non-empty
 project config, and packaged launcher execution also remain pending. The
 launcher decision is fixed: setup must write the verified absolute
 `<data-root>/current/bin/godot-codex` operations launcher with
-`args = ["mcp", "--project-root", "."]` and `cwd = "."`, never a PATH basename
-or an absolute project cwd. Prelaunch must prove the host-owned task root,
+`args = ["mcp", "--project-root", "."]` and no explicit `cwd`, never a PATH
+basename or an embedded project cwd. Prelaunch must prove the host-owned task root,
 receipt-owned config, and exact sidecar package before replacing itself with
 `<data-root>/current/bin/godot-codex-mcp`; doctor must compare that exact
 effective command plus the owned

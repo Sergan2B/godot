@@ -23,7 +23,7 @@
     {
       "id": "sprint11-human-fault-harness-v1",
       "path": "tests/codex/usability/sprint11_fault_harness.py",
-      "sha256": "sha256:9a709baf0f3491c7ca82878fbf32fd0a17b1e32ac80942800ab2d62bd382004d"
+      "sha256": "sha256:832dfe1758c1a42dac3d51dac718b52fd03156f692a15205365baeef7173242b"
     },
     {
       "id": "s11-human-acquisition-authority-schema-v1",
@@ -380,7 +380,7 @@
         "config_snapshot_digest_recorded"
       ],
       "inject": [
-        "In the receipt-owned godot_editor table only, change required from true to false while preserving the canonical absolute cwd, valid TOML, unrelated tables, comments, file mode, and every other owned field.",
+        "In the receipt-owned godot_editor table only, change required from true to false while preserving the canonical absence of cwd, valid TOML, unrelated tables, comments, file mode, and every other owned field.",
         "Write by same-directory exclusive temporary file plus fsync and no-clobber atomic replacement; reject concurrent change."
       ],
       "participant_check": [
