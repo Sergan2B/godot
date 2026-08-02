@@ -1,0 +1,260 @@
+{
+  "artifacts": {
+    "godot_sha256": "sha256:2166f3c6b7784cc7259a08a9636aafe89c8d6bebcbdc05c2b1d8d76933373dff",
+    "sidecar_sha256": "sha256:736c96f6d04d2d0b3e01d5cabee4c9ec5169786c3d0880576504831a2d9ba936"
+  },
+  "bridge_frame": {
+    "budget_usec": 2000,
+    "max_elapsed_usec": 326,
+    "over_budget_count": 0
+  },
+  "cleanup": true,
+  "elicitation_count": 4,
+  "fault_count": 0,
+  "faults": {},
+  "latency_ms": {
+    "apply": {
+      "max": 149.22,
+      "p50": 137.844,
+      "p95": 149.22,
+      "scenario_count": 4
+    },
+    "prepare": {
+      "max": 60.048,
+      "p50": 49.837,
+      "p95": 60.048,
+      "scenario_count": 4
+    },
+    "read": {
+      "max": 0.848,
+      "p50": 0.771,
+      "p95": 0.848,
+      "scenario_count": 4
+    },
+    "status": {
+      "max": 49.626,
+      "p50": 45.306,
+      "p95": 49.626,
+      "scenario_count": 4
+    },
+    "undo": {
+      "max": 74.36,
+      "p50": 64.299,
+      "p95": 74.36,
+      "scenario_count": 4
+    }
+  },
+  "native_action_count": 5,
+  "negatives": {},
+  "operation_count": 4,
+  "operations": [
+    {
+      "cleanup": true,
+      "elicitation_count": 1,
+      "frame_telemetry": {
+        "budget_usec": 2000,
+        "frame_max_elapsed_usec": 1882,
+        "max_elapsed_usec": 245,
+        "over_budget_count": 0
+      },
+      "intervening_action": false,
+      "latency_ms": {
+        "apply": {
+          "count": 1,
+          "max": 141.625,
+          "p50": 141.625,
+          "p95": 141.625
+        },
+        "prepare": {
+          "count": 1,
+          "max": 48.674,
+          "p50": 48.674,
+          "p95": 48.674
+        },
+        "read": {
+          "count": 99,
+          "max": 7.106,
+          "p50": 0.282,
+          "p95": 0.848
+        },
+        "status": {
+          "count": 2,
+          "max": 41.709,
+          "p50": 32.949,
+          "p95": 41.709
+        },
+        "undo": {
+          "count": 1,
+          "max": 64.299,
+          "p50": 64.299,
+          "p95": 64.299
+        }
+      },
+      "native_actions": 1,
+      "native_undo_redo": false,
+      "operation": "detach_script",
+      "oracle_cycle": true,
+      "source_unchanged": true,
+      "transaction_native_actions": 1,
+      "transaction_sha256": "sha256:92ece012af688c93dff3b45e32fbb877afa2acbbb06410c1a9f7267d8424f0af"
+    },
+    {
+      "cleanup": true,
+      "elicitation_count": 1,
+      "frame_telemetry": {
+        "budget_usec": 2000,
+        "frame_max_elapsed_usec": 2403,
+        "max_elapsed_usec": 313,
+        "over_budget_count": 0
+      },
+      "intervening_action": false,
+      "latency_ms": {
+        "apply": {
+          "count": 1,
+          "max": 136.699,
+          "p50": 136.699,
+          "p95": 136.699
+        },
+        "prepare": {
+          "count": 1,
+          "max": 49.837,
+          "p50": 49.837,
+          "p95": 49.837
+        },
+        "read": {
+          "count": 102,
+          "max": 7.057,
+          "p50": 0.271,
+          "p95": 0.771
+        },
+        "status": {
+          "count": 2,
+          "max": 47.498,
+          "p50": 34.494,
+          "p95": 47.498
+        },
+        "undo": {
+          "count": 1,
+          "max": 58.574,
+          "p50": 58.574,
+          "p95": 58.574
+        }
+      },
+      "native_actions": 1,
+      "native_undo_redo": false,
+      "operation": "disconnect_signal",
+      "oracle_cycle": true,
+      "source_unchanged": true,
+      "transaction_native_actions": 1,
+      "transaction_sha256": "sha256:d698320e7a9861718e1cde76add4106b9b3587a975ea45d20c93572123937d21"
+    },
+    {
+      "cleanup": true,
+      "elicitation_count": 1,
+      "frame_telemetry": {
+        "budget_usec": 2000,
+        "frame_max_elapsed_usec": 1940,
+        "max_elapsed_usec": 326,
+        "over_budget_count": 0
+      },
+      "intervening_action": false,
+      "latency_ms": {
+        "apply": {
+          "count": 1,
+          "max": 137.844,
+          "p50": 137.844,
+          "p95": 137.844
+        },
+        "prepare": {
+          "count": 1,
+          "max": 51.93,
+          "p50": 51.93,
+          "p95": 51.93
+        },
+        "read": {
+          "count": 99,
+          "max": 6.94,
+          "p50": 0.286,
+          "p95": 0.845
+        },
+        "status": {
+          "count": 2,
+          "max": 45.306,
+          "p50": 34.938,
+          "p95": 45.306
+        },
+        "undo": {
+          "count": 1,
+          "max": 74.36,
+          "p50": 74.36,
+          "p95": 74.36
+        }
+      },
+      "native_actions": 1,
+      "native_undo_redo": false,
+      "operation": "reparent_node",
+      "oracle_cycle": true,
+      "source_unchanged": true,
+      "transaction_native_actions": 1,
+      "transaction_sha256": "sha256:9457c4e492c0b59f697eecc20b7566ababf206c75e1275de3be3b6213268c63a"
+    },
+    {
+      "cleanup": true,
+      "elicitation_count": 1,
+      "frame_telemetry": {
+        "budget_usec": 2000,
+        "frame_max_elapsed_usec": 2011,
+        "max_elapsed_usec": 310,
+        "over_budget_count": 0
+      },
+      "intervening_action": true,
+      "latency_ms": {
+        "apply": {
+          "count": 1,
+          "max": 149.22,
+          "p50": 149.22,
+          "p95": 149.22
+        },
+        "prepare": {
+          "count": 1,
+          "max": 60.048,
+          "p50": 60.048,
+          "p95": 60.048
+        },
+        "read": {
+          "count": 294,
+          "max": 7.012,
+          "p50": 0.267,
+          "p95": 0.736
+        },
+        "status": {
+          "count": 7,
+          "max": 49.626,
+          "p50": 35.208,
+          "p95": 49.626
+        },
+        "undo": {
+          "count": 3,
+          "max": 71.882,
+          "p50": 70.846,
+          "p95": 71.882
+        }
+      },
+      "native_actions": 2,
+      "native_undo_redo": true,
+      "operation": "set_property",
+      "oracle_cycle": true,
+      "source_unchanged": true,
+      "transaction_native_actions": 1,
+      "transaction_sha256": "sha256:a22421f123bc72a06df8a9461cdd68e28cfab6e70680636d23dddd33d8b69aba"
+    }
+  ],
+  "platform": "macos-arm64",
+  "protocol": "2025-11-25",
+  "redaction": true,
+  "schema_version": "s9-model-free-workflow/1.0",
+  "source_unchanged": true,
+  "status": "passed",
+  "tool_registry": 41,
+  "transaction_identity_unique": true
+}
