@@ -23,7 +23,7 @@
     {
       "id": "sprint11-human-fault-harness-v1",
       "path": "tests/codex/usability/sprint11_fault_harness.py",
-      "sha256": "sha256:832dfe1758c1a42dac3d51dac718b52fd03156f692a15205365baeef7173242b"
+      "sha256": "sha256:fc1a23474b9b1f6fc23517a4eb31a0b5cbb43f877f0c2f66d1d6ede74aa53cfd"
     },
     {
       "id": "s11-human-acquisition-authority-schema-v1",
@@ -280,8 +280,8 @@
         "private_backup_destination_absent"
       ],
       "inject": [
-        "Move the disposable fixture's .godot/codex directory to a private same-parent backup without following links.",
-        "Create mode-0700 .godot/codex and run plus bounded mode-0600 discovery, lock, token, and Unix-socket entries whose lock PID is intentionally non-live.",
+        "Move only bridge.json, bridge.lock, session.token, and run from the disposable fixture's .godot/codex directory to a private backup without following links; leave the setup receipt, semantic index, transaction state, and every unrelated entry in place.",
+        "Create a mode-0700 run directory plus bounded mode-0600 discovery, lock, token, and Unix-socket entries whose lock PID is intentionally non-live.",
         "Record only the fault-state tree digest; never record the token, endpoint, PID, or private path."
       ],
       "participant_check": [
@@ -289,7 +289,7 @@
         "Let the participant use the named product remediation; do not tell them that starting the matching editor is expected."
       ],
       "reset": [
-        "Stop every process owned by the fault harness, remove only marker-bound synthetic entries below the disposable fixture, and restore the exact private backup.",
+        "Stop every process owned by the fault harness, remove only marker-bound synthetic Bridge entries below the disposable fixture, and restore the exact private runtime-entry backup without replacing unrelated .godot/codex state.",
         "Start the matching editor and verify a fresh editor session and ready status; do not reuse synthetic discovery."
       ],
       "postconditions": [
@@ -314,6 +314,7 @@
         "private_backup_destination_absent"
       ],
       "inject": [
+        "Move only existing Bridge runtime entries to the private backup while leaving the setup receipt, semantic index, transaction state, and every unrelated .godot/codex entry in place.",
         "Use the bound fault harness to hold a private Unix socket and live harness PID while publishing otherwise valid private discovery metadata with only unsupported Bridge RPC 2.0.",
         "Use a fresh random token only inside the disposable fixture and never copy it into a trace."
       ],
@@ -322,7 +323,7 @@
         "Do not disclose the injected protocol value to the participant."
       ],
       "reset": [
-        "Terminate the exact marker-bound harness process group, remove its synthetic private metadata, restore the snapshot, then start the matching frozen Godot prerequisite.",
+        "Terminate the exact marker-bound harness process group, remove its synthetic private metadata, restore only the original Bridge runtime entries, then start the matching frozen Godot prerequisite.",
         "Verify the negotiated Bridge version is within the frozen 1.0-1.8 range and status is ready."
       ],
       "postconditions": [
@@ -347,6 +348,7 @@
         "private_backup_destination_absent"
       ],
       "inject": [
+        "Move only existing Bridge runtime entries to the private backup while leaving the setup receipt, semantic index, transaction state, and every unrelated .godot/codex entry in place.",
         "Use the bound fault harness to hold a private Unix socket and live harness PID while publishing supported Bridge RPC metadata with a token file whose length is not 32 bytes.",
         "Never expose either the synthetic token bytes or the original token bytes."
       ],
@@ -355,7 +357,7 @@
         "Do not identify the token fault or tell the participant to restart the editor."
       ],
       "reset": [
-        "Terminate the exact marker-bound harness process group, destroy the synthetic token and metadata, restore the snapshot, and start the matching editor.",
+        "Terminate the exact marker-bound harness process group, destroy the synthetic token and metadata, restore only the original Bridge runtime entries, and start the matching editor.",
         "Verify fresh authenticated discovery and ready status without retaining old token material."
       ],
       "postconditions": [

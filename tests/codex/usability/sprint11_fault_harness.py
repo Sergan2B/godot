@@ -28,6 +28,8 @@ MAX_MARKER_BYTES = 64 * 1024
 MAX_CONFIG_BYTES = 256 * 1024
 MAX_PACKAGE_FILE_BYTES = 256 * 1024 * 1024
 MAX_PACKAGE_FILES = 512
+MAX_DISCOVERY_TREE_ENTRIES = 4096
+MAX_DISCOVERY_TREE_BYTES = 64 * 1024 * 1024
 MARKER_NAME = ".s11-usability-run-root"
 STATE_MARKER_NAME = "fault-state.json"
 RESET_RECEIPT_NAME = "reset-receipt.json"
@@ -52,6 +54,7 @@ DISCOVERY_SCENARIOS = {
     "version_mismatch",
     "authentication_failure",
 }
+BRIDGE_RUNTIME_NAMES = ("bridge.json", "bridge.lock", "run", "session.token")
 RUN_ROOT_MARKER = {
     "schema_version": "s11-usability-run-root/1.0",
     "purpose": "disposable_human_usability_faults",
@@ -397,13 +400,19 @@ def _bridge_process_is_live(codex: Path) -> bool:
     return True
 
 
-def _tree_digest(path: Path, *, maximum_files: int = 128) -> str:
+def _tree_digest(
+    path: Path,
+    *,
+    maximum_files: int = 128,
+    maximum_bytes: int = MAX_DISCOVERY_TREE_BYTES,
+) -> str:
     if not path.exists():
         return _digest_bytes(b"absent\n")
     root_metadata = os.lstat(path)
     if stat.S_ISLNK(root_metadata.st_mode) or not stat.S_ISDIR(root_metadata.st_mode):
         raise FaultHarnessError("fault target tree is unsafe")
     records: list[dict[str, Any]] = []
+    total_bytes = 0
     pending = [path]
     while pending:
         directory = pending.pop()
@@ -423,6 +432,9 @@ def _tree_digest(path: Path, *, maximum_files: int = 128) -> str:
                 )
                 pending.append(entry)
             elif stat.S_ISREG(metadata.st_mode):
+                total_bytes += metadata.st_size
+                if total_bytes > maximum_bytes:
+                    raise FaultHarnessError("fault target tree exceeds byte bound")
                 records.append(
                     {
                         "path": relative,
@@ -489,22 +501,59 @@ def _discovery_state_digest(project: Path) -> str:
         "godot": "present",
         "mode": stat.S_IMODE(metadata.st_mode),
         "siblings": siblings,
-        "codex_sha256": _tree_digest(godot / "codex"),
+        "codex_sha256": _tree_digest(
+            godot / "codex",
+            maximum_files=MAX_DISCOVERY_TREE_ENTRIES,
+            maximum_bytes=MAX_DISCOVERY_TREE_BYTES,
+        ),
     }
     return _digest_bytes(_canonical_json(value))
 
 
-def _remove_synthetic_codex(codex: Path, state: Mapping[str, Any]) -> None:
+def _bridge_runtime_entries(codex: Path) -> list[str]:
+    if not codex.exists():
+        return []
+    metadata = os.lstat(codex)
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+        or stat.S_IMODE(metadata.st_mode) != 0o700
+    ):
+        raise FaultHarnessError("existing Codex directory is unsafe")
+    entries: list[str] = []
+    for name in BRIDGE_RUNTIME_NAMES:
+        path = codex / name
+        try:
+            child = os.lstat(path)
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(child.st_mode):
+            raise FaultHarnessError("existing Bridge state contains a symlink")
+        if name == "run":
+            if not stat.S_ISDIR(child.st_mode):
+                raise FaultHarnessError("existing Bridge run path is unsafe")
+        elif not stat.S_ISREG(child.st_mode):
+            raise FaultHarnessError("existing Bridge file is unsafe")
+        entries.append(name)
+    return entries
+
+
+def _remove_synthetic_bridge(
+    codex: Path,
+    state: Mapping[str, Any],
+    *,
+    preserved_originals: set[str] | None = None,
+) -> None:
     if not codex.exists():
         return
-    allowed = {"bridge.json", "bridge.lock", "run", "session.token"}
-    entries = {entry.name for entry in codex.iterdir()}
-    if not entries <= allowed:
-        raise FaultHarnessError("synthetic Bridge state has an unexpected entry")
+    preserved = preserved_originals or set()
     digests = state.get("synthetic_digests", {})
     if not isinstance(digests, dict):
         raise FaultHarnessError("synthetic digest journal differs")
     for name in ("bridge.json", "bridge.lock", "session.token"):
+        if name in preserved:
+            continue
         path = codex / name
         if path.exists():
             expected = digests.get(name)
@@ -512,7 +561,7 @@ def _remove_synthetic_codex(codex: Path, state: Mapping[str, Any]) -> None:
                 raise FaultHarnessError("synthetic Bridge file changed before reset")
             path.unlink()
     run = codex / "run"
-    if run.exists():
+    if run.exists() and "run" not in preserved:
         run_entries = {entry.name for entry in run.iterdir()}
         if not run_entries <= {"s11-fault.sock"}:
             raise FaultHarnessError("synthetic endpoint state changed before reset")
@@ -522,7 +571,6 @@ def _remove_synthetic_codex(codex: Path, state: Mapping[str, Any]) -> None:
                 raise FaultHarnessError("synthetic endpoint type changed")
             endpoint.unlink()
         run.rmdir()
-    codex.rmdir()
 
 
 class DiscoveryFault:
@@ -546,18 +594,21 @@ class DiscoveryFault:
         self.listener: socket.socket | None = None
 
     def inject(self) -> dict[str, Any]:
+        godot = self.project / ".godot"
+        codex = godot / "codex"
+        created_godot = not godot.exists()
+        created_codex = not codex.exists()
+        if not created_codex and _bridge_process_is_live(codex):
+            raise FaultHarnessError("matching editor is live; stop it before injection")
+        pre_state = _discovery_state_digest(self.project)
+        original_runtime_entries = (
+            [] if created_codex else _bridge_runtime_entries(codex)
+        )
         state_directory = _new_state_directory(
             self.state_directory_input, self.run_root
         )
         self.state_directory = state_directory
-        godot = self.project / ".godot"
-        codex = godot / "codex"
-        backup = state_directory / "original-codex"
-        created_godot = not godot.exists()
-        had_original = codex.exists()
-        if had_original and _bridge_process_is_live(codex):
-            raise FaultHarnessError("matching editor is live; stop it before injection")
-        pre_state = _discovery_state_digest(self.project)
+        backup = state_directory / "original-bridge"
         state: dict[str, Any] = {
             "schema_version": "s11-fault-state/1.0",
             "scenario": self.scenario,
@@ -565,7 +616,11 @@ class DiscoveryFault:
             "phase": "prepared",
             "pre_state_sha256": pre_state,
             "created_godot": created_godot,
-            "had_original": had_original,
+            "created_codex": created_codex,
+            "had_original": not created_codex,
+            "original_runtime_entries": original_runtime_entries,
+            "moved_runtime_entries": [],
+            "synthetic_started": False,
             "synthetic_digests": {},
             "qualification": False,
         }
@@ -573,11 +628,22 @@ class DiscoveryFault:
         try:
             if created_godot:
                 os.mkdir(godot, 0o700)
-            if had_original:
-                os.rename(codex, backup)
+            if created_codex:
+                os.mkdir(codex, 0o700)
+            if original_runtime_entries:
+                os.mkdir(backup, 0o700)
+            for name in original_runtime_entries:
+                os.rename(codex / name, backup / name)
+                cast(list[str], state["moved_runtime_entries"]).append(name)
+                _write_state(state_directory, state)
+            if original_runtime_entries:
+                _fsync_directory(codex)
+                _fsync_directory(backup)
             state["phase"] = "backup_moved"
             _write_state(state_directory, state)
-            os.mkdir(codex, 0o700)
+            state["synthetic_started"] = True
+            state["phase"] = "injecting_synthetic"
+            _write_state(state_directory, state)
             run = codex / "run"
             os.mkdir(run, 0o700)
             endpoint = run / "s11-fault.sock"
@@ -660,20 +726,53 @@ def _recover_discovery(
         raise FaultHarnessError("fault target is not discovery")
     codex = project / ".godot" / "codex"
     godot = project / ".godot"
-    backup = state_directory / "original-codex"
+    backup = state_directory / "original-bridge"
     state["phase"] = "resetting"
     _write_state(state_directory, state)
     had_original = state.get("had_original") is True
     created_godot = state.get("created_godot") is True
+    created_codex = state.get("created_codex") is True
+    original_runtime_entries = state.get("original_runtime_entries", [])
+    if not isinstance(original_runtime_entries, list) or any(
+        not isinstance(name, str) or name not in BRIDGE_RUNTIME_NAMES
+        for name in original_runtime_entries
+    ):
+        raise FaultHarnessError("original Bridge entry journal differs")
+    if state.get("synthetic_started") is True:
+        restored_originals = {
+            name
+            for name in cast(list[str], original_runtime_entries)
+            if not (backup / name).exists() and (codex / name).exists()
+        }
+        _remove_synthetic_bridge(
+            codex,
+            state,
+            preserved_originals=restored_originals,
+        )
+    if original_runtime_entries and not codex.exists():
+        raise FaultHarnessError("Codex directory disappeared before reset")
+    for name in cast(list[str], original_runtime_entries):
+        saved = backup / name
+        target = codex / name
+        saved_exists = saved.exists() or saved.is_symlink()
+        target_exists = target.exists() or target.is_symlink()
+        if saved_exists and not target_exists:
+            os.rename(saved, target)
+        elif not saved_exists and target_exists:
+            continue
+        else:
+            raise FaultHarnessError("original Bridge entry state is ambiguous")
     if backup.exists():
-        _remove_synthetic_codex(codex, state)
-        os.rename(backup, codex)
-        _fsync_directory(godot)
-    elif had_original:
-        if _discovery_state_digest(project) != state["pre_state_sha256"]:
-            raise FaultHarnessError("original Bridge backup is missing")
-    else:
-        _remove_synthetic_codex(codex, state)
+        backup.rmdir()
+    if codex.exists():
+        _fsync_directory(codex)
+    if created_codex and codex.exists():
+        try:
+            codex.rmdir()
+        except OSError as error:
+            raise FaultHarnessError(
+                "harness-created Codex directory is not empty after reset"
+            ) from error
     if created_godot and godot.exists():
         try:
             godot.rmdir()

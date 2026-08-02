@@ -895,7 +895,7 @@ class FaultHarnessTests(unittest.TestCase):
             fault.listener.close()
             fault.listener = None
             state = harness._load_state(run / "fault")
-            harness._remove_synthetic_codex(codex, state)
+            harness._remove_synthetic_bridge(codex, state)
             reset = harness.recover_fault(
                 run_root=run,
                 state_directory=run / "fault",
@@ -914,6 +914,9 @@ class FaultHarnessTests(unittest.TestCase):
             sentinel = codex / "sentinel"
             sentinel.write_bytes(b"original")
             os.chmod(sentinel, 0o600)
+            original_token = codex / "session.token"
+            original_token.write_bytes(b"o" * 32)
+            os.chmod(original_token, 0o600)
             fault = harness.DiscoveryFault(
                 run_root=run,
                 project_root=project,
@@ -925,8 +928,10 @@ class FaultHarnessTests(unittest.TestCase):
             fault.listener.close()
             fault.listener = None
             state = harness._load_state(run / "fault")
-            harness._remove_synthetic_codex(codex, state)
-            os.rename(run / "fault/original-codex", codex)
+            harness._remove_synthetic_bridge(codex, state)
+            backup = run / "fault/original-bridge"
+            os.rename(backup / "session.token", codex / "session.token")
+            backup.rmdir()
             reset = harness.recover_fault(
                 run_root=run,
                 state_directory=run / "fault",
@@ -935,6 +940,38 @@ class FaultHarnessTests(unittest.TestCase):
             )
             self.assertTrue(reset["exact_state_restored"])
             self.assertEqual(sentinel.read_bytes(), b"original")
+
+    def test_discovery_fault_preserves_populated_cache_and_setup_receipt(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory(dir="/tmp", prefix="s11u.") as directory:
+            run = self.create_run(Path(directory))
+            project = self.create_project(run)
+            codex = project / ".godot/codex"
+            segments = codex / "index/segments"
+            segments.mkdir(parents=True, mode=0o700)
+            os.chmod(codex, 0o700)
+            receipt = codex / "setup-receipt-v1.json"
+            receipt.write_bytes(b'{"receipt":"preserved"}\n')
+            os.chmod(receipt, 0o600)
+            for index in range(256):
+                segment = segments / f"segment-{index:04d}.json"
+                segment.write_bytes(f"segment-{index}\n".encode("ascii"))
+                os.chmod(segment, 0o600)
+            before = harness._discovery_state_digest(project)
+            fault = harness.DiscoveryFault(
+                run_root=run,
+                project_root=project,
+                state_directory=run / "fault",
+                scenario="version_mismatch",
+            )
+            fault.inject()
+            self.assertEqual(receipt.read_bytes(), b'{"receipt":"preserved"}\n')
+            self.assertTrue((segments / "segment-0255.json").is_file())
+            self.assertTrue((codex / "bridge.json").is_file())
+            reset = fault.reset()
+            self.assertTrue(reset["exact_state_restored"])
+            self.assertEqual(before, harness._discovery_state_digest(project))
 
     def test_exact_three_discovery_fault_contracts_are_executable(self) -> None:
         for scenario in sorted(harness.DISCOVERY_SCENARIOS):
