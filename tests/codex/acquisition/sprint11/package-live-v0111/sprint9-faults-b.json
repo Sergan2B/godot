@@ -1,0 +1,58 @@
+{
+  "artifacts": {
+    "godot_sha256": "sha256:2166f3c6b7784cc7259a08a9636aafe89c8d6bebcbdc05c2b1d8d76933373dff",
+    "sidecar_sha256": "sha256:457f529d4783c9b4953642d98a2965a5e3052c55ba18a706ce8c0b944f9e012f"
+  },
+  "bridge_frame": {
+    "budget_usec": 2000,
+    "max_elapsed_usec": 0,
+    "over_budget_count": 0
+  },
+  "cleanup": true,
+  "elicitation_count": 0,
+  "fault_count": 4,
+  "faults": {
+    "corrupt_journal": {
+      "diagnostic_reads_available": true,
+      "native_actions": 0,
+      "old_transaction_fail_closed": true,
+      "quarantined": true,
+      "source_unchanged": true
+    },
+    "editor_crash_before_commit": {
+      "editor_exit_nonzero": true,
+      "new_editor_session": true,
+      "old_transaction_unavailable": true,
+      "pre_state_restored": true,
+      "source_unchanged": true,
+      "transaction_native_actions": 0
+    },
+    "editor_restart_after_commit": {
+      "new_editor_session": true,
+      "old_transaction_unavailable": true,
+      "persistent_undo_claimed": false,
+      "source_unchanged": true
+    },
+    "restart_after_bridge_response_before_journal_ack": {
+      "apply_dispatched_durable": true,
+      "automatic_replay": false,
+      "coverage": "packaged_live_fault_injection",
+      "source_unchanged": true,
+      "status_reconciled": "committed",
+      "transaction_native_actions": 1
+    }
+  },
+  "latency_ms": {},
+  "native_action_count": 0,
+  "negatives": {},
+  "operation_count": 0,
+  "operations": [],
+  "platform": "macos-arm64",
+  "protocol": "2025-11-25",
+  "redaction": true,
+  "schema_version": "s9-model-free-workflow/1.0",
+  "source_unchanged": true,
+  "status": "passed",
+  "tool_registry": 41,
+  "transaction_identity_unique": true
+}

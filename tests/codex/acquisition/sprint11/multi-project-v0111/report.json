@@ -1,0 +1,246 @@
+{
+  "artifacts": {
+    "godot_sha256": "sha256:2166f3c6b7784cc7259a08a9636aafe89c8d6bebcbdc05c2b1d8d76933373dff",
+    "sidecar_sha256": "sha256:457f529d4783c9b4953642d98a2965a5e3052c55ba18a706ce8c0b944f9e012f"
+  },
+  "assertions": {
+    "fault_matrix": [
+      {
+        "case_id": "copied_discovery",
+        "cleanup": true,
+        "no_cross_project_approval": true,
+        "no_cross_project_data": true,
+        "no_cross_project_mutation": true,
+        "no_cross_project_transaction": true,
+        "no_fallback": true,
+        "observed_code": "project_binding_mismatch",
+        "proof_source": "live_two_project_processes"
+      },
+      {
+        "case_id": "copied_token",
+        "cleanup": true,
+        "no_cross_project_approval": true,
+        "no_cross_project_data": true,
+        "no_cross_project_mutation": true,
+        "no_cross_project_transaction": true,
+        "no_fallback": true,
+        "observed_code": "bridge_authentication_failed",
+        "proof_source": "live_two_project_processes"
+      },
+      {
+        "case_id": "swapped_discovery",
+        "cleanup": true,
+        "no_cross_project_approval": true,
+        "no_cross_project_data": true,
+        "no_cross_project_mutation": true,
+        "no_cross_project_transaction": true,
+        "no_fallback": true,
+        "observed_code": "project_binding_mismatch",
+        "proof_source": "live_two_project_processes"
+      },
+      {
+        "case_id": "swapped_token",
+        "cleanup": true,
+        "no_cross_project_approval": true,
+        "no_cross_project_data": true,
+        "no_cross_project_mutation": true,
+        "no_cross_project_transaction": true,
+        "no_fallback": true,
+        "observed_code": "bridge_authentication_failed",
+        "proof_source": "live_two_project_processes"
+      },
+      {
+        "case_id": "swapped_config",
+        "cleanup": true,
+        "no_cross_project_approval": true,
+        "no_cross_project_data": true,
+        "no_cross_project_mutation": true,
+        "no_cross_project_transaction": true,
+        "no_fallback": true,
+        "observed_code": "project_binding_mismatch",
+        "proof_source": "public_runner_prelaunch_authority_plus_external_surface_attestation"
+      },
+      {
+        "case_id": "swapped_root",
+        "cleanup": true,
+        "no_cross_project_approval": true,
+        "no_cross_project_data": true,
+        "no_cross_project_mutation": true,
+        "no_cross_project_transaction": true,
+        "no_fallback": true,
+        "observed_code": "project_binding_mismatch",
+        "proof_source": "public_runner_prelaunch_authority_plus_external_surface_attestation"
+      },
+      {
+        "case_id": "swapped_cwd",
+        "cleanup": true,
+        "no_cross_project_approval": true,
+        "no_cross_project_data": true,
+        "no_cross_project_mutation": true,
+        "no_cross_project_transaction": true,
+        "no_fallback": true,
+        "observed_code": "project_binding_mismatch",
+        "proof_source": "public_runner_prelaunch_authority_plus_external_surface_attestation"
+      },
+      {
+        "case_id": "editor_restart",
+        "cleanup": true,
+        "no_cross_project_approval": true,
+        "no_cross_project_data": true,
+        "no_cross_project_mutation": true,
+        "no_cross_project_transaction": true,
+        "no_fallback": true,
+        "observed_code": "editor_reconnected",
+        "proof_source": "live_two_project_processes"
+      },
+      {
+        "case_id": "cache_rebuild",
+        "cleanup": true,
+        "no_cross_project_approval": true,
+        "no_cross_project_data": true,
+        "no_cross_project_mutation": true,
+        "no_cross_project_transaction": true,
+        "no_fallback": true,
+        "observed_code": "cache_rebuilt",
+        "proof_source": "live_two_project_processes"
+      },
+      {
+        "case_id": "package_mismatch",
+        "cleanup": true,
+        "no_cross_project_approval": true,
+        "no_cross_project_data": true,
+        "no_cross_project_mutation": true,
+        "no_cross_project_transaction": true,
+        "no_fallback": true,
+        "observed_code": "package_binding_mismatch",
+        "proof_source": "package_bound_prelaunch_authority_plus_external_surface_attestation"
+      },
+      {
+        "case_id": "version_mismatch",
+        "cleanup": true,
+        "no_cross_project_approval": true,
+        "no_cross_project_data": true,
+        "no_cross_project_mutation": true,
+        "no_cross_project_transaction": true,
+        "no_fallback": true,
+        "observed_code": "package_version_mismatch",
+        "proof_source": "package_bound_prelaunch_authority_plus_external_surface_attestation"
+      }
+    ],
+    "foreign_bindings": [
+      {
+        "error_code": "wrong_project",
+        "is_error": true,
+        "kind": "project_id",
+        "mutation": false
+      },
+      {
+        "error_code": "transaction_not_found",
+        "is_error": true,
+        "kind": "transaction_id",
+        "mutation": false
+      },
+      {
+        "error_code": "transaction_not_found",
+        "is_error": true,
+        "kind": "approval_binding",
+        "mutation": false
+      },
+      {
+        "error_code": "validation_report_not_found",
+        "is_error": true,
+        "kind": "validation_report_id",
+        "mutation": false
+      },
+      {
+        "error_code": "stale_runtime_session",
+        "is_error": true,
+        "kind": "runtime_session_id",
+        "mutation": false
+      },
+      {
+        "error_code": "stale_cursor",
+        "is_error": true,
+        "kind": "cursor",
+        "mutation": false
+      }
+    ],
+    "identity_distinct": {
+      "editor": true,
+      "project": true,
+      "runtime": true,
+      "transaction": true,
+      "validation_report": true
+    },
+    "parallel_apply": true,
+    "parallel_prepare": true,
+    "parallel_reads": true,
+    "parallel_runtime_start": true,
+    "separate_approvals": true,
+    "target_restart": {
+      "component": "sidecar",
+      "process_instance_changed": true,
+      "sibling_editor_preserved": true,
+      "sibling_process_preserved": true,
+      "sibling_readback_preserved": true,
+      "sibling_revisions_preserved": true,
+      "sibling_runtime_preserved": true,
+      "sibling_transaction_preserved": true,
+      "sibling_validation_report_preserved": true,
+      "target": "a",
+      "target_identity_preserved": true,
+      "target_reconnected": true
+    },
+    "targeted_undo": true,
+    "validation_readback": true
+  },
+  "bridge_rpc": "1.8",
+  "cleanup": {
+    "editor_a_stopped": true,
+    "editor_b_stopped": true,
+    "runtime_a_stopped": true,
+    "runtime_b_stopped": true,
+    "sidecar_a_stopped": true,
+    "sidecar_b_stopped": true
+  },
+  "platform": "macos-arm64",
+  "projects": {
+    "a": {
+      "action_count": 0,
+      "approval_provider": "mcp_action_only_form_v1",
+      "editor_identity_sha256": "sha256:4bd5ae8e2424b7706c427eb45ae2a53a55b470ef8f1b3effefa3e60284d42931",
+      "operation_seq": 0,
+      "project_identity_sha256": "sha256:74f100a17ecb07e3c31588268358cb3d529228848266f68c73f2660ed0191ad8",
+      "readback": true,
+      "runtime_identity_sha256": "sha256:fe28611334ff3bf300b4b43998745726690a80fac72d955f7ab5976428242c61",
+      "targeted_undo": true,
+      "transaction_identity_sha256": "sha256:e628d3744f53f17a6f81ba22ff5d06f967360bbca6fbad2da2488fec13873cc1",
+      "validation_outcome": "passed",
+      "validation_report_identity_sha256": "sha256:613a57764d15f72b8f6edb2974a8b4530d0226e72c1c55e735d60eaf4408fae1"
+    },
+    "b": {
+      "action_count": 0,
+      "approval_provider": "mcp_action_only_form_v1",
+      "editor_identity_sha256": "sha256:301f2c85fcea95d64160bcf6b289092b169ea6deb72b2425d574aaf65cc9a2c0",
+      "operation_seq": 0,
+      "project_identity_sha256": "sha256:ee6eba0b2fd06a14d92c90f65a951283e90bdd0c8e00e7d51c5eb74ec08883f6",
+      "readback": true,
+      "runtime_identity_sha256": "sha256:5185c72acab695a78a02a9f004758ddc7c637be81b79a504043de124dce4b880",
+      "targeted_undo": true,
+      "transaction_identity_sha256": "sha256:25267b3bb44481ccfb9ade6d7266d98f9f8d8f2be97d7f5e55ce9a7911a7f35b",
+      "validation_outcome": "passed",
+      "validation_report_identity_sha256": "sha256:714afd6d617a3c68aca783ee9c09dbbbab8b9ebf28405ef495fde438b1b8cf41"
+    }
+  },
+  "protocol": "2025-11-25",
+  "registry": {
+    "digest": "sha256:95b15688c07f089578c364856962b39d3367fc2ecd371bb3b1a6f7d8a39848c7",
+    "tools": 41
+  },
+  "schema_version": "s11-multi-project-live/1.0",
+  "source_integrity": {
+    "a": true,
+    "b": true
+  },
+  "status": "passed"
+}
