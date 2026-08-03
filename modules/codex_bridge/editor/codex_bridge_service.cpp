@@ -104,7 +104,7 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 			service->transport_worker.complete_request(p_command.request_id, result);
 		} break;
 		case MainThreadDispatcher::COMMAND_EDITOR_SNAPSHOT:
-			service->_complete_snapshot(p_command.request_id, p_command.params);
+			service->_complete_snapshot(p_command.request_id, p_command.params, p_command.deadline_usec);
 			break;
 		case MainThreadDispatcher::COMMAND_RESOURCE_SNAPSHOT: {
 			Dictionary error_data;
@@ -255,6 +255,7 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 		case MainThreadDispatcher::COMMAND_CANCEL: {
 			service->transaction_coordinator.cancel_waiter(p_command.request_id);
 			service->runtime_debugger_adapter->cancel(p_command.request_id);
+			service->_cancel_editor_snapshot(p_command.request_id);
 			const Array abandoned = service->resource_graph_adapter.cancel_snapshot(p_command.request_id);
 			if (!abandoned.is_empty()) {
 				service->transport_worker.abort_resource_snapshot(p_command.request_id, abandoned);
@@ -566,7 +567,7 @@ void CodexBridgeService::_flush_scene_change() {
 	_publish_event(native_operation ? "editor_operation" : (property.is_empty() ? "scene_changed" : "property_changed"), property, !native_operation, false);
 }
 
-void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Dictionary &p_params) {
+void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Dictionary &p_params, uint64_t p_deadline_usec) {
 	_refresh_open_scene_ids(true);
 	const Dictionary revisions = revision_clock.get_revision_vector();
 	const String protocol_version = p_params.get("_protocol_version", "1.1");
@@ -574,6 +575,7 @@ void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Diction
 	if (full_live_context) {
 		PendingEditorSnapshot pending;
 		pending.request_id = p_request_id;
+		pending.deadline_usec = p_deadline_usec;
 		pending.protocol_version = protocol_version;
 		pending.revisions = revisions;
 		pending.domains = p_params.get("domains", Array());
@@ -698,7 +700,29 @@ void CodexBridgeService::_complete_snapshot(uint64_t p_request_id, const Diction
 	transport_worker.complete_request(p_request_id, result, messages);
 }
 
+bool CodexBridgeService::_cancel_editor_snapshot(uint64_t p_request_id) {
+	for (List<PendingEditorSnapshot>::Element *element = pending_editor_snapshots.front(); element; element = element->next()) {
+		if (element->get().request_id == p_request_id) {
+			pending_editor_snapshots.erase(element);
+			return true;
+		}
+	}
+	return false;
+}
+
+void CodexBridgeService::_discard_expired_editor_snapshots(uint64_t p_now_usec) {
+	for (List<PendingEditorSnapshot>::Element *element = pending_editor_snapshots.front(); element;) {
+		List<PendingEditorSnapshot>::Element *next = element->next();
+		const uint64_t deadline_usec = element->get().deadline_usec;
+		if (deadline_usec > 0 && p_now_usec >= deadline_usec) {
+			pending_editor_snapshots.erase(element);
+		}
+		element = next;
+	}
+}
+
 void CodexBridgeService::_process_editor_snapshot() {
+	_discard_expired_editor_snapshots(OS::get_singleton()->get_ticks_usec());
 	if (pending_editor_snapshots.is_empty()) {
 		return;
 	}

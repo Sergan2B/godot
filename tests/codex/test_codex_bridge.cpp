@@ -36,6 +36,8 @@ TEST_FORCE_LINK(test_codex_bridge)
 
 #ifdef MODULE_CODEX_BRIDGE_ENABLED
 
+#define CODEX_BRIDGE_TESTS_ENABLED
+
 #include "core/crypto/crypto_core.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -56,6 +58,7 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "modules/codex_bridge/editor/bounded_variant_projector.h"
 #include "modules/codex_bridge/editor/bridge_frame_telemetry.h"
 #include "modules/codex_bridge/editor/bridge_revision_clock.h"
+#include "modules/codex_bridge/editor/codex_bridge_service.h"
 #include "modules/codex_bridge/editor/main_thread_dispatcher.h"
 #include "modules/codex_bridge/editor/resource_delta_journal.h"
 #include "modules/codex_bridge/editor/resource_graph_adapter.h"
@@ -72,6 +75,27 @@ TEST_FORCE_LINK(test_codex_bridge)
 #include "modules/codex_bridge/protocol/bridge_transaction_profile.h"
 #include "modules/codex_bridge/transport/bridge_runtime.h"
 #include "modules/codex_bridge/transport/bridge_transport_worker.h"
+
+struct CodexBridgeServiceTestAccess {
+	static void add_pending_editor_snapshot(CodexBridgeService &p_service, uint64_t p_request_id, uint64_t p_deadline_usec) {
+		CodexBridgeService::PendingEditorSnapshot pending;
+		pending.request_id = p_request_id;
+		pending.deadline_usec = p_deadline_usec;
+		p_service.pending_editor_snapshots.push_back(pending);
+	}
+
+	static bool cancel_editor_snapshot(CodexBridgeService &p_service, uint64_t p_request_id) {
+		return p_service._cancel_editor_snapshot(p_request_id);
+	}
+
+	static void discard_expired_editor_snapshots(CodexBridgeService &p_service, uint64_t p_now_usec) {
+		p_service._discard_expired_editor_snapshots(p_now_usec);
+	}
+
+	static int pending_editor_snapshot_count(const CodexBridgeService &p_service) {
+		return p_service.pending_editor_snapshots.size();
+	}
+};
 
 struct ResourceGraphAdapterTestAccess {
 	static bool can_append_diagnostics(uint64_t p_current_count, uint64_t p_additional_count) {
@@ -3184,6 +3208,25 @@ TEST_CASE("[CodexBridge] Dispatcher preserves an already queued terminal cancell
 	CHECK(stats.remaining == 0);
 	REQUIRE(context.handled_ids.size() == 1);
 	CHECK(context.handled_ids[0] == 42);
+}
+
+TEST_CASE("[CodexBridge] Editor snapshot cancellation and deadlines release pending work") {
+	CodexBridgeService *service = memnew(CodexBridgeService);
+	REQUIRE(service != nullptr);
+	CodexBridgeServiceTestAccess::add_pending_editor_snapshot(*service, 41, 100);
+	CodexBridgeServiceTestAccess::add_pending_editor_snapshot(*service, 42, 200);
+	CodexBridgeServiceTestAccess::add_pending_editor_snapshot(*service, 43, 0);
+	REQUIRE(CodexBridgeServiceTestAccess::pending_editor_snapshot_count(*service) == 3);
+
+	CHECK(CodexBridgeServiceTestAccess::cancel_editor_snapshot(*service, 42));
+	CHECK_FALSE(CodexBridgeServiceTestAccess::cancel_editor_snapshot(*service, 42));
+	CHECK(CodexBridgeServiceTestAccess::pending_editor_snapshot_count(*service) == 2);
+
+	CodexBridgeServiceTestAccess::discard_expired_editor_snapshots(*service, 100);
+	CHECK(CodexBridgeServiceTestAccess::pending_editor_snapshot_count(*service) == 1);
+	CHECK(CodexBridgeServiceTestAccess::cancel_editor_snapshot(*service, 43));
+	CHECK(CodexBridgeServiceTestAccess::pending_editor_snapshot_count(*service) == 0);
+	memdelete(service);
 }
 
 TEST_CASE("[CodexBridge][S9] Dispatcher preserves cancelled apply admission") {

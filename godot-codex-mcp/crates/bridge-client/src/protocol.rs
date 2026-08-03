@@ -23,6 +23,10 @@ use crate::Discovery;
 const MAX_FRAME_BYTES: usize = 1_048_576;
 #[cfg(any(unix, windows))]
 const IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+#[cfg(any(unix, windows))]
+const EDITOR_SNAPSHOT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+#[cfg(any(unix, windows))]
+const EDITOR_SNAPSHOT_RESPONSE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(31);
 #[cfg(any(unix, windows, test))]
 type HmacSha256 = Hmac<Sha256>;
 
@@ -820,10 +824,6 @@ impl Session {
         })
     }
 
-    pub(crate) async fn receive_non_sync_timed(&mut self) -> Result<Value, BridgeError> {
-        self.receive_non_sync_with_timeout(IO_TIMEOUT).await
-    }
-
     pub(crate) async fn receive_runtime_notification(&mut self) -> Result<Value, BridgeError> {
         loop {
             let message = self.stream.receive().await?;
@@ -1028,7 +1028,7 @@ impl Session {
             });
         }
         let response = self
-            .request(
+            .request_with_deadline_and_timeout(
                 "editor.snapshot.get",
                 if has_live_editor_profile(&self.selected_protocol_version) {
                     json!({"domains": [
@@ -1042,6 +1042,8 @@ impl Session {
                 } else {
                     json!({"domains": ["editor_context", "editor_inspector"]})
                 },
+                EDITOR_SNAPSHOT_DEADLINE,
+                EDITOR_SNAPSHOT_RESPONSE_TIMEOUT,
             )
             .await?;
         let result = response
@@ -1054,7 +1056,9 @@ impl Session {
                 BridgeError::Invalid("snapshot revisions are missing".to_owned())
             })?)?;
 
-        let begin = self.receive_non_sync_timed().await?;
+        let begin = self
+            .receive_non_sync_with_timeout(EDITOR_SNAPSHOT_RESPONSE_TIMEOUT)
+            .await?;
         if begin.get("kind").and_then(Value::as_str) != Some("notification")
             || begin.get("method").and_then(Value::as_str) != Some("snapshot.begin")
             || begin.pointer("/params/snapshot_id").and_then(Value::as_str)
@@ -1088,7 +1092,9 @@ impl Session {
         })?;
 
         for expected_index in 0..chunk_count {
-            let message = self.receive_non_sync_timed().await?;
+            let message = self
+                .receive_non_sync_with_timeout(EDITOR_SNAPSHOT_RESPONSE_TIMEOUT)
+                .await?;
             if message.get("kind").and_then(Value::as_str) != Some("chunk") {
                 return Err(BridgeError::Invalid("expected snapshot chunk".to_owned()));
             }
@@ -1110,7 +1116,9 @@ impl Session {
             self.send_ack(&snapshot_id, None, expected_index).await?;
         }
 
-        let end = self.receive_non_sync_timed().await?;
+        let end = self
+            .receive_non_sync_with_timeout(EDITOR_SNAPSHOT_RESPONSE_TIMEOUT)
+            .await?;
         if end.get("kind").and_then(Value::as_str) != Some("notification")
             || end.get("method").and_then(Value::as_str) != Some("snapshot.end")
         {

@@ -40,7 +40,7 @@ use godot_codex_index_store::{
 };
 use godot_codex_product::{
     CONNECTION_STATUS_MAX_BYTES, ComponentCondition, ConnectionHealth, ConnectionStatus,
-    ProductStartupObservation,
+    DiagnosticCode, ProductStartupObservation,
 };
 use godot_codex_resource_indexer::{
     ResourceIndexReadError, ResourceIndexReader, ResourceIndexStaleReason, ResourceIndexStatus,
@@ -649,6 +649,15 @@ enum RuntimeControl {
     Continue,
 }
 
+fn guarded_runtime_lifecycle_for_tool(tool_name: &str) -> Option<RuntimeControl> {
+    match tool_name {
+        "godot_stop_project" => Some(RuntimeControl::Stop),
+        "godot_pause_project" => Some(RuntimeControl::Pause),
+        "godot_continue_project" => Some(RuntimeControl::Continue),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Debug)]
 struct CompoundIndexBaseline {
     generation_id: String,
@@ -716,6 +725,11 @@ impl output_schema::ToolAvailabilityGuard for GodotMcpServer {
         {
             return self.unavailable_error(AvailabilityDomain::Editor);
         }
+        if let Some(operation) = guarded_runtime_lifecycle_for_tool(tool_name)
+            && self.runtime_lifecycle_reauthentication_allowed(operation)
+        {
+            return None;
+        }
         // Diagnostics is the one mixed editor/runtime tool. During a stale
         // semantic replica window the router must admit the request so the
         // deserialized scope can apply its exact domain guard: editor reads
@@ -735,6 +749,71 @@ impl output_schema::ToolAvailabilityGuard for GodotMcpServer {
 }
 
 impl GodotMcpServer {
+    fn runtime_lifecycle_reauthentication_allowed(&self, operation: RuntimeControl) -> bool {
+        if matches!(operation, RuntimeControl::Run(_)) {
+            return false;
+        }
+        let health = self.connection_status();
+        if has_tool_domain_authority(&health, AvailabilityDomain::Runtime) {
+            return true;
+        }
+        if !matches!(
+            health.status,
+            ConnectionStatus::Connecting
+                | ConnectionStatus::Syncing
+                | ConnectionStatus::OfflineEmpty
+        ) || !matches!(
+            health.diagnostic.code,
+            DiagnosticCode::BridgeDiscoveryMissing
+                | DiagnosticCode::BridgeDiscoveryStale
+                | DiagnosticCode::BridgeUnreachable
+                | DiagnosticCode::BridgeConnecting
+                | DiagnosticCode::BridgeSyncing
+                | DiagnosticCode::EditorOffline
+                | DiagnosticCode::StaticCacheUnavailable
+                | DiagnosticCode::StaticCacheStale
+                | DiagnosticCode::StaticCacheRebuilding
+        ) {
+            return false;
+        }
+
+        let summary = self.runtime_overlay.summary();
+        let has_current_session = summary.get("status").and_then(Value::as_str) == Some("ready")
+            && summary.get("freshness").and_then(Value::as_str) == Some("current")
+            && summary
+                .get("runtime_session_id")
+                .and_then(Value::as_str)
+                .is_some_and(|session_id| session_id.starts_with("runtime:"))
+            && summary
+                .get("runtime_event_seq")
+                .and_then(Value::as_u64)
+                .is_some_and(|event_seq| event_seq > 0)
+            && summary
+                .get("project_id")
+                .and_then(Value::as_str)
+                .is_some_and(|project_id| !project_id.is_empty())
+            && summary
+                .get("editor_session_id")
+                .and_then(Value::as_str)
+                .is_some_and(|editor_session_id| !editor_session_id.is_empty());
+        if !has_current_session {
+            return false;
+        }
+
+        match (operation, summary.get("state").and_then(Value::as_str)) {
+            (RuntimeControl::Stop, Some("starting" | "running" | "paused"))
+            | (RuntimeControl::Pause, Some("running"))
+            | (RuntimeControl::Continue, Some("paused")) => true,
+            (
+                RuntimeControl::Run(_)
+                | RuntimeControl::Stop
+                | RuntimeControl::Pause
+                | RuntimeControl::Continue,
+                _,
+            ) => false,
+        }
+    }
+
     fn offline_cache_active(&self) -> bool {
         matches!(
             (
@@ -2432,7 +2511,9 @@ impl GodotMcpServer {
         operation: RuntimeControl,
         guard: Option<&RuntimeGuardInput>,
     ) -> CallToolResult {
-        if let Some(error) = self.unavailable_error(AvailabilityDomain::Runtime) {
+        if let Some(error) = self.unavailable_error(AvailabilityDomain::Runtime)
+            && !self.runtime_lifecycle_reauthentication_allowed(operation)
+        {
             return error;
         }
         let mut client = match self.runtime_overlay.connect().await {
@@ -9970,6 +10051,80 @@ mod tests {
             )
             .is_none(),
             "the mixed-scope router guard must defer to the diagnostics scope"
+        );
+    }
+
+    #[test]
+    fn current_runtime_session_allows_only_guarded_lifecycle_reauthentication() {
+        let server = unavailable_server(None);
+        let state = |runtime_state| godot_codex_bridge_client::RuntimeStateResult {
+            schema_version: "runtime-state/1.0".to_owned(),
+            project_id: "project:fixture".to_owned(),
+            editor_session_id: "editor:fixture".to_owned(),
+            runtime_session_id: "runtime:0123456789abcdef0123456789abcdef".to_owned(),
+            runtime_event_seq: 7,
+            state: runtime_state,
+            origin: godot_codex_bridge_client::RuntimeOrigin::Mcp,
+            target: RuntimeTarget::Project,
+            scene_path: None,
+        };
+
+        server
+            .runtime_overlay
+            .record_state(&state(godot_codex_bridge_client::RuntimeState::Running));
+        assert!(server.runtime_lifecycle_reauthentication_allowed(RuntimeControl::Stop));
+        assert!(server.runtime_lifecycle_reauthentication_allowed(RuntimeControl::Pause));
+        assert!(
+            output_schema::ToolAvailabilityGuard::unavailable_tool_result(
+                &server,
+                "godot_stop_project",
+            )
+            .is_none()
+        );
+        assert!(
+            output_schema::ToolAvailabilityGuard::unavailable_tool_result(
+                &server,
+                "godot_pause_project",
+            )
+            .is_none()
+        );
+        assert!(
+            output_schema::ToolAvailabilityGuard::unavailable_tool_result(
+                &server,
+                "godot_run_project",
+            )
+            .is_some(),
+            "a stale semantic replica must never admit a new runtime launch"
+        );
+        assert!(
+            output_schema::ToolAvailabilityGuard::unavailable_tool_result(
+                &server,
+                "godot_get_runtime_tree",
+            )
+            .is_some(),
+            "runtime reads still require normal current authority"
+        );
+
+        server
+            .runtime_overlay
+            .record_state(&state(godot_codex_bridge_client::RuntimeState::Paused));
+        assert!(server.runtime_lifecycle_reauthentication_allowed(RuntimeControl::Continue));
+        assert!(
+            output_schema::ToolAvailabilityGuard::unavailable_tool_result(
+                &server,
+                "godot_continue_project",
+            )
+            .is_none()
+        );
+
+        server.runtime_overlay.invalidate("test_stale_runtime");
+        assert!(!server.runtime_lifecycle_reauthentication_allowed(RuntimeControl::Stop));
+        assert!(
+            output_schema::ToolAvailabilityGuard::unavailable_tool_result(
+                &server,
+                "godot_stop_project",
+            )
+            .is_some()
         );
     }
 

@@ -54,6 +54,7 @@
 
 class CodexBridgeService : public EditorPlugin {
 	GDCLASS(CodexBridgeService, EditorPlugin);
+	friend struct CodexBridgeServiceTestAccess;
 
 public:
 	enum State {
@@ -106,6 +107,7 @@ private:
 			STAGE_END,
 		};
 		uint64_t request_id = 0;
+		uint64_t deadline_usec = 0;
 		String protocol_version = "1.5";
 		String snapshot_id;
 		Dictionary revisions;
@@ -144,7 +146,9 @@ private:
 	void _on_resources_reload(const PackedStringArray &p_paths);
 	void _on_project_settings_changed();
 	void _flush_scene_change();
-	void _complete_snapshot(uint64_t p_request_id, const Dictionary &p_params);
+	void _complete_snapshot(uint64_t p_request_id, const Dictionary &p_params, uint64_t p_deadline_usec);
+	bool _cancel_editor_snapshot(uint64_t p_request_id);
+	void _discard_expired_editor_snapshots(uint64_t p_now_usec);
 	void _process_editor_snapshot();
 	void _complete_resource_delta(uint64_t p_request_id, uint64_t p_after_resource_revision);
 	void _complete_scene_delta(uint64_t p_request_id, uint64_t p_after_scene_graph_revision);
