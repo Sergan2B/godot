@@ -22,6 +22,12 @@ struct ShutdownSignals {
     terminate: tokio::signal::unix::Signal,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShutdownSignal {
+    Interrupt,
+    Terminate,
+}
+
 #[cfg(unix)]
 impl ShutdownSignals {
     fn install() -> std::io::Result<Self> {
@@ -31,10 +37,10 @@ impl ShutdownSignals {
         })
     }
 
-    async fn receive(&mut self) {
+    async fn receive(&mut self) -> ShutdownSignal {
         tokio::select! {
-            _ = self.interrupt.recv() => {}
-            _ = self.terminate.recv() => {}
+            _ = self.interrupt.recv() => ShutdownSignal::Interrupt,
+            _ = self.terminate.recv() => ShutdownSignal::Terminate,
         }
     }
 }
@@ -351,18 +357,18 @@ async fn serve_mcp(
     let cancellation_token = server.cancellation_token();
     let mut waiting = Box::pin(server.waiting());
     #[cfg(unix)]
-    let (result, shutdown_requested) = tokio::select! {
-        result = &mut waiting => (Some(result), false),
-        () = shutdown_signals.receive() => {
+    let (result, shutdown_signal) = tokio::select! {
+        result = &mut waiting => (Some(result), None),
+        signal = shutdown_signals.receive() => {
             cancellation_token.cancel();
             let result = tokio::time::timeout(SERVICE_SHUTDOWN_TIMEOUT, &mut waiting)
                 .await
                 .ok();
-            (result, true)
+            (result, Some(signal))
         }
     };
     #[cfg(not(unix))]
-    let (result, shutdown_requested) = (Some(waiting.await), false);
+    let (result, shutdown_signal) = (Some(waiting.await), None);
 
     let Some(result) = result else {
         // The service task may still own the tapped transport. Leaving the
@@ -373,19 +379,27 @@ async fn serve_mcp(
         )
         .into());
     };
-    let result = classify_service_exit(result, shutdown_requested);
-    let outcome = service_finalize_outcome(result.is_ok(), shutdown_requested);
+    let result = classify_service_exit(result, shutdown_signal.is_some());
+    let outcome = service_finalize_outcome(result.is_ok(), shutdown_signal);
     let finalized = capture.map(|capture| capture.finalize(outcome)).transpose();
     result?;
     finalized?;
     Ok(())
 }
 
-fn service_finalize_outcome(service_succeeded: bool, shutdown_requested: bool) -> FinalizeOutcome {
-    match (service_succeeded, shutdown_requested) {
-        (true, false) => FinalizeOutcome::Completed,
-        (true, true) => FinalizeOutcome::Cancelled,
-        (false, _) => FinalizeOutcome::Failed,
+fn service_finalize_outcome(
+    service_succeeded: bool,
+    shutdown_signal: Option<ShutdownSignal>,
+) -> FinalizeOutcome {
+    if !service_succeeded {
+        return FinalizeOutcome::Failed;
+    }
+    match shutdown_signal {
+        // Current Codex App, CLI, and IDE hosts terminate their managed MCP
+        // subprocess with SIGTERM during a normal host exit. That is the
+        // signal-backed equivalent of closing stdio, not an operator cancel.
+        None | Some(ShutdownSignal::Terminate) => FinalizeOutcome::Completed,
+        Some(ShutdownSignal::Interrupt) => FinalizeOutcome::Cancelled,
     }
 }
 
@@ -548,19 +562,23 @@ mod tests {
         assert!(classify_service_exit(Ok(QuitReason::Cancelled), true).is_ok());
         assert!(classify_service_exit(Ok(QuitReason::Cancelled), false).is_err());
         assert_eq!(
-            service_finalize_outcome(true, false),
+            service_finalize_outcome(true, None),
             FinalizeOutcome::Completed
         );
         assert_eq!(
-            service_finalize_outcome(true, true),
+            service_finalize_outcome(true, Some(ShutdownSignal::Terminate)),
+            FinalizeOutcome::Completed
+        );
+        assert_eq!(
+            service_finalize_outcome(true, Some(ShutdownSignal::Interrupt)),
             FinalizeOutcome::Cancelled
         );
         assert_eq!(
-            service_finalize_outcome(false, false),
+            service_finalize_outcome(false, None),
             FinalizeOutcome::Failed
         );
         assert_eq!(
-            service_finalize_outcome(false, true),
+            service_finalize_outcome(false, Some(ShutdownSignal::Terminate)),
             FinalizeOutcome::Failed
         );
     }

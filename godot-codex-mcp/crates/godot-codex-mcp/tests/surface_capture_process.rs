@@ -285,6 +285,28 @@ fn production_sidecar_capture_is_absent_by_default_one_shot_and_crash_safe() {
     assert_journal_outcome(
         &fs::read(&terminated_journal_path).unwrap(),
         &terminated,
+        "completed",
+    );
+
+    let interrupted = fixture.arm_direct(&first);
+    let interrupted_run = interrupted["run_id"].as_str().unwrap();
+    let interrupted_journal_path =
+        run_directory(fixture.data_root.path(), interrupted_run).join("journal.json");
+    {
+        let mut captured =
+            McpProcess::start(fixture.project.path(), fixture.data_root.path(), false);
+        captured.initialize();
+        wait_for_lease_state(&store, interrupted_run, LeaseState::Claimed);
+        let tools = captured.request("tools/list", json!({}));
+        assert!(tools.pointer("/result/tools").is_some());
+        let status = captured.call_tool("godot_get_connection_status", json!({}));
+        assert!(status.get("status").and_then(Value::as_str).is_some());
+        captured.interrupt_for_test();
+    }
+    wait_for_lease_state(&store, interrupted_run, LeaseState::Finalized);
+    assert_journal_outcome(
+        &fs::read(&interrupted_journal_path).unwrap(),
+        &interrupted,
         "cancelled",
     );
 
@@ -798,12 +820,16 @@ impl McpProcess {
     }
 
     fn terminate_for_test(mut self) {
+        self.signal_for_test(rustix::process::Signal::TERM, "SIGTERM");
+    }
+
+    fn interrupt_for_test(mut self) {
+        self.signal_for_test(rustix::process::Signal::INT, "SIGINT");
+    }
+
+    fn signal_for_test(&mut self, signal: rustix::process::Signal, label: &str) {
         let child = self.child.as_mut().unwrap();
-        rustix::process::kill_process(
-            rustix::process::Pid::from_child(child),
-            rustix::process::Signal::TERM,
-        )
-        .unwrap();
+        rustix::process::kill_process(rustix::process::Pid::from_child(child), signal).unwrap();
         let started = Instant::now();
         let (status, timed_out) = loop {
             if let Some(status) = child.try_wait().unwrap() {
@@ -821,12 +847,12 @@ impl McpProcess {
         let stderr = self.stderr_thread.take().unwrap().join().unwrap();
         assert!(
             !timed_out,
-            "production sidecar did not exit after SIGTERM: {}",
+            "production sidecar did not exit after {label}: {}",
             String::from_utf8_lossy(&stderr)
         );
         assert!(
             status.success(),
-            "SIGTERM shutdown failed: {}",
+            "{label} shutdown failed: {}",
             String::from_utf8_lossy(&stderr)
         );
     }

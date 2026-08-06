@@ -759,9 +759,11 @@ closed per-tool allowlist. Arm publication is atomic and exact retries are
 idempotent: a lost successful response can recover the same `run_id`, while a
 different active, claimed, or expired same-project lease returns a typed
 non-authorizing report and blocks another arm. A normal transport shutdown
-finalizes exactly one `completed` artifact. SIGINT/SIGTERM finalizes as
-`cancelled`; a crash remains visibly claimed. Neither can qualify or be
-reused. `doctor` and `version` never claim a lease.
+finalizes exactly one `completed` artifact. The official hosts' managed-process
+SIGTERM on a normal host exit is treated as the signal-backed equivalent of
+transport completion. SIGINT finalizes as `cancelled`; a crash remains visibly
+claimed. Neither a cancelled nor a crashed run can qualify or be reused.
+`doctor` and `version` never claim a lease.
 
 The repository helper independently validates that private artifact and
 derives `s11-recorder-journal/1.1` plus a nonqualifying pending trace. The

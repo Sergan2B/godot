@@ -595,6 +595,11 @@ archiving a task does not prove MCP shutdown:
 - IDE: choose **Code → Quit Visual Studio Code** (`Cmd+Q`) and wait for the
   extension host and VS Code to exit; do not reload or force-quit.
 
+Current official hosts may implement that normal exit by sending SIGTERM to
+their managed MCP subprocess. The package records this host-owned shutdown as
+`completed`; an explicit SIGINT remains `cancelled`, and a crash remains
+claimed.
+
 From a separate terminal, query the saved run exactly once:
 
 ```sh
