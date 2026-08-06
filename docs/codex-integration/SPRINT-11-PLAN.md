@@ -137,11 +137,11 @@ IDE extension.
   Cursor and other compatible editors may be recorded as `not_tested`, but
   they do not substitute for the required VS Code gate.
 - Qualification candidates refreshed on 2026-08-01 are Codex desktop app
-  `com.openai.codex` `26.727.51351` build `6119` (team `2DC432GLL2`),
-  its bundled Codex CLI `0.146.0-alpha.9.2`
-  (`sha256:d96ae1ca1ff6fc8587842fa04c92d3ee4d31651a811c2f89b65fcfd9c28473e2`),
-  VS Code Stable `1.130.0` commit
-  `1b6a188127eeaf9194f945eb6eb89a657e93c54c`, and official extension
+  `com.openai.codex` `26.730.61639` build `6234` (team `2DC432GLL2`),
+  its bundled Codex CLI `0.147.0-alpha.1.2`
+  (`sha256:9f6748b4ab10ffc92c28b9ccedae89e61a302bbc011df7d276ee38f55906e481`),
+  VS Code Stable `1.131.0` commit
+  `e4c7e7b1d6d060162f4aa7f8225271b67ce1df75`, and official extension
   `openai.chatgpt@26.721.41059`. The extension embeds Codex CLI
   `0.146.0-alpha.3.1` at `bin/macos-aarch64/codex`
   (`sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4`).

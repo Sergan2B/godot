@@ -2496,30 +2496,30 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         "host_name": "codex-desktop",
         "host_identifier": "com.openai.codex",
         "host_artifact_kind": "macos_bundle_executable",
-        "host_version": "26.727.51351",
-        "host_build": "6119",
+        "host_version": "26.730.61639",
+        "host_build": "6234",
         "host_commit": None,
         "host_artifact_sha256": (
-            "sha256:e184ce460ed0565166e295507ad9ae6d7"
-            "003fa8bd5d2e2f2f9ee8b5602feb2d4"
+            "sha256:52a495842624d8dc9d2236d3e8411bb9"
+            "3c0be17039835b1691adb46c5c81cadb"
         ),
         "host_metadata_sha256": None,
         "host_code_signature": {
             "mode": "deep_strict",
             "identifier": "com.openai.codex",
             "team_id": "2DC432GLL2",
-            "cdhash": "9f7d645ec76f3543f788f58b1039b9069201fca2",
+            "cdhash": "31988e4baf66f1817b3445fa47809ea75b018963",
         },
-        "client_version": "0.146.0-alpha.9.2",
+        "client_version": "0.147.0-alpha.1.2",
         "client_artifact_sha256": (
-            "sha256:d96ae1ca1ff6fc8587842fa04c92d3ee"
-            "4d31651a811c2f89b65fcfd9c28473e2"
+            "sha256:9f6748b4ab10ffc92c28b9ccedae89e6"
+            "1a302bbc011df7d276ee38f55906e481"
         ),
         "client_code_signature": {
             "mode": "strict",
             "identifier": "codex",
             "team_id": "2DC432GLL2",
-            "cdhash": "dce9780d114a670768798d0dc0de4a96b422c309",
+            "cdhash": "e0b83937bfb53f8058364344725d47d8e159da99",
         },
         "ide_host_version": None,
         "ide_shell_identifier": None,
@@ -2531,30 +2531,30 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
         "host_name": "codex-cli",
         "host_identifier": "codex-cli",
         "host_artifact_kind": "standalone_executable",
-        "host_version": "0.146.0-alpha.9.2",
-        "host_build": "0.146.0-alpha.9.2",
+        "host_version": "0.147.0-alpha.1.2",
+        "host_build": "0.147.0-alpha.1.2",
         "host_commit": None,
         "host_artifact_sha256": (
-            "sha256:d96ae1ca1ff6fc8587842fa04c92d3ee"
-            "4d31651a811c2f89b65fcfd9c28473e2"
+            "sha256:9f6748b4ab10ffc92c28b9ccedae89e6"
+            "1a302bbc011df7d276ee38f55906e481"
         ),
         "host_metadata_sha256": None,
         "host_code_signature": {
             "mode": "strict",
             "identifier": "codex",
             "team_id": "2DC432GLL2",
-            "cdhash": "dce9780d114a670768798d0dc0de4a96b422c309",
+            "cdhash": "e0b83937bfb53f8058364344725d47d8e159da99",
         },
-        "client_version": "0.146.0-alpha.9.2",
+        "client_version": "0.147.0-alpha.1.2",
         "client_artifact_sha256": (
-            "sha256:d96ae1ca1ff6fc8587842fa04c92d3ee"
-            "4d31651a811c2f89b65fcfd9c28473e2"
+            "sha256:9f6748b4ab10ffc92c28b9ccedae89e6"
+            "1a302bbc011df7d276ee38f55906e481"
         ),
         "client_code_signature": {
             "mode": "strict",
             "identifier": "codex",
             "team_id": "2DC432GLL2",
-            "cdhash": "dce9780d114a670768798d0dc0de4a96b422c309",
+            "cdhash": "e0b83937bfb53f8058364344725d47d8e159da99",
         },
         "ide_host_version": None,
         "ide_shell_identifier": None,
@@ -2589,18 +2589,18 @@ EXACT_HOST_COORDINATES: Mapping[str, Mapping[str, Any]] = {
             "team_id": "2DC432GLL2",
             "cdhash": "34fe2ba0b5f1b88e294c8dca8caa8675806e05fa",
         },
-        "ide_host_version": "1.130.0",
+        "ide_host_version": "1.131.0",
         "ide_shell_identifier": "com.microsoft.VSCode",
         "ide_shell_artifact_sha256": (
-            "sha256:e1e3268741a2658a22b31e82b58a42f"
-            "a48be73f64fc2de006be48a2ba136b930"
+            "sha256:9a8597fb750505964ceffee9f42dc6731"
+            "421ae6f76fdcc2511ef39efa6f1504b"
         ),
         "ide_shell_team_id": "UBF8T346G9",
         "ide_shell_code_signature": {
             "mode": "deep_strict",
             "identifier": "com.microsoft.VSCode",
             "team_id": "UBF8T346G9",
-            "cdhash": "a3881eda3a41e747728f32973acd265a08ee0d5a",
+            "cdhash": "c03ce0ccba9092d6338fe2569cdb0d15147e5cd1",
         },
     },
 }
@@ -2653,7 +2653,7 @@ def validate_host_coordinate_profile(
         profile["schema_version"]
         == "godot-codex-host-coordinate-profile/1.0"
         and profile["profile_id"]
-        == "external-codex-beta-macos-arm64-hosts-v10",
+        == "external-codex-beta-macos-arm64-hosts-v11",
         "host coordinate profile identity differs",
     )
     matrix_binding = _exact_fields(
