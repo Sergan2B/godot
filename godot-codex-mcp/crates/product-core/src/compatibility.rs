@@ -1220,20 +1220,20 @@ mod tests {
         let expected = [
             (
                 SurfaceKind::App,
-                "26.727.51351",
+                "26.730.61639",
                 None,
                 SurfaceQualification::Candidate,
             ),
             (
                 SurfaceKind::Cli,
-                "0.146.0-alpha.9.2",
+                "0.147.0-alpha.1.2",
                 None,
                 SurfaceQualification::Candidate,
             ),
             (
                 SurfaceKind::Ide,
                 "26.721.41059",
-                Some("1.130.0"),
+                Some("1.131.0"),
                 SurfaceQualification::Candidate,
             ),
             (
