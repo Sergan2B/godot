@@ -102,12 +102,12 @@ any Markdown/JSON drift.
 | Extension Codex CLI | `bin/macos-aarch64/codex`, `0.146.0-alpha.3.1`, `sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4`, team `2DC432GLL2` | candidate embedded client |
 | MCP protocol | `2025-11-25`; form-compatible floor `2025-06-18` | candidate |
 | Bridge | RPC `1.8` exact profile | candidate |
-| Godot × Codex package | workspace `0.1.14` | same-project lease contention, long project-root UDS transport, accepted-socket subprocess inheritance, full-beta doctor registry probing, current host-measurement guidance, receipt-1.1 config fault harness with populated-cache-safe Bridge isolation, isolated-install package-owned guidance, App-safe fail-closed project-bound MCP prelaunch, bounded editor snapshots, and runtime lifecycle recovery fixed; independently installable host-surface bundle added |
+| Godot × Codex package | workspace `0.1.15` | same-project lease contention, long project-root UDS transport, accepted-socket subprocess inheritance, full-beta doctor registry probing, current host-measurement guidance, receipt-1.1 config fault harness with populated-cache-safe Bridge isolation, isolated-install package-owned guidance, App-safe fail-closed project-bound MCP prelaunch, bounded editor snapshots, runtime lifecycle recovery, and normal managed-host shutdown capture fixed; independently installable host-surface bundle added |
 | Godot Bridge prerequisite | `bin/godot.macos.editor.dev.arm64`, `4.8.dev.codex.2a9eaaf67`, `sha256:07589f1bb4e961fe74c764534d5268f39633ed94055d060898b7ac8d28936439` | exact local candidate; detached package binding pending |
 
 ### 3.1 Independent host-surface compatibility updates
 
-Package `0.1.14` keeps package, Godot, protocol, schema, registry, Bridge, and
+Package `0.1.15` keeps package, Godot, protocol, schema, registry, Bridge, and
 Cursor coordinates embedded and immutable. A separately released
 `godot-codex-surface-compatibility-bundle/1.0` may replace only the complete
 App/CLI/IDE surface snapshot for that exact embedded matrix. This permits a

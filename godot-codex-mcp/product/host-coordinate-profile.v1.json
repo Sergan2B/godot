@@ -3,7 +3,7 @@
   "profile_id": "external-codex-beta-macos-arm64-hosts-v11",
   "compatibility_matrix": {
     "path": "godot-codex-mcp/product/compatibility-matrix.v1.json",
-    "sha256": "sha256:e73e19b2c4f230ddd9d1064b92b3afc00523dc8c1884d1d19c58604544be51f3"
+    "sha256": "sha256:e698911f29e2a7e59c0605dbab61ab3df24498fb15925f86e2342a5a72870223"
   },
   "server_instructions": {
     "path": "godot-codex-mcp/product/server-instructions.v1.txt",
