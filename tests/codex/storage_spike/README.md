@@ -6,8 +6,7 @@ without adding either physical backend to the production sidecar dependency grap
 From the repository root, run the full decision profile:
 
 ```bash
-cargo +1.94.1 run --locked --release \
-  --manifest-path tests/codex/storage_spike/Cargo.toml -- \
+python3 tests/codex/sprint3_storage_spike.py \
   run --backend all --dataset all --repo-root "$PWD" \
   --output tests/codex/evidence/sprint-3-storage-spike.json
 ```
@@ -30,8 +29,7 @@ two required Sprint 3 target hosts. It accepts only clean source-identical decis
 profiles. Linux remains outside the Sprint 3 acceptance matrix.
 
 ```bash
-cargo +1.94.1 run --locked --release \
-  --manifest-path tests/codex/storage_spike/Cargo.toml -- \
+python3 tests/codex/sprint3_storage_spike.py \
   merge tests/codex/evidence/sprint-3-storage-spike-cross-platform.json \
   tests/codex/evidence/platform/sprint-3-storage-spike-macos.json \
   tests/codex/evidence/platform/sprint-3-storage-spike-windows.json
@@ -41,8 +39,7 @@ Before the final acceptance merge, validate the aggregate with the same pinned R
 implementation that produced its scores and confidence intervals:
 
 ```bash
-cargo +1.94.1 run --quiet --locked --release \
-  --manifest-path tests/codex/storage_spike/Cargo.toml -- \
+python3 tests/codex/sprint3_storage_spike.py \
   validate tests/codex/evidence/sprint-3-storage-spike-cross-platform.json
 ```
 

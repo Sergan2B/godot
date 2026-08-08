@@ -191,8 +191,7 @@ trap 'exit 143' TERM
 
 cargo +1.94.1 test --locked --workspace --all-targets \
   --manifest-path godot-codex-mcp/Cargo.toml
-cargo +1.94.1 run --locked --release \
-  --manifest-path tests/codex/storage_spike/Cargo.toml -- \
+python3 tests/codex/sprint3_storage_spike.py \
   run --backend all --dataset all --repo-root "$REPOSITORY" --output "$WORK_OUTPUT"
 
 REPORT_PATH="$WORK_OUTPUT" python3 - <<'PY'

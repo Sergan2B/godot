@@ -223,15 +223,12 @@ readonly ACCEPTANCE_B="$WORK/b/sprint-3-acceptance.json"
 python3 tests/codex/sprint3_acceptance.py validate-live "$MACOS_LIVE" >/dev/null
 python3 tests/codex/sprint3_acceptance.py validate-live "$WINDOWS_LIVE" >/dev/null
 
-cargo +1.94.1 run --quiet --locked --release \
-  --manifest-path tests/codex/storage_spike/Cargo.toml -- \
+python3 tests/codex/sprint3_storage_spike.py \
   merge "$STORAGE_A" "$MACOS_STORAGE" "$WINDOWS_STORAGE"
-cargo +1.94.1 run --quiet --locked --release \
-  --manifest-path tests/codex/storage_spike/Cargo.toml -- \
+python3 tests/codex/sprint3_storage_spike.py \
   merge "$STORAGE_B" "$WINDOWS_STORAGE" "$MACOS_STORAGE"
 cmp "$STORAGE_A" "$STORAGE_B"
-cargo +1.94.1 run --quiet --locked --release \
-  --manifest-path tests/codex/storage_spike/Cargo.toml -- validate "$STORAGE_A"
+python3 tests/codex/sprint3_storage_spike.py validate "$STORAGE_A"
 python3 tests/codex/sprint3_acceptance.py validate-storage "$STORAGE_A" >/dev/null
 
 python3 tests/codex/sprint3_acceptance.py merge \

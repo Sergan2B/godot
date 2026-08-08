@@ -182,6 +182,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
+    def test_supported_entry_points_use_version_resilient_launcher(self) -> None:
+        for path in (
+            launcher.AGGREGATE_RUNNER,
+            launcher.LINUX_RUNNER,
+            launcher.SPIKE_README,
+        ):
+            with self.subTest(path=path):
+                text = path.read_text(encoding="utf-8")
+                self.assertIn(
+                    "python3 tests/codex/sprint3_storage_spike.py",
+                    text,
+                )
+                self.assertNotIn(
+                    "--manifest-path tests/codex/storage_spike/Cargo.toml",
+                    text,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
