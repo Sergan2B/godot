@@ -2653,7 +2653,7 @@ def validate_host_coordinate_profile(
         profile["schema_version"]
         == "godot-codex-host-coordinate-profile/1.0"
         and profile["profile_id"]
-        == "external-codex-beta-macos-arm64-hosts-v13",
+        == "external-codex-beta-macos-arm64-hosts-v14",
         "host coordinate profile identity differs",
     )
     matrix_binding = _exact_fields(
