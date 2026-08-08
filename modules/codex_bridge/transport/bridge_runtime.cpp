@@ -83,16 +83,6 @@ static Error remove_path_no_follow(const String &p_path) {
 	return FAILED;
 }
 
-static bool is_process_alive(int64_t p_pid) {
-	if (p_pid <= 0 || p_pid > INT32_MAX) {
-		return false;
-	}
-	if (kill((pid_t)p_pid, 0) == 0) {
-		return true;
-	}
-	return errno == EPERM;
-}
-
 static Error sync_directory(const String &p_directory) {
 	const CharString path = path_utf8(p_directory);
 	const int descriptor = open(path.get_data(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
@@ -792,19 +782,6 @@ static Error read_private_file(const String &p_path, int p_expected_size, Packed
 	return OK;
 }
 
-static bool is_process_alive(int64_t p_pid) {
-	if (p_pid <= 0 || p_pid > INT32_MAX) {
-		return false;
-	}
-	HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, static_cast<DWORD>(p_pid));
-	if (!process) {
-		return GetLastError() == ERROR_ACCESS_DENIED;
-	}
-	const bool alive = WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
-	CloseHandle(process);
-	return alive;
-}
-
 static bool is_lower_hex(const String &p_value, int p_length) {
 	if (p_value.length() != p_length) {
 		return false;
@@ -1233,13 +1210,12 @@ Error BridgeRuntime::_remove_or_reject_stale_runtime() {
 	}
 	Dictionary discovery;
 	if (read_discovery(discovery_path, discovery) == OK) {
-		bool process_alive = false;
-		int64_t pid = 0;
-		if (get_bounded_integer_field(discovery, "pid", 1, INT32_MAX, pid)) {
-			process_alive = is_process_alive(pid);
-		}
+		// initialize() already owns the project-scoped OS lock. A PID in stale
+		// discovery can have been reused or can remain observable after the old
+		// endpoint stopped; only an authenticated endpoint proves a competing
+		// runtime after lock acquisition.
 		const bool authenticated = probe_authenticated_runtime(canonical_project_root);
-		if (process_alive || authenticated) {
+		if (authenticated) {
 			return ERR_ALREADY_IN_USE;
 		}
 		String stale_endpoint;

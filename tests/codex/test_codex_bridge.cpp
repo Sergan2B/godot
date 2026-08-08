@@ -3723,7 +3723,9 @@ TEST_CASE("[CodexBridge] Private runtime replaces only inactive unauthenticated 
 	const String stale_session = first_runtime.get_editor_session_id();
 	first_runtime.cleanup();
 
-	stale_discovery["pid"] = INT32_MAX;
+	// A stale PID can still name a live but unrelated process after the
+	// original editor released the project-scoped OS lock.
+	stale_discovery["pid"] = OS::get_singleton()->get_process_id();
 	Error write_error = OK;
 	Ref<FileAccess> discovery_file = FileAccess::open(codex_dir.path_join("bridge.json"), FileAccess::WRITE, &write_error);
 	REQUIRE(write_error == OK);
@@ -3741,7 +3743,7 @@ TEST_CASE("[CodexBridge] Private runtime replaces only inactive unauthenticated 
 #endif
 	Ref<FileAccess> lock_file = FileAccess::open(codex_dir.path_join("bridge.lock"), FileAccess::WRITE, &write_error);
 	REQUIRE(write_error == OK);
-	lock_file->store_string("{\"pid\":2147483647}");
+	lock_file->store_string(vformat("{\"pid\":%d}", OS::get_singleton()->get_process_id()));
 	lock_file->close();
 #ifdef UNIX_ENABLED
 	REQUIRE(FileAccess::set_unix_permissions(codex_dir.path_join("bridge.lock"), 0600) == OK);
