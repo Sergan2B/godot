@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/sprint11-host-smoke.schema.json",
+  "title": "Sprint 11 model-free Codex app-server MCP smoke",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "client_artifact_sha256",
+    "surfaces",
+    "protocol",
+    "registry",
+    "connection",
+    "semantic_fact",
+    "assertions",
+    "redaction"
+  ],
+  "properties": {
+    "schema_version": { "const": "s11-host-smoke/1.0" },
+    "status": { "const": "passed" },
+    "client_artifact_sha256": { "$ref": "#/$defs/sha256" },
+    "surfaces": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": { "enum": ["app", "cli", "ide"] }
+    },
+    "protocol": { "const": "2025-11-25" },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "tools", "fixed_resources", "resource_templates"],
+      "properties": {
+        "digest": { "$ref": "#/$defs/unprefixed_sha256" },
+        "tools": { "const": 41 },
+        "fixed_resources": { "const": 4 },
+        "resource_templates": { "const": 1 }
+      }
+    },
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "status",
+        "bridge_protocol",
+        "static_cache",
+        "project_scope_sha256"
+      ],
+      "properties": {
+        "schema_version": { "const": "godot-connection-status/1.1" },
+        "status": { "const": "ready" },
+        "bridge_protocol": { "const": "1.8" },
+        "static_cache": { "const": "online_current" },
+        "project_scope_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "semantic_fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["freshness", "evidence_sha256"],
+      "properties": {
+        "freshness": { "const": "current" },
+        "evidence_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "assertions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_turn_absent", "project_integrity_preserved", "clean_shutdown"],
+      "properties": {
+        "model_turn_absent": { "const": true },
+        "project_integrity_preserved": { "const": true },
+        "clean_shutdown": { "const": true }
+      }
+    },
+    "redaction": { "$ref": "#/$defs/redaction" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "unprefixed_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "absolute_paths_absent",
+        "account_identity_absent",
+        "artifact_content_absent",
+        "environment_secrets_absent"
+      ],
+      "properties": {
+        "absolute_paths_absent": { "const": true },
+        "account_identity_absent": { "const": true },
+        "artifact_content_absent": { "const": true },
+        "environment_secrets_absent": { "const": true }
+      }
+    }
+  }
+}

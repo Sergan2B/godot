@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/sprint11-host-delta-receipt.schema.json",
+  "title": "Sprint 11 Codex host delta qualification receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "outcome",
+    "delta_class",
+    "affected_surfaces",
+    "required_probes",
+    "bindings",
+    "bundle",
+    "assertions",
+    "redaction"
+  ],
+  "properties": {
+    "schema_version": { "const": "s11-host-delta-receipt/1.0" },
+    "status": { "const": "passed" },
+    "outcome": {
+      "enum": [
+        "compatible_observed",
+        "compatible_bundle_issued",
+        "targeted_surface_check_required",
+        "full_package_qualification_required"
+      ]
+    },
+    "delta_class": {
+      "enum": [
+        "coordinate_only",
+        "interaction_sensitive",
+        "surface_structural",
+        "product_contract",
+        "unclassifiable"
+      ]
+    },
+    "affected_surfaces": {
+      "type": "array",
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": { "enum": ["app", "cli", "ide"] }
+    },
+    "required_probes": {
+      "type": "array",
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["host_provenance", "host_smoke", "interaction_contract"]
+      }
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package_manifest_sha256",
+        "baseline_matrix_sha256",
+        "previous_profile_sha256",
+        "measurement_sha256",
+        "host_profile_sha256",
+        "bundle_sha256",
+        "contract_projection_sha256",
+        "smoke_report_sha256"
+      ],
+      "properties": {
+        "package_manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "baseline_matrix_sha256": { "$ref": "#/$defs/sha256" },
+        "previous_profile_sha256": {
+          "oneOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        },
+        "measurement_sha256": { "$ref": "#/$defs/sha256" },
+        "host_profile_sha256": { "$ref": "#/$defs/sha256" },
+        "bundle_sha256": { "$ref": "#/$defs/sha256" },
+        "contract_projection_sha256": { "$ref": "#/$defs/sha256" },
+        "smoke_report_sha256": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundle_id", "sequence", "qualification"],
+      "properties": {
+        "bundle_id": { "$ref": "#/$defs/safe_token" },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "qualification": { "const": "supported" }
+      }
+    },
+    "assertions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "package_unchanged",
+        "all_required_surfaces_measured",
+        "all_distinct_clients_probed",
+        "project_integrity_preserved",
+        "manual_interaction_absent",
+        "external_beta_claimed"
+      ],
+      "properties": {
+        "package_unchanged": { "const": true },
+        "all_required_surfaces_measured": { "const": true },
+        "all_distinct_clients_probed": { "const": true },
+        "project_integrity_preserved": { "const": true },
+        "manual_interaction_absent": { "const": true },
+        "external_beta_claimed": { "const": false }
+      }
+    },
+    "redaction": { "$ref": "#/$defs/redaction" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "safe_token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+:/-]*$"
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "absolute_paths_absent",
+        "account_identity_absent",
+        "artifact_content_absent",
+        "environment_secrets_absent"
+      ],
+      "properties": {
+        "absolute_paths_absent": { "const": true },
+        "account_identity_absent": { "const": true },
+        "artifact_content_absent": { "const": true },
+        "environment_secrets_absent": { "const": true }
+      }
+    }
+  }
+}
