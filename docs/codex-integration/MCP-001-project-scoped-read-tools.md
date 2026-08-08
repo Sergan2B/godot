@@ -9,7 +9,7 @@ registry change
 
 **MCP protocol:** `2025-11-25`
 
-**Server:** `godot-codex-mcp` `0.1.16`
+**Server:** `godot-codex-mcp` `0.1.17`
 
 ## Purpose
 

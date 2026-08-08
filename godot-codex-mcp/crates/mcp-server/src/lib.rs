@@ -6222,11 +6222,7 @@ fn transaction_bridge_error(error: BridgeError) -> CallToolResult {
             code.as_str(),
             "transaction_not_undoable" | "transaction_undo_failed" | "transaction_in_doubt"
         ) {
-            return structured_error(
-                code,
-                "The Godot transaction request failed.",
-                *retryable,
-            );
+            return structured_error(code, "The Godot transaction request failed.", *retryable);
         }
     }
     runtime_bridge_error(error)

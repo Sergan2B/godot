@@ -1,17 +1,17 @@
 {
   "schema_version": "godot-codex-compatibility-matrix/1.0",
-  "matrix_id": "external-codex-beta-macos-arm64-v11",
+  "matrix_id": "external-codex-beta-macos-arm64-v12",
   "package": {
-    "version": "0.1.16",
+    "version": "0.1.17",
     "target": {
       "os": "macos",
       "architecture": "arm64"
     }
   },
   "godot": {
-    "source_commit": "2a9eaaf67dc05f3b197e655d2b594ae96996f96a",
-    "build_id": "4.8.dev.codex.2a9eaaf67",
-    "artifact_sha256": "07589f1bb4e961fe74c764534d5268f39633ed94055d060898b7ac8d28936439",
+    "source_commit": "1cf3494f8aa6ecc625bc4f1ea43687481c8681be",
+    "build_id": "4.8.dev.codex.1cf3494f8",
+    "artifact_sha256": "24fa12054e2b82894373656cda7c4271a32d86ff17a2a7c11b42ed68a1690c79",
     "target": {
       "os": "macos",
       "architecture": "arm64"
@@ -249,7 +249,7 @@
   "surfaces": [
     {
       "surface": "app",
-      "host_version": "26.730.61639",
+      "host_version": "26.803.41515",
       "ide_host_version": null,
       "target": {
         "os": "macos",
@@ -259,7 +259,7 @@
     },
     {
       "surface": "cli",
-      "host_version": "0.147.0-alpha.1.2",
+      "host_version": "0.147.0-alpha.6.5",
       "ide_host_version": null,
       "target": {
         "os": "macos",
@@ -269,7 +269,7 @@
     },
     {
       "surface": "ide",
-      "host_version": "26.721.41059",
+      "host_version": "26.727.40816",
       "ide_host_version": "1.131.0",
       "target": {
         "os": "macos",

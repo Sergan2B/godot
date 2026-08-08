@@ -57,7 +57,7 @@ The checked contract establishes:
 
 - App, CLI, and IDE share the Codex configuration layers;
 - project `.codex/config.toml` is loaded only for a trusted project;
-- the qualification-candidate Codex `0.147.0-alpha.1.2` MCP launcher uses the
+- the qualification-candidate Codex `0.147.0-alpha.6.5` MCP launcher uses the
   task runtime directory only as the fallback when stdio `cwd` is omitted;
   setup therefore forbids an explicit relative `cwd` and uses a package-owned
   prelaunch command which resolves the nearest Godot root from that host-owned
@@ -74,7 +74,7 @@ A historical locally generated app-server JSON Schema from Codex
 `0.145.0-alpha.30` contains the same request, response, capability, and
 `openai/form` definitions. That older coordinate is not the current
 qualification candidate and proves neither implementation nor a UI workflow
-for the current `0.147.0-alpha.1.2` CLI.
+for the current `0.147.0-alpha.6.5` CLI.
 
 ## 3. Qualification candidate matrix
 
@@ -85,29 +85,29 @@ any Markdown/JSON drift.
 <!-- BEGIN S11 HOST COORDINATE AUTHORITY -->
 | Surface | Host identifier | Host version/build | Host artifact SHA-256 | Client version/SHA-256 | IDE shell | Qualification |
 |---|---|---|---|---|---|---|
-| app | `com.openai.codex` | `26.730.61639` / `6234` | `sha256:52a495842624d8dc9d2236d3e8411bb93c0be17039835b1691adb46c5c81cadb` | `0.147.0-alpha.1.2` / `sha256:9f6748b4ab10ffc92c28b9ccedae89e61a302bbc011df7d276ee38f55906e481` | — | candidate |
-| cli | `codex-cli` | `0.147.0-alpha.1.2` / `0.147.0-alpha.1.2` | `sha256:9f6748b4ab10ffc92c28b9ccedae89e61a302bbc011df7d276ee38f55906e481` | `0.147.0-alpha.1.2` / `sha256:9f6748b4ab10ffc92c28b9ccedae89e61a302bbc011df7d276ee38f55906e481` | — | candidate |
-| ide | `openai.chatgpt` | `26.721.41059` / `26.721.41059` | `sha256:ea66cea39f5c40d83079fe200251ac698afe285e4cb30d335e4ee6517ee7b8aa` | `0.146.0-alpha.3.1` / `sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4` | com.microsoft.VSCode 1.131.0 `sha256:9a8597fb750505964ceffee9f42dc6731421ae6f76fdcc2511ef39efa6f1504b` | candidate |
+| app | `com.openai.codex` | `26.803.41515` / `6321` | `sha256:1c33ce19e1812fa4606e0e3f32b43596b30ce89e33b94ec93ac03df532620fdf` | `0.147.0-alpha.6.5` / `sha256:e4432c0c085e4a2e5b9cf982e4dd2ebdb44ed33c422827b6e6c64353778e773b` | — | candidate |
+| cli | `codex-cli` | `0.147.0-alpha.6.5` / `0.147.0-alpha.6.5` | `sha256:e4432c0c085e4a2e5b9cf982e4dd2ebdb44ed33c422827b6e6c64353778e773b` | `0.147.0-alpha.6.5` / `sha256:e4432c0c085e4a2e5b9cf982e4dd2ebdb44ed33c422827b6e6c64353778e773b` | — | candidate |
+| ide | `openai.chatgpt` | `26.727.40816` / `26.727.40816` | `sha256:0f3f97a02fc72be163f54e3d836813250c42586a0fad986a964222b20e6a4935` | `0.146.0-alpha.9.2` / `sha256:a2795588f2492f8839bc03c3f6ffc0d4ac2950812ae8c66800122db584a8af04` | com.microsoft.VSCode 1.131.0 `sha256:9a8597fb750505964ceffee9f42dc6731421ae6f76fdcc2511ef39efa6f1504b` | candidate |
 <!-- END S11 HOST COORDINATE AUTHORITY -->
 
 | Component | Exact observed coordinate | Candidate state |
 |---|---|---|
 | OS | macOS `26.5.2` build `25F84`, `arm64` | candidate |
-| Codex desktop | bundle `com.openai.codex`, version `26.730.61639`, build `6234`, team `2DC432GLL2` | static capability proven; live workflow pending |
-| App-bundled Codex CLI | `0.147.0-alpha.1.2`, `arm64` | full packaged surface workflow pending |
-| App-bundled CLI artifact | `sha256:9f6748b4ab10ffc92c28b9ccedae89e61a302bbc011df7d276ee38f55906e481` | candidate artifact identity |
+| Codex desktop | bundle `com.openai.codex`, version `26.803.41515`, build `6321`, team `2DC432GLL2` | static capability proven; live workflow pending |
+| App-bundled Codex CLI | `0.147.0-alpha.6.5`, `arm64` | full packaged surface workflow pending |
+| App-bundled CLI artifact | `sha256:e4432c0c085e4a2e5b9cf982e4dd2ebdb44ed33c422827b6e6c64353778e773b` | candidate artifact identity |
 | VS Code Stable | `1.131.0`, commit `e4c7e7b1d6d060162f4aa7f8225271b67ce1df75`, `arm64`, team `UBF8T346G9` | candidate |
-| Official Codex extension | `openai.chatgpt@26.721.41059`, `darwin-arm64` | installed candidate; live workflow pending |
-| Extension package | `sha256:fa2a88ea55413183654f5613b14e744517ad7626d26a673403bdde83c73adea7` | candidate artifact identity |
-| Extension Codex CLI | `bin/macos-aarch64/codex`, `0.146.0-alpha.3.1`, `sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4`, team `2DC432GLL2` | candidate embedded client |
+| Official Codex extension | `openai.chatgpt@26.727.40816`, `darwin-arm64` | installed candidate; live workflow pending |
+| Extension package | `sha256:ef175598ebcb0cd8e1da151a3fb81218ce65933b13f33b4d10bde385e807b160` | candidate artifact identity |
+| Extension Codex CLI | `bin/macos-aarch64/codex`, `0.146.0-alpha.9.2`, `sha256:a2795588f2492f8839bc03c3f6ffc0d4ac2950812ae8c66800122db584a8af04`, team `2DC432GLL2` | candidate embedded client |
 | MCP protocol | `2025-11-25`; form-compatible floor `2025-06-18` | candidate |
 | Bridge | RPC `1.8` exact profile | candidate |
-| Godot × Codex package | workspace `0.1.16` | same-project lease contention, long project-root UDS transport, accepted-socket subprocess inheritance, full-beta doctor registry probing, current host-measurement guidance, receipt-1.1 config fault harness with populated-cache-safe Bridge isolation, isolated-install package-owned guidance, App-safe fail-closed project-bound MCP prelaunch, bounded editor snapshots, runtime lifecycle recovery, and normal managed-host shutdown capture fixed; independently installable host-surface bundle added |
-| Godot Bridge prerequisite | `bin/godot.macos.editor.dev.arm64`, `4.8.dev.codex.2a9eaaf67`, `sha256:07589f1bb4e961fe74c764534d5268f39633ed94055d060898b7ac8d28936439` | exact local candidate; detached package binding pending |
+| Godot × Codex package | workspace `0.1.17` | same-project lease contention, bounded persisted-index convergence, exact change-set Undo error semantics, stale-PID editor restart recovery, long project-root UDS transport, fail-closed project binding, and independently installable host-surface bundle |
+| Godot Bridge prerequisite | `bin/godot.macos.editor.dev.arm64`, `4.8.dev.codex.1cf3494f8`, `sha256:24fa12054e2b82894373656cda7c4271a32d86ff17a2a7c11b42ed68a1690c79` | exact local candidate; detached package binding pending |
 
 ### 3.1 Independent host-surface compatibility updates
 
-Package `0.1.16` keeps package, Godot, protocol, schema, registry, Bridge, and
+Package `0.1.17` keeps package, Godot, protocol, schema, registry, Bridge, and
 Cursor coordinates embedded and immutable. A separately released
 `godot-codex-surface-compatibility-bundle/1.0` may replace only the complete
 App/CLI/IDE surface snapshot for that exact embedded matrix. This permits a
@@ -175,7 +175,7 @@ Earlier working notes recorded four action-only outcomes against
 `0.145.0-alpha.30`. That result is historical only and does not qualify or
 substitute for the current candidate. The independent current-coordinate
 probes summarized above prove `cancel` and `timeout` for the historical
-`0.146.0-alpha.3.1` coordinate; the current `0.147.0-alpha.1.2` coordinate
+`0.146.0-alpha.3.1` coordinate; the current `0.147.0-alpha.6.5` coordinate
 requires a fresh four-outcome capture.
 
 The current four-outcome result proves the isolated action boundary for this
@@ -188,7 +188,7 @@ effective reload therefore remain unproved.
 ## 4. Current blockers and fail-closed interpretation
 
 VS Code Stable now contains the official
-`openai.chatgpt@26.721.41059` extension. Installation is only acquisition; no
+`openai.chatgpt@26.727.40816` extension. Installation is only acquisition; no
 IDE MCP workflow or form outcome is qualified yet, and Cursor cannot replace
 that gate.
 
@@ -247,9 +247,9 @@ shasum -a 256 /Applications/ChatGPT.app/Contents/Resources/codex
 '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code' \
   --list-extensions --show-versions
 shasum -a 256 \
-  "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json"
+  "$HOME/.vscode/extensions/openai.chatgpt-26.727.40816-darwin-arm64/package.json"
 shasum -a 256 \
-  "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex"
+  "$HOME/.vscode/extensions/openai.chatgpt-26.727.40816-darwin-arm64/bin/macos-aarch64/codex"
 readlink /usr/local/bin/code
 ```
 
@@ -268,10 +268,10 @@ python3 tests/codex/sprint11_external_acquisitions.py host-provenance \
   --app-client '/Applications/ChatGPT.app/Contents/Resources/codex' \
   --vscode-bundle '/Applications/Visual Studio Code.app' \
   --vscode-executable '/Applications/Visual Studio Code.app/Contents/MacOS/Code' \
-  --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64" \
-  --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json" \
-  --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex" \
-  --output-root tests/codex/acquisition/sprint11/host-provenance-v019
+  --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.727.40816-darwin-arm64" \
+  --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.727.40816-darwin-arm64/package.json" \
+  --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.727.40816-darwin-arm64/bin/macos-aarch64/codex" \
+  --output-root tests/codex/acquisition/sprint11/host-provenance-v020
 ```
 
 The output directory must not already exist. `receipt.json` is the

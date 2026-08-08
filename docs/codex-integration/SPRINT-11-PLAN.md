@@ -136,15 +136,15 @@ IDE extension.
 - The required IDE surface is the official Codex extension on VS Code Stable.
   Cursor and other compatible editors may be recorded as `not_tested`, but
   they do not substitute for the required VS Code gate.
-- Qualification candidates refreshed on 2026-08-01 are Codex desktop app
-  `com.openai.codex` `26.730.61639` build `6234` (team `2DC432GLL2`),
-  its bundled Codex CLI `0.147.0-alpha.1.2`
-  (`sha256:9f6748b4ab10ffc92c28b9ccedae89e61a302bbc011df7d276ee38f55906e481`),
+- Qualification candidates refreshed on 2026-08-08 are Codex desktop app
+  `com.openai.codex` `26.803.41515` build `6321` (team `2DC432GLL2`),
+  its bundled Codex CLI `0.147.0-alpha.6.5`
+  (`sha256:e4432c0c085e4a2e5b9cf982e4dd2ebdb44ed33c422827b6e6c64353778e773b`),
   VS Code Stable `1.131.0` commit
   `e4c7e7b1d6d060162f4aa7f8225271b67ce1df75`, and official extension
-  `openai.chatgpt@26.721.41059`. The extension embeds Codex CLI
-  `0.146.0-alpha.3.1` at `bin/macos-aarch64/codex`
-  (`sha256:fa0cb7c5f80e6a192563fcb1d9f98857f4a808a28cb29289400ed7110291bce4`).
+  `openai.chatgpt@26.727.40816`. The extension embeds Codex CLI
+  `0.146.0-alpha.9.2` at `bin/macos-aarch64/codex`
+  (`sha256:a2795588f2492f8839bc03c3f6ffc0d4ac2950812ae8c66800122db584a8af04`).
   These are observations, not support promises; S11-01 records the exact
   coordinates used by final evidence. The current App-bundled CLI still
   requires a fresh action-only `accept`, `decline`, `cancel`, and `timeout`
@@ -1039,10 +1039,10 @@ python3 tests/codex/sprint11_external_acquisitions.py host-provenance \
   --app-client '/Applications/ChatGPT.app/Contents/Resources/codex' \
   --vscode-bundle '/Applications/Visual Studio Code.app' \
   --vscode-executable '/Applications/Visual Studio Code.app/Contents/MacOS/Code' \
-  --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64" \
-  --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/package.json" \
-  --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.721.41059-darwin-arm64/bin/macos-aarch64/codex" \
-  --output-root tests/codex/acquisition/sprint11/host-provenance-v019
+  --extension-root "$HOME/.vscode/extensions/openai.chatgpt-26.727.40816-darwin-arm64" \
+  --extension-package-json "$HOME/.vscode/extensions/openai.chatgpt-26.727.40816-darwin-arm64/package.json" \
+  --ide-client "$HOME/.vscode/extensions/openai.chatgpt-26.727.40816-darwin-arm64/bin/macos-aarch64/codex" \
+  --output-root tests/codex/acquisition/sprint11/host-provenance-v020
 ```
 
 The repository-local output directory is new and contains two authorities
