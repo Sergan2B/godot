@@ -13,6 +13,7 @@
     "feature_projection",
     "app_server_projection",
     "contract_projection_sha256",
+    "commands",
     "assertions",
     "redaction"
   ],
@@ -22,10 +23,9 @@
     "package": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version", "manifest_sha256", "baseline_matrix_sha256"],
+      "required": ["version", "baseline_matrix_sha256"],
       "properties": {
         "version": { "$ref": "#/$defs/safe_token" },
-        "manifest_sha256": { "$ref": "#/$defs/sha256" },
         "baseline_matrix_sha256": { "$ref": "#/$defs/sha256" }
       }
     },
@@ -41,9 +41,15 @@
       "maxItems": 3,
       "items": { "$ref": "#/$defs/client_group" }
     },
-    "feature_projection": { "$ref": "#/$defs/projection" },
-    "app_server_projection": { "$ref": "#/$defs/projection" },
+    "feature_projection": { "$ref": "#/$defs/feature_projection_set" },
+    "app_server_projection": { "$ref": "#/$defs/app_server_projection_set" },
     "contract_projection_sha256": { "$ref": "#/$defs/sha256" },
+    "commands": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 10,
+      "items": { "$ref": "#/$defs/command_binding" }
+    },
     "assertions": {
       "type": "object",
       "additionalProperties": false,
@@ -182,19 +188,138 @@
         }
       }
     },
-    "projection": {
+    "feature_row": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schema_version", "complete", "sha256", "members"],
+      "required": ["name", "maturity", "enabled"],
       "properties": {
-        "schema_version": { "$ref": "#/$defs/safe_token" },
+        "name": {
+          "enum": [
+            "auth_elicitation",
+            "exec_permission_approvals",
+            "guardian_approval",
+            "request_permissions_tool",
+            "tool_call_mcp_elicitation"
+          ]
+        },
+        "maturity": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z -]*$"
+        },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "feature_projection_set": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "complete", "clients", "sha256"],
+      "properties": {
+        "schema_version": { "const": "s11-codex-feature-projection-set/1.0" },
         "complete": { "const": true },
-        "sha256": { "$ref": "#/$defs/sha256" },
-        "members": {
+        "clients": {
           "type": "array",
-          "items": { "$ref": "#/$defs/safe_token" },
-          "uniqueItems": true
-        }
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["client_artifact_sha256", "surfaces", "rows", "projection_sha256"],
+            "properties": {
+              "client_artifact_sha256": { "$ref": "#/$defs/sha256" },
+              "surfaces": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "uniqueItems": true,
+                "items": { "enum": ["app", "cli", "ide"] }
+              },
+              "rows": {
+                "type": "array",
+                "minItems": 5,
+                "maxItems": 5,
+                "items": { "$ref": "#/$defs/feature_row" }
+              },
+              "projection_sha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "app_server_projection_set": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "complete", "clients", "sha256"],
+      "properties": {
+        "schema_version": { "const": "s11-codex-app-server-projection-set/1.0" },
+        "complete": { "const": true },
+        "clients": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "client_artifact_sha256",
+              "surfaces",
+              "methods",
+              "elicitation_actions",
+              "projection_sha256"
+            ],
+            "properties": {
+              "client_artifact_sha256": { "$ref": "#/$defs/sha256" },
+              "surfaces": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "uniqueItems": true,
+                "items": { "enum": ["app", "cli", "ide"] }
+              },
+              "methods": {
+                "const": [
+                  "initialize",
+                  "thread/start",
+                  "mcpServerStatus/list",
+                  "mcpServer/tool/call",
+                  "openai/form"
+                ]
+              },
+              "elicitation_actions": { "const": ["accept", "decline", "cancel"] },
+              "projection_sha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "command_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation",
+        "executable_sha256",
+        "exit_code",
+        "duration_ms",
+        "stdout_sha256",
+        "stderr_sha256"
+      ],
+      "properties": {
+        "operation": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "executable_sha256": { "$ref": "#/$defs/sha256" },
+        "exit_code": { "const": 0 },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 600000
+        },
+        "stdout_sha256": { "$ref": "#/$defs/sha256" },
+        "stderr_sha256": { "$ref": "#/$defs/sha256" }
       }
     },
     "redaction": {
