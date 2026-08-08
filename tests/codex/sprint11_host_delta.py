@@ -15,6 +15,7 @@ import enum
 import hashlib
 import json
 import re
+import stat
 from collections.abc import Mapping, Sequence, Set
 from pathlib import Path
 from typing import Any, Final
@@ -143,7 +144,7 @@ def sha256_file(path: Path, *, maximum_bytes: int = 2 * 1024 * 1024) -> str:
     except OSError as error:
         raise HostDeltaError("host delta input is unavailable") from error
     require(
-        metadata.is_file() and not path.is_symlink(),
+        stat.S_ISREG(metadata.st_mode) and not path.is_symlink(),
         "host delta input must be a regular non-symlink file",
     )
     require(metadata.st_size <= maximum_bytes, "host delta input exceeds its byte bound")
