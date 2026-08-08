@@ -382,6 +382,7 @@ cpp.hint
 .DS_Store
 __MACOSX
 Godot.app
+.worktrees/
 
 # Windows
 # https://github.com/github/gitignore/blob/main/Global/Windows.gitignore
