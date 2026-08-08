@@ -60,9 +60,11 @@ Package `0.1.18` could retain a persisted change-set proof baseline while a
 previous Undo was still rebuilding the static cache, making later convergence
 impossible to prove even after the cache became current.
 Do not replace old binaries in place, reuse an old detached manifest, or
-relabel old evidence. Install `0.1.19` into
-a clean operator root and repeat App, CLI, and IDE technical acceptance from
-the beginning.
+relabel old evidence. Install `0.1.19` into a clean operator root. A package,
+Godot, Bridge, protocol, schema, or registry change requires package
+qualification again. A later signed Codex host-only update uses the automated
+host-delta path below and does **not** repeat App/CLI/IDE operator acceptance
+from the beginning.
 
 ## Install and verify
 
@@ -120,6 +122,46 @@ the same trusted channel:
 - `surface-compatibility-bundle.json`;
 - its detached `host-coordinate-profile.json`;
 - the published raw SHA-256 of the bundle file.
+
+For maintainers producing those inputs, the normal rolling-update entry point
+is `tests/codex/sprint11_host_delta_qualify.py`. Supply the frozen detached
+manifest/artifact root, the exact version-owned installed launcher (not the
+`current` symlink), the signed App/CLI/IDE artifacts, and three already
+configured disposable projects:
+
+```sh
+python3 -E -s -S tests/codex/sprint11_host_delta_qualify.py \
+  --package-manifest /absolute/package/sprint11-package-manifest.json \
+  --artifact-root /absolute/package/root \
+  --installed-launcher /absolute/data/versions/0.1.19/bin/godot-codex \
+  --previous-profile /absolute/previous/host-coordinate-profile.json \
+  --previous-receipt /absolute/previous/host-delta-receipt.json \
+  --app-bundle /Applications/ChatGPT.app \
+  --app-executable /Applications/ChatGPT.app/Contents/MacOS/ChatGPT \
+  --app-client /Applications/ChatGPT.app/Contents/Resources/codex \
+  --cli-client /Applications/ChatGPT.app/Contents/Resources/codex \
+  --vscode-bundle "/Applications/Visual Studio Code.app" \
+  --vscode-executable "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" \
+  --extension-root /absolute/openai.chatgpt-extension \
+  --extension-package-json /absolute/openai.chatgpt-extension/package.json \
+  --ide-client /absolute/openai.chatgpt-extension/bin/macos-aarch64/codex \
+  --project app=/absolute/projects/app-primary \
+  --project cli=/absolute/projects/cli-primary \
+  --project ide=/absolute/projects/ide-primary \
+  --output /absolute/new/host-delta-acquisition \
+  --apply --json
+```
+
+For the first `0.1.19` host bundle, pass `none` to both `--previous-profile`
+and `--previous-receipt`. Later runs must pass the immediately previous pair;
+the qualifier checks that it is still the active sequence before advancing.
+The output path must not exist. Every project must already be configured and
+have its matching verified editor ready, but the command itself never runs
+install, setup, repair, Trust, a model turn, a semantic write, or a manual
+form. The first bootstrap establishes the bounded interaction baseline with
+the same model-free smokes. On later runs, an interaction-sensitive or
+structural delta stops with the specific required next gate instead of
+pretending the old evidence applies.
 
 Preview and inspect the exact bounded update:
 

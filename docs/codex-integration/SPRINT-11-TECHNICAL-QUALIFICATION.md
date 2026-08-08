@@ -48,16 +48,48 @@ The technical track still requires:
 - the frozen `0.1.19` package and exact Godot prerequisite;
 - all automated package, previous-sprint, same-project takeover, multi-project,
   redaction, cleanup, and reproducibility gates;
-- fresh official Codex App, CLI, and IDE runs using the canonical prompt pack;
-- manual project Trust and real host form outcomes where required;
-- semantic parity of saved, offline, runtime, write/validation/Undo, approval,
-  restart, and project-isolation behavior;
-- bounded, redacted, source/package-bound surface evidence.
+- an exact signed measurement of the current official Codex App, bundled CLI,
+  VS Code shell, and official IDE extension;
+- one model-free app-server smoke for each distinct Codex client binary,
+  covering all App/CLI/IDE surface labels;
+- an applied host-surface compatibility bundle bound to the unchanged package
+  matrix and a passing host-delta receipt;
+- bounded, redacted, source/package-bound technical evidence.
+
+An ordinary Codex-only version/hash update does not require fresh project
+Trust, manual forms, canonical prompt packs, App/CLI/IDE chats, runtime/write
+replays, fault injection, package install, or setup. Those behaviours remain
+proven by the frozen package-bound receipts. The automated delta path measures
+the new signed coordinate and exercises the exact MCP loading/registry/status/
+saved-semantic path without a model turn. An elicitation or selected app-server
+projection change escalates to a targeted surface check; a product-contract
+change escalates to full package qualification.
 
 Completing these items can produce a separate technical qualification report.
 It does not create
 `tests/codex/evidence/sprint-11-external-codex-beta-macos.json`, because that
 filename and schema assert a fully passing human-usability gate.
+
+Compose and revalidate the separate report with:
+
+```sh
+python3 -E -s -S tests/codex/sprint11_technical_acceptance.py compose \
+  --package-manifest tests/codex/acquisition/sprint11/package-v0119/sprint11-package-manifest.json \
+  --package-live-receipt tests/codex/acquisition/sprint11/package-live-v0119/receipt.json \
+  --multi-project-receipt tests/codex/acquisition/sprint11/multi-project-v0119/receipt.json \
+  --reproducibility-receipt tests/codex/acquisition/sprint11/reproducibility-v0119/receipt.json \
+  --host-delta-directory tests/codex/acquisition/sprint11/host-delta-v0119 \
+  --active-compatibility-status tests/codex/acquisition/sprint11/host-delta-v0119/compatibility-active-status.json \
+  --output tests/codex/acquisition/sprint11/technical-private-alpha-v0119/report.json
+
+python3 -E -s -S tests/codex/sprint11_technical_acceptance.py validate \
+  --evidence tests/codex/acquisition/sprint11/technical-private-alpha-v0119/report.json \
+  --artifact-root .
+```
+
+The summary contains only relative paths, raw digests, schema/status, source
+commit, and package-manifest bindings. It does not duplicate the evidence
+bodies and cannot set usability or commercial claims true.
 
 ## Deferred commercial-beta exit gate
 

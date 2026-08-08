@@ -153,6 +153,42 @@ untrusted channel. Doctor reports the effective matrix digest. If an active
 bundle becomes invalid, doctor reports `package_invalid` instead of silently
 falling back to embedded host claims.
 
+### 3.2 Rolling Codex host-delta qualification
+
+An ordinary signed Codex App, bundled CLI, or official IDE-extension update no
+longer invalidates the frozen package evidence. For package `0.1.19`, the
+model-free `tests/codex/sprint11_host_delta_qualify.py` command performs one
+bounded pipeline:
+
+```text
+signed measurement -> delta classification -> one app-server smoke per
+distinct Codex client -> supported profile/bundle -> preview/apply -> receipt
+```
+
+The smoke starts no model turn. It calls the exact MCP registry, connection
+status, and current-scene tools directly through Codex app-server, uses an
+isolated `CODEX_HOME`, and proves the disposable project stayed unchanged.
+App and CLI may share one measured client binary; the pipeline deduplicates
+that client while still proving all three surface labels. A successful run
+therefore requires no reinstall, project setup/repair, Trust prompt, fault
+harness, approval form, surface capture, or repeated App/CLI/IDE chat.
+
+The classifier fails closed at the smallest necessary boundary:
+
+| Observed delta | Required action |
+|---|---|
+| only signed host version/build/hash changed | automated host smoke, then issue/apply a new surface bundle |
+| elicitation/features/selected app-server projection changed | `targeted_surface_check_required` |
+| package, Godot, Bridge, MCP protocol, schema, registry, or surface structure changed | `full_package_qualification_required` |
+
+The resulting `s11-host-delta-receipt/1.0` binds the frozen package manifest,
+baseline matrix, measurement, profile, bundle, contract projection, and every
+distinct-client smoke. The separate
+`s11-technical-private-alpha/1.0` compositor reuses the existing package-live,
+same-project takeover, multi-project isolation, and reproducibility receipts.
+It can assert Technical/Private Alpha only; usability, External Codex Beta,
+and commercial readiness remain false.
+
 The current App-bundled CLI reports `tool_call_mcp_elicitation` as stable.
 Real stdio probes through `tests/codex/sprint11_approval_host_probe.py`
 negotiated MCP `2025-06-18`, received an action-only `openai/form` with an

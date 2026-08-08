@@ -6,6 +6,32 @@ production sidecar now lives in the repository-root `godot-codex-mcp` workspace.
 
 ## Sprint 11 official-surface acquisition
 
+For an ordinary signed Codex App/CLI/IDE update against unchanged package
+`0.1.19`, do not start the manual acquisition below. Run
+`sprint11_host_delta_qualify.py` once. It measures exact signatures and hashes,
+classifies the change, deduplicates shared App/CLI clients, runs direct
+model-free app-server MCP smokes, and optionally previews/applies a new
+surface-compatibility bundle. It invokes no install/setup/Trust/model turn,
+semantic mutation, operator form, or surface capture. See
+`docs/codex-integration/EXTERNAL-CODEX-BETA-GUIDE.md` for the complete argv.
+
+The classifier returns one of these boundaries:
+
+- coordinate-only: automated smokes may issue/apply a bundle;
+- interaction-sensitive: `targeted_surface_check_required`;
+- structural or product-contract change:
+  `full_package_qualification_required`.
+
+`sprint11_technical_acceptance.py` then composes the frozen package-live,
+same-project takeover, multi-project, reproducibility, and new host-delta
+receipts into `s11-technical-private-alpha/1.0`. That report deliberately
+keeps usability `deferred_unacquired` and External Beta/commercial claims
+false.
+
+The manual `surface-capture` workflow described next is reserved for an
+explicit External Beta/human-usability acquisition or a targeted interaction
+contract check; it is not the routine response to a Codex version bump.
+
 Real App, CLI, and IDE evidence is acquired only through the installed
 package's one-shot `godot-codex surface-capture` lease and
 `sprint11_surface_artifacts.py prepare|derive|attest` pipeline. The capture is
