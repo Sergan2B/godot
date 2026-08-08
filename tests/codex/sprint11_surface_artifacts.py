@@ -1722,6 +1722,7 @@ OBSERVATION_ARRAY_FIELDS = frozenset(
         "checks",
         "capabilities",
         "evidence",
+        "diagnostics",
     }
 )
 OBSERVATION_INTEGER_FIELDS = frozenset(

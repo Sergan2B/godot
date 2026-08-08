@@ -1738,7 +1738,7 @@ impl GodotMcpServer {
             .is_some_and(|scope| !scope.is_empty());
         let mut post_live = self.replicator.read().ok();
         let mut post_index = self.compound_index_baseline();
-        let convergence_deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let convergence_deadline = tokio::time::Instant::now() + Duration::from_secs(15);
         let mut live_converged = !has_scene;
         let mut index_converged;
         loop {
@@ -6207,18 +6207,27 @@ fn runtime_bridge_error(error: BridgeError) -> CallToolResult {
 }
 
 fn transaction_bridge_error(error: BridgeError) -> CallToolResult {
-    if matches!(
-        &error,
-        BridgeError::Rpc {
-            code,
-            ..
-        } if code == "change_set_not_found"
-    ) {
-        return structured_error(
-            "transaction_not_found",
-            "The transaction was not found in this editor session.",
-            false,
-        );
+    if let BridgeError::Rpc {
+        code, retryable, ..
+    } = &error
+    {
+        if code == "change_set_not_found" {
+            return structured_error(
+                "transaction_not_found",
+                "The transaction was not found in this editor session.",
+                false,
+            );
+        }
+        if matches!(
+            code.as_str(),
+            "transaction_not_undoable" | "transaction_undo_failed" | "transaction_in_doubt"
+        ) {
+            return structured_error(
+                code,
+                "The Godot transaction request failed.",
+                *retryable,
+            );
+        }
     }
     runtime_bridge_error(error)
 }
@@ -7641,7 +7650,7 @@ impl GodotMcpServer {
                 .await
             {
                 Ok(result) => transaction_result(result),
-                Err(error) => runtime_bridge_error(error),
+                Err(error) => transaction_bridge_error(error),
             };
         }
         let Some(coordinator) = self.transaction_coordinator.coordinator() else {
@@ -10663,6 +10672,32 @@ mod tests {
         assert!(!serialized.contains("/Users/"));
         assert!(!serialized.contains("change-set:"));
         assert!(!serialized.contains("native_handle"));
+    }
+
+    #[test]
+    fn compound_undo_errors_remain_transaction_errors() {
+        for (bridge_code, expected_retryable) in [
+            ("transaction_not_undoable", false),
+            ("transaction_undo_failed", false),
+            ("transaction_in_doubt", true),
+        ] {
+            let projected = transaction_bridge_error(BridgeError::Rpc {
+                code: bridge_code.to_owned(),
+                message: "private bridge detail /Users/private/project".to_owned(),
+                retryable: expected_retryable,
+                data: json!({
+                    "change_set_id": format!("change-set:{}", "a".repeat(32)),
+                    "native_handle": 42,
+                }),
+            });
+            let error = &structured_content(&projected).unwrap()["error"];
+            assert_eq!(error["code"], bridge_code);
+            assert_eq!(error["retryable"], expected_retryable);
+            let serialized = serde_json::to_string(error).unwrap();
+            assert!(!serialized.contains("/Users/"));
+            assert!(!serialized.contains("change-set:"));
+            assert!(!serialized.contains("native_handle"));
+        }
     }
 
     #[test]

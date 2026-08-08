@@ -201,6 +201,121 @@ def _wait_scene_node(
     raise s9.WorkflowError(f"scene node readback did not converge: {last}")
 
 
+def _persisted_change_set_and_undo(
+    client: Sprint10McpClient,
+    project_root: Path,
+    timeout: float,
+) -> dict[str, Any]:
+    current, history, state, _ = s9.stable_read(client, timeout)
+    before = _coordinates(current, history, state)
+    root_id = cast(Mapping[str, str], before["node_ids"])["."]
+    source_before = _all_project_hashes(project_root)
+    key = hashlib.sha256(b"s10:model-free:persisted-alias").hexdigest()[:32]
+    prepared, prepare_error, _ = client.tool(
+        "godot_prepare_change_set",
+        {
+            "project_id": before["project_id"],
+            "idempotency_key": f"idempotency:{key}",
+            "coordinates": {
+                "editor_session_id": before["editor_session_id"],
+                "scene_id": before["scene_id"],
+                "scene_revision": before["scene_revision"],
+                "operation_seq": before["operation_seq"],
+                "resource_revision": before["resource_revision"],
+                "script_graph_revision": before["script_graph_revision"],
+            },
+            "operations": [
+                {
+                    "kind": "create_node",
+                    "alias": "alias:persisted",
+                    "parent_node_id": root_id,
+                    "godot_type": "Node2D",
+                    "name": "CompoundPersisted",
+                },
+                {
+                    "kind": "set_property",
+                    "node_id": "alias:persisted",
+                    "property": "position",
+                    "value": {"type": "vector2", "value": [24.0, 36.0]},
+                },
+            ],
+            "save_scope": {"paths": ["res://main.tscn"]},
+            "validation_policy": {
+                "rollback": "on_any_failure",
+                "warnings": "allow",
+                "runtime": "skip",
+            },
+        },
+    )
+    s9.require(not prepare_error, f"persisted compound prepare failed: {prepared}")
+    client.expect_change_set(prepared)
+    applied, apply_error, _ = client.tool(
+        "godot_apply_transaction",
+        {
+            "transaction_id": prepared["change_set_id"],
+            "preview_digest": prepared["preview_digest"],
+            "expected_scene_revision": before["scene_revision"],
+            "expected_operation_seq": before["operation_seq"],
+        },
+        timeout=max(timeout, 15.0),
+    )
+    client.clear_approval()
+    s9.require(not apply_error, f"persisted compound apply failed: {applied}")
+    terminal, _ = _wait_terminal(
+        client, str(prepared["change_set_id"]), max(timeout, 15.0)
+    )
+    report, report_error, _ = client.tool(
+        "godot_get_validation_report",
+        {"report_id": terminal["validation_report_id"], "page": 0},
+    )
+    s9.require(not report_error, f"persisted validation report failed: {report}")
+    parsed_report = s9.strict_json_text(str(report.get("content", "")))
+    check_outcomes = {
+        item.get("check"): item.get("outcome")
+        for item in parsed_report.get("checks", [])
+        if isinstance(item, dict)
+    }
+    s9.require(
+        terminal.get("state") == "committed",
+        "persisted compound validation did not commit: "
+        f"terminal={terminal}; checks={check_outcomes}; "
+        f"report_outcome={parsed_report.get('outcome')}",
+    )
+    s9.require(
+        parsed_report.get("outcome") == "passed"
+        and check_outcomes.get("index_convergence") == "passed",
+        f"persisted index convergence was not proven: {check_outcomes}",
+    )
+    after_current, after_history, after_state = _wait_scene_node(
+        client, "CompoundPersisted", True, timeout
+    )
+    after = _coordinates(after_current, after_history, after_state)
+    undone, undo_error, _ = client.tool(
+        "godot_undo_transaction",
+        {
+            "transaction_id": prepared["change_set_id"],
+            "expected_transaction_seq": terminal["transaction_seq"],
+            "expected_scene_revision": after["scene_revision"],
+            "expected_operation_seq": after["operation_seq"],
+        },
+    )
+    s9.require(
+        not undo_error and undone.get("state") == "undone",
+        f"persisted compound Undo failed: {undone}",
+    )
+    _wait_scene_node(client, "CompoundPersisted", False, timeout)
+    s9.require(
+        source_before == _all_project_hashes(project_root),
+        "persisted compound Undo did not restore exact project bytes",
+    )
+    return {
+        "change_set_id": prepared["change_set_id"],
+        "validation_report_id": terminal["validation_report_id"],
+        "index_convergence": "passed",
+        "exact_undo": True,
+    }
+
+
 def run_workflow(
     godot: Path,
     sidecar: Path,
@@ -415,6 +530,9 @@ def run_workflow(
             source_before == _all_project_hashes(session.project_root),
             "memory-only workflow changed project-content bytes",
         )
+        persisted = _persisted_change_set_and_undo(
+            client, session.project_root, timeout
+        )
         return {
             "schema_version": "s10-model-free-live/1.0",
             "status": "passed",
@@ -432,6 +550,7 @@ def run_workflow(
             "one_native_action": True,
             "prepare_read_only": True,
             "exact_undo": True,
+            "persisted": persisted,
             "validation": {
                 "outcome": parsed_report["outcome"],
                 "checks": check_outcomes,

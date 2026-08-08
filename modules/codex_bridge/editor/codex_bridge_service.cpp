@@ -235,6 +235,14 @@ void CodexBridgeService::_dispatch_command(const MainThreadDispatcher::Command &
 			} else {
 				outcome = service->compound_change_set_coordinator.rollback(params, now_ms);
 			}
+			if (p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_APPLY ||
+					p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_UNDO ||
+					p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_VALIDATION_COMPLETE ||
+					p_command.type == MainThreadDispatcher::COMMAND_CHANGE_SET_ROLLBACK) {
+				service->resource_graph_adapter.request_refresh();
+				service->scene_state_adapter.request_refresh();
+				service->script_graph_adapter.request_refresh();
+			}
 			if (outcome.has_result) {
 				service->transport_worker.complete_request(p_command.request_id, outcome.result);
 			} else {

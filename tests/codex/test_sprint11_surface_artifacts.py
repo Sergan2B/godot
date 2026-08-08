@@ -650,6 +650,7 @@ def raw_capture(
             }
         ],
         "facts": [],
+        "diagnostics": [],
     }
     _tool_exchange(
         events,
