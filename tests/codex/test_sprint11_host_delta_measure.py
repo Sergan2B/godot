@@ -320,6 +320,7 @@ class HostDeltaMeasurementTests(unittest.TestCase):
                 embedded_profile=profile_path,
                 embedded_matrix=matrix_path,
                 output=output,
+                timeout_seconds=180.0,
             )
 
             def signature(path: Path, *, deep: bool, runner: object = None) -> dict[str, object]:

@@ -59,6 +59,7 @@ MAX_JSON_BYTES: Final = 2 * 1024 * 1024
 MAX_COMMAND_BYTES: Final = 256 * 1024
 MAX_VERSION_BYTES: Final = 16 * 1024
 MAX_DURATION_MS: Final = 10 * 60 * 1000
+MAX_TIMEOUT_SECONDS: Final = 180.0
 VERSION_RE: Final = re.compile(r"[0-9][0-9A-Za-z.+-]{0,63}\Z")
 MATURITY_RE: Final = re.compile(r"[a-z][a-z -]{0,31}\Z")
 FEATURE_LINE_RE: Final = re.compile(
@@ -283,7 +284,7 @@ def run_bounded_command(
                 returncode = process.wait(timeout=timeout)
             except subprocess.TimeoutExpired as error:
                 _stop_process_group(process)
-                raise HostMeasurementError("host command timed out") from error
+                raise HostMeasurementError(f"host command timed out: {operation}") from error
             try:
                 os.killpg(process.pid, 0)
             except ProcessLookupError:
@@ -765,7 +766,7 @@ def measure_host_delta(options: MeasureOptions) -> dict[str, Any]:
     require(
         isinstance(options.timeout_seconds, (int, float))
         and not isinstance(options.timeout_seconds, bool)
-        and 0 < options.timeout_seconds <= 120,
+        and 0 < options.timeout_seconds <= MAX_TIMEOUT_SECONDS,
         "host measurement timeout differs",
     )
     require(

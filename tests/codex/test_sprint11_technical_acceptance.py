@@ -33,10 +33,12 @@ class TechnicalAcceptanceTests(unittest.TestCase):
         self.host = self.root / "host-delta"
         self.host.mkdir()
 
+        self.matrix_artifact_digest = digest("9")
         self.manifest = {
             "schema_version": "s11-package-manifest/1.0",
             "package_version": "0.1.19",
             "source_commit": SOURCE_COMMIT,
+            "compatibility_matrix_sha256": self.matrix_artifact_digest,
         }
         self.manifest_path = self.root / "package/sprint11-package-manifest.json"
         self.manifest_digest = write_json(self.manifest_path, self.manifest)
@@ -115,7 +117,7 @@ class TechnicalAcceptanceTests(unittest.TestCase):
         self.matrix = matrix()
         self.matrix_digest = host_delta.sha256_bytes(host_delta.ordered_compact_json(self.matrix))
         self.supported_profile = profile()
-        self.supported_profile["compatibility_matrix"]["sha256"] = self.matrix_digest
+        self.supported_profile["compatibility_matrix"]["sha256"] = self.matrix_artifact_digest
         for surface in self.supported_profile["surfaces"]:
             surface["qualification"] = "supported"
         self.profile_path = self.host / "host-coordinate-profile.json"
@@ -148,7 +150,7 @@ class TechnicalAcceptanceTests(unittest.TestCase):
 
         self.measurement = {
             "schema_version": "s11-host-delta-measurement/1.0",
-            "package": {"version": "0.1.19", "baseline_matrix_sha256": self.matrix_digest},
+            "package": {"version": "0.1.19", "baseline_matrix_sha256": self.matrix_artifact_digest},
             "surfaces": copy.deepcopy(self.supported_profile["surfaces"]),
             "client_groups": [
                 {"client_artifact_sha256": digest("a"), "surfaces": ["app", "cli"]},
@@ -242,6 +244,15 @@ class TechnicalAcceptanceTests(unittest.TestCase):
         self.measurement["surfaces"].pop()
         write_json(self.measurement_path, self.measurement)
         with self.assertRaisesRegex(technical.TechnicalAcceptanceError, "surfaces"):
+            self.compose()
+
+    def test_measurement_must_bind_the_manifest_matrix_artifact(self) -> None:
+        self.measurement["package"]["baseline_matrix_sha256"] = digest("8")
+        write_json(self.measurement_path, self.measurement)
+        with self.assertRaisesRegex(
+            technical.TechnicalAcceptanceError,
+            "host measurement package",
+        ):
             self.compose()
 
     def test_active_sequence_mismatch_is_rejected(self) -> None:

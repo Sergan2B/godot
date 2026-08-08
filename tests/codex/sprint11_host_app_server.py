@@ -34,13 +34,18 @@ except ModuleNotFoundError:  # Direct execution from tests/codex.
     )
 
 
-MAX_LINE_BYTES: Final = 2 * 1024 * 1024
+# A full mcpServerStatus/list response includes the schemas for all 41 tools.
+# Current Codex hosts legitimately exceed 2 MiB while remaining well below the
+# independent total-output ceiling.
+MAX_LINE_BYTES: Final = 8 * 1024 * 1024
 MAX_TOTAL_OUTPUT_BYTES: Final = 16 * 1024 * 1024
 MAX_NOTIFICATIONS: Final = 4096
 MAX_REGISTRY_BYTES: Final = 512 * 1024
 MAX_PROJECT_FILES: Final = 16_384
 MAX_PROJECT_BYTES: Final = 512 * 1024 * 1024
 READ_BYTES: Final = 64 * 1024
+STATUS_READY_TIMEOUT_SECONDS: Final = 20.0
+STATUS_POLL_INTERVAL_SECONDS: Final = 0.25
 PROCESS_SCOPE_RE: Final = re.compile(r"GODOT_CODEX_PROCESS_SCOPE_[0-9a-f]{48}\Z")
 PROJECT_ID_RE: Final = re.compile(r"project:sha256:([0-9a-f]{64})\Z")
 REGISTRY_FIELDS: Final = {
@@ -341,10 +346,19 @@ class JsonRpcLineClient:
                 require("method" not in message, "unexpected app-server request")
                 self.completed_ids.add(response_id)
                 if "error" in message:
-                    raise AppServerProtocolError("app-server returned a JSON-RPC error")
+                    # Identify the failed contract operation without copying the
+                    # server-provided error object into persisted or operator-visible
+                    # output; it can contain paths or other host-local details.
+                    raise AppServerProtocolError(
+                        f"app-server returned a JSON-RPC error for {method}"
+                    )
                 result = message.get("result")
                 require(isinstance(result, dict), "app-server result differs")
                 return result
+        except AppServerProtocolError as error:
+            if f"for {method}" in str(error):
+                raise
+            raise AppServerProtocolError(f"{method}: {error}") from error
         finally:
             self.outstanding = False
 
@@ -525,7 +539,7 @@ def run_client_smoke(options: SmokeOptions) -> dict[str, Any]:
             "-c",
             f"mcp_servers.godot_editor.command={_toml_string(str(launcher))}",
             "-c",
-            'mcp_servers.godot_editor.args=["mcp"]',
+            'mcp_servers.godot_editor.args=["mcp","--project-root","."]',
             "-c",
             f"mcp_servers.godot_editor.cwd={_toml_string(str(project))}",
             "-c",
@@ -584,28 +598,50 @@ def run_client_smoke(options: SmokeOptions) -> dict[str, Any]:
                 {"threadId": thread_id, "detail": "full"},
             )
             registry_projection = _validate_inventory(inventory, registry)
-            status_result = protocol.request(
-                "mcpServer/tool/call",
-                {
-                    "server": "godot_editor",
-                    "threadId": thread_id,
-                    "tool": "godot_get_connection_status",
-                    "arguments": {},
-                },
+            status_deadline = min(
+                deadline,
+                time.monotonic() + STATUS_READY_TIMEOUT_SECONDS,
             )
-            status = _tool_payload(status_result)
-            bridge = status.get("bridge")
-            cache = status.get("static_cache")
-            require(
-                status.get("schema_version") == "godot-connection-status/1.1"
-                and status.get("status") == "ready"
-                and status.get("project_scope") == project_scope
-                and isinstance(bridge, dict)
-                and bridge.get("negotiated_protocol") == "1.8"
-                and isinstance(cache, dict)
-                and cache.get("condition") == "online_current",
-                "Godot MCP connection status differs",
-            )
+            while True:
+                status_result = protocol.request(
+                    "mcpServer/tool/call",
+                    {
+                        "server": "godot_editor",
+                        "threadId": thread_id,
+                        "tool": "godot_get_connection_status",
+                        "arguments": {},
+                    },
+                )
+                status = _tool_payload(status_result)
+                bridge = status.get("bridge")
+                cache = status.get("static_cache")
+                status_checks = {
+                    "schema": status.get("schema_version")
+                    == "godot-connection-status/1.1",
+                    "ready": status.get("status") == "ready",
+                    "scope": status.get("project_scope") == project_scope,
+                    "protocol": isinstance(bridge, dict)
+                    and bridge.get("negotiated_protocol") == "1.8",
+                    "cache": isinstance(cache, dict)
+                    and cache.get("condition") == "online_current",
+                }
+                if all(status_checks.values()):
+                    break
+                if status.get("status") not in {"offline_empty", "syncing"}:
+                    failed = ",".join(
+                        name
+                        for name in sorted(status_checks)
+                        if not status_checks[name]
+                    )
+                    raise AppServerProtocolError(
+                        f"Godot MCP connection status differs: {failed}"
+                    )
+                remaining = status_deadline - time.monotonic()
+                require(
+                    remaining > 0,
+                    "Godot MCP connection did not become ready within its bound",
+                )
+                time.sleep(min(STATUS_POLL_INTERVAL_SECONDS, remaining))
             scene_result = protocol.request(
                 "mcpServer/tool/call",
                 {

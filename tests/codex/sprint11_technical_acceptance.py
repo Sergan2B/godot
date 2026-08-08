@@ -234,6 +234,7 @@ def _validate_host_delta(
     inputs: TechnicalInputs,
     manifest_digest: str,
     source_commit: str,
+    compatibility_matrix_sha256: str,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any], list[tuple[Path, dict[str, Any]]]]:
     root = inputs.host_delta_directory
     require(root.is_dir() and not root.is_symlink(), "host-delta directory differs")
@@ -249,7 +250,12 @@ def _validate_host_delta(
 
     require(measurement.get("schema_version") == "s11-host-delta-measurement/1.0", "host measurement schema differs")
     package = _mapping(measurement.get("package"), label="host measurement package")
-    require(package.get("version") == PACKAGE_VERSION, "host measurement package differs")
+    require(
+        package.get("version") == PACKAGE_VERSION
+        and package.get("baseline_matrix_sha256")
+        == compatibility_matrix_sha256,
+        "host measurement package differs",
+    )
     measurement_surfaces = measurement.get("surfaces")
     require(
         isinstance(measurement_surfaces, list)
@@ -289,11 +295,12 @@ def _validate_host_delta(
     )
     profile_digest = host_delta.sha256_bytes(profile_raw)
     bundle_digest = host_delta.sha256_bytes(bundle_raw)
-    baseline_digest = package.get("baseline_matrix_sha256")
+    baseline_digest = bundle.get("baseline_matrix_sha256")
     require(
         bundle.get("schema_version") == host_delta.BUNDLE_SCHEMA
         and bundle.get("package_version") == PACKAGE_VERSION
-        and bundle.get("baseline_matrix_sha256") == baseline_digest
+        and isinstance(baseline_digest, str)
+        and host_delta.DIGEST_RE.fullmatch(baseline_digest) is not None
         and bundle.get("host_coordinate_profile_sha256") == profile_digest,
         "surface compatibility bundle binding differs",
     )
@@ -376,12 +383,19 @@ def compose(inputs: TechnicalInputs) -> dict[str, Any]:
     manifest, manifest_raw = _read_json(inputs.package_manifest, label="detached package manifest")
     manifest_digest = host_delta.sha256_bytes(manifest_raw)
     source_commit = manifest.get("source_commit")
+    compatibility_matrix_sha256 = manifest.get("compatibility_matrix_sha256")
     require(
         manifest.get("schema_version") == "s11-package-manifest/1.0"
         and manifest.get("package_version") == PACKAGE_VERSION
         and isinstance(source_commit, str)
         and SOURCE_COMMIT_RE.fullmatch(source_commit) is not None,
         "frozen package manifest coordinate differs",
+    )
+    require(
+        isinstance(compatibility_matrix_sha256, str)
+        and host_delta.DIGEST_RE.fullmatch(compatibility_matrix_sha256)
+        is not None,
+        "frozen package compatibility matrix binding differs",
     )
     package_live, same_project, multi, repro, same_path = _validate_package_receipts(
         inputs=inputs,
@@ -392,6 +406,7 @@ def compose(inputs: TechnicalInputs) -> dict[str, Any]:
         inputs=inputs,
         manifest_digest=manifest_digest,
         source_commit=source_commit,
+        compatibility_matrix_sha256=compatibility_matrix_sha256,
     )
     report = {
         "schema_version": SCHEMA_VERSION,

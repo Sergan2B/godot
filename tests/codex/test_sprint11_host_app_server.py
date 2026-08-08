@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests.codex import sprint11_host_app_server as app_server
 
@@ -47,6 +48,7 @@ TOOLS = {registry["tools"]!r}
 RESOURCES = {registry["fixed_resources"]!r}
 TEMPLATES = {registry["resource_templates"]!r}
 methods = []
+status_calls = 0
 def save():
     with open(LOG, "w", encoding="utf-8") as stream:
         json.dump({{"methods": methods, "argv": sys.argv[1:], "cwd": os.getcwd(), "codex_home": os.environ.get("CODEX_HOME")}}, stream)
@@ -67,12 +69,15 @@ for line in sys.stdin:
         sys.stdout.flush()
         continue
     if MODE == "oversized":
-        sys.stdout.write("{{\\\"value\\\":\\\"" + "x" * (2 * 1024 * 1024 + 32) + "\\\"}}\\n")
+        sys.stdout.write("{{\\\"value\\\":\\\"" + "x" * ({app_server.MAX_LINE_BYTES} + 32) + "\\\"}}\\n")
         sys.stdout.flush()
         continue
     if MODE == "notification_flood":
         for index in range(4097):
             send({{"jsonrpc": "2.0", "method": "fixture/progress", "params": {{"index": index}}}})
+    if MODE == "json_rpc_error" and method == "thread/start":
+        send({{"jsonrpc": "2.0", "id": request["id"], "error": {{"code": -32000, "message": "secret host detail"}}}})
+        continue
     if method == "initialize":
         assert request["params"]["capabilities"]["mcpServerOpenaiFormElicitation"] is True
         send({{"jsonrpc": "2.0", "id": request["id"], "result": {{"userAgent": "fixture", "platformFamily": "unix", "platformOs": "macos", "codexHome": "redacted"}}}})
@@ -103,12 +108,16 @@ for line in sys.stdin:
         assert params["threadId"] == "thread-fixture"
         assert params["arguments"] == {{}}
         if params["tool"] == "godot_get_connection_status":
+            status_calls += 1
+            syncing = MODE in {{"sync_then_ready", "permanent_sync"}} and (
+                MODE == "permanent_sync" or status_calls == 1
+            )
             payload = {{
                 "schema_version": "godot-connection-status/1.1",
-                "status": "ready",
+                "status": "syncing" if syncing else "ready",
                 "project_scope": "b" * 64 if MODE == "wrong_scope" else "a" * 64,
                 "bridge": {{"condition": "ready", "negotiated_protocol": "1.8"}},
-                "static_cache": {{"condition": "online_current"}}
+                "static_cache": {{"condition": "rebuilding" if syncing else "online_current"}}
             }}
         elif params["tool"] == "godot_get_current_scene":
             payload = {{
@@ -175,6 +184,10 @@ if MODE == "ignore_shutdown":
         )
         self.assertNotIn("turn/start", observed["methods"])
         self.assertEqual(observed["cwd"], str(self.project))
+        self.assertIn(
+            'mcp_servers.godot_editor.args=["mcp","--project-root","."]',
+            observed["argv"],
+        )
         self.assertNotEqual(observed["codex_home"], str(Path.home() / ".codex"))
         encoded = json.dumps(report, sort_keys=True)
         self.assertNotIn(str(self.root), encoded)
@@ -200,15 +213,42 @@ if MODE == "ignore_shutdown":
                     app_server.run_client_smoke(options)
                 self.assertFalse(options.output.exists())
 
+    def test_transient_sync_is_polled_without_operator_interaction(self) -> None:
+        options = self._options("sync_then_ready")
+        report = app_server.run_client_smoke(options)
+        self.assertEqual(report["status"], "passed")
+        observed = json.loads(self.log.read_text(encoding="utf-8"))
+        self.assertEqual(observed["methods"].count("mcpServer/tool/call"), 3)
+
+    def test_transient_sync_still_has_a_local_deadline(self) -> None:
+        options = self._options("permanent_sync")
+        with mock.patch.object(app_server, "STATUS_READY_TIMEOUT_SECONDS", 0.2):
+            with self.assertRaisesRegex(
+                app_server.AppServerProtocolError,
+                "did not become ready within its bound",
+            ):
+                app_server.run_client_smoke(options)
+        self.assertFalse(options.output.exists())
+
     def test_timeout_kills_only_the_exact_child(self) -> None:
-        options = self._options("timeout", timeout=0.25)
-        with self.assertRaisesRegex(app_server.AppServerProtocolError, "deadline"):
+        options = self._options("timeout", timeout=0.75)
+        with self.assertRaisesRegex(app_server.AppServerProtocolError, "initialize:.*deadline"):
             app_server.run_client_smoke(options)
         observed = json.loads(self.log.read_text(encoding="utf-8"))
         self.assertEqual(observed["methods"], ["initialize"])
 
+    def test_json_rpc_error_names_only_the_failed_method(self) -> None:
+        options = self._options("json_rpc_error")
+        with self.assertRaisesRegex(
+            app_server.AppServerProtocolError,
+            "JSON-RPC error for thread/start",
+        ) as raised:
+            app_server.run_client_smoke(options)
+        self.assertNotIn("secret host detail", str(raised.exception))
+        self.assertFalse(options.output.exists())
+
     def test_close_forces_an_uncooperative_child_to_exit(self) -> None:
-        options = self._options("ignore_shutdown", timeout=0.5)
+        options = self._options("ignore_shutdown", timeout=1.0)
         started = time.monotonic()
         with self.assertRaisesRegex(app_server.AppServerProtocolError, "cleanly"):
             app_server.run_client_smoke(options)
