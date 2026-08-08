@@ -124,6 +124,55 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
         self.assertEqual(serde["version"], "1.0.228")
         self.assertIn("source", serde)
 
+    def test_prepared_workspace_refreshes_version_without_mutating_checkout(
+        self,
+    ) -> None:
+        original_manifest = launcher.SPIKE_MANIFEST.read_bytes()
+        original_lock = launcher.SPIKE_LOCK.read_bytes()
+        with launcher.prepared_storage_spike() as manifest:
+            prepared = tomllib.loads(
+                manifest.with_name("Cargo.lock").read_text(encoding="utf-8")
+            )
+            package = next(
+                item
+                for item in prepared["package"]
+                if item["name"] == "godot-codex-index-store"
+            )
+            self.assertEqual(package["version"], launcher.workspace_version())
+            self.assertNotEqual(manifest, launcher.SPIKE_MANIFEST)
+            self.assertTrue(manifest.is_file())
+        self.assertEqual(launcher.SPIKE_MANIFEST.read_bytes(), original_manifest)
+        self.assertEqual(launcher.SPIKE_LOCK.read_bytes(), original_lock)
+
+    def test_command_is_locked_offline_and_uses_prepared_manifest(self) -> None:
+        with launcher.prepared_storage_spike() as manifest:
+            command = launcher.storage_spike_command(
+                manifest,
+                ["validate", "evidence.json"],
+            )
+            self.assertIn("--locked", command)
+            self.assertIn("--offline", command)
+            self.assertEqual(
+                command[command.index("--manifest-path") + 1],
+                str(manifest),
+            )
+            self.assertEqual(command[-3:], ["--", "validate", "evidence.json"])
+
+    def test_manifest_rewrite_requires_one_exact_local_dependency(self) -> None:
+        original = launcher.SPIKE_MANIFEST.read_text(encoding="utf-8")
+        duplicated = (
+            original
+            + '\ngodot-codex-index-store = { path = "duplicate" }\n'
+        )
+        with self.assertRaisesRegex(
+            launcher.StorageSpikeLauncherError,
+            "dependency must appear exactly once",
+        ):
+            launcher.replace_exact_index_store_path(
+                duplicated,
+                launcher.INDEX_STORE_ROOT,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
