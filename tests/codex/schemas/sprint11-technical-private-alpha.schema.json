@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://godot-codex.invalid/schemas/sprint11-technical-private-alpha.schema.json",
+  "title": "Sprint 11 Technical/Private-Alpha evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "track", "package", "package_evidence", "host_compatibility", "usability", "claims", "assertions", "redaction"],
+  "properties": {
+    "schema_version": { "const": "s11-technical-private-alpha/1.0" },
+    "status": { "const": "passed" },
+    "track": { "const": "technical_private_alpha" },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "source_commit", "manifest"],
+      "properties": {
+        "version": { "const": "0.1.19" },
+        "source_commit": { "$ref": "#/$defs/commit" },
+        "manifest": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "package_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package_live", "same_project", "multi_project", "reproducibility"],
+      "properties": {
+        "package_live": { "$ref": "#/$defs/evidence" },
+        "same_project": { "$ref": "#/$defs/evidence" },
+        "multi_project": { "$ref": "#/$defs/evidence" },
+        "reproducibility": { "$ref": "#/$defs/evidence" }
+      }
+    },
+    "host_compatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["measurement", "profile", "bundle", "receipt", "active_status", "smokes"],
+      "properties": {
+        "measurement": { "$ref": "#/$defs/evidence" },
+        "profile": { "$ref": "#/$defs/evidence" },
+        "bundle": { "$ref": "#/$defs/evidence" },
+        "receipt": { "$ref": "#/$defs/evidence" },
+        "active_status": { "$ref": "#/$defs/evidence" },
+        "smokes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "usability": { "const": "deferred_unacquired" },
+    "claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["technical_private_alpha", "external_codex_beta", "commercial_ready"],
+      "properties": {
+        "technical_private_alpha": { "const": true },
+        "external_codex_beta": { "const": false },
+        "commercial_ready": { "const": false }
+      }
+    },
+    "assertions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package_evidence_reused", "host_delta_applied", "same_project_takeover_passed", "multi_project_isolation_passed", "all_host_clients_smoked", "manual_surface_loop_not_required"],
+      "properties": {
+        "package_evidence_reused": { "const": true },
+        "host_delta_applied": { "const": true },
+        "same_project_takeover_passed": { "const": true },
+        "multi_project_isolation_passed": { "const": true },
+        "all_host_clients_smoked": { "const": true },
+        "manual_surface_loop_not_required": { "const": true }
+      }
+    },
+    "redaction": { "$ref": "#/$defs/redaction" }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "relative_path": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?!/)(?!.*(^|/)\\.\\.(/|$)).+$" },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "schema_version", "status", "source_commit", "package_manifest_sha256"],
+      "properties": {
+        "path": { "$ref": "#/$defs/relative_path" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "schema_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "status": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "source_commit": { "$ref": "#/$defs/commit" },
+        "package_manifest_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["absolute_paths_absent", "account_identity_absent", "artifact_content_absent", "environment_secrets_absent"],
+      "properties": {
+        "absolute_paths_absent": { "const": true },
+        "account_identity_absent": { "const": true },
+        "artifact_content_absent": { "const": true },
+        "environment_secrets_absent": { "const": true }
+      }
+    }
+  }
+}
