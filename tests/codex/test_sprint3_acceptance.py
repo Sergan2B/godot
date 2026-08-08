@@ -595,6 +595,65 @@ class Sprint3AcceptanceTests(unittest.TestCase):
             )
             self.assertTrue(output.is_file())
 
+    def test_storage_validator_reports_build_failure_instead_of_scoring_mismatch(
+        self,
+    ) -> None:
+        failed = subprocess.CompletedProcess(
+            args=["cargo"],
+            returncode=101,
+            stdout="",
+            stderr="error: lock mismatch\n",
+        )
+        with mock.patch.object(
+            acceptance,
+            "run_storage_spike",
+            return_value=failed,
+        ):
+            with self.assertRaisesRegex(
+                AcceptanceError,
+                "Rust D-05 validator failed: error: lock mismatch",
+            ):
+                acceptance.validate_storage_canonical_receipt(b"{}", "segment")
+
+    def test_storage_validator_preserves_canonical_scoring_rejection(
+        self,
+    ) -> None:
+        failed = subprocess.CompletedProcess(
+            args=["cargo"],
+            returncode=1,
+            stdout="",
+            stderr=(
+                "storage spike failed: validation failed: combined D-05 "
+                "evidence differs from canonical raw-sample scoring\n"
+            ),
+        )
+        with mock.patch.object(
+            acceptance,
+            "run_storage_spike",
+            return_value=failed,
+        ):
+            with self.assertRaisesRegex(
+                AcceptanceError,
+                "storage aggregate differs from canonical Rust raw-sample scoring",
+            ):
+                acceptance.validate_storage_canonical_receipt(b"{}", "segment")
+
+    def test_storage_validator_bounds_child_diagnostics(self) -> None:
+        failed = subprocess.CompletedProcess(
+            args=["cargo"],
+            returncode=101,
+            stdout="",
+            stderr="x" * 4_096,
+        )
+        with mock.patch.object(
+            acceptance,
+            "run_storage_spike",
+            return_value=failed,
+        ):
+            with self.assertRaises(AcceptanceError) as raised:
+                acceptance.validate_storage_canonical_receipt(b"{}", "segment")
+        self.assertLessEqual(len(str(raised.exception).encode("utf-8")), 576)
+
     def test_rejects_summary_not_derived_from_raw_samples(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

@@ -14,8 +14,12 @@ import tempfile
 from pathlib import Path
 from typing import Any, cast
 
+from sprint3_storage_spike import (
+    StorageSpikeLauncherError,
+    run_storage_spike,
+)
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-STORAGE_SPIKE_MANIFEST = REPOSITORY_ROOT / "tests" / "codex" / "storage_spike" / "Cargo.toml"
 SOURCE_SCOPE_PATH = REPOSITORY_ROOT / "tests" / "codex" / "sprint3_source_scopes.txt"
 SOURCE_SCOPE_MANIFEST = SOURCE_SCOPE_PATH.relative_to(REPOSITORY_ROOT).as_posix()
 SOURCE_SCOPES = tuple(
@@ -340,6 +344,18 @@ def require(condition: bool, message: str) -> None:
         raise AcceptanceError(message)
 
 
+def bounded_child_error(value: str, *, byte_limit: int) -> str:
+    """Collapse and bound an untrusted child-process diagnostic by UTF-8 bytes."""
+
+    if byte_limit <= 0:
+        raise ValueError("child diagnostic byte limit must be positive")
+    collapsed = " ".join(value.split()) or "no diagnostic"
+    encoded = collapsed.encode("utf-8", errors="replace")
+    if len(encoded) <= byte_limit:
+        return collapsed
+    return encoded[:byte_limit].decode("utf-8", errors="ignore").rstrip()
+
+
 def require_sha256(value: Any, name: str) -> None:
     require(isinstance(value, str) and SHA256.fullmatch(value) is not None, f"{name} is invalid")
 
@@ -536,34 +552,32 @@ def validate_storage_canonical_receipt(evidence_bytes: bytes, chosen_backend: st
     with tempfile.TemporaryDirectory(prefix="sprint3-storage-receipt-") as temporary:
         snapshot = Path(temporary) / "storage-evidence.json"
         snapshot.write_bytes(evidence_bytes)
-        command = [
-            "cargo",
-            "+1.94.1",
-            "run",
-            "--quiet",
-            "--locked",
-            "--release",
-            "--manifest-path",
-            str(STORAGE_SPIKE_MANIFEST),
-            "--",
-            "validate",
-            str(snapshot),
-        ]
         try:
-            completed = subprocess.run(
-                command,
-                cwd=REPOSITORY_ROOT,
-                check=False,
+            completed = run_storage_spike(
+                ["validate", str(snapshot)],
                 capture_output=True,
-                text=True,
-                timeout=600,
             )
+        except StorageSpikeLauncherError as error:
+            raise AcceptanceError(
+                f"canonical Rust D-05 validator could not be prepared: {error}"
+            ) from error
         except (OSError, subprocess.TimeoutExpired) as error:
-            raise AcceptanceError("canonical Rust D-05 validation could not run") from error
-    require(
-        completed.returncode == 0,
-        "storage aggregate differs from canonical Rust raw-sample scoring",
-    )
+            raise AcceptanceError(
+                "canonical Rust D-05 validation could not run"
+            ) from error
+    if completed.returncode != 0:
+        stderr = completed.stderr or ""
+        if (
+            "combined D-05 evidence differs from canonical raw-sample scoring"
+            in stderr
+        ):
+            raise AcceptanceError(
+                "storage aggregate differs from canonical Rust raw-sample scoring"
+            )
+        summary = bounded_child_error(stderr, byte_limit=512)
+        raise AcceptanceError(
+            f"canonical Rust D-05 validator failed: {summary}"
+        )
     try:
         receipt = json.loads(completed.stdout)
     except json.JSONDecodeError as error:
