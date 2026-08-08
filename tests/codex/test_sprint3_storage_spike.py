@@ -173,6 +173,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
                 launcher.INDEX_STORE_ROOT,
             )
 
+    def test_current_storage_spike_compiles_through_isolated_launcher(
+        self,
+    ) -> None:
+        completed = launcher.run_storage_spike(
+            ["validate", str(launcher.CANONICAL_STORAGE_EVIDENCE)],
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -76,6 +76,7 @@ pub fn synthetic_generation(
         diagnostics: Vec::new(),
         tombstones: Vec::new(),
         scene: Default::default(),
+        script: Default::default(),
         validation_digest: String::new(),
     })
 }
@@ -336,6 +337,7 @@ fn oracle_phase(phase: &Value, revision: u64) -> Result<IndexGeneration, StoreEr
         diagnostics,
         tombstones: Vec::new(),
         scene: Default::default(),
+        script: Default::default(),
         validation_digest: String::new(),
     }))
 }
