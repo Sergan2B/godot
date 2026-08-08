@@ -275,6 +275,37 @@ pub(crate) struct PrepareChangeSetInput {
 }
 
 impl PrepareChangeSetInput {
+    pub(crate) fn index_requirements(&self) -> (bool, bool, bool) {
+        let has_scene = self
+            .operations
+            .iter()
+            .any(|operation| matches!(operation, ChangeSetOperationInput::Scene(_)));
+        let scene_persisted = has_scene
+            && self
+                .save_scope
+                .paths
+                .iter()
+                .any(|path| path.ends_with(".tscn"));
+        let resource = self.operations.iter().any(|operation| {
+            matches!(
+                operation,
+                ChangeSetOperationInput::Persistence(
+                    PersistenceOperationInput::CreateResource { .. }
+                        | PersistenceOperationInput::UpdateResource { .. }
+                )
+            )
+        });
+        let script = self.operations.iter().any(|operation| {
+            matches!(
+                operation,
+                ChangeSetOperationInput::Persistence(
+                    PersistenceOperationInput::UpdateGdscript { .. }
+                )
+            )
+        });
+        (scene_persisted, resource, script)
+    }
+
     pub(crate) fn validate(&self) -> Result<(), &'static str> {
         if self.operations.is_empty() || self.operations.len() > 16 {
             return Err("operations must contain between 1 and 16 entries");
@@ -688,5 +719,36 @@ mod tests {
         assert!(snapshot.get("receipt").is_none());
         assert!(snapshot.get("receipt_hash").is_none());
         assert!(snapshot.get("mac").is_none());
+    }
+
+    #[test]
+    fn change_set_index_requirements_follow_persisted_domains() {
+        let saved_scene: PrepareChangeSetInput = serde_json::from_value(json!({
+            "project_id": format!("project:sha256:{}", "0".repeat(64)),
+            "idempotency_key": format!("idempotency:{}", "1".repeat(32)),
+            "coordinates": {
+                "editor_session_id": format!("editor:{}", "2".repeat(32)),
+                "scene_id": format!("scene:{}", "3".repeat(32)),
+                "scene_revision": 1,
+                "operation_seq": 1,
+                "resource_revision": 1,
+                "script_graph_revision": 1
+            },
+            "operations": [{
+                "kind": "create_node",
+                "parent_node_id": format!("node:{}", "4".repeat(32)),
+                "godot_type": "Node2D",
+                "name": "Saved"
+            }],
+            "save_scope": {"paths": ["res://main.tscn"]},
+            "validation_policy": {
+                "rollback": "on_required_failure",
+                "warnings": "allow",
+                "runtime": "skip"
+            }
+        }))
+        .unwrap();
+
+        assert_eq!(saved_scene.index_requirements(), (true, false, false));
     }
 }

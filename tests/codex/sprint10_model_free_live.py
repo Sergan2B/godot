@@ -201,6 +201,31 @@ def _wait_scene_node(
     raise s9.WorkflowError(f"scene node readback did not converge: {last}")
 
 
+def _prepare_persisted_change_set(
+    client: Sprint10McpClient,
+    arguments: Mapping[str, Any],
+    timeout: float,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    last: dict[str, Any] | None = None
+    while time.monotonic() < deadline:
+        prepared, error, _ = client.tool("godot_prepare_change_set", arguments)
+        last = prepared
+        if not error:
+            return prepared
+        diagnostic = prepared.get("error")
+        if not (
+            isinstance(diagnostic, dict)
+            and diagnostic.get("code") == "index_not_ready"
+            and diagnostic.get("retryable") is True
+        ):
+            break
+        time.sleep(0.05)
+    raise s9.WorkflowError(
+        f"persisted compound prepare did not obtain a current index baseline: {last}"
+    )
+
+
 def _persisted_change_set_and_undo(
     client: Sprint10McpClient,
     project_root: Path,
@@ -211,8 +236,8 @@ def _persisted_change_set_and_undo(
     root_id = cast(Mapping[str, str], before["node_ids"])["."]
     source_before = _all_project_hashes(project_root)
     key = hashlib.sha256(b"s10:model-free:persisted-alias").hexdigest()[:32]
-    prepared, prepare_error, _ = client.tool(
-        "godot_prepare_change_set",
+    prepared = _prepare_persisted_change_set(
+        client,
         {
             "project_id": before["project_id"],
             "idempotency_key": f"idempotency:{key}",
@@ -246,8 +271,8 @@ def _persisted_change_set_and_undo(
                 "runtime": "skip",
             },
         },
+        timeout,
     )
-    s9.require(not prepare_error, f"persisted compound prepare failed: {prepared}")
     client.expect_change_set(prepared)
     applied, apply_error, _ = client.tool(
         "godot_apply_transaction",

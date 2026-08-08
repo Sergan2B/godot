@@ -668,6 +668,19 @@ struct CompoundIndexBaseline {
     validation_digest: String,
 }
 
+fn compound_index_baseline_eligible(
+    freshness: SemanticIndexFreshness,
+    partial_reasons: &[SemanticPartialReason],
+    require_scene: bool,
+    require_script: bool,
+) -> bool {
+    freshness == SemanticIndexFreshness::OnlineCurrent
+        && !partial_reasons.iter().any(|reason| {
+            (require_scene && reason.domain == SemanticPartialDomain::Scene)
+                || (require_script && reason.domain == SemanticPartialDomain::Script)
+        })
+}
+
 #[derive(Clone, Debug)]
 struct PreparedChangeSetBaseline {
     project_id: String,
@@ -887,8 +900,20 @@ impl GodotMcpServer {
         })))
     }
 
-    fn compound_index_baseline(&self) -> Option<CompoundIndexBaseline> {
+    fn compound_index_baseline(
+        &self,
+        require_scene: bool,
+        require_script: bool,
+    ) -> Option<CompoundIndexBaseline> {
         let snapshot = self.semantic_index.pin_current().ok()?;
+        if !compound_index_baseline_eligible(
+            snapshot.freshness(),
+            snapshot.partial_reasons(),
+            require_scene,
+            require_script,
+        ) {
+            return None;
+        }
         let generation = snapshot.generation();
         Some(CompoundIndexBaseline {
             generation_id: generation.generation_id.clone(),
@@ -941,7 +966,12 @@ impl GodotMcpServer {
         (snapshot.entities.len() <= 2_000).then_some(snapshot)
     }
 
-    async fn retain_change_set_baseline(&self, input: &PrepareChangeSetInput, result: &Value) {
+    async fn retain_change_set_baseline(
+        &self,
+        input: &PrepareChangeSetInput,
+        result: &Value,
+        index: Option<CompoundIndexBaseline>,
+    ) {
         let Some(change_set_id) = result.get("change_set_id").and_then(Value::as_str) else {
             return;
         };
@@ -963,7 +993,7 @@ impl GodotMcpServer {
             preview,
             live,
             semantic,
-            index: self.compound_index_baseline(),
+            index,
             completed_report: None,
         };
         let mut baselines = self.change_set_baselines.lock().await;
@@ -1336,6 +1366,13 @@ impl GodotMcpServer {
         let semantic = live
             .as_deref()
             .and_then(|snapshot| self.compound_semantic_snapshot(&preview, snapshot, &scene_id));
+        let (scene_persisted, resource, script) = change_set_operation_flags(&preview);
+        let scene_persisted = scene_persisted && change_set_saves_scene(&preview);
+        let index = if scene_persisted || resource || script {
+            Some(self.compound_index_baseline(scene_persisted, script)?)
+        } else {
+            None
+        };
         let baseline = PreparedChangeSetBaseline {
             project_id: client.project_id().to_owned(),
             editor_session_id: client.editor_session_id().to_owned(),
@@ -1344,7 +1381,7 @@ impl GodotMcpServer {
             preview,
             live,
             semantic,
-            index: self.compound_index_baseline(),
+            index,
             completed_report: None,
         };
         self.change_set_baselines
@@ -1737,7 +1774,7 @@ impl GodotMcpServer {
             .and_then(Value::as_array)
             .is_some_and(|scope| !scope.is_empty());
         let mut post_live = self.replicator.read().ok();
-        let mut post_index = self.compound_index_baseline();
+        let mut post_index = self.compound_index_baseline(scene_persisted, has_script);
         let convergence_deadline = tokio::time::Instant::now() + Duration::from_secs(15);
         let mut live_converged = !has_scene;
         let mut index_converged;
@@ -1771,7 +1808,7 @@ impl GodotMcpServer {
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
             post_live = self.replicator.read().ok();
-            post_index = self.compound_index_baseline();
+            post_index = self.compound_index_baseline(scene_persisted, has_script);
         }
 
         let intrinsic_passed = status
@@ -7455,13 +7492,27 @@ impl GodotMcpServer {
                 true,
             );
         }
+        let (scene_persisted, resource, script) = input.index_requirements();
+        let index_baseline = if scene_persisted || resource || script {
+            let Some(baseline) = self.compound_index_baseline(scene_persisted, script) else {
+                return structured_error(
+                    "index_not_ready",
+                    "The requested persisted change set requires an online-current semantic baseline; wait for static_cache.condition=online_current and retry the same idempotent preview.",
+                    true,
+                );
+            };
+            Some(baseline)
+        } else {
+            None
+        };
         let mut params = input.bridge_params();
         if let Err((code, message)) = self.bind_change_set_resource_paths(&mut params) {
             return structured_error(&code, &message, code == "resource_index_unavailable");
         }
         match client.prepare_change_set(params).await {
             Ok(result) => {
-                self.retain_change_set_baseline(&input, &result).await;
+                self.retain_change_set_baseline(&input, &result, index_baseline)
+                    .await;
                 transaction_result(result)
             }
             Err(error) => runtime_bridge_error(error),
@@ -11685,6 +11736,49 @@ mod tests {
                 .and_then(Value::as_str),
             Some("live_editor_property")
         );
+    }
+
+    #[test]
+    fn compound_proof_baseline_requires_online_current_requested_domains() {
+        let scene_stale = [SemanticPartialReason {
+            domain: SemanticPartialDomain::Scene,
+            code: SemanticPartialCode::NotCurrent,
+        }];
+        let script_stale = [SemanticPartialReason {
+            domain: SemanticPartialDomain::Script,
+            code: SemanticPartialCode::NotCurrent,
+        }];
+
+        assert!(compound_index_baseline_eligible(
+            SemanticIndexFreshness::OnlineCurrent,
+            &[],
+            true,
+            true,
+        ));
+        assert!(!compound_index_baseline_eligible(
+            SemanticIndexFreshness::OfflineCached,
+            &[],
+            true,
+            true,
+        ));
+        assert!(!compound_index_baseline_eligible(
+            SemanticIndexFreshness::OnlineCurrent,
+            &scene_stale,
+            true,
+            false,
+        ));
+        assert!(compound_index_baseline_eligible(
+            SemanticIndexFreshness::OnlineCurrent,
+            &scene_stale,
+            false,
+            true,
+        ));
+        assert!(!compound_index_baseline_eligible(
+            SemanticIndexFreshness::OnlineCurrent,
+            &script_stale,
+            false,
+            true,
+        ));
     }
 
     #[path = "success_contract_tests.rs"]
