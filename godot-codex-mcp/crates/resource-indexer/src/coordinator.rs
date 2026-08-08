@@ -1759,15 +1759,38 @@ impl ResourceIndexCoordinator {
             .join("staging");
         let snapshot = loop {
             let mut spool = ScriptSnapshotSpool::create(&staging)?;
-            match client.stream_script_snapshot(&mut spool).await {
-                Ok(_) => break spool.confirmed_snapshot()?,
+            let snapshot = match client.stream_script_snapshot(&mut spool).await {
+                Ok(_) => spool.confirmed_snapshot()?,
                 Err(error) if is_catalog_building(&error, "script_catalog_building") => {
                     tokio::time::sleep(CATALOG_RETRY_INTERVAL).await;
+                    continue;
                 }
                 Err(error) => return Err(error.into()),
+            };
+            let active = store.active_generation()?;
+            let active_scene_graph_revision = (client.negotiated_profile().scene_graph_available
+                && !active.scene.is_empty())
+            .then_some(active.scene.scene_graph_revision);
+            match classify_script_snapshot_binding(
+                client.editor_session_id(),
+                active.checkpoint.resource_revision,
+                active_scene_graph_revision,
+                &snapshot,
+            )? {
+                ScriptSnapshotBinding::Ready => break snapshot,
+                ScriptSnapshotBinding::RebaseDependencies => {
+                    if snapshot.end.resource_revision != active.checkpoint.resource_revision {
+                        self.full_snapshot(client, store).await?;
+                        if !self.online_activation_pending {
+                            self.reader.publish_current(store)?;
+                        }
+                    }
+                    if client.negotiated_profile().scene_graph_available {
+                        self.full_scene_snapshot(client, store).await?;
+                    }
+                }
             }
         };
-        validate_script_snapshot_binding(client, store, &snapshot)?;
         let graph = normalize_script_snapshot(&snapshot)?;
         let base = store.active_generation()?;
         let composition_base = self.script_composition_base(&base);
@@ -2078,25 +2101,36 @@ fn validate_scene_snapshot_binding(
     Ok(())
 }
 
-fn validate_script_snapshot_binding(
-    client: &BridgeClient,
-    store: &SegmentStore,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ScriptSnapshotBinding {
+    Ready,
+    RebaseDependencies,
+}
+
+fn classify_script_snapshot_binding(
+    editor_session_id: &str,
+    active_resource_revision: u64,
+    active_scene_graph_revision: Option<u64>,
     snapshot: &ScriptSnapshot,
-) -> Result<(), CoordinatorError> {
-    let active = store.active_generation()?;
-    if snapshot.accepted.revisions.editor_session_id != client.editor_session_id()
-        || snapshot.end.revisions.editor_session_id != client.editor_session_id()
-        || snapshot.accepted.resource_revision != snapshot.end.resource_revision
-        || snapshot.accepted.scene_graph_revision != snapshot.end.scene_graph_revision
-        || snapshot.accepted.script_graph_revision != snapshot.end.script_graph_revision
-        || snapshot.end.resource_revision != active.checkpoint.resource_revision
-        || (client.negotiated_profile().scene_graph_available
-            && !active.scene.is_empty()
-            && snapshot.end.scene_graph_revision > active.scene.scene_graph_revision)
+) -> Result<ScriptSnapshotBinding, CoordinatorError> {
+    if snapshot.accepted.revisions.editor_session_id != editor_session_id
+        || snapshot.end.revisions.editor_session_id != editor_session_id
     {
         return Err(IndexerError::Script("script_snapshot_session_changed").into());
     }
-    Ok(())
+    if snapshot.accepted.resource_revision != snapshot.end.resource_revision
+        || snapshot.accepted.scene_graph_revision != snapshot.end.scene_graph_revision
+        || snapshot.accepted.script_graph_revision != snapshot.end.script_graph_revision
+    {
+        return Err(IndexerError::Script("script_snapshot_revision_changed").into());
+    }
+    if snapshot.end.resource_revision != active_resource_revision
+        || active_scene_graph_revision
+            .is_some_and(|revision| snapshot.end.scene_graph_revision > revision)
+    {
+        return Ok(ScriptSnapshotBinding::RebaseDependencies);
+    }
+    Ok(ScriptSnapshotBinding::Ready)
 }
 
 fn script_payload_from_graph(graph: &NormalizedScriptGraph) -> ScriptSnapshotPayload {
@@ -3203,6 +3237,45 @@ mod tests {
                 .iter()
                 .all(|document| document.resource_revision == 2
                     && document.script_graph_revision == 2)
+        );
+    }
+
+    #[test]
+    fn script_snapshot_dependency_advance_requests_rebase_instead_of_session_failure() {
+        let response: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../schemas/codex_bridge/v1/fixtures/valid/script-snapshot-response.json"
+        ))
+        .unwrap();
+        let begin: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../schemas/codex_bridge/v1/fixtures/valid/script-snapshot-begin.json"
+        ))
+        .unwrap();
+        let end: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../schemas/codex_bridge/v1/fixtures/valid/script-snapshot-end.json"
+        ))
+        .unwrap();
+        let snapshot = ScriptSnapshot {
+            accepted: serde_json::from_value(response["result"].clone()).unwrap(),
+            begin: serde_json::from_value(begin["params"].clone()).unwrap(),
+            payload: ScriptSnapshotPayload {
+                documents: Vec::new(),
+                symbols: Vec::new(),
+                relations: Vec::new(),
+                diagnostics: Vec::new(),
+                adapter_statuses: Vec::new(),
+            },
+            end: serde_json::from_value(end["params"].clone()).unwrap(),
+        };
+
+        assert_eq!(
+            classify_script_snapshot_binding(
+                "editor:0123456789abcdef0123456789abcdef",
+                6,
+                Some(4),
+                &snapshot,
+            )
+            .unwrap(),
+            ScriptSnapshotBinding::RebaseDependencies,
         );
     }
 }
