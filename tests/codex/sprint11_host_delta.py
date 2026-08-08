@@ -74,6 +74,7 @@ SMOKE_FIELDS: Final = frozenset(
         "registry",
         "connection",
         "semantic_fact",
+        "execution",
         "assertions",
         "redaction",
     }
@@ -639,9 +640,29 @@ def validate_smoke_report(value: Any) -> dict[str, Any]:
     )
     require(semantic["freshness"] == "current", "host smoke semantic freshness differs")
     _digest(semantic["evidence_sha256"], label="host smoke evidence")
+    execution = _exact_fields(
+        report["execution"],
+        frozenset({"command_sha256", "duration_ms"}),
+        label="host smoke execution",
+    )
+    _digest(execution["command_sha256"], label="host smoke command")
+    require(
+        isinstance(execution["duration_ms"], int)
+        and not isinstance(execution["duration_ms"], bool)
+        and 0 <= execution["duration_ms"] <= 180_000,
+        "host smoke duration differs",
+    )
     assertions = _exact_fields(
         report["assertions"],
-        frozenset({"model_turn_absent", "project_integrity_preserved", "clean_shutdown"}),
+        frozenset(
+            {
+                "model_turn_absent",
+                "project_integrity_preserved",
+                "isolated_codex_home",
+                "exact_child_shutdown",
+                "clean_shutdown",
+            }
+        ),
         label="host smoke assertions",
     )
     require(all(value is True for value in assertions.values()), "host smoke assertion failed")

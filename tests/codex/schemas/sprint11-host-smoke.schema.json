@@ -13,6 +13,7 @@
     "registry",
     "connection",
     "semantic_fact",
+    "execution",
     "assertions",
     "redaction"
   ],
@@ -66,13 +67,34 @@
         "evidence_sha256": { "$ref": "#/$defs/sha256" }
       }
     },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command_sha256", "duration_ms"],
+      "properties": {
+        "command_sha256": { "$ref": "#/$defs/sha256" },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 180000
+        }
+      }
+    },
     "assertions": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["model_turn_absent", "project_integrity_preserved", "clean_shutdown"],
+      "required": [
+        "model_turn_absent",
+        "project_integrity_preserved",
+        "isolated_codex_home",
+        "exact_child_shutdown",
+        "clean_shutdown"
+      ],
       "properties": {
         "model_turn_absent": { "const": true },
         "project_integrity_preserved": { "const": true },
+        "isolated_codex_home": { "const": true },
+        "exact_child_shutdown": { "const": true },
         "clean_shutdown": { "const": true }
       }
     },

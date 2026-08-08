@@ -198,9 +198,15 @@ def passing_smoke(client_digest: str = digest("a")) -> dict[str, Any]:
             "freshness": "current",
             "evidence_sha256": digest("5"),
         },
+        "execution": {
+            "command_sha256": digest("6"),
+            "duration_ms": 12,
+        },
         "assertions": {
             "model_turn_absent": True,
             "project_integrity_preserved": True,
+            "isolated_codex_home": True,
+            "exact_child_shutdown": True,
             "clean_shutdown": True,
         },
         "redaction": {
